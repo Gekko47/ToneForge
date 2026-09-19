@@ -20,7 +20,12 @@ export const ProfileVersionSchema = z.object({
 export type ProfileVersion = z.infer<typeof ProfileVersionSchema>;
 
 export const TypographyRulesSchema = z.object({
+  // How an em dash is represented. "em" is the Unicode U+2014 character,
+  // "hyphen" is a double hyphen "--", and "space" is a plain space. The
+  // companion `emDashSpacing` field controls whether the dash is surrounded
+  // by spaces, which is orthogonal to how the dash itself is encoded.
   emDash: z.enum(["em", "hyphen", "space"]).default("em"),
+  emDashSpacing: z.enum(["spaced", "tight"]).default("spaced"),
   enDashSpacing: z.enum(["spaced", "tight"]).default("spaced"),
   doubleQuotes: z.enum(["curly", "straight"]).default("curly"),
   singleQuotes: z.enum(["curly", "straight"]).default("curly"),

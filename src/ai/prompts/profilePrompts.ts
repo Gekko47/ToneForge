@@ -4,9 +4,41 @@
  * unless the user explicitly opts in.
  */
 
+import { z } from "zod";
+
 export interface ProfilePromptOptions {
   includeRawText: boolean;
 }
+
+/**
+ * Expected JSON shape returned by the LLM for `buildProfilePrompt`.
+ * Parsed defensively: unknown fields are stripped and missing required
+ * fields produce a typed error so callers can surface a clean failure
+ * instead of trusting raw model output.
+ */
+export const ProfileResponseSchema = z.object({
+  tone: z.string().trim().min(1),
+  voice: z.string().trim().min(1),
+  formality: z.number().min(0).max(100),
+  readingGradeTarget: z.number().min(0).max(20).nullable(),
+  preferredSentenceLength: z.number().min(5).max(60),
+  vocabularyRegister: z.enum(["simple", "standard", "technical", "academic"]),
+  rhetoricalStyle: z.string().trim().min(1),
+  avoidWords: z.array(z.string()).default([]),
+});
+
+export type ProfileResponse = z.infer<typeof ProfileResponseSchema>;
+
+/**
+ * Expected JSON shape returned by the LLM for `buildDeviationPrompt`.
+ */
+export const DeviationResponseSchema = z.object({
+  deviation: z.string().trim().min(1),
+  severity: z.enum(["low", "medium", "high"]),
+  suggestion: z.string().trim().min(1),
+});
+
+export type DeviationResponse = z.infer<typeof DeviationResponseSchema>;
 
 export function buildProfilePrompt(
   sampleText: string,

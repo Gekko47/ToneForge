@@ -74,7 +74,13 @@ See `docs/architecture.md` for module boundaries and data flow.
 Each roadmap stage (see `ROADMAP.md`) follows this protocol:
 
 1. Read the stage file in `docs/stages/`.
-2. Load only the relevant skills.
+2. Load only the relevant skills from `.roo/skills/<skill-name>/SKILL.md` (Zoo/Roo Code discovers `SKILL.md` with `name` + `description` frontmatter; `skill` tool loads by name, e.g. `toneforge-llm`):
+   - `toneforge-scaffold` (`.roo/skills/toneforge-scaffold/SKILL.md`) — project setup, build, manifest, and verification commands.
+   - `toneforge-officejs` (`.roo/skills/toneforge-officejs/SKILL.md`) — Word JavaScript API patterns (`runInWord`, reader, revision adapter).
+   - `toneforge-llm` (`.roo/skills/toneforge-llm/SKILL.md`) — LLM provider contract, retry, redaction, and privacy opt-in.
+   - `toneforge-testing` (`.roo/skills/toneforge-testing/SKILL.md`) — Vitest patterns, Office mocks, and coverage expectations.
+   - Governance rules live in `.cline/rules/toneforge.md`.
+   - Validate skills with `npm run skills:validate`.
 3. Inspect before modifying.
 4. Implement only the stage scope.
 5. Run targeted tests.

@@ -31,7 +31,12 @@
         "read_file",
         "read_text_file",
         "read_media_file",
-        "read_multiple_files"
+        "read_multiple_files",
+        "write_file",
+        "edit_file",
+        "directory_tree",
+        "get_file_info",
+        "search_files"
       ]
     },
     "git": {
@@ -44,7 +49,8 @@
         "git_show",
         "git_branch",
         "git_diff_staged",
-        "git_diff_unstaged"
+        "git_diff_unstaged",
+        "git_add"
       ]
     }
   }

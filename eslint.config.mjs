@@ -54,4 +54,76 @@ export default [
       ],
     },
   },
+  {
+    // Enforces docs/architecture.md: core/domain may only import zod and
+    // shared/utils — never word, ai, ui, or Office (see ADR-0013).
+    files: ["src/core/domain/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/word/*", "**/ai/*", "**/taskpane/*", "**/commands/*"],
+              message:
+                "core/domain must stay Office-free: allowed imports are zod and shared/utils only (architecture.md).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Enforces docs/architecture.md: word/ must not depend on ai or ui.
+    files: ["src/word/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/ai/*", "**/taskpane/*"],
+              message: "word/ must not depend on ai or ui (architecture.md).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Enforces docs/architecture.md: ai/providers must not depend on word or ui.
+    files: ["src/ai/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/word/*", "**/taskpane/*"],
+              message: "ai/ must not depend on word or ui (architecture.md).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Enforces docs/architecture.md: ui/* must not import revisionAdapter
+    // directly — all mutations go through the orchestrator.
+    files: ["src/taskpane/**/*.{ts,tsx}", "src/commands/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/word/revisionAdapter*"],
+              message:
+                "ui/* must not import revisionAdapter directly; mutations go through the orchestrator (architecture.md).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];

@@ -18,6 +18,7 @@
     "sideload": "npx office-addin-debugging start manifest.json",
     "stop": "npx office-addin-debugging stop manifest.json",
     "validate": "node scripts/validate-manifest.mjs",
+    "skills:validate": "node scripts/validate-skills.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

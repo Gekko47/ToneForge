@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   buildProfilePrompt,
   buildDeviationPrompt,
-} from "../../../../src/ai/prompts/profilePrompts";
+  ProfileResponseSchema,
+  DeviationResponseSchema,
+} from "../../../../src/ai/prompts/index";
 
 describe("buildProfilePrompt", () => {
   it("throws when includeRawText is false (default)", () => {
@@ -43,5 +45,112 @@ describe("buildDeviationPrompt", () => {
     });
     expect(prompt).toContain("target text");
     expect(prompt).toContain("Target text:");
+  });
+});
+
+describe("ProfileResponseSchema", () => {
+  it("accepts a valid profile response", () => {
+    const result = ProfileResponseSchema.safeParse({
+      tone: "formal",
+      voice: "third-person",
+      formality: 70,
+      readingGradeTarget: 10,
+      preferredSentenceLength: 22,
+      vocabularyRegister: "standard",
+      rhetoricalStyle: "direct",
+      avoidWords: ["very"],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("strips unknown fields", () => {
+    const result = ProfileResponseSchema.safeParse({
+      tone: "formal",
+      voice: "third-person",
+      formality: 70,
+      readingGradeTarget: null,
+      preferredSentenceLength: 22,
+      vocabularyRegister: "standard",
+      rhetoricalStyle: "direct",
+      avoidWords: [],
+      extraField: "should be dropped",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty("extraField");
+    }
+  });
+
+  it("rejects out-of-range formality", () => {
+    const result = ProfileResponseSchema.safeParse({
+      tone: "formal",
+      voice: "third-person",
+      formality: 200,
+      readingGradeTarget: null,
+      preferredSentenceLength: 22,
+      vocabularyRegister: "standard",
+      rhetoricalStyle: "direct",
+      avoidWords: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects invalid vocabularyRegister", () => {
+    const result = ProfileResponseSchema.safeParse({
+      tone: "formal",
+      voice: "third-person",
+      formality: 70,
+      readingGradeTarget: null,
+      preferredSentenceLength: 22,
+      vocabularyRegister: "bogus",
+      rhetoricalStyle: "direct",
+      avoidWords: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("defaults avoidWords when omitted", () => {
+    const result = ProfileResponseSchema.safeParse({
+      tone: "formal",
+      voice: "third-person",
+      formality: 70,
+      readingGradeTarget: null,
+      preferredSentenceLength: 22,
+      vocabularyRegister: "standard",
+      rhetoricalStyle: "direct",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.avoidWords).toEqual([]);
+    }
+  });
+});
+
+describe("DeviationResponseSchema", () => {
+  it("accepts a valid deviation response", () => {
+    const result = DeviationResponseSchema.safeParse({
+      deviation: "wordy phrasing",
+      severity: "medium",
+      suggestion: "trim it",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects invalid severity", () => {
+    const result = DeviationResponseSchema.safeParse({
+      deviation: "x",
+      severity: "critical",
+      suggestion: "y",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty deviation", () => {
+    const result = DeviationResponseSchema.safeParse({
+      deviation: "",
+      severity: "low",
+      suggestion: "y",
+    });
+    expect(result.success).toBe(false);
   });
 });

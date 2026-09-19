@@ -96,7 +96,22 @@ function setLocalStorage(value: Record<string, unknown>): void {
 export function loadState(): PersistedState {
   const raw = getRoamingSettings() ??
     getLocalStorage() ?? { version: 1, profiles: [], activeProfileId: null, settings: {} };
-  return StateSchema.parse(raw);
+  try {
+    return StateSchema.parse(raw);
+  } catch (err) {
+    // Corrupted or incompatible persisted state: fall back to defaults
+    // rather than crashing the add-in. The previous value is unrecoverable.
+    console.warn(
+      "Failed to parse persisted state; falling back to defaults:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return {
+      version: 1,
+      profiles: [],
+      activeProfileId: null,
+      settings: { telemetryDisabled: true },
+    };
+  }
 }
 
 /**

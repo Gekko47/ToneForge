@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { v4 as uuidv4 } from "uuid";
 import { ChangeSchema, type Change } from "./Change";
 
 export const ChangePlanSchema = z.object({
@@ -27,7 +28,7 @@ export function createChangePlan(
   changes: Change[],
 ): ChangePlan {
   return ChangePlanSchema.parse({
-    id: crypto.randomUUID(),
+    id: uuidv4(),
     docHash,
     baseDocId,
     createdAt: new Date().toISOString(),

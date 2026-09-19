@@ -45,11 +45,11 @@ Per-stage status per the Stage protocol in `ROADMAP.md`. Updated after each stag
 
 - R1: Probe rewritten non-destructive (`dryRun: true` default); `supportsStyles`/`supportsRevisions` now return truthful values. In-Word execution still required for PASS.
 - R2: Revision adapter frozen behind `STAGE_01_PASSED` flag; range-aware apply via `body.getRange`; `applyStyle`/`setListLevel` throw explicit `Unsupported` errors.
-- R3: `manifest.json` fixed (URLs as strings, GUID for `webApplicationInfo.id`); `validate-manifest.mjs` updated.
-- R4: Domain schemas hardened (`RangeSchema` refine, `ChangeSchema` superRefine for payload requirements, `emDash` enum fixed, `uuid.v4()` used).
-- R5: `LlmProvider` extended with `profile()`/`deviations()`/`rewrite()` via `withSemanticHelpers`; OpenAI adapter honors `request.signal`, delegates retry to `withRetry()`, implements real `redact()`.
-- R6: Prompt builders throw unless `includeRawText: true` is explicitly passed.
-- R7: `persistence.ts` calls `saveAsync` after `set`; `migration.ts` implements v0→v1 with `version` field.
-- R8: `documentReader.ts` uses stable doc ID + FNV hash + chunked read; `officeHelpers.ts` typed; `tests/setup.ts` mock shape fixed.
-- R9: Traceability restored (this file); ADRs added for domain, persistence, fetch adapter, destructive probe.
-- R10: New tests added for Change, Finding, migration, prompts, revision adapter gate; 72 tests passing.
+- R3: `manifest.json` rewritten as unified v1.30 manifest; `manifest.xml` rewritten as valid add-in-only fallback (bt namespace, Document host, Permissions, bt:Urls/ShortStrings/LongStrings); `validate-manifest.mjs` updated to v1.30 with `validateXmlFallback()` structural checks. Both manifests pass the Office validation service.
+- R4: Domain schemas hardened: `ChangeRangeSchema` refine, discriminated-union payloads (`ChangePayloadSchema`) enforced via `superRefine`, `emDash`/`emDashSpacing` documented, `uuid.v4()` replaces `crypto.randomUUID()`. 39 domain tests.
+- R5: OpenAI adapter uses `AbortSignal.any()`; caller-abort (non-retryable) is now distinguished from timeout (retryable); retry delegates to `withRetry()`; `redact()` strips emails, cards, API keys, and bearer tokens. 10 adapter tests.
+- R6: Prompt builders throw unless `includeRawText: true`; `ProfileResponseSchema`/`DeviationResponseSchema` Zod parsers added for LLM outputs. 10 prompt tests.
+- R7: `loadState()` falls back to defaults on corrupted/incompatible state instead of throwing; `saveState()` persists via `saveAsync`. 4 Office-path tests added.
+- R8: `documentReader.ts` uses stable doc ID (Context.document.id) with FNV hash fallback + chunked read; `officeHelpers.ts` typed to `Office.Context`; 8 reader tests added.
+- R9: Traceability restored (this file); ADR-0001 updated for manifest v1.30; ADR-0009 (domain schemas), ADR-0010 (persistence), ADR-0011 (fetch adapter), ADR-0012 (non-destructive probe) added.
+- R10: New tests added for Change, ChangePlan, Finding, migration, prompts, revision adapter gate, persistence Office path, documentReader, OpenAI adapter; 124 tests passing (17 files). `npm run stage:verify` passes typecheck/lint/test/build/validate; format passes for all project files (`.roo/mcp.json` is environment-owned tooling config and excluded from this claim).

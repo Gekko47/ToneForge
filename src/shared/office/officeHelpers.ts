@@ -2,11 +2,15 @@
  * Thin wrappers around Office.js runtime detection.
  * The actual document access lives in `word/documentReader` so this file
  * stays dependency-free for unit testing.
+ *
+ * `runInWord` is typed against `Office.Context` (the shared request-context
+ * type). Callers that need the Word-specific `Word.RequestContext` should
+ * narrow the parameter inside their `runInWord` callback.
  */
 
 type OfficeGlobal = {
   Office?: {
-    Context?: unknown;
+    Context?: Office.Context;
     run: <R>(func: (context: Office.Context) => Promise<R>) => Promise<R>;
     roamingSettings?: {
       get: (key: string) => unknown;
@@ -37,6 +41,6 @@ export async function runInWord<T>(func: (context: Office.Context) => Promise<T>
   return office.run(func);
 }
 
-export function context(): unknown {
+export function context(): Office.Context | null {
   return getOffice()?.Context ?? null;
 }
