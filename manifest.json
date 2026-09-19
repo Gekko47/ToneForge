@@ -1,0 +1,135 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/v1.10/manifest.schema.json",
+  "manifestVersion": "1.10",
+  "id": "gekko47.toneforge",
+  "version": "0.1.0",
+  "publisher": {
+    "name": "Gekko47",
+    "contactUrl": "https://github.com/Gekko47/ToneForge",
+    "supportUrl": "https://github.com/Gekko47/ToneForge/issues"
+  },
+  "developer": {
+    "name": "Gekko47",
+    "websiteUrl": "https://github.com/Gekko47/ToneForge",
+    "contactUrl": true,
+    "supportUrl": true,
+    "privacyUrl": "https://github.com/Gekko47/ToneForge/blob/main/docs/privacy-security.md",
+    "termsOfUseUrl": "https://github.com/Gekko47/ToneForge/blob/main/LICENSE"
+  },
+  "name": {
+    "short": "ToneForge",
+    "full": "ToneForge — style consistency for Word"
+  },
+  "description": {
+    "short": "Learn a style from samples and check consistency across Word documents.",
+    "full": "ToneForge is a Word Web Add-in that learns an editable style profile from writing samples, runs deterministic micro-consistency checks, uses AI only where interpretation is required, and applies safe native Word revisions."
+  },
+  "icons": [
+    {
+      "size": 16,
+      "url": "assets/icon-16.png"
+    },
+    {
+      "size": 32,
+      "url": "assets/icon-32.png"
+    },
+    {
+      "size": 80,
+      "url": "assets/icon-80.png"
+    }
+  ],
+  "permissions": ["Document", "Settings"],
+  "host": {
+    "name": "Word"
+  },
+  "extensions": [
+    {
+      "requires": {
+        "Word": ">=1.0"
+      },
+      "entryPoints": {
+        "taskpane": {
+          "pages": [
+            {
+              "type": "taskpane",
+              "url": "https://localhost:3000/taskpane.html",
+              "responsible": "taskpane"
+            }
+          ]
+        },
+        "commands": {
+          "pages": [
+            {
+              "type": "taskpane",
+              "url": "https://localhost:3000/commands.html",
+              "responsible": "commands"
+            }
+          ]
+        }
+      },
+      "ribbons": [
+        {
+          "tabs": [
+            {
+              "id": "ToneForgeTab",
+              "label": "ToneForge",
+              "groups": [
+                {
+                  "id": "ToneForgeGroup",
+                  "label": "Style",
+                  "commands": [
+                    {
+                      "id": "ToneForgeTaskpane",
+                      "type": "taskpane",
+                      "label": "Open ToneForge",
+                      "responsible": "taskpane"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "runtimes": [
+    {
+      "type": "javascript",
+      "code": {
+        "entryPoint": "taskpane",
+        "script": {
+          "id": "taskpane",
+          "type": "page",
+          "responsible": "taskpane",
+          "url": "https://localhost:3000/taskpane.html"
+        }
+      },
+      "lifetime": "short",
+      "sso": false
+    }
+  ],
+  "commands": {
+    "commands": [
+      {
+        "id": "ToneForgeTaskpane",
+        "type": "taskpane",
+        "title": "ToneForge",
+        "pinnable": true,
+        "visible": true
+      }
+    ]
+  },
+  "authorization": [
+    {
+      "name": "ToneForge",
+      "type": "api",
+      "allowed": ["Document"]
+    }
+  ],
+  "appDomains": ["https://localhost:3000"],
+  "webApplicationInfo": {
+    "id": "gekko47.toneforge",
+    "resource": "https://graph.microsoft.com"
+  }
+}
