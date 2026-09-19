@@ -1,6 +1,15 @@
 /**
  * Stage 01 hard gate: probe Word capabilities BEFORE building the reformatter.
  * Exposes a single, testable probe that the rest of the codebase depends on.
+ *
+ * Non-destructive: probes inspect the host object model without mutating the
+ * user's document. No `insertText`, `insertParagraph`, or `insertBreak`
+ * mutations are performed, so the probe can be run freely inside Word without
+ * polluting the user's document.
+ *
+ * Truthfulness: every probe returns the actual result from the host callback.
+ * Failures are caught and recorded as `false` so the add-in can degrade
+ * gracefully. No probe silently reports `true` when the host did not confirm.
  */
 
 import { runInWord } from "../shared/office/officeHelpers";
@@ -28,7 +37,7 @@ const DEFAULT_CAPABILITIES: WordCapabilities = {
 };
 
 /**
- * Probe the host by attempting each primitive. Failures are caught and
+ * Probe the host by inspecting the object model. Failures are caught and
  * recorded as `false` so the add-in can degrade gracefully.
  */
 export async function probeWordCapabilities(): Promise<WordCapabilities> {
@@ -41,7 +50,7 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
         hostVersion: context.host?.version ?? null,
       };
     });
-    caps.hostName = (ctx?.hostName as WordCapabilities["hostName"]) ?? "unknown";
+    caps.hostName = normalizeHostName(ctx?.hostName);
     caps.hostVersion = ctx?.hostVersion ?? null;
   } catch {
     return caps;
@@ -51,74 +60,77 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
     [
       "supportsInsertText",
       async () => {
-        await runInWord(async (context) => {
-          context.document.getSelection().insertText("ToneForge probe", "Replace");
+        const result = await runInWord(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range, "insertText");
         });
-        return true;
+        return result === true;
       },
     ],
     [
       "supportsReplaceText",
       async () => {
-        await runInWord(async (context) => {
-          const range = context.document.getSelection();
-          range.load("text");
-          await context.sync();
-          if (range.text?.includes("ToneForge probe")) {
-            range.insertText("", "Replace");
-          }
+        const result = await runInWord(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range, "insertText");
         });
-        return true;
+        return result === true;
       },
     ],
     [
       "supportsInsertParagraph",
       async () => {
-        await runInWord(async (context) => {
-          const para = context.document.getSelection().insertParagraph("");
-          para.load("text");
-          await context.sync();
+        const result = await runInWord(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range, "insertParagraph");
         });
-        return true;
+        return result === true;
       },
     ],
     [
       "supportsInsertBreak",
       async () => {
-        await runInWord(async (context) => {
-          context.document.getSelection().insertBreak(Office.InsertBreakBehavior.Paragraph);
+        const result = await runInWord(async (context) => {
+          const range = getProbeRange(context);
+          return (
+            range !== null && hasMethod(range, "insertBreak") && hasOfficeInsertBreakBehavior()
+          );
         });
-        return true;
+        return result === true;
       },
     ],
     [
       "supportsStyles",
       async () => {
-        await runInWord(async (context) => {
+        const result = await runInWord(async (context) => {
           const styles = context.document.styles;
+          if (!styles || typeof styles.load !== "function") return false;
           styles.load("name");
           await context.sync();
-          return styles.items.length > 0;
+          const items = (styles as unknown as { items?: unknown[] }).items;
+          return Array.isArray(items) && items.length > 0;
         });
-        return true;
+        return result === true;
       },
     ],
     [
       "supportsRevisions",
       async () => {
-        await runInWord(async (context) => {
+        const result = await runInWord(async (context) => {
           const anyContext = context as unknown as {
             document?: {
-              trackedChanges?: { load: (p: string) => void; items: unknown[] };
+              trackedChanges?: unknown;
             };
           };
           const tracked = anyContext.document?.trackedChanges;
-          if (tracked) {
-            tracked.load("items");
-            await context.sync();
-          }
+          if (!tracked) return false;
+          const trackedChanges = tracked as { load?: unknown; items?: unknown };
+          if (typeof trackedChanges.load !== "function") return false;
+          trackedChanges.load("items");
+          await context.sync();
+          return Array.isArray(trackedChanges.items);
         });
-        return true;
+        return result === true;
       },
     ],
   ];
@@ -132,4 +144,38 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
   }
 
   return caps;
+}
+
+/**
+ * Obtain a probe Range from the current selection without mutating anything.
+ * Returns `null` when the host cannot provide a usable Range.
+ */
+function getProbeRange(context: Office.Context): Office.Range | null {
+  try {
+    const selection = context.document.getSelection();
+    if (typeof selection.getRange !== "function") return null;
+    const range = selection.getRange(0, 0);
+    return range;
+  } catch {
+    return null;
+  }
+}
+
+function hasMethod(target: unknown, methodName: string): boolean {
+  return typeof (target as { [key: string]: unknown })[methodName] === "function";
+}
+
+function hasOfficeInsertBreakBehavior(): boolean {
+  const office = (
+    globalThis as unknown as {
+      Office?: { InsertBreakBehavior?: { Paragraph?: unknown } };
+    }
+  ).Office;
+  return Boolean(office?.InsertBreakBehavior?.Paragraph);
+}
+
+function normalizeHostName(name: unknown): WordCapabilities["hostName"] {
+  return name === "Word" || name === "Excel" || name === "PowerPoint"
+    ? (name as WordCapabilities["hostName"])
+    : "unknown";
 }

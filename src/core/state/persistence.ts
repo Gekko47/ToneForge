@@ -4,12 +4,16 @@
  * Primary store: Office roamingSettings (survives across sessions).
  * Fallback: localStorage (used when Office runtime is unavailable,
  * e.g. in unit tests or when running outside Word).
+ *
+ * NOTE: API keys are stored in plaintext in roamingSettings. This is an
+ * accepted MVP limitation; Stage 25 should add DPPII/key-vault encryption.
  */
 
 import { z } from "zod";
 import { StyleProfileSchema, type StyleProfile } from "../domain/StyleProfile";
 
 const StateSchema = z.object({
+  version: z.number().int().nonnegative().default(1),
   profiles: z.array(StyleProfileSchema).default([]),
   activeProfileId: z.string().uuid().nullable().default(null),
   settings: z
@@ -48,15 +52,30 @@ function getRoamingSettings(): Record<string, unknown> | null {
   }
 }
 
-function setRoamingSettings(value: Record<string, unknown>): void {
+async function setRoamingSettingsAsync(value: Record<string, unknown>): Promise<void> {
   const office = (
     globalThis as unknown as {
-      Office: { roamingSettings?: { set: (k: string, v: unknown) => void } };
+      Office: {
+        roamingSettings?: {
+          set: (key: string, v: unknown) => void;
+          saveAsync: (callback?: (result: unknown) => void) => void;
+        };
+      };
     }
   ).Office;
   const settings = office?.roamingSettings;
-  if (settings) {
-    settings.set(STORAGE_KEY, JSON.stringify(value));
+  if (!settings) return;
+  settings.set(STORAGE_KEY, JSON.stringify(value));
+  // Persist to the Office document. Without this call, roamingSettings
+  // changes are discarded when the add-in closes.
+  if (typeof settings.saveAsync === "function") {
+    await new Promise<void>((resolve) => {
+      try {
+        settings.saveAsync(() => resolve());
+      } catch {
+        resolve();
+      }
+    });
   }
 }
 
@@ -76,19 +95,31 @@ function setLocalStorage(value: Record<string, unknown>): void {
 
 export function loadState(): PersistedState {
   const raw = getRoamingSettings() ??
-    getLocalStorage() ?? { profiles: [], activeProfileId: null, settings: {} };
+    getLocalStorage() ?? { version: 1, profiles: [], activeProfileId: null, settings: {} };
   return StateSchema.parse(raw);
 }
 
+/**
+ * Save state. localStorage is written synchronously so callers can rely on
+ * it. Office roamingSettings is persisted asynchronously via saveAsync;
+ * failures are logged but never thrown.
+ */
 export function saveState(state: PersistedState): void {
   const parsed = StateSchema.parse(state);
   const payload = { ...parsed };
-  try {
-    setRoamingSettings(payload);
-  } catch {
-    // Fall back silently if roamingSettings throws.
-  }
+
+  // Always write localStorage synchronously.
   setLocalStorage(payload);
+
+  // Persist to Office roamingSettings asynchronously (best-effort).
+  if (isOfficeRuntime()) {
+    setRoamingSettingsAsync(payload).catch((err: unknown) => {
+      console.error(
+        "Failed to persist to Office roamingSettings:",
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+  }
 }
 
 export function upsertProfile(profile: StyleProfile): void {

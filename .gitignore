@@ -48,3 +48,9 @@ logs/
 ## Misc
 .DS_Store
 .cache/
+
+## Tool-specific / generated directories
+.vs/
+.roomodes
+.qodo/
+.husky/_/

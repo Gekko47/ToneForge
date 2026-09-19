@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod";
+import { v4 as uuidv4 } from "uuid";
 
 export const ProfileVersionSchema = z.object({
   major: z.number().int().nonnegative(),
@@ -93,7 +94,7 @@ export function createEmptyProfile(
 ): StyleProfile {
   const now = new Date().toISOString();
   return StyleProfileSchema.parse({
-    id: crypto.randomUUID(),
+    id: uuidv4(),
     name,
     version,
     measured: {},

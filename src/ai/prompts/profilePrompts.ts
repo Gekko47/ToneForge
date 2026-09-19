@@ -4,7 +4,20 @@
  * unless the user explicitly opts in.
  */
 
-export function buildProfilePrompt(sampleText: string, constraints: string[] = []): string {
+export interface ProfilePromptOptions {
+  includeRawText: boolean;
+}
+
+export function buildProfilePrompt(
+  sampleText: string,
+  constraints: string[] = [],
+  opts: ProfilePromptOptions = { includeRawText: false },
+): string {
+  if (!opts.includeRawText) {
+    throw new Error(
+      "buildProfilePrompt requires includeRawText: true — raw document text must not leave the add-in without explicit user opt-in",
+    );
+  }
   return [
     "Analyze the following writing sample and produce a concise style profile.",
     "Return a JSON object with exactly these keys: tone, voice, formality (0-100),",
@@ -20,7 +33,20 @@ export function buildProfilePrompt(sampleText: string, constraints: string[] = [
     .join("\n");
 }
 
-export function buildDeviationPrompt(profile: unknown, targetText: string): string {
+export interface DeviationPromptOptions {
+  includeRawText: boolean;
+}
+
+export function buildDeviationPrompt(
+  profile: unknown,
+  targetText: string,
+  opts: DeviationPromptOptions = { includeRawText: false },
+): string {
+  if (!opts.includeRawText) {
+    throw new Error(
+      "buildDeviationPrompt requires includeRawText: true — raw document text must not leave the add-in without explicit user opt-in",
+    );
+  }
   return [
     "Given this style profile (JSON):",
     JSON.stringify(profile),

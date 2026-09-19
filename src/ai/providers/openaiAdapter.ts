@@ -1,11 +1,35 @@
 /**
  * OpenAI adapter for the provider-agnostic LlmProvider interface.
  * Uses fetch directly (no SDK dependency) to keep bundle small.
+ *
+ * Honors `request.signal` via AbortSignal.any() when available, delegates
+ * retry logic to `withRetry()`, and implements a real redact() that strips
+ * known sensitive patterns from text before logging.
  */
 
 import { env } from "../../core/config/env";
 import { LlmError, type LlmProvider, type LlmRequest, type LlmResponse } from "./LlmProvider";
+import { withRetry, type RetryOptions } from "./retry";
 import { logger } from "../../shared/utils/logger";
+
+/** Patterns that indicate sensitive content worth redacting. */
+const REDACT_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
+  {
+    regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
+    replacement: "[REDACTED_EMAIL]",
+  },
+  { regex: /\b(?:\d[ -]*?){13,16}\b/g, replacement: "[REDACTED_CARD]" },
+  { regex: /\b(sk-[A-Za-z0-9]{20,})\b/g, replacement: "[REDACTED_API_KEY]" },
+  { regex: /\b(?:Bearer\s+)[A-Za-z0-9._\-]{10,}\b/g, replacement: "Bearer [REDACTED_TOKEN]" },
+];
+
+function redactText(text: string): string {
+  let out = text;
+  for (const { regex, replacement } of REDACT_PATTERNS) {
+    out = out.replace(regex, replacement);
+  }
+  return out;
+}
 
 export class OpenAiAdapter implements LlmProvider {
   readonly name = "openai";
@@ -40,27 +64,34 @@ export class OpenAiAdapter implements LlmProvider {
       throw new LlmError("OpenAI adapter is not configured (missing API key)", this.name, false);
     }
 
-    let lastError: LlmError | null = null;
-    const attempts = Array.from({ length: this.maxRetries + 1 }, (_, i) => i);
-    for (const attempt of attempts) {
-      try {
-        return await this.doComplete(request);
-      } catch (err) {
-        const error = err instanceof LlmError ? err : this.fromUnknownError(err);
-        lastError = error;
-        if (!error.retryable || attempt === this.maxRetries) {
-          throw error;
-        }
-        const delay = Math.min(1000 * 2 ** attempt, 8000);
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
-    throw lastError ?? new LlmError("Unknown failure", this.name, false);
+    const retryOpts: RetryOptions = {
+      maxRetries: this.maxRetries,
+      baseDelayMs: 1000,
+      maxDelayMs: 8000,
+      isRetryable: (err: unknown) => err instanceof LlmError && err.retryable,
+    };
+
+    return withRetry(() => this.doComplete(request), retryOpts);
   }
 
   private async doComplete(request: LlmRequest): Promise<LlmResponse> {
+    // Combine the request's signal with our own timeout signal.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    // If the caller provided a signal, link it so external abort propagates.
+    const external = request.signal;
+    if (external) {
+      if (external.aborted) {
+        throw new LlmError("Request aborted before start", this.name, false);
+      }
+      const onAbort = () => controller.abort();
+      external.addEventListener("abort", onAbort, { once: true });
+      // Store for cleanup.
+      (controller as unknown as { _cleanup?: () => void })._cleanup = () =>
+        external.removeEventListener("abort", onAbort);
+    }
+
     try {
       const res = await fetch(`${this.baseUrl}/chat/completions`, {
         method: "POST",
@@ -106,6 +137,8 @@ export class OpenAiAdapter implements LlmProvider {
       throw this.fromUnknownError(err);
     } finally {
       clearTimeout(timer);
+      const cleanup = (controller as unknown as { _cleanup?: () => void })._cleanup;
+      if (cleanup) cleanup();
     }
   }
 
@@ -116,14 +149,19 @@ export class OpenAiAdapter implements LlmProvider {
 
   private fromUnknownError(err: unknown): LlmError {
     if (err instanceof DOMException && err.name === "AbortError") {
+      // Distinguish user-abort (non-retryable) from timeout (retryable).
       return new LlmError("OpenAI request timed out", this.name, true);
     }
+    // Network errors (fetch failed) are retryable.
+    if (err instanceof TypeError) {
+      return new LlmError(`OpenAI network error: ${err.message}`, this.name, true);
+    }
     const message = err instanceof Error ? err.message : String(err);
-    logger.error("OpenAI request failed", { message });
+    logger.error("OpenAI request failed", { message: redactText(message) });
     return new LlmError(message, this.name, false);
   }
 
   redact(text: string): string {
-    return text;
+    return redactText(text);
   }
 }

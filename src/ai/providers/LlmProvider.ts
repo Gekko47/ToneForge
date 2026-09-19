@@ -28,6 +28,17 @@ export interface LlmProvider {
   redact?(text: string): string;
 }
 
+/**
+ * High-level helpers that delegate to `complete()` with AbortSignal passthrough.
+ * Concrete adapters implement `complete()`; these helpers provide the
+ * `profile()`, `deviations()`, and `rewrite()` contract required by plan.md.
+ */
+export interface LlmSemanticProvider extends LlmProvider {
+  profile(request: LlmRequest): Promise<LlmResponse>;
+  deviations(request: LlmRequest): Promise<LlmResponse>;
+  rewrite(request: LlmRequest): Promise<LlmResponse>;
+}
+
 export class LlmError extends Error {
   constructor(
     message: string,
@@ -37,4 +48,22 @@ export class LlmError extends Error {
     super(message);
     this.name = "LlmError";
   }
+}
+
+/**
+ * Mixin that adds profile/deviations/rewrite helpers to any LlmProvider.
+ * All three delegate to `complete()` and pass through `request.signal`.
+ */
+export function withSemanticHelpers<T extends LlmProvider>(provider: T): T & LlmSemanticProvider {
+  const p = provider as T & LlmSemanticProvider;
+  (p as unknown as { profile: (r: LlmRequest) => Promise<LlmResponse> }).profile = (
+    request: LlmRequest,
+  ) => p.complete(request);
+  (p as unknown as { deviations: (r: LlmRequest) => Promise<LlmResponse> }).deviations = (
+    request: LlmRequest,
+  ) => p.complete(request);
+  (p as unknown as { rewrite: (r: LlmRequest) => Promise<LlmResponse> }).rewrite = (
+    request: LlmRequest,
+  ) => p.complete(request);
+  return p as T & LlmSemanticProvider;
 }

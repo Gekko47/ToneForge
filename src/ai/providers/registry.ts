@@ -6,6 +6,7 @@
 import { LlmError, type LlmProvider, type LlmRequest, type LlmResponse } from "./LlmProvider";
 import { OpenAiAdapter } from "./openaiAdapter";
 import { MockAdapter } from "./mockAdapter";
+import { withSemanticHelpers, type LlmSemanticProvider } from "./LlmProvider";
 
 export type ProviderName = "openai" | "mock";
 
@@ -21,9 +22,19 @@ export class LlmRegistry {
 
   constructor(opts: LlmRegistryOptions = {}) {
     this.providers = new Map();
-    this.providers.set("openai", new OpenAiAdapter(opts.openai ?? {}));
+    const openai = new OpenAiAdapter(opts.openai ?? {});
+    this.providers.set("openai", openai);
     this.providers.set("mock", new MockAdapter(opts.mock ?? {}));
-    this.active = this.providers.get(opts.provider ?? "openai") ?? this.providers.get("openai")!;
+
+    // Default to mock when no API key is configured, so the add-in is
+    // functional offline and never throws on missing configuration.
+    if (opts.provider) {
+      this.active = this.providers.get(opts.provider) ?? this.providers.get("openai")!;
+    } else if (openai.configured) {
+      this.active = openai;
+    } else {
+      this.active = this.providers.get("mock")!;
+    }
   }
 
   get activeProvider(): LlmProvider {
@@ -41,12 +52,7 @@ export class LlmRegistry {
   }
 
   async complete(request: LlmRequest): Promise<LlmResponse> {
-    try {
-      return await this.active.complete(request);
-    } catch (err) {
-      if (err instanceof LlmError && !err.retryable) throw err;
-      throw err;
-    }
+    return this.active.complete(request);
   }
 
   async completeWithFallback(
@@ -66,4 +72,12 @@ export class LlmRegistry {
       }
     }
   }
+}
+
+/** Build a registry with semantic helpers attached. */
+export function createLlmRegistry(
+  opts: LlmRegistryOptions = {},
+): LlmRegistry & LlmSemanticProvider {
+  const registry = new LlmRegistry(opts);
+  return withSemanticHelpers(registry as LlmRegistry & LlmProvider);
 }

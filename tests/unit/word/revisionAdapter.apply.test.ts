@@ -1,0 +1,178 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { createChangePlan } from "../../../src/core/domain/ChangePlan";
+import {
+  applyChangePlan,
+  validatePlanBeforeApply,
+  setStage01Passed,
+} from "../../../src/word/revisionAdapter";
+
+describe("applyChangePlan gate", () => {
+  beforeEach(() => {
+    setStage01Passed(false);
+  });
+
+  it("blocks all changes when Stage 01 has not passed", async () => {
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "hello" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+    const results = await applyChangePlan(plan);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.error).toContain("Stage 01");
+  });
+
+  it("blocks when plan has no changes", async () => {
+    setStage01Passed(true);
+    const plan = createChangePlan("hash-123", "doc-1", []);
+    const results = await applyChangePlan(plan);
+    expect(results).toHaveLength(0);
+  });
+
+  it("flags empty docHash in validation", () => {
+    const plan = {
+      id: "00000000-0000-0000-0000-000000000000",
+      docHash: "",
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [],
+      conflicts: [],
+      stale: false,
+    };
+    const problems = validatePlanBeforeApply(plan);
+    expect(problems).toContain("ChangePlan.docHash is required");
+  });
+
+  it("blocks when plan is stale", async () => {
+    setStage01Passed(true);
+    const plan = createChangePlan("hash", "doc", []);
+    (plan as { stale: boolean }).stale = true;
+    const problems = validatePlanBeforeApply(plan);
+    expect(problems).toContain("ChangePlan is stale; re-plan before applying");
+  });
+
+  it("passes validation for a well-formed plan", async () => {
+    setStage01Passed(true);
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "hello" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+    const problems = validatePlanBeforeApply(plan);
+    expect(problems).toHaveLength(0);
+  });
+});
+
+describe("applyChangePlan apply path", () => {
+  let originalOffice: unknown;
+
+  beforeEach(() => {
+    originalOffice = (globalThis as { Office?: unknown }).Office;
+  });
+
+  afterEach(() => {
+    (globalThis as { Office?: unknown }).Office = originalOffice;
+  });
+
+  function installApplyMock() {
+    const insertText = vi.fn();
+    const getRange = vi.fn(() => ({ insertText, load: vi.fn() }));
+    const body = {
+      text: "hello world",
+      load: vi.fn(),
+      getRange,
+      paragraphs: { load: vi.fn(), items: [] },
+    };
+    const context = {
+      document: {
+        body,
+        getSelection: vi.fn(() => ({ getRange })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: {
+        get: vi.fn(),
+        set: vi.fn(),
+        saveAsync: vi.fn(),
+      },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+    };
+    return { insertText, getRange };
+  }
+
+  it("applies insertText to the range returned by body.getRange", async () => {
+    setStage01Passed(true);
+    const { insertText, getRange } = installApplyMock();
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "REPLACED" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+
+    const results = await applyChangePlan(plan);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.applied).toBe(true);
+    expect(getRange).toHaveBeenCalledWith(0, 5);
+    expect(insertText).toHaveBeenCalledWith("REPLACED", "Replace");
+  });
+
+  it("reports applied:false and error for unsupported applyStyle", async () => {
+    setStage01Passed(true);
+    installApplyMock();
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174001",
+        type: "applyStyle",
+        range: { start: 0, end: 5 },
+        payload: { styleName: "Nonexistent" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+
+    const results = await applyChangePlan(plan);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.error).toContain("Style");
+  });
+
+  it("refuses to apply when currentDocHash mismatches", async () => {
+    setStage01Passed(true);
+    installApplyMock();
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174002",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "different-hash");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.error).toContain("hash mismatch");
+  });
+});

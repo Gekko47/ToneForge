@@ -2,8 +2,13 @@ import { describe, it, expect } from "vitest";
 import { LlmRegistry, MockAdapter, OpenAiAdapter } from "../../../../src/ai/providers/index";
 
 describe("LlmRegistry", () => {
-  it("defaults to openai adapter", () => {
+  it("defaults to mock adapter when no API key is configured", () => {
     const registry = new LlmRegistry();
+    expect(registry.activeName).toBe("mock");
+  });
+
+  it("defaults to openai adapter when API key is configured", () => {
+    const registry = new LlmRegistry({ openai: { apiKey: "sk-test" } });
     expect(registry.activeName).toBe("openai");
   });
 

@@ -20,12 +20,15 @@ declare global {
       selection: Range;
       styles: Styles;
       url?: string;
+      id?: string;
       getSelection(): Range;
     }
 
     interface Body {
       text: string;
       load: (prop: "text") => Body;
+      paragraphs?: ParagraphCollection;
+      getRange?: (start: number, length: number) => Range;
     }
 
     interface Range {
@@ -36,6 +39,7 @@ declare global {
       paragraphs: ParagraphCollection;
       font: Font;
       load: (...props: Array<string>) => Range;
+      getRange?: (start: number, length: number) => Range;
     }
 
     interface ParagraphCollection {
@@ -45,11 +49,13 @@ declare global {
 
     interface Paragraph {
       format: ParagraphFormat;
+      text?: string;
       load: (prop: string) => Paragraph;
+      insertText?: (text: string, insertMode?: string) => Paragraph;
     }
 
     interface ParagraphFormat {
-      // placeholder for future properties
+      setListLevel?: (level: number) => void;
     }
 
     interface Font {
@@ -67,6 +73,7 @@ declare global {
 
     interface Style {
       name: string;
+      apply?: () => void;
     }
 
     type Run = <R>(func: (context: Context) => Promise<R>) => Promise<R>;
@@ -77,6 +84,7 @@ declare global {
     roamingSettings: {
       get: (key: string) => unknown;
       set: (key: string, value: unknown) => void;
+      saveAsync?: (callback?: (result: unknown) => void) => void;
     };
     InsertBreakBehavior: typeof Office.InsertBreakBehavior;
   };

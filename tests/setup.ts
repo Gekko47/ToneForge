@@ -5,7 +5,20 @@ const officeMock = {
   run: <T>(func: (context: unknown) => Promise<T>): Promise<T> =>
     func({
       document: {
-        body: { text: "", load: vi.fn() },
+        body: {
+          text: "",
+          load: vi.fn(),
+          paragraphs: { load: vi.fn(), items: [] },
+          getRange: vi.fn(() => ({
+            text: "",
+            insertText: vi.fn(),
+            insertBreak: vi.fn(),
+            insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+            paragraphs: { load: vi.fn(), items: [] },
+            font: { name: "", size: 0, color: "", load: vi.fn() },
+            load: vi.fn(),
+          })),
+        },
         selection: {
           text: "",
           insertText: vi.fn(),
@@ -15,8 +28,16 @@ const officeMock = {
           font: { name: "", size: 0, color: "", load: vi.fn() },
           load: vi.fn(),
         },
+        getSelection: vi.fn(() => ({
+          text: "",
+          insertText: vi.fn(),
+          insertBreak: vi.fn(),
+          insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+          paragraphs: { load: vi.fn(), items: [] },
+          font: { name: "", size: 0, color: "", load: vi.fn() },
+          load: vi.fn(),
+        })),
         styles: { name: "", load: vi.fn(), items: [] },
-        getSelection: vi.fn(),
       },
       host: { name: "Word", version: "16.0" },
       sync: vi.fn(),
@@ -24,6 +45,9 @@ const officeMock = {
   roamingSettings: {
     get: vi.fn(),
     set: vi.fn(),
+    saveAsync: vi.fn((cb?: (result: unknown) => void) => {
+      if (cb) cb(undefined);
+    }),
   },
   InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
 };

@@ -11,11 +11,16 @@ export type FindingKind = z.infer<typeof FindingKindSchema>;
 export const SeveritySchema = z.enum(["info", "warning", "error"]);
 export type Severity = z.infer<typeof SeveritySchema>;
 
-export const RangeSchema = z.object({
-  start: z.number().int().nonnegative(),
-  end: z.number().int().nonnegative(),
-  unit: z.enum(["character", "paragraph", "section"]).default("character"),
-});
+export const RangeSchema = z
+  .object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().nonnegative(),
+    unit: z.enum(["character", "paragraph", "section"]).default("character"),
+  })
+  .refine((r) => r.start <= r.end, {
+    message: "Range.start must be <= Range.end",
+    path: ["start"],
+  });
 
 export type Range = z.infer<typeof RangeSchema>;
 

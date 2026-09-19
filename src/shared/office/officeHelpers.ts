@@ -11,6 +11,7 @@ type OfficeGlobal = {
     roamingSettings?: {
       get: (key: string) => unknown;
       set: (key: string, value: unknown) => void;
+      saveAsync?: (callback?: (result: unknown) => void) => void;
     };
   };
 };
