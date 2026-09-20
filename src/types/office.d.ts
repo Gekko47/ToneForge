@@ -80,6 +80,18 @@ declare global {
     }
 
     type Run = <R>(func: (context: Context) => Promise<R>) => Promise<R>;
+
+    /**
+     * Host enumeration used by `Office.context.host` and `Office.onReady`.
+     */
+    type HostType = "Word" | "Excel" | "PowerPoint" | "Outlook" | "Project";
+
+    /**
+     * Readiness hook fired by Word desktop/web once the Office.js runtime is
+     * initialised and `Office.run` is available. Preferred over the legacy
+     * `Office.initialize` callback.
+     */
+    type OnReadyCallback = () => void;
   }
 
   const Office: {
@@ -90,6 +102,22 @@ declare global {
       saveAsync?: (callback?: (result: unknown) => void) => void;
     };
     InsertBreakBehavior: typeof Office.InsertBreakBehavior;
+    /**
+     * Modern readiness hook. Called by the host after the runtime is ready.
+     */
+    onReady: (callback: Office.OnReadyCallback) => void;
+    /**
+     * Legacy readiness hook. Still supported but `onReady` is preferred.
+     */
+    initialize: (callback: () => void) => void;
+    /**
+     * Runtime context populated after `onReady`/`initialize` fires.
+     */
+    context: Office.Context;
+    /**
+     * Host name, e.g. "Word".
+     */
+    host: { name: Office.HostType; version: string };
   };
 }
 

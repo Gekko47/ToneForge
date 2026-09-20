@@ -2,7 +2,8 @@ import React from "react";
 import { ThemeProvider } from "@fluentui/react";
 import { ThemeProvider as LocalThemeProvider } from "../theme";
 import { createDefaultTheme } from "../fluentTheme";
-import { probeWordCapabilities } from "../../../src/word/capabilityProbe";
+import { probeWordCapabilities } from "../../word/capabilityProbe";
+import { probeOfficeRuntime, formatDiagnostics } from "../../shared/office/diagnostics";
 
 export default function Dashboard(): React.ReactNode {
   const [caps, setCaps] = React.useState<{
@@ -15,6 +16,7 @@ export default function Dashboard(): React.ReactNode {
     hostName: string;
     hostVersion: string | null;
   } | null>(null);
+  const [diag, setDiag] = React.useState<string | null>(null);
   const [running, setRunning] = React.useState(false);
 
   async function runProbe(): Promise<void> {
@@ -27,6 +29,16 @@ export default function Dashboard(): React.ReactNode {
     }
   }
 
+  function runDiagnostics(): void {
+    // Non-destructive: inspects the global Office/Word objects only.
+    const d = probeOfficeRuntime();
+    const formatted = formatDiagnostics(d);
+    // Also surface to the browser console for F12 inspection.
+    // eslint-disable-next-line no-console
+    console.log(formatted);
+    setDiag(formatted);
+  }
+
   return (
     <LocalThemeProvider>
       <ThemeProvider theme={createDefaultTheme()}>
@@ -36,9 +48,21 @@ export default function Dashboard(): React.ReactNode {
           <button type="button" onClick={runProbe} disabled={running} style={{ marginTop: "1rem" }}>
             {running ? "Probing…" : "Probe Word capabilities"}
           </button>
+          <button
+            type="button"
+            onClick={runDiagnostics}
+            style={{ marginTop: "1rem", marginLeft: "1rem" }}
+          >
+            Diagnose Office runtime
+          </button>
           {caps && (
             <pre style={{ marginTop: "1rem", whiteSpace: "pre-wrap" }} aria-live="polite">
               {JSON.stringify(caps, null, 2)}
+            </pre>
+          )}
+          {diag && (
+            <pre style={{ marginTop: "1rem", whiteSpace: "pre-wrap" }} aria-live="polite">
+              {diag}
             </pre>
           )}
         </main>

@@ -58,12 +58,15 @@ npm run verify   # typecheck + lint + format + test + build + manifest validate
 
 ## Troubleshooting
 
-| Symptom                          | Likely cause                           | Fix                                                     |
-| -------------------------------- | -------------------------------------- | ------------------------------------------------------- |
-| Dev server won't start on HTTPS  | Missing dev cert                       | `npx office-addin-dev-certs install --machine`          |
-| Add-in not appearing in ribbon   | Manifest not sideloaded                | Run `npm run sideload` after `npm run dev`              |
-| "Office.js is not loaded"        | Wrong HTML entry or missing script tag | Ensure `taskpane.html` loads the bundle                 |
-| TypeScript errors about `Office` | Missing global types                   | `src/types/office.d.ts` is included via `tsconfig.json` |
+| Symptom                                   | Likely cause                                                    | Fix                                                                                                                                     |
+| ----------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Dev server won't start on HTTPS           | Missing dev cert                                                | `npx office-addin-dev-certs install --machine`                                                                                          |
+| Add-in not appearing in ribbon            | Manifest not sideloaded                                         | Run `npm run sideload` after `npm run dev`                                                                                              |
+| "Script error." / blank pane              | Cross-origin Office.js script conflict or missing runtime chunk | Do not add a manual Office.js CDN tag (Word injects it); ensure `runtime.js` and `taskpane.js` load from `localhost:3000`               |
+| Favicon 404 in dev server                 | No favicon in the taskpane template                             | Inline SVG data-URI favicon added to `src/taskpane/taskpane.html`                                                                       |
+| `Office` global is `undefined` in browser | Loading the taskpane outside Word (expected)                    | The "Diagnose Office runtime" button on the Dashboard confirms this state; `officeInit.ts` resolves immediately so the UI still renders |
+| TypeScript errors about `Office`          | Missing global types                                            | `src/types/office.d.ts` is included via `tsconfig.json`                                                                                 |
+| Task pane loads but buttons don't respond | `Word.run` not yet available                                    | Click "Diagnose Office runtime" to check host globals; `probeWordCapabilities()` only works inside Word                                 |
 
 ## Project layout
 

@@ -2,11 +2,14 @@
  * Initialize Office.js runtime for the taskpane.
  * Idempotent and safe to call multiple times.
  *
- * Office.js exposes a global `Office` object whose `initialize` callback is
- * invoked by the host when the runtime is ready. We resolve only after that
- * callback has fired (or after a short grace period if it never does), so the
- * taskpane never blocks forever on a missing host.
+ * Resolves only after the host signals readiness via `Office.onReady` (the
+ * modern hook used by Word desktop and Word on the web). Falls back to the
+ * legacy `Office.initialize` callback for older hosts, and finally falls
+ * back to a short grace-period timeout so the taskpane never blocks forever
+ * on a missing host.
  */
+import { logger } from "../shared/utils/logger";
+
 export async function initializeOffice(): Promise<void> {
   return new Promise<void>((resolve) => {
     const office = (globalThis as unknown as { Office?: Record<string, unknown> }).Office;
@@ -18,18 +21,25 @@ export async function initializeOffice(): Promise<void> {
       return;
     }
 
-    // Let the host signal readiness via the standard Office.initialize hook.
     let settled = false;
-    const finish = (): void => {
+    const finish = (reason: string): void => {
       if (settled) return;
       settled = true;
+      logger.info("Office ready", { reason });
       resolve();
     };
 
-    if (typeof office.initialize === "function") {
+    // Modern Word desktop/web exposes `Office.onReady(callback)`. Prefer it
+    // over the legacy `Office.initialize` hook because it is called after the
+    // runtime is fully initialised and `Office.run` is guaranteed available.
+    if (typeof office.onReady === "function") {
       try {
-        // Office.initialize is the host's readiness callback. Replace it so
-        // our resolve runs when the host fires it.
+        (office.onReady as (cb: () => void) => void)(() => finish("onReady"));
+      } catch {
+        finish("onReady-threw");
+      }
+    } else if (typeof office.initialize === "function") {
+      try {
         const original = office.initialize;
         office.initialize = function (...args: unknown[]) {
           try {
@@ -37,18 +47,16 @@ export async function initializeOffice(): Promise<void> {
           } catch {
             /* ignore host callback errors */
           }
-          finish();
+          finish("initialize");
         };
-        // If the host already fired initialize before we replaced it, finish now.
-        finish();
       } catch {
-        finish();
+        finish("initialize-assign-failed");
       }
     } else {
-      finish();
+      finish("no-hook");
     }
 
     // Safety net: never block the UI indefinitely if the host never fires.
-    setTimeout(finish, 2000);
+    setTimeout(() => finish("timeout"), 2000);
   });
 }

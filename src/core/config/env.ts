@@ -5,6 +5,11 @@
 
 import { z } from "zod";
 
+const optionalUrl = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().url().optional(),
+);
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().default(3000),
@@ -15,7 +20,7 @@ const EnvSchema = z.object({
   OPENAI_TIMEOUT_MS: z.coerce.number().default(30000),
   OPENAI_MAX_RETRIES: z.coerce.number().int().default(2),
   TELEMETRY_DISABLED: z.coerce.boolean().default(true),
-  ANALYTICS_ENDPOINT: z.string().url().optional(),
+  ANALYTICS_ENDPOINT: optionalUrl,
 });
 
 export type Env = z.infer<typeof EnvSchema>;
