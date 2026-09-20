@@ -1,10 +1,14 @@
 import { merge } from "webpack-merge";
 import common from "./webpack.common.js";
 import path from "path";
+import fs from "fs";
+import os from "os";
 import { fileURLToPath } from "url";
 import HtmlWebpackPlugin from "html-webpack-plugin";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const certDir = path.resolve(os.homedir(), ".office-addin-dev-certs");
 
 const dev = {
   mode: "development",
@@ -15,7 +19,13 @@ const dev = {
     },
     host: "127.0.0.1",
     port: 3000,
-    server: "https",
+    server: {
+      type: "https",
+      options: {
+        key: fs.readFileSync(path.resolve(certDir, "localhost.key")),
+        cert: fs.readFileSync(path.resolve(certDir, "localhost.crt")),
+      },
+    },
     hot: true,
     open: false,
     historyApiFallback: true,
