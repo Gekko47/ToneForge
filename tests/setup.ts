@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import "@testing-library/jest-dom/vitest";
 
 // Provide a minimal Office global so shared/word modules can be imported in tests.
 const officeMock = {

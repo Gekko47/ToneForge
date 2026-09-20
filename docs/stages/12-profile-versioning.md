@@ -10,7 +10,7 @@ Add profile versioning and diffs.
 
 - Extend `StyleProfile` with version bump helpers.
 - `src/style/versioning.ts` — diff two profiles, produce a changelog.
-- UI integration in `src/ui/profile/`.
+- UI integration in `src/taskpane/components/`.
 
 ## Verification
 

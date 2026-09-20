@@ -1,9 +1,11 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { ThemeProvider } from "@fluentui/react";
 import { ThemeProvider as LocalThemeProvider } from "../theme";
 import { createDefaultTheme } from "../fluentTheme";
 import { probeWordCapabilities } from "../../word/capabilityProbe";
 import { probeOfficeRuntime, formatDiagnostics } from "../../shared/office/diagnostics";
+
+const Settings = lazy(() => import("./Settings"));
 
 export default function Dashboard(): React.ReactNode {
   const [caps, setCaps] = React.useState<{
@@ -18,6 +20,7 @@ export default function Dashboard(): React.ReactNode {
   } | null>(null);
   const [diag, setDiag] = React.useState<string | null>(null);
   const [running, setRunning] = React.useState(false);
+  const [showSettings, setShowSettings] = React.useState(false);
 
   async function runProbe(): Promise<void> {
     setRunning(true);
@@ -39,6 +42,14 @@ export default function Dashboard(): React.ReactNode {
     setDiag(formatted);
   }
 
+  if (showSettings) {
+    return (
+      <Suspense fallback={<div className="tf-card">Loading…</div>}>
+        <Settings />
+      </Suspense>
+    );
+  }
+
   return (
     <LocalThemeProvider>
       <ThemeProvider theme={createDefaultTheme()}>
@@ -55,6 +66,13 @@ export default function Dashboard(): React.ReactNode {
           >
             Diagnose Office runtime
           </button>
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            style={{ marginTop: "1rem", marginLeft: "1rem" }}
+          >
+            Settings
+          </button>
           {caps && (
             <pre style={{ marginTop: "1rem", whiteSpace: "pre-wrap" }} aria-live="polite">
               {JSON.stringify(caps, null, 2)}
@@ -62,7 +80,7 @@ export default function Dashboard(): React.ReactNode {
           )}
           {diag && (
             <pre style={{ marginTop: "1rem", whiteSpace: "pre-wrap" }} aria-live="polite">
-              {diag}
+              {JSON.stringify(diag, null, 2)}
             </pre>
           )}
         </main>

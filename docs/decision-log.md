@@ -110,6 +110,13 @@
 - **Decision**: Create 8 scoped rule files under `.roo/rules/`, each with YAML frontmatter (`name`, `description`) and evidence-backed content referencing `tsconfig.json`, `eslint.config.mjs`, `vitest.config.ts`, ADRs, and source files. Rules are intentionally non-duplicative of existing skills and ESLint config.
 - **Consequences**: Agents now have explicit, scoping rules for each gap area. `npm run skills:validate` passes (rules live in `.roo/rules/`, not `.roo/skills/`, so they are not subject to the skill frontmatter spec). `npm run verify` passes after formatting `src/taskpane/taskpane.html`.
 
+### ADR-0017 — UI root is `src/taskpane/`, not `src/ui/`
+
+- **Status**: Accepted (2026-09-20)
+- **Context**: Stage files 07/11/12 reference `src/ui/` for Settings and Profile Editor components, but the scaffold skill placement guide and the existing `src/taskpane/` tree (App, pages, theme) are canonical. ESLint `no-restricted-imports` scopes `taskpane/` and `commands/`; a second `src/ui/` root would split that boundary and need new lint scopes for zero benefit.
+- **Decision**: All task-pane UI lives under `src/taskpane/` (pages under `src/taskpane/pages/`, shared components under `src/taskpane/components/`). Stage 07 Settings is implemented as `src/taskpane/pages/Settings.tsx` + `src/taskpane/components/SettingsForm.tsx`, wired into `Dashboard.tsx` via lazy import. Stage files 07/11/12 are corrected to say `src/taskpane/`.
+- **Consequences**: Single UI root avoids import divergence and test-mirror confusion; no shim needed. Docs drift closed for the UI-location concern; other `src/ui/` references in stage files remain as-is until their stages execute.
+
 ### ADR-0015 — State migration wired into `loadState()`
 
 - **Status**: Accepted (2026-09-19)
