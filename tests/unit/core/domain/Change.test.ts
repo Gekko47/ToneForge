@@ -141,4 +141,51 @@ describe("ChangeSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  describe("setCharacterFormat payload", () => {
+    const charBase = {
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      type: "setCharacterFormat" as const,
+      range: { start: 0, end: 5 },
+      rationale: "",
+      reversible: true,
+    };
+
+    it("accepts name/size/color aligned with the revision adapter", () => {
+      const result = ChangeSchema.safeParse({
+        ...charBase,
+        payload: { name: "Arial", size: 12, color: "#FF0000" },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts bold/italic/underline boolean flags", () => {
+      const result = ChangeSchema.safeParse({
+        ...charBase,
+        payload: { bold: true, italic: false, underline: true },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts an empty payload", () => {
+      const result = ChangeSchema.safeParse({ ...charBase, payload: {} });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects non-string font name", () => {
+      const result = ChangeSchema.safeParse({
+        ...charBase,
+        payload: { name: 12 },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects non-number font size", () => {
+      const result = ChangeSchema.safeParse({
+        ...charBase,
+        payload: { size: "twelve" },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
 });

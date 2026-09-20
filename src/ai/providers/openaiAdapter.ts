@@ -18,7 +18,14 @@ import { LlmError, type LlmProvider, type LlmRequest, type LlmResponse } from ".
 import { withRetry, type RetryOptions } from "./retry";
 import { logger } from "../../shared/utils/logger";
 
-/** Patterns that indicate sensitive content worth redacting. */
+/** Patterns that indicate sensitive content worth redacting.
+ *
+ * The generic long-token pattern (`[A-Za-z0-9+/]{32,}`) is intentionally
+ * LAST in the list and only matches tokens that are not already caught by
+ * the more specific patterns above (emails, card numbers, `sk-`/`pk-`/`rk-`/
+ * `whsec-` keys, and bearer tokens). It is also anchored to require word
+ * boundaries so ordinary long words are not over-redacted.
+ */
 const REDACT_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
   {
     regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
@@ -30,9 +37,11 @@ const REDACT_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
   { regex: /\b(sk-[A-Za-z0-9]{6,})\b/g, replacement: "[REDACTED_API_KEY]" },
   // Project keys and other bearer tokens.
   { regex: /\b((?:pk|rk|whsec)-[A-Za-z0-9]{10,})\b/g, replacement: "[REDACTED_API_KEY]" },
-  // Generic long hex/base64-ish secrets that look like keys.
-  { regex: /\b([A-Za-z0-9+/]{32,}={0,2})\b/g, replacement: "[REDACTED_SECRET]" },
   { regex: /\b(?:Bearer\s+)[A-Za-z0-9._\-]{10,}\b/g, replacement: "Bearer [REDACTED_TOKEN]" },
+  // Generic long hex/base64-ish secrets. Kept after the specific patterns so
+  // emails/keys/bearer tokens are redacted with their own labels, and anchored
+  // with word boundaries to avoid redacting ordinary long words.
+  { regex: /\b([A-Za-z0-9+/]{32,}={0,2})\b/g, replacement: "[REDACTED_SECRET]" },
 ];
 
 function redactText(text: string): string {

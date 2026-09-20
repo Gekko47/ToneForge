@@ -35,15 +35,24 @@ export class MockAdapter implements LlmProvider {
       await new Promise((r) => setTimeout(r, this.latencyMs));
     }
 
-    for (const [key, value] of Object.entries(this.responses)) {
-      if (request.prompt.includes(key)) {
-        return { text: value, model: "mock" };
-      }
+    // Honor caller abort signals so the mock respects the same contract as
+    // the live adapters (non-retryable caller abort).
+    if (request.signal?.aborted) {
+      throw new LlmError("Mock request aborted by caller", this.name, false);
     }
 
+    // Precedence: `failOn` is checked BEFORE `responses`. If the same needle
+    // appears in both, failure wins so test expectations about error paths are
+    // not silently overridden by a scripted response.
     for (const needle of this.failOn) {
       if (request.prompt.includes(needle)) {
         throw new LlmError(`Mock failure triggered by: ${needle}`, this.name, false);
+      }
+    }
+
+    for (const [key, value] of Object.entries(this.responses)) {
+      if (request.prompt.includes(key)) {
+        return { text: value, model: "mock" };
       }
     }
 

@@ -15,10 +15,12 @@ Add persistence and application state management.
 
 ## Verification
 
-- [ ] `npm run typecheck` passes
-- [ ] `npm run test` passes
-- [ ] `docs/project-state.md` updated
+- [x] `npm run typecheck` passes
+- [x] `npm run test` passes
+- [x] `docs/project-state.md` updated
 
 ## Status
 
-PENDING
+PASS — `loadState()` now calls `migrate(raw)` before `StateSchema.parse`, so
+v0 persisted state is upgraded to v1 instead of being discarded. Migration
+behavior is covered by Office-path tests.

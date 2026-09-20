@@ -22,12 +22,14 @@ If `supportsRevisions` is false, the stage is PASS WITH DOCUMENTED LIMITATION an
 
 ## Verification
 
-- [ ] `probeWordCapabilities()` returns a complete `WordCapabilities` object
+- [x] `probeWordCapabilities()` returns a complete `WordCapabilities` object
+- [x] `npm run typecheck` passes
+- [x] `npm run test` passes (probe structure + failure injection)
 - [ ] Probe runs inside Word without unhandled exceptions
 - [ ] Results recorded in `docs/manual-verification.md`
-- [ ] `npm run typecheck` passes
-- [ ] `npm run test` passes (unit test for probe structure)
 
 ## Status
 
-PENDING — must run inside Word.
+PARTIAL — code, tests, and ADR are in place; the probe is non-destructive and
+truthful in mocked environments. **In-Word execution on web/desktop remains
+required for PASS** and is human-only (see `docs/manual-verification.md`).

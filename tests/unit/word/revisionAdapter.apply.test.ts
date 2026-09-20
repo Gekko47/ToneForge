@@ -28,9 +28,13 @@ describe("applyChangePlan gate", () => {
     expect(results[0]?.error).toContain("Stage 01");
   });
 
-  it("blocks when plan has no changes", async () => {
+  it("flags empty plan via validatePlanBeforeApply", async () => {
     setStage01Passed(true);
     const plan = createChangePlan("hash-123", "doc-1", []);
+    const problems = validatePlanBeforeApply(plan);
+    expect(problems).toContain("ChangePlan has no changes");
+    // applyChangePlan on an empty plan produces no results (vacuous), so the
+    // meaningful assertion is the validation message above.
     const results = await applyChangePlan(plan);
     expect(results).toHaveLength(0);
   });

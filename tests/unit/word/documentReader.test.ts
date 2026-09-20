@@ -3,6 +3,7 @@ import {
   hashDocument,
   getDocumentSnapshot,
   getSelectionText,
+  getParagraphRange,
 } from "../../../src/word/documentReader";
 
 describe("hashDocument", () => {
@@ -139,5 +140,76 @@ describe("getSelectionText", () => {
   it("returns the selection text", async () => {
     const text = await getSelectionText();
     expect(typeof text).toBe("string");
+  });
+});
+
+describe("getParagraphRange", () => {
+  it("returns paragraph text after a second context.sync", async () => {
+    const sync = vi.fn();
+    const para1 = {
+      text: "",
+      load: vi.fn(function (this: { text: string }) {
+        this.text = "first paragraph";
+      }),
+    };
+    const para2 = {
+      text: "",
+      load: vi.fn(function (this: { text: string }) {
+        this.text = "second paragraph";
+      }),
+    };
+    setOffice({
+      run: async (func: (context: unknown) => Promise<unknown>) =>
+        func({
+          document: {
+            body: {
+              paragraphs: { load: vi.fn(), items: [para1, para2] },
+            },
+          },
+          sync,
+        }),
+    });
+
+    const result = await getParagraphRange(0, 2);
+    expect(result).toEqual(["first paragraph", "second paragraph"]);
+    // The first sync loads `items`; the second sync loads `text`.
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(para1.load).toHaveBeenCalledWith("text");
+    expect(para2.load).toHaveBeenCalledWith("text");
+  });
+
+  it("returns an empty array when paragraphs are unavailable", async () => {
+    setOffice({
+      run: async (func: (context: unknown) => Promise<unknown>) =>
+        func({
+          document: { body: {} },
+          sync: vi.fn(),
+        }),
+    });
+
+    const result = await getParagraphRange(0, 5);
+    expect(result).toEqual([]);
+  });
+
+  it("slices by startIndex and count", async () => {
+    const sync = vi.fn();
+    const paras = ["zero", "one", "two", "three", "four"].map((t) => ({
+      text: "",
+      load: vi.fn(function (this: { text: string }) {
+        this.text = t;
+      }),
+    }));
+    setOffice({
+      run: async (func: (context: unknown) => Promise<unknown>) =>
+        func({
+          document: {
+            body: { paragraphs: { load: vi.fn(), items: paras } },
+          },
+          sync,
+        }),
+    });
+
+    const result = await getParagraphRange(1, 2);
+    expect(result).toEqual(["one", "two"]);
   });
 });

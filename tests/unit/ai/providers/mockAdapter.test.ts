@@ -22,4 +22,24 @@ describe("MockAdapter", () => {
     const adapter = new MockAdapter({ failOn: ["explode"] });
     await expect(adapter.complete({ prompt: "explode now" })).rejects.toBeInstanceOf(LlmError);
   });
+
+  it("failOn takes precedence over responses when needles overlap", async () => {
+    const adapter = new MockAdapter({
+      responses: { explode: "should not win" },
+      failOn: ["explode"],
+    });
+    await expect(adapter.complete({ prompt: "explode now" })).rejects.toBeInstanceOf(LlmError);
+  });
+
+  it("throws non-retryable LlmError when caller signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const adapter = new MockAdapter();
+    await expect(
+      adapter.complete({ prompt: "anything", signal: controller.signal }),
+    ).rejects.toMatchObject({
+      retryable: false,
+      message: "Mock request aborted by caller",
+    });
+  });
 });

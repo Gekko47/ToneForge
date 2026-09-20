@@ -11,7 +11,7 @@ Establish the ToneForge implementation baseline: vision, rules, architecture, an
 - Read `ROADMAP.md` and confirm vision, stages, and hard gates.
 - Inspect existing repository (README, LICENSE, .gitignore, .roo/mcp.json).
 - Define the production-ready scaffold plan.
-- Confirm tech stack: TypeScript + React + Fluent UI v9 + Webpack + npm, unified JSON manifest.
+- Confirm tech stack: TypeScript + React + Fluent UI v8 + Webpack + npm, unified JSON manifest v1.30.
 - Confirm LLM strategy: provider-agnostic interface + OpenAI + mock, Vitest + Testing Library.
 
 ## Verification

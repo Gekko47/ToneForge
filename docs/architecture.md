@@ -59,9 +59,9 @@ Rule/Formatting Engine   LLM Semantic Engine
 ## Technology stack
 
 - **Language**: TypeScript 5.6 (strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)
-- **UI**: React 18 + Fluent UI v9 + React Error Boundary
+- **UI**: React 18 + Fluent UI v8 + React Error Boundary
 - **Build**: Webpack 5 + ts-loader, dev-server HTTPS on 127.0.0.1:3000
-- **Manifest**: Unified JSON manifest v1.10, Word host
+- **Manifest**: Unified JSON manifest v1.30, Word host
 - **LLM**: Provider-agnostic `LlmProvider` interface; OpenAI (fetch) + Mock adapters; `LlmRegistry` for fallback
 - **State**: `Office.roamingSettings` with localStorage fallback; Zod-validated
 - **Tests**: Vitest + jsdom + Testing Library; coverage threshold 80%

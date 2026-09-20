@@ -81,4 +81,46 @@ describe("persistence with Office roamingSettings", () => {
     const parsed = JSON.parse(persisted as string) as { version: number };
     expect(parsed.version).toBe(1);
   });
+
+  it("migrates v0 state (no version field) to v1 via loadState", () => {
+    if (!officeRuntime?.roamingSettings) throw new Error("setup");
+    // v0 persisted state had no `version` field. Migration upgrades the
+    // version and preserves existing settings values over defaults.
+    officeRuntime.roamingSettings.get = () =>
+      JSON.stringify({
+        profiles: [],
+        activeProfileId: null,
+        settings: { telemetryDisabled: false },
+      });
+    const state = loadState();
+    expect(state.version).toBe(1);
+    expect(state.settings.telemetryDisabled).toBe(false);
+  });
+
+  it("fills missing settings with defaults during v0 migration", () => {
+    if (!officeRuntime?.roamingSettings) throw new Error("setup");
+    officeRuntime.roamingSettings.get = () =>
+      JSON.stringify({
+        profiles: [],
+        activeProfileId: null,
+        settings: {},
+      });
+    const state = loadState();
+    expect(state.version).toBe(1);
+    expect(state.settings.telemetryDisabled).toBe(true);
+  });
+
+  it("preserves v1 state without re-migration", () => {
+    if (!officeRuntime?.roamingSettings) throw new Error("setup");
+    officeRuntime.roamingSettings.get = () =>
+      JSON.stringify({
+        version: 1,
+        profiles: [],
+        activeProfileId: null,
+        settings: { telemetryDisabled: true },
+      });
+    const state = loadState();
+    expect(state.version).toBe(1);
+    expect(state.settings.telemetryDisabled).toBe(true);
+  });
 });

@@ -131,15 +131,22 @@ async function applySingleChange(change: Change): Promise<void> {
       }
       case "setCharacterFormat": {
         const range = await getRangeByOffset(context, change.range);
-        range.font.load("name", "size", "color");
+        range.font.load("name", "size", "color", "bold", "italic", "underline");
         await context.sync();
         if (change.payload) {
-          if (typeof change.payload.name === "string")
-            (range.font as { name: string }).name = change.payload.name;
-          if (typeof change.payload.size === "number")
-            (range.font as { size: number }).size = change.payload.size;
-          if (typeof change.payload.color === "string")
-            (range.font as { color: string }).color = change.payload.color;
+          const payload = change.payload as Record<string, unknown>;
+          if (typeof payload.name === "string")
+            (range.font as { name: string }).name = payload.name;
+          if (typeof payload.size === "number")
+            (range.font as { size: number }).size = payload.size;
+          if (typeof payload.color === "string")
+            (range.font as { color: string }).color = payload.color;
+          if (typeof payload.bold === "boolean")
+            (range.font as { bold: boolean }).bold = payload.bold;
+          if (typeof payload.italic === "boolean")
+            (range.font as { italic: boolean }).italic = payload.italic;
+          if (typeof payload.underline === "boolean")
+            (range.font as { underline: boolean }).underline = payload.underline;
         }
         break;
       }

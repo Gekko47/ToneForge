@@ -84,9 +84,17 @@ export async function getParagraphRange(startIndex: number, count: number): Prom
     paragraphs.load("items");
     await context.sync();
     const items = paragraphs.items ?? [];
-    return items.slice(startIndex, startIndex + count).map((p: unknown) => {
-      const para = p as { text?: string; load?: (p: string) => unknown };
+    const target = items.slice(startIndex, startIndex + count);
+    // Load `text` on each paragraph and sync again before reading it.
+    // Without this second sync, paragraph.text is still a proxy and will
+    // always resolve to an empty string in a real Word host.
+    for (const p of target) {
+      const para = p as { load?: (prop: string) => unknown };
       if (typeof para.load === "function") para.load("text");
+    }
+    await context.sync();
+    return target.map((p: unknown) => {
+      const para = p as { text?: string };
       return typeof para.text === "string" ? para.text : "";
     });
   });

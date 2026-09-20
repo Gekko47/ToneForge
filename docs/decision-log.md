@@ -84,10 +84,10 @@
 
 ### ADR-0012 — Capability probe is non-destructive by default
 
-- **Status**: Accepted
-- **Context**: Stage 1 audit (R1) found the capability probe inserted and deleted text in the user's document as a side effect of probing.
-- **Decision**: `probeWordCapabilities()` defaults to `dryRun: true` and never mutates the document unless the caller explicitly opts in. `supportsStyles`/`supportsRevisions` return truthful values derived from the probe, not hardcoded `true`.
-- **Consequences**: Probing is safe to run on any document. Callers that need a live write test must pass `dryRun: false` explicitly and accept the mutation risk.
+- **Status**: Accepted (corrected 2026-09-19 to match implementation)
+- **Context**: Stage 1 audit (R1) found the capability probe inserted and deleted text in the user's document as a side effect of probing. The original decision text described a `dryRun` parameter that was never implemented.
+- **Decision**: `probeWordCapabilities()` takes no arguments and is _always_ non-destructive. It inspects the host object model only (`getSelection().getRange(0,0)` + `hasMethod` checks, `styles.load`, `trackedChanges.load`) and never calls `insertText`, `insertParagraph`, or `insertBreak`. There is no opt-in mutation path — the probe cannot mutate the document by design. `supportsStyles`/`supportsRevisions` return truthful values derived from the probe, not hardcoded `true`.
+- **Consequences**: Probing is safe to run on any document. Because there is no `dryRun: false` escape hatch, a live write test must be implemented as a separate, explicitly opt-in utility if ever needed (deferred to Stage 27).
 
 ### ADR-0013 — Enforce module boundaries with ESLint `no-restricted-imports`
 
@@ -95,3 +95,17 @@
 - **Context**: Stage 1 audit (R9) found `docs/architecture.md` forbids `core/domain` from importing `Office`, but no lint rule enforced it — the boundary was documentation-only.
 - **Decision**: `eslint.config.mjs` adds scoped `no-restricted-imports` rules: `core/domain` may only import `zod`/`shared/utils`; `word/` may not import `ai`/`ui`; `ai/` may not import `word`/`ui`; `ui` (`taskpane/`, `commands/`) may not import `word/revisionAdapter` directly.
 - **Consequences**: Boundary violations fail `npm run lint`. New modules must declare their allowed imports in `architecture.md` and add a matching ESLint scope.
+
+### ADR-0014 — `exactOptionalPropertyTypes` enabled in tsconfig
+
+- **Status**: Accepted (2026-09-19)
+- **Context**: Stage 00–06 audit (G2.3) found `tsconfig.json` omitted `exactOptionalPropertyTypes`, which `plans/plan.md` mandates.
+- **Decision**: Add `"exactOptionalPropertyTypes": true` to `tsconfig.json` compilerOptions. Verified `tsc --noEmit` passes with the flag enabled.
+- **Consequences**: Optional properties now distinguish `undefined` from absence. Code that explicitly passes `undefined` for optional fields must use the property name explicitly; existing code already compiles cleanly.
+
+### ADR-0015 — State migration wired into `loadState()`
+
+- **Status**: Accepted (2026-09-19)
+- **Context**: Stage 00–06 audit (G5.1) found `loadState()` parsed raw persisted state directly, bypassing `migrate()` and making the v0→v1 migration dead code.
+- **Decision**: `loadState()` calls `migrate(raw)` before `StateSchema.parse`. Migration preserves existing `settings` values over defaults and fills missing fields with defaults.
+- **Consequences**: Legacy v0 persisted state is upgraded to v1 on load instead of being discarded. Tests added for v0→v1 via the Office path.

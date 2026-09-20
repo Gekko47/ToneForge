@@ -62,6 +62,9 @@ declare global {
       name: string;
       size: number;
       color: string;
+      bold?: boolean;
+      italic?: boolean;
+      underline?: boolean;
       load: (...props: Array<string>) => Font;
     }
 

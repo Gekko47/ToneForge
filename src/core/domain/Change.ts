@@ -61,10 +61,18 @@ const SetParagraphFormatPayloadSchema = z
 
 const SetCharacterFormatPayloadSchema = z
   .object({
+    // Font properties that map directly to Word.Range.font.
+    // `name` is the font name, `size` is the font size in points, and
+    // `color` is the font color as a hex string. These align with the
+    // revisionAdapter's setCharacterFormat handler.
+    name: z.string().optional(),
+    size: z.number().optional(),
+    color: z.string().optional(),
+    // Boolean formatting flags are also accepted for completeness; the
+    // adapter applies them when present.
     bold: z.boolean().optional(),
     italic: z.boolean().optional(),
     underline: z.boolean().optional(),
-    color: z.string().optional(),
   })
   .partial();
 

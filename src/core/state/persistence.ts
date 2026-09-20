@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 import { StyleProfileSchema, type StyleProfile } from "../domain/StyleProfile";
+import { migrate } from "./migration";
 
 const StateSchema = z.object({
   version: z.number().int().nonnegative().default(1),
@@ -93,11 +94,22 @@ function setLocalStorage(value: Record<string, unknown>): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
 }
 
+/**
+ * Load persisted state.
+ *
+ * Raw persisted bytes are migrated to the current schema version BEFORE
+ * validation, so legacy v0 state is upgraded to v1 instead of being
+ * discarded as incompatible.
+ */
 export function loadState(): PersistedState {
   const raw = getRoamingSettings() ??
     getLocalStorage() ?? { version: 1, profiles: [], activeProfileId: null, settings: {} };
+
+  // Migrate before parsing so versioned state upgrades are applied.
+  const migrated = migrate(raw);
+
   try {
-    return StateSchema.parse(raw);
+    return StateSchema.parse(migrated);
   } catch (err) {
     // Corrupted or incompatible persisted state: fall back to defaults
     // rather than crashing the add-in. The previous value is unrecoverable.

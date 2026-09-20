@@ -56,31 +56,22 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
     return caps;
   }
 
+  // The Word JS API exposes a single `Range.insertText(text, insertLocation)`
+  // method. "Insert" text uses modes Start/End/Before/After; "replace" text
+  // uses the same method with the "Replace" mode. There is no separate
+  // `replaceText` method, so both capabilities derive from one probe.
+  const insertTextResult = await runInWordSafe(async (context) => {
+    const range = getProbeRange(context);
+    return range !== null && hasMethod(range, "insertText");
+  });
+  caps.supportsInsertText = insertTextResult;
+  caps.supportsReplaceText = insertTextResult;
+
   const probes: Array<[keyof WordCapabilities, () => Promise<boolean>]> = [
-    [
-      "supportsInsertText",
-      async () => {
-        const result = await runInWord(async (context) => {
-          const range = getProbeRange(context);
-          return range !== null && hasMethod(range, "insertText");
-        });
-        return result === true;
-      },
-    ],
-    [
-      "supportsReplaceText",
-      async () => {
-        const result = await runInWord(async (context) => {
-          const range = getProbeRange(context);
-          return range !== null && hasMethod(range, "insertText");
-        });
-        return result === true;
-      },
-    ],
     [
       "supportsInsertParagraph",
       async () => {
-        const result = await runInWord(async (context) => {
+        const result = await runInWordSafe(async (context) => {
           const range = getProbeRange(context);
           return range !== null && hasMethod(range, "insertParagraph");
         });
@@ -90,7 +81,7 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
     [
       "supportsInsertBreak",
       async () => {
-        const result = await runInWord(async (context) => {
+        const result = await runInWordSafe(async (context) => {
           const range = getProbeRange(context);
           return (
             range !== null && hasMethod(range, "insertBreak") && hasOfficeInsertBreakBehavior()
@@ -102,7 +93,7 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
     [
       "supportsStyles",
       async () => {
-        const result = await runInWord(async (context) => {
+        const result = await runInWordSafe(async (context) => {
           const styles = context.document.styles;
           if (!styles || typeof styles.load !== "function") return false;
           styles.load("name");
@@ -116,7 +107,7 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
     [
       "supportsRevisions",
       async () => {
-        const result = await runInWord(async (context) => {
+        const result = await runInWordSafe(async (context) => {
           const anyContext = context as unknown as {
             document?: {
               trackedChanges?: unknown;
@@ -147,6 +138,19 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
 }
 
 /**
+ * Run a probe callback inside Word, swallowing host errors and returning
+ * `false` instead. Used for capability checks that must never throw out of
+ * the probe (see ADR-0012: non-destructive, graceful degradation).
+ */
+async function runInWordSafe<T>(func: (context: Office.Context) => Promise<T>): Promise<T | false> {
+  try {
+    return await runInWord(func);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Obtain a probe Range from the current selection without mutating anything.
  * Returns `null` when the host cannot provide a usable Range.
  */
@@ -171,7 +175,12 @@ function hasOfficeInsertBreakBehavior(): boolean {
       Office?: { InsertBreakBehavior?: { Paragraph?: unknown } };
     }
   ).Office;
-  return Boolean(office?.InsertBreakBehavior?.Paragraph);
+  // Office.InsertBreakBehavior is an enum where Paragraph === 0, so we must
+  // check for key presence rather than truthiness.
+  return (
+    office?.InsertBreakBehavior !== undefined &&
+    Object.prototype.hasOwnProperty.call(office.InsertBreakBehavior, "Paragraph")
+  );
 }
 
 function normalizeHostName(name: unknown): WordCapabilities["hostName"] {

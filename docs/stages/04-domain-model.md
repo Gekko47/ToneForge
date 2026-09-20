@@ -17,11 +17,13 @@ Define the canonical domain types: `StyleProfile`, `Finding`, `ChangePlan`, `Cha
 
 ## Verification
 
-- [ ] `npm run typecheck` passes
-- [ ] `npm run test` passes
-- [ ] `docs/project-state.md` updated
-- [ ] `docs/decision-log.md` updated
+- [x] `npm run typecheck` passes
+- [x] `npm run test` passes
+- [x] `docs/project-state.md` updated
+- [x] `docs/decision-log.md` updated
 
 ## Status
 
-PENDING
+PASS — payload/adapter mismatch closed: `SetCharacterFormatPayloadSchema` now
+allows `name`/`size`/`color` plus `bold`/`italic`/`underline`, matching the
+revision adapter. Barrel re-exports `ChangePayloadSchema`.

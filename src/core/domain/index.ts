@@ -24,4 +24,11 @@ export {
   type Range,
 } from "./Finding";
 export { ChangePlanSchema, type ChangePlan, createChangePlan } from "./ChangePlan";
-export { ChangeSchema, ChangeTypeSchema, type Change, type ChangeType } from "./Change";
+export {
+  ChangeSchema,
+  ChangeTypeSchema,
+  ChangePayloadSchema,
+  type Change,
+  type ChangeType,
+  type ChangePayload,
+} from "./Change";
