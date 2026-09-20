@@ -103,6 +103,13 @@
 - **Decision**: Add `"exactOptionalPropertyTypes": true` to `tsconfig.json` compilerOptions. Verified `tsc --noEmit` passes with the flag enabled.
 - **Consequences**: Optional properties now distinguish `undefined` from absence. Code that explicitly passes `undefined` for optional fields must use the property name explicitly; existing code already compiles cleanly.
 
+### ADR-0016 — Agent-facing zoo rules as scoped markdown files
+
+- **Status**: Accepted (2026-09-20)
+- **Context**: The four existing `.roo/skills/` packages cover LLM, Office.js, scaffold, and testing, but several recurring concerns had no agent-facing rule: TypeScript strict-mode discipline, deterministic-purity enforcement, prompt-privacy opt-in, graceful state persistence, per-module coverage expectations, manifest/build verification before commit, and commit-scope alignment with ROADMAP stages. These gaps were documented in `plans/zoo-rules.md`.
+- **Decision**: Create 8 scoped rule files under `.roo/rules/`, each with YAML frontmatter (`name`, `description`) and evidence-backed content referencing `tsconfig.json`, `eslint.config.mjs`, `vitest.config.ts`, ADRs, and source files. Rules are intentionally non-duplicative of existing skills and ESLint config.
+- **Consequences**: Agents now have explicit, scoping rules for each gap area. `npm run skills:validate` passes (rules live in `.roo/rules/`, not `.roo/skills/`, so they are not subject to the skill frontmatter spec). `npm run verify` passes after formatting `src/taskpane/taskpane.html`.
+
 ### ADR-0015 — State migration wired into `loadState()`
 
 - **Status**: Accepted (2026-09-19)
