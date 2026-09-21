@@ -130,6 +130,25 @@ export default [
     },
   },
   {
+    // Enforces docs/architecture.md: analysis/ may import core/domain, rules,
+    // formatting, ai/providers, and shared/utils — never ui or
+    // word/revisionAdapter (see ADR-0006 and ADR-0013).
+    files: ["src/analysis/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/taskpane/*", "**/commands/*", "**/word/revisionAdapter*"],
+              message: "analysis/ must not import ui or word/revisionAdapter (architecture.md).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Enforces docs/architecture.md: ai/providers must not depend on word or ui.
     files: ["src/ai/**/*.ts"],
     rules: {
