@@ -14,11 +14,12 @@ Add Word formatting analyzer and normalizer.
 
 ## Verification
 
-- [ ] `npm run typecheck` passes
-- [ ] `npm run test` passes
-- [ ] Coverage threshold met for `formatting/`
-- [ ] `docs/project-state.md` updated
+- [x] `npm run typecheck` passes
+- [x] `npm run test` passes
+- [x] Coverage threshold met for `formatting/`
+- [x] `docs/project-state.md` updated
+- [x] `npm run verify` passes (typecheck → lint → format → test → build → validate)
 
 ## Status
 
-PENDING
+PASS
