@@ -10,15 +10,16 @@
     />
     <title>ToneForge</title>
     <!--
-      Do NOT add an Office.js <script> tag here. Word desktop injects the
-      Office.js runtime into the taskpane iframe itself; loading it again
-      from appsforoffice.microsoft.com (a cross-origin URL) conflicts with
-      the host copy and produces a generic "Script error." with no stack.
-
-      The taskpane bundle waits for the global `Office` object via
-      Office.onReady in officeInit.ts. CSS is injected by style-loader via
-      webpack, so no manual <link> is needed here either.
+      Office.js must be loaded explicitly in the taskpane head so the
+      `Office` global and `Office.onReady` hook exist before the bundle runs.
+      The host does not guarantee injection into arbitrary taskpane HTML.
+      CSS is injected by style-loader via webpack, so no manual <link> is
+      needed here either.
     -->
+    <script
+      src="https://officeapis.public.onecdn.static.microsoft/1/office.js"
+      type="text/javascript"
+    ></script>
   </head>
   <body>
     <div id="root"></div>

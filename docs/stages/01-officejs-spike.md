@@ -28,20 +28,24 @@ If `supportsRevisions` is false, the stage is PASS WITH DOCUMENTED LIMITATION an
 - [x] Task pane loads via webpack-dev-server on https://localhost:3000
 - [x] "Probe Word capabilities" button renders and is clickable in the pane
 - [x] "Diagnose Office runtime" button added for non-destructive host inspection
-- [ ] Probe runs inside Word without unhandled exceptions
-- [ ] Results recorded in `docs/manual-verification.md`
+- [x] Probe runs inside Word without unhandled exceptions
+- [x] Results recorded in `docs/manual-verification.md`
 
 ## Status
 
-PARTIAL — code, tests, and ADR are in place; the probe is non-destructive and
-truthful in mocked environments. **In-Word execution on web/desktop remains
-required for PASS** and is human-only (see `docs/manual-verification.md`).
+PASS WITH DOCUMENTED LIMITATION — Desktop Word in-word execution is recorded in
+`docs/manual-verification.md`. Native revisions, insert-break behavior, styles
+enumeration, and host version remain unavailable/limited in the tested host;
+Word on the web and Word on Mac remain untested.
 
 ## Runtime findings
 
 - The task pane renders correctly when served from `https://localhost:3000/taskpane.html`.
+- The taskpane `<head>` must load Office.js explicitly from the Microsoft CDN;
+  without that bootstrap, Word can still render the iframe while `Office`
+  remains undefined.
 - The `Office` global is `undefined` when loaded directly in a browser (outside
-  Word), which is expected — Word injects `Office.js` into the taskpane iframe.
+  Word), which is expected.
 - `probeOfficeRuntime()` (in `src/shared/office/diagnostics.ts`) reports this
   state without throwing, and `officeInit.ts` resolves immediately when `Office`
   is absent so the UI never blocks.
@@ -53,3 +57,8 @@ required for PASS** and is human-only (see `docs/manual-verification.md`).
 - `probeWordCapabilities()` is wired to the "Probe Word capabilities" button;
   it calls `Word.run` and is only meaningful when the add-in is loaded inside
   Word (where `Office` and `Word` globals are present).
+- Desktop Word result (2026-09-21, Edge WebView2 153): `supportsInsertText`,
+  `supportsReplaceText`, and `supportsInsertParagraph` are true;
+  `supportsInsertBreak`, `supportsStyles`, and `supportsRevisions` are false;
+  `hostName` is `"Word"` via cached `Office.onReady(info)`; `hostVersion` is
+  null because `Office.context.host` is absent.

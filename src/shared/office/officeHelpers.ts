@@ -6,22 +6,35 @@
  * `runInWord` is typed against `Office.Context` (the shared request-context
  * type). Callers that need the Word-specific `Word.RequestContext` should
  * narrow the parameter inside their `runInWord` callback.
+ *
+ * Word document access must go through `Word.run`, not `Office.run`. The
+ * real Word host exposes `Word.run`; `Office.run` does not exist in the
+ * production runtime (it only existed in our old test doubles).
  */
 
-type OfficeGlobal = {
+type HostGlobals = {
   Office?: {
     Context?: Office.Context;
-    run: <R>(func: (context: Office.Context) => Promise<R>) => Promise<R>;
+    // Legacy test doubles expose `run` on `Office`. The real Word host does
+    // not; production code must prefer `Word.run` below.
+    run?: <R>(func: (context: Office.Context) => Promise<R>) => Promise<R>;
     roamingSettings?: {
       get: (key: string) => unknown;
       set: (key: string, value: unknown) => void;
       saveAsync?: (callback?: (result: unknown) => void) => void;
     };
   };
+  Word?: {
+    run: <R>(func: (context: Office.Context) => Promise<R>) => Promise<R>;
+  };
 };
 
-function getOffice(): OfficeGlobal["Office"] {
-  return (globalThis as unknown as OfficeGlobal).Office;
+function getOffice(): HostGlobals["Office"] {
+  return (globalThis as unknown as HostGlobals).Office;
+}
+
+function getWord(): HostGlobals["Word"] {
+  return (globalThis as unknown as HostGlobals).Word;
 }
 
 export function isOfficeReady(): boolean {
@@ -36,9 +49,11 @@ export function ensureOfficeReady(): void {
 
 export async function runInWord<T>(func: (context: Office.Context) => Promise<T>): Promise<T> {
   ensureOfficeReady();
-  const office = getOffice();
-  if (!office?.run) throw new Error("Office.run is not available");
-  return office.run(func);
+  const wordRun = getWord()?.run;
+  if (typeof wordRun === "function") return wordRun(func);
+  const officeRun = getOffice()?.run;
+  if (typeof officeRun === "function") return officeRun(func);
+  throw new Error("Word.run is not available");
 }
 
 export function context(): Office.Context | null {

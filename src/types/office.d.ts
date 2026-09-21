@@ -86,16 +86,25 @@ declare global {
      */
     type HostType = "Word" | "Excel" | "PowerPoint" | "Outlook" | "Project";
 
+    interface HostInfo {
+      host: HostType;
+      platform: string;
+    }
+
     /**
      * Readiness hook fired by Word desktop/web once the Office.js runtime is
-     * initialised and `Office.run` is available. Preferred over the legacy
+     * initialised and `Word.run` is available. Preferred over the legacy
      * `Office.initialize` callback.
      */
-    type OnReadyCallback = () => void;
+    type OnReadyCallback = (info: HostInfo) => void;
   }
 
   const Office: {
-    run: Office.Run;
+    /**
+     * Legacy test-double entry point. The real Word host does not expose
+     * `Office.run`; production code must use `Word.run`.
+     */
+    run?: Office.Run;
     roamingSettings: {
       get: (key: string) => unknown;
       set: (key: string, value: unknown) => void;
@@ -118,6 +127,10 @@ declare global {
      * Host name, e.g. "Word".
      */
     host: { name: Office.HostType; version: string };
+  };
+
+  const Word: {
+    run: Office.Run;
   };
 }
 

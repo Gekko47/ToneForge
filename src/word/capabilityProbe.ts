@@ -13,6 +13,7 @@
  */
 
 import { runInWord } from "../shared/office/officeHelpers";
+import { getCachedHostInfo } from "../shared/office/hostInfo";
 
 export interface WordCapabilities {
   supportsInsertText: boolean;
@@ -50,9 +51,18 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
         hostVersion: context.host?.version ?? null,
       };
     });
-    caps.hostName = normalizeHostName(ctx?.hostName);
+    // Word.RequestContext does not reliably carry host identity in the real
+    // host; prefer the authoritative `Office.onReady` info captured at startup
+    // when the request context omits it.
+    const cached = getCachedHostInfo();
+    const hostName = ctx?.hostName ?? cached?.host ?? null;
+    caps.hostName = normalizeHostName(hostName);
     caps.hostVersion = ctx?.hostVersion ?? null;
   } catch {
+    const cached = getCachedHostInfo();
+    if (cached?.host) {
+      caps.hostName = normalizeHostName(cached.host);
+    }
     return caps;
   }
 

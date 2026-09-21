@@ -9,6 +9,20 @@
  * on a missing host.
  */
 import { logger } from "../shared/utils/logger";
+import { setCachedHostInfo, getCachedHostInfo } from "../shared/office/hostInfo";
+import type { OfficeHostInfo } from "../shared/office/hostInfo";
+
+export type { OfficeHostInfo };
+export { getCachedHostInfo };
+
+/**
+ * Reset the cached host identity. Used by unit tests that swap the Office
+ * global between scenarios so the cached onReady info does not leak across
+ * tests.
+ */
+export function resetCachedHostInfo(): void {
+  setCachedHostInfo(null);
+}
 
 export async function initializeOffice(): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -31,10 +45,24 @@ export async function initializeOffice(): Promise<void> {
 
     // Modern Word desktop/web exposes `Office.onReady(callback)`. Prefer it
     // over the legacy `Office.initialize` hook because it is called after the
-    // runtime is fully initialised and `Office.run` is guaranteed available.
+    // runtime is fully initialised and `Word.run` is guaranteed available.
+    // The callback receives the authoritative host identity; cache it so the
+    // probe and diagnostics can report the real host instead of "unknown".
     if (typeof office.onReady === "function") {
       try {
-        (office.onReady as (cb: () => void) => void)(() => finish("onReady"));
+        (office.onReady as (cb: (info: { host?: unknown; platform?: unknown }) => void) => void)(
+          (info) => {
+            try {
+              setCachedHostInfo({
+                host: typeof info?.host === "string" ? info.host : null,
+                platform: typeof info?.platform === "string" ? info.platform : null,
+              });
+            } catch {
+              setCachedHostInfo(null);
+            }
+            finish("onReady");
+          },
+        );
       } catch {
         finish("onReady-threw");
       }

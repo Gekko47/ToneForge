@@ -8,9 +8,12 @@
  * All probes are read-only and safe to call outside a Word host.
  */
 
+import { getCachedHostInfo } from "./hostInfo";
+
 export interface OfficeDiagnostics {
   officeGlobal: boolean;
   officeGlobalType: string;
+  userAgent: string | null;
   onReady: boolean;
   initialize: boolean;
   run: boolean;
@@ -18,6 +21,8 @@ export interface OfficeDiagnostics {
   host: boolean;
   hostName: string | null;
   hostVersion: string | null;
+  onReadyHost: string | null;
+  onReadyPlatform: string | null;
   roamingSettings: boolean;
   insertBreakBehavior: boolean;
   wordGlobal: boolean;
@@ -35,6 +40,7 @@ export function probeOfficeRuntime(): OfficeDiagnostics {
   const result: OfficeDiagnostics = {
     officeGlobal: false,
     officeGlobalType: "undefined",
+    userAgent: null,
     onReady: false,
     initialize: false,
     run: false,
@@ -42,6 +48,8 @@ export function probeOfficeRuntime(): OfficeDiagnostics {
     host: false,
     hostName: null,
     hostVersion: null,
+    onReadyHost: null,
+    onReadyPlatform: null,
     roamingSettings: false,
     insertBreakBehavior: false,
     wordGlobal: false,
@@ -50,6 +58,27 @@ export function probeOfficeRuntime(): OfficeDiagnostics {
     errors,
   };
 
+  // --- Cached onReady host identity ---
+  // The authoritative host name comes from the `Office.onReady(info)` payload
+  // captured at startup, not from `Office.context.host` (which the real host
+  // does not populate as an object with name/version).
+  try {
+    const cached = getCachedHostInfo();
+    if (cached) {
+      result.onReadyHost = cached.host;
+      result.onReadyPlatform = cached.platform;
+    }
+  } catch {
+    // Non-fatal: cached host info is best-effort diagnostics only.
+  }
+
+  // --- Environment context ---
+  try {
+    result.userAgent = typeof navigator !== "undefined" ? navigator.userAgent : null;
+  } catch (err) {
+    errors.push(`navigator probe threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   // --- Office global ---
   try {
     const office = (globalThis as unknown as { Office?: unknown }).Office;
@@ -57,6 +86,10 @@ export function probeOfficeRuntime(): OfficeDiagnostics {
     result.officeGlobalType = typeof office;
     if (!office) {
       errors.push("Office global is undefined — add-in is not running inside Word.");
+      // Keep probing: report the environment so we can distinguish
+      // "loaded in a plain browser" from "loaded in Word but Office.js
+      // failed to inject".
+      result.wordGlobal = typeof (globalThis as unknown as { Word?: unknown }).Word !== "undefined";
       return result;
     }
   } catch (err) {
@@ -119,6 +152,7 @@ export function probeOfficeRuntime(): OfficeDiagnostics {
 export function formatDiagnostics(d: OfficeDiagnostics): string {
   const lines: string[] = [];
   lines.push("=== Office/Word runtime diagnostics ===");
+  lines.push(`User agent: ${d.userAgent ?? "(null)"}`);
   lines.push(`Office global present: ${d.officeGlobal} (type: ${d.officeGlobalType})`);
   lines.push(`Office.onReady: ${d.onReady}`);
   lines.push(`Office.initialize: ${d.initialize}`);
@@ -127,6 +161,8 @@ export function formatDiagnostics(d: OfficeDiagnostics): string {
   lines.push(`Office.context.host present: ${d.host}`);
   lines.push(`Host name: ${d.hostName ?? "(null)"}`);
   lines.push(`Host version: ${d.hostVersion ?? "(null)"}`);
+  lines.push(`onReady host: ${d.onReadyHost ?? "(null)"}`);
+  lines.push(`onReady platform: ${d.onReadyPlatform ?? "(null)"}`);
   lines.push(`Office.roamingSettings present: ${d.roamingSettings}`);
   lines.push(`Office.InsertBreakBehavior present: ${d.insertBreakBehavior}`);
   lines.push(`Word global present: ${d.wordGlobal}`);
