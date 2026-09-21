@@ -115,6 +115,7 @@ export const ChangeSchema = z
     payload: z.record(z.string(), z.unknown()),
     rationale: z.string().trim().default(""),
     reversible: z.boolean().default(true),
+    suggestedChangeId: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     // Validate the payload against the discriminated union for the chosen

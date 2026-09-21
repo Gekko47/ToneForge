@@ -149,6 +149,34 @@ export default [
     },
   },
   {
+    // Enforces docs/architecture.md: changes/ is pure and may import only
+    // core/domain and shared/utils. It must never read Word, call AI, or touch UI.
+    files: ["src/changes/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/analysis/*",
+                "**/rules/*",
+                "**/formatting/*",
+                "**/style/*",
+                "**/ai/*",
+                "**/word/*",
+                "**/taskpane/*",
+                "**/commands/*",
+              ],
+              message:
+                "changes/ must stay pure: allowed imports are core/domain and shared/utils only (architecture.md).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Enforces docs/architecture.md: ai/providers must not depend on word or ui.
     files: ["src/ai/**/*.ts"],
     rules: {

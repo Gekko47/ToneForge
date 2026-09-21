@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { ChangeSchema, type Change } from "./Change";
+import { FindingSchema, type Finding } from "./Finding";
 
 export const ChangePlanSchema = z.object({
   id: z.string().uuid(),
@@ -18,6 +19,7 @@ export const ChangePlanSchema = z.object({
   changes: z.array(ChangeSchema),
   conflicts: z.array(z.string()),
   stale: z.boolean().default(false),
+  findings: z.array(FindingSchema).optional(),
 });
 
 export type ChangePlan = z.infer<typeof ChangePlanSchema>;
@@ -26,6 +28,7 @@ export function createChangePlan(
   docHash: string,
   baseDocId: string,
   changes: Change[],
+  findings: Finding[] = [],
 ): ChangePlan {
   return ChangePlanSchema.parse({
     id: uuidv4(),
@@ -35,5 +38,6 @@ export function createChangePlan(
     changes,
     conflicts: [],
     stale: false,
+    findings,
   });
 }

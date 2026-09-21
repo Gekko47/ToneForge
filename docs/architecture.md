@@ -38,15 +38,15 @@ Rule/Formatting Engine   LLM Semantic Engine
 
 ## Module boundaries
 
-| Module                                 | Allowed imports                                                      | Forbidden imports               |
-| -------------------------------------- | -------------------------------------------------------------------- | ------------------------------- |
-| `core/domain`                          | `zod`, `shared/utils`                                                | `word`, `ai`, `ui`, `Office`    |
-| `rules`, `formatting`, `style/metrics` | `core/domain`, `shared/utils`                                        | `ai`, `Office`, `ui`            |
-| `analysis`                             | `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils` | `ui`, `word/revisionAdapter`    |
-| `changes`                              | `core/domain`, `shared/utils`                                        | `ui`                            |
-| `word`                                 | `shared/office`, `core/domain`                                       | `ai`, `ui`                      |
-| `ai/providers`                         | `core/config`, `shared/utils`                                        | `word`, `ui`                    |
-| `ui/*`                                 | `core/*`, `shared/*`, `ai/providers`, `word/documentReader`          | `word/revisionAdapter` directly |
+| Module                                 | Allowed imports                                                      | Forbidden imports                                                        |
+| -------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `core/domain`                          | `zod`, `shared/utils`                                                | `word`, `ai`, `ui`, `Office`                                             |
+| `rules`, `formatting`, `style/metrics` | `core/domain`, `shared/utils`                                        | `ai`, `Office`, `ui`                                                     |
+| `analysis`                             | `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils` | `ui`, `word/revisionAdapter`                                             |
+| `changes`                              | `core/domain`, `shared/utils`                                        | `analysis`, `rules`, `formatting`, `style`, `ai`, `word`, `ui`, `Office` |
+| `word`                                 | `shared/office`, `core/domain`                                       | `ai`, `ui`                                                               |
+| `ai/providers`                         | `core/config`, `shared/utils`                                        | `word`, `ui`                                                             |
+| `ui/*`                                 | `core/*`, `shared/*`, `ai/providers`, `word/documentReader`          | `word/revisionAdapter` directly                                          |
 
 ## Data flow
 
