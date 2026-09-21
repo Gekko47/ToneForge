@@ -6,6 +6,7 @@ import { probeWordCapabilities } from "../../word/capabilityProbe";
 import { probeOfficeRuntime, formatDiagnostics } from "../../shared/office/diagnostics";
 
 const Settings = lazy(() => import("./Settings"));
+const Profile = lazy(() => import("./Profile"));
 
 export default function Dashboard(): React.ReactNode {
   const [caps, setCaps] = React.useState<{
@@ -21,6 +22,7 @@ export default function Dashboard(): React.ReactNode {
   const [diag, setDiag] = React.useState<string | null>(null);
   const [running, setRunning] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
+  const [showProfile, setShowProfile] = React.useState(false);
 
   async function runProbe(): Promise<void> {
     setRunning(true);
@@ -42,10 +44,10 @@ export default function Dashboard(): React.ReactNode {
     setDiag(formatted);
   }
 
-  if (showSettings) {
+  if (showSettings || showProfile) {
     return (
       <Suspense fallback={<div className="tf-card">Loading…</div>}>
-        <Settings />
+        {showSettings ? <Settings /> : <Profile />}
       </Suspense>
     );
   }
@@ -72,6 +74,13 @@ export default function Dashboard(): React.ReactNode {
             style={{ marginTop: "1rem", marginLeft: "1rem" }}
           >
             Settings
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowProfile(true)}
+            style={{ marginTop: "1rem", marginLeft: "0.5rem" }}
+          >
+            Style profile
           </button>
           {caps && (
             <pre style={{ marginTop: "1rem", whiteSpace: "pre-wrap" }} aria-live="polite">

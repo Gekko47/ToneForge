@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 
 // Provide a minimal Office global so shared/word modules can be imported in tests.
@@ -90,3 +90,12 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
   }
   return originalFetch(input);
 }) as typeof fetch;
+
+// Ensure a clean document body between tests, even when a test file does not
+// call cleanup() itself. This prevents DOM rendered by an earlier file from
+// leaking into later files that use global queries.
+afterEach(() => {
+  if (typeof document !== "undefined" && document.body) {
+    document.body.innerHTML = "";
+  }
+});
