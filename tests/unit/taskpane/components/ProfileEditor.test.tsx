@@ -51,8 +51,9 @@ function makeProfile(): StyleProfile {
 
 function makeState(profile: StyleProfile = makeProfile()) {
   return {
-    version: 1,
+    version: 2,
     profiles: [profile],
+    profileHistory: { [profile.id]: [profile] },
     activeProfileId: profile.id,
     settings: { telemetryDisabled: true },
   };
@@ -158,5 +159,15 @@ describe("ProfileEditor", () => {
     expect(inputByValue(document.body, "Untitled style profile")).toBeInTheDocument();
     expect(lastByRole("button", { name: "Save profile" })).toBeDisabled();
     expect(mocks.upsertProfile).not.toHaveBeenCalled();
+  });
+
+  it("bumps the version and marks the profile dirty", async () => {
+    const user = userEvent.setup();
+    render(<ProfileEditor />);
+
+    await user.click(lastByRole("button", { name: "Major" }));
+
+    expect(within(document.body).getByRole("textbox", { name: "Version" })).toHaveValue("v2.0.0");
+    expect(lastByRole("button", { name: "Save profile" })).toBeEnabled();
   });
 });

@@ -17,6 +17,7 @@ import {
   type TypographyRules,
 } from "../../core/domain/StyleProfile";
 import { loadState, setActiveProfile, upsertProfile } from "../../core/state/index";
+import { bumpProfileVersion, type BumpType } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
 
 interface ProfileFormValues {
@@ -48,6 +49,7 @@ interface ProfileFormValues {
 interface ProfileEditorState {
   baseProfile: StyleProfile;
   savedProfile: StyleProfile | null;
+  history: StyleProfile[];
   values: ProfileFormValues;
   dirty: boolean;
   savedAt: string | null;
@@ -114,34 +116,25 @@ function parseLines(value: string): string[] {
 function parseTerminology(value: string): TerminologyParse {
   const values: Record<string, string> = {};
   const lines = value.split(/\r?\n/u);
-  for (const [index, rawLine] of lines.entries()) {
+  lines.forEach((rawLine, index) => {
     const line = rawLine.trim();
     if (line.length === 0) {
-      continue;
+      return;
     }
     const separatorIndex = line.indexOf(":");
     if (separatorIndex <= 0) {
-      return {
-        values,
-        error: `Terminology line ${index + 1} must use "term: replacement".`,
-      };
+      throw new Error(`Terminology line ${index + 1} must use "term: replacement".`);
     }
     const term = line.slice(0, separatorIndex).trim();
     const replacement = line.slice(separatorIndex + 1).trim();
     if (term.length === 0 || replacement.length === 0) {
-      return {
-        values,
-        error: `Terminology line ${index + 1} needs both a term and a replacement.`,
-      };
+      throw new Error(`Terminology line ${index + 1} needs both a term and a replacement.`);
     }
     if (Object.prototype.hasOwnProperty.call(values, term)) {
-      return {
-        values,
-        error: `Terminology term "${term}" is listed more than once.`,
-      };
+      throw new Error(`Terminology term "${term}" is listed more than once.`);
     }
     values[term] = replacement;
-  }
+  });
   return { values, error: null };
 }
 
@@ -272,6 +265,7 @@ function initialContext(): ProfileEditorState {
   return {
     baseProfile: profile,
     savedProfile: persisted,
+    history: persisted ? (state.profileHistory[persisted.id] ?? [persisted]) : [],
     values: profileToValues(profile),
     dirty: false,
     savedAt: null,
@@ -287,13 +281,33 @@ function formatMetric(value: number | null): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
+function sameSnapshot(left: StyleProfile, right: StyleProfile): boolean {
+  return JSON.stringify({ ...left, updatedAt: "" }) === JSON.stringify({ ...right, updatedAt: "" });
+}
+
+function appendSnapshot(history: readonly StyleProfile[], profile: StyleProfile): StyleProfile[] {
+  const latest = history[history.length - 1];
+  return latest && sameSnapshot(latest, profile) ? [...history] : [...history, profile];
+}
+
+function appendHistory(
+  history: readonly StyleProfile[],
+  previous: StyleProfile,
+  next: StyleProfile,
+): StyleProfile[] {
+  const withPrevious = appendSnapshot(history, previous);
+  const latest = withPrevious[withPrevious.length - 1];
+  return latest && sameSnapshot(latest, next) ? withPrevious : [...withPrevious, next];
+}
+
 function option(key: string, text: string): IDropdownOption {
   return { key, text };
 }
 
 export default function ProfileEditor(): React.ReactNode {
   const [context, setContext] = React.useState<ProfileEditorState>(initialContext);
-  const { baseProfile, savedProfile, values, dirty, savedAt, fieldErrors, error } = context;
+  const { baseProfile, savedProfile, history, values, dirty, savedAt, fieldErrors, error } =
+    context;
   const validation = validateValues(values, baseProfile);
 
   function patch(partial: Partial<ProfileFormValues>): void {
@@ -327,12 +341,27 @@ export default function ProfileEditor(): React.ReactNode {
     setContext({
       baseProfile: profile,
       savedProfile: null,
+      history: [],
       values: profileToValues(profile),
       dirty: false,
       savedAt: null,
       fieldErrors: {},
       error: null,
     });
+  }
+
+  function bumpVersion(type: BumpType): void {
+    setContext((prev) => ({
+      ...prev,
+      baseProfile: {
+        ...prev.baseProfile,
+        version: bumpProfileVersion(prev.baseProfile.version, type),
+      },
+      dirty: true,
+      savedAt: null,
+      fieldErrors: {},
+      error: null,
+    }));
   }
 
   function save(): void {
@@ -349,10 +378,14 @@ export default function ProfileEditor(): React.ReactNode {
     upsertProfile(profile);
     setActiveProfile(profile.id);
 
+    const nextHistory = savedProfile
+      ? appendHistory(history, savedProfile, profile)
+      : appendSnapshot(history, profile);
     setContext((prev) => ({
       ...prev,
       baseProfile: profile,
       savedProfile: profile,
+      history: nextHistory,
       values: profileToValues(profile),
       dirty: false,
       savedAt: updatedAt,
@@ -381,6 +414,8 @@ export default function ProfileEditor(): React.ReactNode {
 
   const version = baseProfile.version;
   const versionLabel = `v${version.major}.${version.minor}.${version.patch}`;
+  const hasHistory = history.length > 0;
+  const historyCount = history.length;
 
   return (
     <div className="tf-card">
@@ -402,6 +437,32 @@ export default function ProfileEditor(): React.ReactNode {
         />
         <TextField label="Version" disabled value={versionLabel} />
       </div>
+
+      <div
+        style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, alignItems: "flex-end" }}
+      >
+        <DefaultButton text="Major" onClick={() => bumpVersion("major")} />
+        <DefaultButton text="Minor" onClick={() => bumpVersion("minor")} />
+        <DefaultButton text="Patch" onClick={() => bumpVersion("patch")} />
+        <span className="tf-sub" style={{ padding: "6px 0" }}>
+          {hasHistory
+            ? `${historyCount} historical snapshot(s) recorded.`
+            : "No historical snapshots yet — save to record the first baseline."}
+        </span>
+      </div>
+      {hasHistory && (
+        <details style={{ marginTop: 12 }}>
+          <summary className="tf-sub">Version history</summary>
+          <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+            {history.map((snapshot) => (
+              <li key={snapshot.id}>
+                v{snapshot.version.major}.{snapshot.version.minor}.{snapshot.version.patch} —{" "}
+                {new Date(snapshot.updatedAt).toLocaleString()}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       <section aria-labelledby="measured-heading" style={sectionStyle}>
         <h2 id="measured-heading" style={sectionHeadingStyle}>

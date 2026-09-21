@@ -117,9 +117,17 @@
 - **Decision**: All task-pane UI lives under `src/taskpane/` (pages under `src/taskpane/pages/`, shared components under `src/taskpane/components/`). Stage 07 Settings is implemented as `src/taskpane/pages/Settings.tsx` + `src/taskpane/components/SettingsForm.tsx`, wired into `Dashboard.tsx` via lazy import. Stage files 07/11/12 are corrected to say `src/taskpane/`.
 - **Consequences**: Single UI root avoids import divergence and test-mirror confusion; no shim needed. Docs drift closed for the UI-location concern; other `src/ui/` references in stage files remain as-is until their stages execute.
 
-### ADR-0015 — State migration wired into `loadState()`
+- **Status**: Accepted (2026-09-19)
+- **Context**: Stage 00–06 audit (G5.1) found `loadState()` parsed raw persisted state directly, bypassing `migrate()` and making the v0→v1 migration dead code.
+- **Decision**: `loadState()` calls `migrate(raw)` before `StateSchema.parse`. Migration preserves existing `settings` values over defaults and fills missing fields with defaults.
 
 - **Status**: Accepted (2026-09-19)
 - **Context**: Stage 00–06 audit (G5.1) found `loadState()` parsed raw persisted state directly, bypassing `migrate()` and making the v0→v1 migration dead code.
 - **Decision**: `loadState()` calls `migrate(raw)` before `StateSchema.parse`. Migration preserves existing `settings` values over defaults and fills missing fields with defaults.
-- **Consequences**: Legacy v0 persisted state is upgraded to v1 on load instead of being discarded. Tests added for v0→v1 via the Office path.
+
+### ADR-0018 — Persistent profile version history (state schema v2)
+
+- **Status**: Accepted (2026-09-21)
+- **Context**: Stage 12 requires persistent profile version history and diffs. The v1 state schema had no history; `upsertProfile` replaced the current profile without recording a prior snapshot, so version bumps were invisible after restart.
+- **Decision**: Bump `StateSchema` to v2 and add `profileHistory: Record<ProfileId, StyleProfile[]>`. `CURRENT_STATE_VERSION` becomes 2. `loadState()` reads `ToneForge.State.v2` first, falling back to the legacy `ToneForge.State.v1` key in both `Office.roamingSettings` and `localStorage`. `migrate()` handles v0→v1→v2 and seeds history from existing profiles when no history is present. `upsertProfile()` appends the previous snapshot before replacing the current profile; `removeProfile()` deletes history entries. `src/style/versioning.ts` provides pure `bumpProfileVersion`, `diffProfiles`, and `formatChangelog`; `VersionDiff.tsx` consumes them.
+- **Consequences**: Existing v1 persisted state is upgraded transparently on next load; corrupt or future-version state falls back to defaults per ADR-0010. History is append-only per profile and deduplicated so unchanged saves do not create duplicate snapshots. `npm run verify` is green.

@@ -11,11 +11,12 @@
 
 import { z } from "zod";
 import { StyleProfileSchema, type StyleProfile } from "../domain/StyleProfile";
-import { migrate } from "./migration";
+import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(1),
+  version: z.number().int().nonnegative().default(2),
   profiles: z.array(StyleProfileSchema).default([]),
+  profileHistory: z.record(z.string().uuid(), z.array(StyleProfileSchema)).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   settings: z
     .object({
@@ -29,10 +30,25 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v1";
+const STORAGE_KEY = "ToneForge.State.v2";
+const LEGACY_STORAGE_KEY = "ToneForge.State.v1";
 
 function isOfficeRuntime(): boolean {
   return typeof (globalThis as unknown as { Office?: unknown }).Office !== "undefined";
+}
+
+function parsePersistedValue(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== "string") {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function getRoamingSettings(): Record<string, unknown> | null {
@@ -40,14 +56,16 @@ function getRoamingSettings(): Record<string, unknown> | null {
   try {
     const office = (
       globalThis as unknown as {
-        Office: { roamingSettings?: { get: (k: string) => unknown } };
+        Office?: { roamingSettings?: { get: (k: string) => unknown } };
       }
     ).Office;
-    const settings = office.roamingSettings;
+    const settings = office?.roamingSettings;
     if (!settings) return null;
-    const raw = settings.get(STORAGE_KEY);
-    if (typeof raw !== "string") return null;
-    return JSON.parse(raw) as Record<string, unknown>;
+
+    return (
+      parsePersistedValue(settings.get(STORAGE_KEY)) ??
+      parsePersistedValue(settings.get(LEGACY_STORAGE_KEY))
+    );
   } catch {
     return null;
   }
@@ -56,10 +74,10 @@ function getRoamingSettings(): Record<string, unknown> | null {
 async function setRoamingSettingsAsync(value: Record<string, unknown>): Promise<void> {
   const office = (
     globalThis as unknown as {
-      Office: {
+      Office?: {
         roamingSettings?: {
-          set: (key: string, v: unknown) => void;
-          saveAsync: (callback?: (result: unknown) => void) => void;
+          set: (k: string, v: unknown) => void;
+          saveAsync: (cb?: (result: unknown) => void) => void;
         };
       };
     }
@@ -67,43 +85,51 @@ async function setRoamingSettingsAsync(value: Record<string, unknown>): Promise<
   const settings = office?.roamingSettings;
   if (!settings) return;
   settings.set(STORAGE_KEY, JSON.stringify(value));
-  // Persist to the Office document. Without this call, roamingSettings
-  // changes are discarded when the add-in closes.
-  if (typeof settings.saveAsync === "function") {
-    await new Promise<void>((resolve) => {
-      try {
-        settings.saveAsync(() => resolve());
-      } catch {
-        resolve();
-      }
-    });
-  }
+  await new Promise<void>((resolve) => {
+    try {
+      settings.saveAsync(() => resolve());
+    } catch {
+      resolve();
+    }
+  });
 }
 
 function getLocalStorage(): Record<string, unknown> | null {
+  if (typeof localStorage === "undefined") return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as Record<string, unknown>;
+    return (
+      parsePersistedValue(localStorage.getItem(STORAGE_KEY)) ??
+      parsePersistedValue(localStorage.getItem(LEGACY_STORAGE_KEY))
+    );
   } catch {
     return null;
   }
 }
 
 function setLocalStorage(value: Record<string, unknown>): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // localStorage may be full or unavailable; ignore silently.
+  }
 }
 
 /**
  * Load persisted state.
  *
  * Raw persisted bytes are migrated to the current schema version BEFORE
- * validation, so legacy v0 state is upgraded to v1 instead of being
+ * validation, so legacy v0 and v1 state are upgraded instead of being
  * discarded as incompatible.
  */
 export function loadState(): PersistedState {
   const raw = getRoamingSettings() ??
-    getLocalStorage() ?? { version: 1, profiles: [], activeProfileId: null, settings: {} };
+    getLocalStorage() ?? {
+      version: CURRENT_STATE_VERSION,
+      profiles: [],
+      activeProfileId: null,
+      settings: {},
+    };
 
   // Migrate before parsing so versioned state upgrades are applied.
   const migrated = migrate(raw);
@@ -117,12 +143,7 @@ export function loadState(): PersistedState {
       "Failed to parse persisted state; falling back to defaults:",
       err instanceof Error ? err.message : String(err),
     );
-    return {
-      version: 1,
-      profiles: [],
-      activeProfileId: null,
-      settings: { telemetryDisabled: true },
-    };
+    return migrate(null);
   }
 }
 
@@ -149,24 +170,50 @@ export function saveState(state: PersistedState): void {
   }
 }
 
+function sameSnapshot(left: StyleProfile, right: StyleProfile): boolean {
+  return JSON.stringify({ ...left, updatedAt: "" }) === JSON.stringify({ ...right, updatedAt: "" });
+}
+
+function appendSnapshot(history: readonly StyleProfile[], profile: StyleProfile): StyleProfile[] {
+  const latest = history[history.length - 1];
+  return latest && sameSnapshot(latest, profile) ? [...history] : [...history, profile];
+}
+
 export function upsertProfile(profile: StyleProfile): void {
   const state = loadState();
-  const existing = state.profiles.findIndex((p: StyleProfile) => p.id === profile.id);
-  if (existing >= 0) {
-    state.profiles[existing] = {
-      ...state.profiles[existing],
+  const existingIndex = state.profiles.findIndex((item: StyleProfile) => item.id === profile.id);
+  const history = state.profileHistory[profile.id] ?? [];
+
+  if (existingIndex >= 0) {
+    const current = state.profiles[existingIndex];
+    if (!current) {
+      state.profiles.push(profile);
+      state.profileHistory[profile.id] = appendSnapshot(history, profile);
+      saveState(state);
+      return;
+    }
+    const historyWithCurrent = appendSnapshot(history, current);
+    const updated = {
+      ...current,
       ...profile,
       updatedAt: new Date().toISOString(),
     };
+    state.profiles[existingIndex] = updated;
+    state.profileHistory[profile.id] = appendSnapshot(historyWithCurrent, updated);
   } else {
     state.profiles.push(profile);
+    state.profileHistory[profile.id] = appendSnapshot(history, profile);
   }
+
   saveState(state);
 }
 
 export function removeProfile(id: string): void {
   const state = loadState();
-  state.profiles = state.profiles.filter((p: StyleProfile) => p.id !== id);
+  state.profiles = state.profiles.filter((item: StyleProfile) => item.id !== id);
+  const nextHistory = { ...state.profileHistory };
+  delete nextHistory[id];
+  state.profileHistory = nextHistory;
   if (state.activeProfileId === id) state.activeProfileId = null;
   saveState(state);
 }

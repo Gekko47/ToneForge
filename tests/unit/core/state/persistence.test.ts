@@ -19,6 +19,7 @@ describe("persistence", () => {
   it("returns default state when empty", () => {
     const state = loadState();
     expect(state.profiles).toEqual([]);
+    expect(state.profileHistory).toEqual({});
     expect(state.activeProfileId).toBeNull();
   });
 
@@ -28,6 +29,7 @@ describe("persistence", () => {
     const state = loadState();
     expect(state.profiles).toHaveLength(1);
     expect(state.profiles[0]?.name).toBe("Saved");
+    expect(state.profileHistory[profile.id]).toHaveLength(1);
   });
 
   it("upserts instead of duplicating", () => {
@@ -37,13 +39,25 @@ describe("persistence", () => {
     const state = loadState();
     expect(state.profiles).toHaveLength(1);
     expect(state.profiles[0]?.name).toBe("Dup Updated");
+    expect(state.profileHistory[profile.id]).toHaveLength(2);
   });
 
-  it("removes a profile", () => {
+  it("does not append a duplicate snapshot on unchanged save", () => {
+    const profile = createEmptyProfile("Stable");
+    upsertProfile(profile);
+    upsertProfile({ ...profile });
+    const state = loadState();
+    expect(state.profileHistory[profile.id]).toHaveLength(1);
+  });
+
+  it("removes a profile and its history", () => {
     const profile = createEmptyProfile("ToRemove");
     upsertProfile(profile);
+    upsertProfile({ ...profile, name: "ToRemove Updated" });
     removeProfile(profile.id);
-    expect(loadState().profiles).toHaveLength(0);
+    const state = loadState();
+    expect(state.profiles).toHaveLength(0);
+    expect(state.profileHistory[profile.id]).toBeUndefined();
   });
 
   it("sets active profile id", () => {
@@ -53,5 +67,15 @@ describe("persistence", () => {
     expect(loadState().activeProfileId).toBe(profile.id);
     setActiveProfile(null);
     expect(loadState().activeProfileId).toBeNull();
+  });
+
+  it("records a version bump as a new history snapshot", () => {
+    const profile = createEmptyProfile("Versioned");
+    upsertProfile(profile);
+    const bumped = { ...profile, version: { major: 1, minor: 1, patch: 0 } };
+    upsertProfile(bumped);
+    const state = loadState();
+    expect(state.profiles[0]?.version).toEqual({ major: 1, minor: 1, patch: 0 });
+    expect(state.profileHistory[profile.id]).toHaveLength(2);
   });
 });
