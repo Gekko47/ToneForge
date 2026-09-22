@@ -168,6 +168,148 @@ describe("ProfileEditor", () => {
     await user.click(lastByRole("button", { name: "Major" }));
 
     expect(within(document.body).getByRole("textbox", { name: "Version" })).toHaveValue("v2.0.0");
-    expect(lastByRole("button", { name: "Save profile" })).toBeEnabled();
+  });
+  it("shows a terminology parse error instead of crashing", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<ProfileEditor />);
+    const terminologyInput = within(container).getByRole("textbox", {
+      name: (name) => name.startsWith("Preferred terminology"),
+    });
+
+    await user.clear(terminologyInput);
+    await user.type(terminologyInput, "no colon here");
+
+    expect(within(container).queryByTestId("profile-editor-error")).not.toBeInTheDocument();
+    expect(
+      within(container).getByText('Terminology line 1 must use "term: replacement".'),
+    ).toBeInTheDocument();
+  });
+
+  it("disables Save and Reset after a change is reverted", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<ProfileEditor />);
+    const toneInput = inputByValue(container, "neutral");
+
+    await user.clear(toneInput);
+    await user.type(toneInput, "conversational");
+    await user.clear(toneInput);
+    await user.type(toneInput, "neutral");
+
+    expect(lastByRole("button", { name: "Save profile" })).toBeDisabled();
+    expect(lastByRole("button", { name: "Reset changes" })).toBeDisabled();
+  });
+
+  it("auto-bumps the patch version when content changes and the version is unchanged", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<ProfileEditor />);
+    const toneInput = inputByValue(container, "neutral");
+
+    await user.clear(toneInput);
+    await user.type(toneInput, "conversational");
+    await user.click(lastByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.upsertProfile).toHaveBeenCalledTimes(1);
+    });
+    const saved = mocks.upsertProfile.mock.calls[0]?.[0] as StyleProfile;
+    expect(saved.semantic.tone).toBe("conversational");
+    expect(saved.version.major).toBe(profile.version.major);
+    expect(saved.version.minor).toBe(profile.version.minor);
+    expect(saved.version.patch).toBe(profile.version.patch + 1);
+  });
+
+  it("does not persist when nothing has changed", async () => {
+    const user = userEvent.setup();
+    render(<ProfileEditor />);
+
+    await user.click(lastByRole("button", { name: "Save profile" }));
+
+    expect(mocks.upsertProfile).not.toHaveBeenCalled();
+    expect(mocks.setActiveProfile).not.toHaveBeenCalled();
+  });
+
+  it("switches the active profile when a saved profile is selected", async () => {
+    const user = userEvent.setup();
+    const other = {
+      ...createEmptyProfile("Other profile"),
+      semantic: {
+        tone: "formal",
+        voice: "second-person",
+        formality: 70,
+        readingGradeTarget: null,
+        preferredSentenceLength: 24,
+        vocabularyRegister: "technical",
+        rhetoricalStyle: "analytical",
+        avoidWords: [],
+      },
+      typography: {
+        emDash: "hyphen",
+        emDashSpacing: "tight",
+        enDashSpacing: "tight",
+        doubleQuotes: "straight",
+        singleQuotes: "straight",
+        apostrophes: "straight",
+        decimalSeparator: "comma",
+        thousandsSeparator: "space",
+        ellipsis: "three-dots",
+      },
+      houseStyle: {
+        preferredTerminology: { api: "interface" },
+        bannedTerms: [],
+        capitalization: { sentenceCase: false, titleCaseWords: [] },
+        spellingVariant: "en-GB",
+      },
+    };
+    mocks.loadState.mockReturnValue({
+      version: 2,
+      profiles: [profile, other],
+      profileHistory: {
+        [profile.id]: [profile],
+        [other.id]: [other],
+      },
+      activeProfileId: profile.id,
+      settings: { telemetryDisabled: true },
+    });
+
+    render(<ProfileEditor />);
+    const savedDropdown = within(document.body).getByRole("combobox", {
+      name: (name) => name.startsWith("Saved profiles"),
+    });
+    await user.click(savedDropdown);
+    await user.click(within(document.body).getByRole("option", { name: /Other profile/ }));
+
+    await waitFor(() => {
+      expect(mocks.setActiveProfile).toHaveBeenCalledWith(other.id);
+    });
+    expect(inputByValue(document.body, "Other profile")).toBeInTheDocument();
+    expect(inputByValue(document.body, "formal")).toBeInTheDocument();
+  });
+
+  it("restores a history snapshot and immediately switches the active profile", async () => {
+    const user = userEvent.setup();
+    const previous = {
+      ...profile,
+      semantic: { ...profile.semantic, tone: "formal" },
+      version: { major: 1, minor: 2, patch: 3 },
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    };
+    mocks.loadState.mockReturnValue({
+      version: 2,
+      profiles: [profile],
+      profileHistory: { [profile.id]: [previous, profile] },
+      activeProfileId: profile.id,
+      settings: { telemetryDisabled: true },
+    });
+
+    render(<ProfileEditor />);
+    await user.click(within(document.body).getByRole("button", { name: /Restore v1.2.3/ }));
+
+    await waitFor(() => {
+      expect(mocks.upsertProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ id: previous.id }),
+      );
+    });
+    expect(mocks.setActiveProfile).toHaveBeenCalledWith(previous.id);
+    expect(inputByValue(document.body, "formal")).toBeInTheDocument();
   });
 });

@@ -1,7 +1,9 @@
 import React from "react";
 import {
+  ComboBox,
   DefaultButton,
   Dropdown,
+  type IComboBoxOption,
   type IDropdownOption,
   MessageBar,
   MessageBarType,
@@ -13,11 +15,12 @@ import {
   createEmptyProfile,
   StyleProfileSchema,
   type HouseStyle,
+  type ProfileVersion,
   type StyleProfile,
   type TypographyRules,
 } from "../../core/domain/StyleProfile";
 import { loadState, setActiveProfile, upsertProfile } from "../../core/state/index";
-import { bumpProfileVersion, type BumpType } from "../../style/versioning";
+import { bumpProfileVersion, diffProfiles, type BumpType } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
 
 interface ProfileFormValues {
@@ -48,7 +51,9 @@ interface ProfileFormValues {
 
 interface ProfileEditorState {
   baseProfile: StyleProfile;
+  draftBaseProfile: StyleProfile;
   savedProfile: StyleProfile | null;
+  profiles: StyleProfile[];
   history: StyleProfile[];
   values: ProfileFormValues;
   dirty: boolean;
@@ -101,9 +106,36 @@ const buttonStyle: React.CSSProperties = {
 
 const vocabularyRegisters = ["simple", "standard", "technical", "academic"] as const;
 const spellingVariants = ["en-US", "en-GB", "au"] as const;
+const toneSuggestions = [
+  "neutral",
+  "formal",
+  "conversational",
+  "friendly",
+  "authoritative",
+  "empathetic",
+  "persuasive",
+  "instructional",
+] as const;
+const voiceSuggestions = ["first-person", "second-person", "third-person", "impersonal"] as const;
+const rhetoricalStyleSuggestions = [
+  "direct",
+  "narrative",
+  "analytical",
+  "descriptive",
+  "argumentative",
+  "explanatory",
+] as const;
 
 function dropdownValue(option: IDropdownOption | undefined): string | null {
   return option && typeof option.key === "string" ? option.key : null;
+}
+
+function comboBoxOptions(values: readonly string[]): IComboBoxOption[] {
+  return values.map((value) => ({ key: value, text: value }));
+}
+
+function comboBoxValue(option: IComboBoxOption | undefined, value: string | undefined): string {
+  return value ?? (option && typeof option.key === "string" ? option.key : "");
 }
 
 function parseLines(value: string): string[] {
@@ -116,25 +148,34 @@ function parseLines(value: string): string[] {
 function parseTerminology(value: string): TerminologyParse {
   const values: Record<string, string> = {};
   const lines = value.split(/\r?\n/u);
-  lines.forEach((rawLine, index) => {
+  for (const [index, rawLine] of lines.entries()) {
     const line = rawLine.trim();
     if (line.length === 0) {
-      return;
+      continue;
     }
     const separatorIndex = line.indexOf(":");
     if (separatorIndex <= 0) {
-      throw new Error(`Terminology line ${index + 1} must use "term: replacement".`);
+      return {
+        values,
+        error: `Terminology line ${index + 1} must use "term: replacement".`,
+      };
     }
     const term = line.slice(0, separatorIndex).trim();
     const replacement = line.slice(separatorIndex + 1).trim();
     if (term.length === 0 || replacement.length === 0) {
-      throw new Error(`Terminology line ${index + 1} needs both a term and a replacement.`);
+      return {
+        values,
+        error: `Terminology line ${index + 1} needs both a term and a replacement.`,
+      };
     }
     if (Object.prototype.hasOwnProperty.call(values, term)) {
-      throw new Error(`Terminology term "${term}" is listed more than once.`);
+      return {
+        values,
+        error: `Terminology term "${term}" is listed more than once.`,
+      };
     }
     values[term] = replacement;
-  });
+  }
   return { values, error: null };
 }
 
@@ -264,7 +305,9 @@ function initialContext(): ProfileEditorState {
 
   return {
     baseProfile: profile,
+    draftBaseProfile: profile,
     savedProfile: persisted,
+    profiles: state.profiles,
     history: persisted ? (state.profileHistory[persisted.id] ?? [persisted]) : [],
     values: profileToValues(profile),
     dirty: false,
@@ -283,6 +326,14 @@ function formatMetric(value: number | null): string {
 
 function sameSnapshot(left: StyleProfile, right: StyleProfile): boolean {
   return JSON.stringify({ ...left, updatedAt: "" }) === JSON.stringify({ ...right, updatedAt: "" });
+}
+
+function sameEditableSnapshot(left: StyleProfile, right: StyleProfile): boolean {
+  return diffProfiles(left, right).changedCount === 0;
+}
+
+function sameVersion(left: ProfileVersion, right: ProfileVersion): boolean {
+  return left.major === right.major && left.minor === right.minor && left.patch === right.patch;
 }
 
 function appendSnapshot(history: readonly StyleProfile[], profile: StyleProfile): StyleProfile[] {
@@ -304,20 +355,28 @@ function option(key: string, text: string): IDropdownOption {
   return { key, text };
 }
 
+function formatVersionLabel(version: ProfileVersion): string {
+  return `v${version.major}.${version.minor}.${version.patch}`;
+}
+
 export default function ProfileEditor(): React.ReactNode {
   const [context, setContext] = React.useState<ProfileEditorState>(initialContext);
-  const { baseProfile, savedProfile, history, values, dirty, savedAt, fieldErrors, error } =
+  const { baseProfile, savedProfile, profiles, history, values, savedAt, fieldErrors, error } =
     context;
   const validation = validateValues(values, baseProfile);
+  const draftProfile = validation.profile ?? validation.candidate;
+  const derivedDirty = !sameEditableSnapshot(draftProfile, savedProfile ?? baseProfile);
 
   function patch(partial: Partial<ProfileFormValues>): void {
     setContext((prev) => {
       const nextValues = { ...prev.values, ...partial };
       const nextValidation = validateValues(nextValues, prev.baseProfile);
+      const nextDraft = nextValidation.profile ?? nextValidation.candidate;
+      const nextDirty = !sameEditableSnapshot(nextDraft, prev.savedProfile ?? prev.baseProfile);
       return {
         ...prev,
         values: nextValues,
-        dirty: true,
+        dirty: nextDirty,
         savedAt: null,
         error: null,
         fieldErrors: nextValidation.errors,
@@ -328,7 +387,8 @@ export default function ProfileEditor(): React.ReactNode {
   function reset(): void {
     setContext((prev) => ({
       ...prev,
-      values: profileToValues(prev.baseProfile),
+      baseProfile: prev.draftBaseProfile,
+      values: profileToValues(prev.draftBaseProfile),
       dirty: false,
       savedAt: null,
       fieldErrors: {},
@@ -338,16 +398,19 @@ export default function ProfileEditor(): React.ReactNode {
 
   function createNewProfile(): void {
     const profile = createEmptyProfile("Untitled style profile");
-    setContext({
+    setContext((prev) => ({
+      ...prev,
       baseProfile: profile,
+      draftBaseProfile: profile,
       savedProfile: null,
+      profiles: [...prev.profiles, profile],
       history: [],
       values: profileToValues(profile),
       dirty: false,
       savedAt: null,
       fieldErrors: {},
       error: null,
-    });
+    }));
   }
 
   function bumpVersion(type: BumpType): void {
@@ -364,6 +427,48 @@ export default function ProfileEditor(): React.ReactNode {
     }));
   }
 
+  function selectProfile(profileId: string): void {
+    const selected = profiles.find((item) => item.id === profileId);
+    if (!selected) {
+      return;
+    }
+    setActiveProfile(selected.id);
+    const state = loadState();
+    const nextHistory = state.profileHistory[selected.id] ?? [selected];
+    setContext((prev) => ({
+      ...prev,
+      baseProfile: selected,
+      draftBaseProfile: selected,
+      savedProfile: selected,
+      history: nextHistory,
+      values: profileToValues(selected),
+      dirty: false,
+      savedAt: null,
+      fieldErrors: {},
+      error: null,
+    }));
+  }
+
+  function restoreHistorySnapshot(snapshot: StyleProfile): void {
+    upsertProfile(snapshot);
+    setActiveProfile(snapshot.id);
+    setContext((prev) => ({
+      ...prev,
+      baseProfile: snapshot,
+      draftBaseProfile: snapshot,
+      savedProfile: snapshot,
+      profiles: prev.profiles.some((item) => item.id === snapshot.id)
+        ? prev.profiles.map((item) => (item.id === snapshot.id ? snapshot : item))
+        : [...prev.profiles, snapshot],
+      history: appendSnapshot(prev.history, snapshot),
+      values: profileToValues(snapshot),
+      dirty: false,
+      savedAt: null,
+      fieldErrors: {},
+      error: null,
+    }));
+  }
+
   function save(): void {
     if (!validation.profile) {
       setContext((prev) => ({
@@ -373,8 +478,26 @@ export default function ProfileEditor(): React.ReactNode {
       return;
     }
 
+    const contentChanged = !sameEditableSnapshot(validation.profile, context.draftBaseProfile);
+    const versionChanged = !sameVersion(
+      validation.profile.version,
+      context.draftBaseProfile.version,
+    );
+
+    if (!contentChanged && !versionChanged) {
+      return;
+    }
+
     const updatedAt = new Date().toISOString();
-    const profile: StyleProfile = { ...validation.profile, updatedAt };
+    const shouldAutoPatch = contentChanged && !versionChanged && savedProfile !== null;
+    const profile: StyleProfile = shouldAutoPatch
+      ? {
+          ...validation.profile,
+          version: bumpProfileVersion(validation.profile.version, "patch"),
+          updatedAt,
+        }
+      : { ...validation.profile, updatedAt };
+
     upsertProfile(profile);
     setActiveProfile(profile.id);
 
@@ -384,7 +507,11 @@ export default function ProfileEditor(): React.ReactNode {
     setContext((prev) => ({
       ...prev,
       baseProfile: profile,
+      draftBaseProfile: profile,
       savedProfile: profile,
+      profiles: prev.savedProfile
+        ? prev.profiles.map((item) => (item.id === profile.id ? profile : item))
+        : [...prev.profiles, profile],
       history: nextHistory,
       values: profileToValues(profile),
       dirty: false,
@@ -413,7 +540,7 @@ export default function ProfileEditor(): React.ReactNode {
   }
 
   const version = baseProfile.version;
-  const versionLabel = `v${version.major}.${version.minor}.${version.patch}`;
+  const versionLabel = formatVersionLabel(version);
   const hasHistory = history.length > 0;
   const historyCount = history.length;
 
@@ -428,6 +555,20 @@ export default function ProfileEditor(): React.ReactNode {
       {renderMessageBar()}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+        <Dropdown
+          label="Saved profiles"
+          selectedKey={baseProfile.id}
+          options={profiles.map((item) => ({
+            key: item.id,
+            text: `${item.name} ${formatVersionLabel(item.version)}`,
+          }))}
+          onChange={(_event, optionValue) => {
+            const nextValue = dropdownValue(optionValue);
+            if (nextValue) {
+              selectProfile(nextValue);
+            }
+          }}
+        />
         <TextField
           label="Profile name"
           required
@@ -454,10 +595,14 @@ export default function ProfileEditor(): React.ReactNode {
         <details style={{ marginTop: 12 }}>
           <summary className="tf-sub">Version history</summary>
           <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
-            {history.map((snapshot) => (
-              <li key={snapshot.id}>
-                v{snapshot.version.major}.{snapshot.version.minor}.{snapshot.version.patch} —{" "}
-                {new Date(snapshot.updatedAt).toLocaleString()}
+            {history.map((snapshot, index) => (
+              <li key={`${snapshot.id}-${snapshot.updatedAt}-${index}`}>
+                {formatVersionLabel(snapshot.version)} —{" "}
+                {new Date(snapshot.updatedAt).toLocaleString()}{" "}
+                <DefaultButton
+                  text={`Restore ${formatVersionLabel(snapshot.version)}`}
+                  onClick={() => restoreHistorySnapshot(snapshot)}
+                />
               </li>
             ))}
           </ul>
@@ -514,19 +659,31 @@ export default function ProfileEditor(): React.ReactNode {
           Semantic style
         </h2>
         <div style={gridStyle}>
-          <TextField
+          <ComboBox
             label="Tone"
             required
-            value={values.tone}
+            text={values.tone}
+            allowFreeform
+            autoComplete="on"
+            options={comboBoxOptions(toneSuggestions)}
             errorMessage={fieldErrors["semantic.tone"] ?? ""}
-            onChange={(_event, value) => patch({ tone: value ?? "" })}
+            onInputValueChange={(value) => patch({ tone: value ?? "" })}
+            onChange={(_event, optionValue, _index, value) =>
+              patch({ tone: comboBoxValue(optionValue, value) })
+            }
           />
-          <TextField
+          <ComboBox
             label="Voice"
             required
-            value={values.voice}
+            text={values.voice}
+            allowFreeform
+            autoComplete="on"
+            options={comboBoxOptions(voiceSuggestions)}
             errorMessage={fieldErrors["semantic.voice"] ?? ""}
-            onChange={(_event, value) => patch({ voice: value ?? "" })}
+            onInputValueChange={(value) => patch({ voice: value ?? "" })}
+            onChange={(_event, optionValue, _index, value) =>
+              patch({ voice: comboBoxValue(optionValue, value) })
+            }
           />
           <TextField
             label="Formality (0–100)"
@@ -562,12 +719,18 @@ export default function ProfileEditor(): React.ReactNode {
               }
             }}
           />
-          <TextField
+          <ComboBox
             label="Rhetorical style"
             required
-            value={values.rhetoricalStyle}
+            text={values.rhetoricalStyle}
+            allowFreeform
+            autoComplete="on"
+            options={comboBoxOptions(rhetoricalStyleSuggestions)}
             errorMessage={fieldErrors["semantic.rhetoricalStyle"] ?? ""}
-            onChange={(_event, value) => patch({ rhetoricalStyle: value ?? "" })}
+            onInputValueChange={(value) => patch({ rhetoricalStyle: value ?? "" })}
+            onChange={(_event, optionValue, _index, value) =>
+              patch({ rhetoricalStyle: comboBoxValue(optionValue, value) })
+            }
           />
           <TextField
             label="Avoid words (one per line)"
@@ -735,8 +898,18 @@ export default function ProfileEditor(): React.ReactNode {
       <VersionDiff savedProfile={savedProfile} currentProfile={validation.profile} />
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        <PrimaryButton text="Save profile" onClick={save} disabled={!dirty} style={buttonStyle} />
-        <DefaultButton text="Reset changes" onClick={reset} disabled={!dirty} style={buttonStyle} />
+        <PrimaryButton
+          text="Save profile"
+          onClick={save}
+          disabled={!derivedDirty}
+          style={buttonStyle}
+        />
+        <DefaultButton
+          text="Reset changes"
+          onClick={reset}
+          disabled={!derivedDirty}
+          style={buttonStyle}
+        />
         <DefaultButton text="New profile" onClick={createNewProfile} style={buttonStyle} />
       </div>
     </div>
