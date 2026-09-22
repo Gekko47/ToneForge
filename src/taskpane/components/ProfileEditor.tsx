@@ -660,7 +660,6 @@ export default function ProfileEditor(): React.ReactNode {
             autoComplete="on"
             options={comboBoxOptions(toneSuggestions)}
             errorMessage={fieldErrors["semantic.tone"] ?? ""}
-            buttonIconProps={{ iconName: "caret" }}
             onInputValueChange={(value) => patch({ tone: value ?? "" })}
             onChange={(_event, optionValue, _index, value) =>
               patch({ tone: comboBoxValue(optionValue, value) })
@@ -674,7 +673,6 @@ export default function ProfileEditor(): React.ReactNode {
             autoComplete="on"
             options={comboBoxOptions(voiceSuggestions)}
             errorMessage={fieldErrors["semantic.voice"] ?? ""}
-            buttonIconProps={{ iconName: "caret" }}
             onInputValueChange={(value) => patch({ voice: value ?? "" })}
             onChange={(_event, optionValue, _index, value) =>
               patch({ voice: comboBoxValue(optionValue, value) })
@@ -722,7 +720,6 @@ export default function ProfileEditor(): React.ReactNode {
             autoComplete="on"
             options={comboBoxOptions(rhetoricalStyleSuggestions)}
             errorMessage={fieldErrors["semantic.rhetoricalStyle"] ?? ""}
-            buttonIconProps={{ iconName: "caret" }}
             onInputValueChange={(value) => patch({ rhetoricalStyle: value ?? "" })}
             onChange={(_event, optionValue, _index, value) =>
               patch({ rhetoricalStyle: comboBoxValue(optionValue, value) })

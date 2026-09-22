@@ -1,4 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The adapter logs expected warn/error messages for every refusal path. Mock
+// the logger so these expected messages do not pollute test stderr.
+vi.mock("../../../src/shared/utils/logger", () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 import {
   applyChangePlan,
   setStage01Passed,

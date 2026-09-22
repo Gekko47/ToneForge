@@ -1,5 +1,12 @@
 import { afterEach, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import { initializeIcons } from "@fluentui/react/lib/Icons";
+
+// Register Fluent UI icons (ChevronDown, etc.) before any component renders.
+// Without this, every ComboBox/Dropdown/Icon in the test suite emits
+// "icon not registered" warnings to stderr. The "re-registered" warning that
+// appears once per test file is harmless — it is a console warning, not an error.
+initializeIcons();
 
 // Provide a minimal Office global so shared/word modules can be imported in tests.
 const officeMock = {

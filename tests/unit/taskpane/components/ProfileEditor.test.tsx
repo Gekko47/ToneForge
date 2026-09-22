@@ -330,7 +330,7 @@ describe("ProfileEditor", () => {
       expect(caretButton).toBeTruthy();
       const icon = caretButton?.querySelector("i.ms-Icon");
       expect(icon).toBeTruthy();
-      expect(icon?.getAttribute("data-icon-name")).toBe("caret");
+      expect(icon?.getAttribute("data-icon-name")).toBe("ChevronDown");
     }
   });
 });
