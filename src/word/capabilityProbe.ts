@@ -128,18 +128,37 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
       "supportsRevisions",
       async () => {
         const result = await runInWordSafe(async (context) => {
-          const anyContext = context as unknown as {
-            document?: {
-              trackedChanges?: unknown;
-            };
+          // There is no `document.trackedChanges` property in the Word
+          // JavaScript API (the read API is `body.getTrackedChanges()`,
+          // WordApi 1.6), so manageability is probed through the tracking
+          // mode properties instead. A working Track Changes toggle in the
+          // Word UI does NOT imply these APIs exist: the UI reflects native
+          // host state, while the API requires WordApi 1.4
+          // (`Document.changeTrackingMode`: "Off" | "TrackAll" |
+          // "TrackMineOnly") or WordApiDesktop 1.4 (`Document.trackRevisions`).
+          const doc = context.document as unknown as {
+            load?: (props: string) => void;
+            changeTrackingMode?: unknown;
+            trackRevisions?: unknown;
           };
-          const tracked = anyContext.document?.trackedChanges;
-          if (!tracked) return false;
-          const trackedChanges = tracked as { load?: unknown; items?: unknown };
-          if (typeof trackedChanges.load !== "function") return false;
-          trackedChanges.load("items");
-          await context.sync();
-          return Array.isArray(trackedChanges.items);
+          if (typeof doc.load !== "function") return false;
+          try {
+            doc.load("changeTrackingMode");
+            await context.sync();
+          } catch {
+            return false;
+          }
+          const mode = doc.changeTrackingMode;
+          if (mode === "Off" || mode === "TrackAll" || mode === "TrackMineOnly") {
+            return true;
+          }
+          try {
+            doc.load("trackRevisions");
+            await context.sync();
+          } catch {
+            return false;
+          }
+          return typeof doc.trackRevisions === "boolean";
         });
         return result === true;
       },

@@ -20,7 +20,8 @@ function fullOffice(overrides: Record<string, unknown> = {}) {
           body: { text: "", load: vi.fn(), getRange },
           getSelection: vi.fn(() => ({ getRange })),
           styles: { name: "", load: vi.fn(), items: [{ name: "Normal" }] },
-          trackedChanges: { load: vi.fn(), items: [] },
+          load: vi.fn(),
+          changeTrackingMode: "Off",
         },
         host: { name: "Word", version: "16.0" },
         sync: vi.fn(),
@@ -72,7 +73,12 @@ describe("probeWordCapabilities", () => {
     expect(caps.hostName).toBe("Word");
   });
 
-  it("reports supportsRevisions:false when trackedChanges is missing", async () => {
+  it("reports supportsRevisions:false when change tracking APIs are missing", async () => {
+    // The Word JavaScript API exposes tracking control as
+    // Document.changeTrackingMode (WordApi 1.4) with a trackRevisions
+    // desktop fallback — there is no document.trackedChanges property.
+    // A working Track Changes toggle in the Word UI does not imply these
+    // APIs exist, so a document without them must report false.
     setOffice(
       fullOffice({
         document: {
@@ -85,11 +91,34 @@ describe("probeWordCapabilities", () => {
             getRange: vi.fn(() => ({ insertText: vi.fn(), load: vi.fn() })),
           })),
           styles: { name: "", load: vi.fn(), items: [{ name: "Normal" }] },
+          load: vi.fn(),
         },
       }),
     );
     const caps = await probeWordCapabilities();
     expect(caps.supportsRevisions).toBe(false);
+  });
+
+  it("reports supportsRevisions:true via the trackRevisions desktop fallback", async () => {
+    setOffice(
+      fullOffice({
+        document: {
+          body: {
+            text: "",
+            load: vi.fn(),
+            getRange: vi.fn(() => ({ insertText: vi.fn(), load: vi.fn() })),
+          },
+          getSelection: vi.fn(() => ({
+            getRange: vi.fn(() => ({ insertText: vi.fn(), load: vi.fn() })),
+          })),
+          styles: { name: "", load: vi.fn(), items: [{ name: "Normal" }] },
+          load: vi.fn(),
+          trackRevisions: false,
+        },
+      }),
+    );
+    const caps = await probeWordCapabilities();
+    expect(caps.supportsRevisions).toBe(true);
   });
 
   it("reports supportsStyles:false when styles collection is empty", async () => {

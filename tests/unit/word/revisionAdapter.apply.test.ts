@@ -3,6 +3,7 @@ import { createChangePlan } from "../../../src/core/domain/ChangePlan";
 import { logger } from "../../../src/shared/utils/logger";
 import {
   applyChangePlan,
+  applyChangePlanWithTracking,
   validatePlanBeforeApply,
   setStage01Passed,
 } from "../../../src/word/revisionAdapter";
@@ -411,6 +412,143 @@ describe("applyChangePlan apply path", () => {
       (globalThis as { Word?: unknown }).Word = previousWord;
       (globalThis as { Office?: unknown }).Office = previousOffice;
     }
+  });
+
+  it("manages revision tracking around the plan when the API is available", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const { rangeMock } = installApplyMock();
+    const docMock: Record<string, unknown> = {
+      load: vi.fn(),
+      changeTrackingMode: "Off",
+    };
+    const getTrackedChanges = vi.fn(() => ({
+      load: vi.fn(),
+      items: [{}, {}, {}],
+    }));
+    const context = {
+      document: {
+        body: {
+          text: "hello world",
+          load: vi.fn(),
+          getRange: vi.fn(() => rangeMock),
+          getTrackedChanges,
+        },
+        getSelection: vi.fn(),
+        styles: { load: vi.fn(), items: [] },
+        ...docMock,
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    // Share one mutable document object across runInWord sessions so mode
+    // transitions are observable.
+    const sharedDoc = context.document as Record<string, unknown>;
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> =>
+        func({ ...context, document: sharedDoc }),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
+    };
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "X" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+
+    const { results, tracking } = await applyChangePlanWithTracking(plan, "hash-123");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.applied).toBe(true);
+    expect(tracking.managed).toBe(true);
+    expect(tracking.modeBefore).toBe("Off");
+    expect(tracking.modeAfter).toBe("Off");
+    expect(tracking.recordedCount).toBe(3);
+    // Tracking was enabled for the mutations, then restored.
+    expect(sharedDoc["changeTrackingMode"]).toBe("Off");
+    expect(rangeMock.insertText).toHaveBeenCalledWith("X", "Replace");
+  });
+
+  it("leaves an already-tracking document untouched", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    installApplyMock();
+    const docMock: Record<string, unknown> = {
+      load: vi.fn(),
+      changeTrackingMode: "TrackAll",
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> =>
+        func({
+          document: {
+            body: {
+              text: "hello world",
+              load: vi.fn(),
+              getRange: vi.fn(() => ({
+                insertText: vi.fn(),
+                load: vi.fn(),
+                set: vi.fn(),
+              })),
+            },
+            getSelection: vi.fn(),
+            styles: { load: vi.fn(), items: [] },
+            ...docMock,
+          },
+          host: { name: "Word", version: "16.0" },
+          sync: vi.fn(),
+        }),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
+    };
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "X" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+
+    const { results, tracking } = await applyChangePlanWithTracking(plan, "hash-123");
+
+    expect(results[0]?.applied).toBe(true);
+    expect(tracking.managed).toBe(true);
+    expect(tracking.modeBefore).toBe("TrackAll");
+    expect(tracking.modeAfter).toBe("TrackAll");
+    expect(docMock["changeTrackingMode"]).toBe("TrackAll");
+  });
+
+  it("applies unmanaged with a clear report when tracking control is missing", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    installApplyMock();
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "X" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+
+    const { results, tracking } = await applyChangePlanWithTracking(plan, "hash-123");
+
+    // installApplyMock's document has no load/changeTrackingMode, so tracking
+    // is unmanaged — but the edit itself still applies.
+    expect(results[0]?.applied).toBe(true);
+    expect(tracking.managed).toBe(false);
+    expect(tracking.modeBefore).toBeUndefined();
+    expect(tracking.recordedCount).toBeUndefined();
   });
 
   it("reports applied:false and error for unsupported applyStyle", async () => {

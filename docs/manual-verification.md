@@ -45,19 +45,45 @@ Root causes identified (see ADR-0026):
 - The diagnostics view double-encoded newlines (`JSON.stringify` on a string);
   fixed to render the preformatted text directly.
 
+## Intended end-to-end flow (generation → preview → apply with tracking)
+
+The Dashboard **Stage 18 smoke test** panel implements the full loop with
+preview-before-apply at every step; nothing mutates without an explicit click:
+
+1. **Generate (profile → selection).** Select text in the document, then
+   **Check selection**: the panel loads the active style profile, runs the
+   deterministic typography + house-style rules over the selection, and lists
+   each finding with its body-relative range. No network is involved.
+2. **Preview.** Findings (profile flow) or the demo summary lines (plan flow)
+   render in the panel before anything mutates. An empty result reports
+   success ("already matches") instead of applying nothing silently.
+3. **Apply with revision tracking.** **Apply plan** snapshots the live hash,
+   refuses on mismatch, enables tracking (`TrackAll`) when the host exposes
+   `changeTrackingMode`/`trackRevisions`, applies each change independently,
+   restores the prior mode, and reports per-change `applied` flags plus a
+   tracking summary (`managed`, before/after mode, recorded count). When
+   tracking control is unavailable the edits still apply and the report says
+   `managed: no` — they are tracked only if Track Changes is on in the UI.
+4. **Record.** Copy the probe JSON, the tracking summary, and the per-change
+   results into the host matrix and the Stage 18 smoke section below.
+
 **To close the Stage 18 hard gate, re-run in live Word after rebuilding:**
 
 1. `npm run build`, sideload per `docs/onboarding.md`, open a test document.
-2. Click **Probe Word capabilities** — expect `supportsInsertBreak: true`;
-   record the full JSON below with host version.
-3. Apply a minimal `ChangePlan` (one `replaceText` + one `insertText`) via the
-   adapter and record per-change `applied` flags plus any exceptions.
-4. Record results in the host matrix and the Stage 18 smoke section below.
+2. Click **Probe Word capabilities** — expect `supportsInsertBreak: true` and
+   (if the host carries WordApi 1.4) `supportsRevisions: true`; record the
+   full JSON below with host version.
+3. In **Stage 18 smoke test**, click **Enable mutations (Stage 01 gate)**,
+   then **Build demo plan** (review the preview), then **Apply demo plan**.
+   Record the applied counts, the tracking summary, and any exceptions.
+4. Select a paragraph with a style deviation, **Check selection**, review the
+   findings preview, then **Apply plan** and record the outcome.
+5. Record everything in the host matrix and the Stage 18 smoke section below.
 
 ## Stage 18 unit verification note
 
-- `tests/unit/word/revisionAdapter.test.ts` (16 tests) plus `tests/unit/word/revisionAdapter.apply.test.ts` (14 tests) plus `tests/unit/word/capabilityProbe.test.ts` (11 tests) cover gate refusal, validation failure, missing `currentDocHash`, hash mismatch, successful application, `body.getRange("Whole")` plus `range.set({ start, end })` offset resolution, all eight change kinds, reverse-offset application order, out-of-bounds range errors, unsupported-host refusal, per-change isolation, invalid-range and missing-payload pre-flight checks, the `setStage01Passed(true)` capability-snapshot requirement, Word-global break-enum resolution (plus the unavailable-enums failure path), Word-global break detection, and the styles lookup-method fallback.
-- `npx tsc --noEmit`, `npx eslint src tests --max-warnings 0`, `npx vitest run` (415 tests), `npm run build`, `npm run validate`, and `npm run stage:verify` all pass.
+- `tests/unit/word/revisionAdapter.test.ts` (16 tests) plus `tests/unit/word/revisionAdapter.apply.test.ts` (17 tests) plus `tests/unit/word/capabilityProbe.test.ts` (12 tests) plus `tests/unit/word/smokeApply.test.ts` (5 tests) plus `tests/unit/taskpane/components/smokePlan.test.ts` (9 tests) cover gate refusal, validation failure, missing `currentDocHash`, hash mismatch, successful application, `body.getRange("Whole")` plus `range.set({ start, end })` offset resolution, all eight change kinds, reverse-offset application order, out-of-bounds range errors, unsupported-host refusal, per-change isolation, invalid-range and missing-payload pre-flight checks, the `setStage01Passed(true)` capability-snapshot requirement, Word-global break-enum resolution (plus the unavailable-enums failure path), Word-global break detection, the styles lookup-method fallback, `changeTrackingMode`/`trackRevisions` manageability, tracked apply with restore and fallback, demo-plan building, stale refusal, and selection locating/planning.
+- `npx tsc --noEmit`, `npx eslint src tests --max-warnings 0`, `npx vitest run` (429 tests), `npm run build`, `npm run validate`, and `npm run stage:verify` all pass.
 - Live in-Word adapter smoke is still pending; no mutation was attempted in this repository run. The adapter targets the documented Word JavaScript API (`body.getRange("Whole")`, `range.set`, `range.style`, `range.paragraphFormat.set`, `range.font.set`, `range.listFormat.set`, `range.insertBreak` with `Word.BreakType` plus `Word.InsertLocation`) but live host behavior for `range.set` (WordApiDesktop 1.4) and formatting paths remains unproven until a human sideload session records results below.
 
 ## Host matrix

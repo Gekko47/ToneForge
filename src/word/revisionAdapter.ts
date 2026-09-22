@@ -136,6 +136,174 @@ export async function applyChangePlan(
   return results;
 }
 
+export interface TrackingReport {
+  /** True when the adapter could read and control the tracking mode. */
+  managed: boolean;
+  /** Tracking mode observed before applying (`Off` | `TrackAll` | `TrackMineOnly`). */
+  modeBefore?: string;
+  /** Tracking mode left behind after restore (absent when restore failed). */
+  modeAfter?: string;
+  /** Tracked-revision count observed after applying (WordApi 1.6 only). */
+  recordedCount?: number;
+}
+
+export interface ApplyWithTrackingResult {
+  results: RevisionResult[];
+  tracking: TrackingReport;
+}
+
+/**
+ * Apply a ChangePlan with revision tracking managed around the mutations.
+ *
+ * When the host exposes tracking control (`Document.changeTrackingMode`,
+ * WordApi 1.4, or `Document.trackRevisions`, WordApiDesktop 1.4), tracking is
+ * switched on before the first change and restored afterwards, so every
+ * applied change is natively recorded as a tracked revision. The per-change
+ * `RevisionResult[]` is still the tool's record of what it changed.
+ *
+ * When tracking control is unavailable, edits are applied normally and
+ * reported as `tracking.managed: false` — they are still tracked if the user
+ * has Track Changes enabled in the Word UI, but the add-in cannot guarantee
+ * or verify it. Failures to enable, restore, or count revisions are never
+ * fatal to the plan itself.
+ */
+export async function applyChangePlanWithTracking(
+  plan: ChangePlan,
+  currentDocHash: string,
+): Promise<ApplyWithTrackingResult> {
+  const enablement = await enableRevisionTracking();
+  const results = await applyChangePlan(plan, currentDocHash);
+  const modeAfter = await restoreRevisionTracking(enablement);
+  const recordedCount = enablement.managed ? await countRecordedRevisions() : undefined;
+  const tracking: TrackingReport = { managed: enablement.managed };
+  if (enablement.modeBefore !== undefined) {
+    tracking.modeBefore = enablement.modeBefore;
+  }
+  if (modeAfter !== undefined) {
+    tracking.modeAfter = modeAfter;
+  }
+  if (recordedCount !== undefined) {
+    tracking.recordedCount = recordedCount;
+  }
+  return { results, tracking };
+}
+
+interface DocumentTrackingView {
+  load?: (props: string) => void;
+  changeTrackingMode?: unknown;
+  trackRevisions?: unknown;
+}
+
+function trackingDocument(context: Office.Context): DocumentTrackingView {
+  return context.document as unknown as DocumentTrackingView;
+}
+
+const KNOWN_TRACKING_MODES: readonly string[] = ["Off", "TrackAll", "TrackMineOnly"];
+
+async function readTrackingMode(): Promise<{ mode: string; desktop: boolean } | undefined> {
+  try {
+    return await runInWord(async (context) => {
+      const doc = trackingDocument(context);
+      if (typeof doc.load !== "function") return undefined;
+      try {
+        doc.load("changeTrackingMode");
+        await context.sync();
+      } catch {
+        return undefined;
+      }
+      if (
+        typeof doc.changeTrackingMode === "string" &&
+        KNOWN_TRACKING_MODES.includes(doc.changeTrackingMode)
+      ) {
+        return { mode: doc.changeTrackingMode, desktop: false };
+      }
+      try {
+        doc.load("trackRevisions");
+        await context.sync();
+      } catch {
+        return undefined;
+      }
+      if (typeof doc.trackRevisions === "boolean") {
+        return { mode: doc.trackRevisions ? "TrackAll" : "Off", desktop: true };
+      }
+      return undefined;
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+interface TrackingEnablement {
+  managed: boolean;
+  modeBefore?: string;
+  changed: boolean;
+  desktop: boolean;
+}
+
+async function enableRevisionTracking(): Promise<TrackingEnablement> {
+  const read = await readTrackingMode();
+  if (read === undefined) return { managed: false, changed: false, desktop: false };
+  if (read.mode !== "Off") {
+    return { managed: true, modeBefore: read.mode, changed: false, desktop: read.desktop };
+  }
+  try {
+    await runInWord(async (context) => {
+      const doc = trackingDocument(context);
+      if (read.desktop) {
+        (doc as { trackRevisions?: unknown }).trackRevisions = true;
+      } else {
+        (doc as { changeTrackingMode?: unknown }).changeTrackingMode = "TrackAll";
+      }
+      await context.sync();
+    });
+    return { managed: true, modeBefore: read.mode, changed: true, desktop: read.desktop };
+  } catch (err) {
+    logger.warn("Failed to enable revision tracking; applying unmanaged", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return { managed: false, modeBefore: read.mode, changed: false, desktop: read.desktop };
+  }
+}
+
+async function restoreRevisionTracking(state: TrackingEnablement): Promise<string | undefined> {
+  if (!state.changed) return state.modeBefore;
+  try {
+    await runInWord(async (context) => {
+      const doc = trackingDocument(context);
+      if (state.desktop) {
+        (doc as { trackRevisions?: unknown }).trackRevisions = state.modeBefore !== "Off";
+      } else {
+        (doc as { changeTrackingMode?: unknown }).changeTrackingMode = state.modeBefore;
+      }
+      await context.sync();
+    });
+    return state.modeBefore;
+  } catch (err) {
+    logger.warn("Failed to restore change tracking mode", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
+}
+
+async function countRecordedRevisions(): Promise<number | undefined> {
+  try {
+    return await runInWord(async (context) => {
+      const body = context.document.body as unknown as {
+        getTrackedChanges?: () => { load?: (props: string) => void; items?: unknown[] };
+      };
+      if (typeof body.getTrackedChanges !== "function") return undefined;
+      const collection = body.getTrackedChanges();
+      if (!collection || typeof collection.load !== "function") return undefined;
+      collection.load("items");
+      await context.sync();
+      return Array.isArray(collection.items) ? collection.items.length : undefined;
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 async function applySingleChange(change: Change): Promise<void> {
   await runInWord(async (context) => {
     switch (change.type) {

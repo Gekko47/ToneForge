@@ -4,6 +4,7 @@ import { ThemeProvider as LocalThemeProvider } from "../theme";
 import { createDefaultTheme } from "../fluentTheme";
 import { probeWordCapabilities } from "../../word/capabilityProbe";
 import { probeOfficeRuntime, formatDiagnostics } from "../../shared/office/diagnostics";
+import SmokePanel from "../components/SmokePanel";
 
 const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
@@ -92,6 +93,7 @@ export default function Dashboard(): React.ReactNode {
               {diag}
             </pre>
           )}
+          <SmokePanel />
         </main>
       </ThemeProvider>
     </LocalThemeProvider>
