@@ -85,7 +85,32 @@ preview-before-apply at every step; nothing mutates without an explicit click:
 Human-run SmokePanel session on a Lorem Ipsum test document with Track
 Changes enabled in the Word UI. No unhandled exceptions in any run.
 
-Observed panel log (abridged, oldest first):
+### Re-probe after the ADR-0027 fix (same host, later run)
+
+```json
+{
+  "supportsInsertText": true,
+  "supportsReplaceText": true,
+  "supportsInsertParagraph": true,
+  "supportsInsertBreak": false,
+  "supportsStyles": false,
+  "supportsRevisions": true,
+  "hostName": "Word",
+  "hostVersion": null
+}
+```
+
+`supportsRevisions` flipped `false → true`, confirming the corrected probe
+(manageability via `changeTrackingMode`/`trackRevisions`) works on this host
+while the old `document.trackedChanges` check could never have returned true.
+`supportsInsertBreak` is still false because the diagnostics show
+`Word.InsertLocation: true` but no `Word.BreakType` — the probe correctly
+reports false rather than guessing a break value. `supportsStyles` is still
+false (loaded items empty; `getByNameOrNullObject` fallback is a secondary
+signal only and needs a live re-probe). These two are genuine host gaps, not
+probe bugs.
+
+### Observed panel log (abridged, oldest first)
 
 ```text
 Selection text was not found in the document body — re-select and try again.
