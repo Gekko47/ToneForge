@@ -27,6 +27,10 @@ import type { WordCapabilities } from "./capabilityProbe";
  * Explicit human opt-in that flips the Stage 01 mutation gate for the smoke
  * test. Requires the capability snapshot from a fresh in-Word probe run —
  * never enable blindly.
+ *
+ * @deprecated Use the Stage 21 `reformatDocument` production path for
+ * profile-driven reformatting. This helper remains only for the Stage 18
+ * live-smoke harness and must not be extended.
  */
 export function enableSmokeMutations(capabilities: WordCapabilities): void {
   setStage01Passed(true, capabilities);
@@ -42,6 +46,10 @@ export interface DemoPlan {
  * an appended smoke marker plus an uppercase tweak of the opening characters
  * when the body is non-empty. Ranges and the doc hash come from a fresh
  * snapshot so the plan is never stale at build time.
+ *
+ * @deprecated Stage 21 owns profile-driven planning through
+ * `src/reformat/orchestrator.ts`. Keep this helper only for the historical
+ * Stage 18 smoke harness.
  */
 export async function buildDemoChangePlan(): Promise<DemoPlan> {
   const snapshot = await getDocumentSnapshot();
@@ -91,6 +99,9 @@ export async function buildDemoChangePlan(): Promise<DemoPlan> {
  * Apply any caller-built plan through the tracked adapter path. The caller
  * supplies the live document hash observed at preview time; a mismatch
  * refuses application instead of corrupting an edited document.
+ *
+ * @deprecated Stage 21 applies through `reformatDocument`; this entry point is
+ * retained only so the Stage 18 live-smoke harness remains reproducible.
  */
 export async function applySmokePlan(
   plan: ChangePlan,

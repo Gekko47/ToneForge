@@ -31,30 +31,32 @@ Rule/Formatting Engine   LLM Semantic Engine
                   |
         conflict/stale checks
                   |
-     Word Mutation Adapter
+      Word Mutation Adapter
                   |
-            Word revisions
+             Word revisions
 ```
 
 ## Module boundaries
 
-| Module                                 | Allowed imports                                                      | Forbidden imports                                                        |
-| -------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `core/domain`                          | `zod`, `shared/utils`                                                | `word`, `ai`, `ui`, `Office`                                             |
-| `rules`, `formatting`, `style/metrics` | `core/domain`, `shared/utils`                                        | `ai`, `Office`, `ui`                                                     |
-| `analysis`                             | `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils` | `ui`, `word/revisionAdapter`                                             |
-| `changes`                              | `core/domain`, `shared/utils`                                        | `analysis`, `rules`, `formatting`, `style`, `ai`, `word`, `ui`, `Office` |
-| `word`                                 | `shared/office`, `core/domain`                                       | `ai`, `ui`                                                               |
-| `ai/providers`                         | `core/config`, `shared/utils`                                        | `word`, `ui`                                                             |
-| `ui/*`                                 | `core/*`, `shared/*`, `ai/providers`, `word/documentReader`          | `word/revisionAdapter` directly                                          |
+| Module                                 | Allowed imports                                                                                   | Forbidden imports                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `core/domain`                          | `zod`, `shared/utils`                                                                             | `word`, `ai`, `ui`, `Office`                                             |
+| `rules`, `formatting`, `style/metrics` | `core/domain`, `shared/utils`                                                                     | `ai`, `Office`, `ui`                                                     |
+| `analysis`                             | `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils`                              | `ui`, `word/revisionAdapter`                                             |
+| `changes`                              | `core/domain`, `shared/utils`                                                                     | `analysis`, `rules`, `formatting`, `style`, `ai`, `word`, `ui`, `Office` |
+| `reformat`                             | `core/domain`, `analysis`, `changes`, `formatting` DTOs, `word/*`, `ai/providers`, `shared/utils` | `taskpane`, `commands`, direct `Office.run`                              |
+| `word`                                 | `shared/office`, `core/domain`                                                                    | `ai`, `ui`                                                               |
+| `ai/providers`                         | `core/config`, `shared/utils`                                                                     | `word`, `ui`                                                             |
+| `ui/*`                                 | `core/*`, `shared/*`, `ai/providers`, `word/documentReader`                                       | `word/revisionAdapter` directly                                          |
 
 ## Data flow
 
 1. **Capture**: `style/sampleCapture` → quality gate → `style/metrics` (deterministic) + `ai/providers` (semantic).
 2. **Profile**: `core/domain/StyleProfile` is the canonical, editable, versioned object.
-3. **Analyze**: `analysis/unifiedFindings` merges deterministic `rules`/`formatting` findings with semantic `ai` deviations into `Findings[]`.
-4. **Plan**: `changes/planner` turns `Findings[]` into `ChangePlan` with conflict/stale checks.
-5. **Apply**: `word/revisionAdapter` is the ONLY module that calls `Office.run` to mutate Word.
+3. **Analyze**: `analysis/consistencyChecker` composes deterministic `rules`/`formatting` findings with optional semantic `ai` deviations and returns a findings-only report.
+4. **Orchestrate**: `reformat/orchestrator` snapshots the document, delegates analysis, plans the report, and exposes preview or tracked apply without importing UI or commands.
+5. **Plan**: `changes/planner` turns `Findings[]` into `ChangePlan` with conflict/stale metadata.
+6. **Apply**: `word/revisionAdapter` is the ONLY module that calls `Office.run` to mutate Word; the legacy Stage 18 smoke helpers are deprecated and retained only for historical live-smoke reproduction.
 
 ## Technology stack
 

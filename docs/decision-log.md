@@ -177,6 +177,14 @@
 - **Addendum 2026-09-22 (Just-Me default)**: when enabling tracking from `Off`, the adapter sets `TrackMineOnly` rather than `TrackAll` — least invasive in shared documents, and still captures every tool-applied edit because those run through the current user's session. The desktop `trackRevisions` boolean has no per-user mode and simply turns on.
 - **Addendum 2026-09-22 (re-probe)**: a later probe on the same host returned `supportsRevisions: true` (was false) while `supportsInsertBreak` and `supportsStyles` stayed false. The `supportsRevisions` flip proves the corrected manageability check works; the two remaining falses are genuine host gaps, not probe bugs — diagnostics show `Word.InsertLocation: true` but no `Word.BreakType`, so the probe correctly refuses to guess a break value, and styles loaded empty with only a secondary `getByNameOrNullObject` signal. The probe reports what the host exposes; it does not invent capability.
 
+### ADR-0028 — Stage 21 reformat orchestration boundary
+
+- **Status**: Accepted (2026-09-22)
+- **Context**: Stage 20 returns a findings-only `ConsistencyReport`, Stage 17 produces a validated `ChangePlan`, and Stage 18 applies plans through the tracked revision adapter. Stage 21 needs one taskpane-safe composition point without duplicating planning, stale, privacy, or mutation logic, while the locked scope explicitly excludes Dashboard UI wiring and Stage 22 confirmation UX.
+- **Decision**: Add `src/reformat/orchestrator.ts` as the Stage 21 boundary. It reads the document and optional formatting snapshots through `runInWord`, delegates hybrid analysis to `checkConsistency`, passes the report and snapshot hash into `planChanges`, and either returns a preview plan or calls `applyChangePlanWithTracking`. The caller may supply an apply-time `currentDocHash`; that value is passed into planning so `plan.stale` is populated before adapter validation. Preview never enters the mutation adapter. Empty text skips the formatting read and produces an empty report/plan.
+- **Consequences**: UI code can consume a single typed entry point without importing `word/revisionAdapter`; preview, no-change, stale, gate, abort, semantic opt-in, provided-snapshot, and tracking-fallback behavior are testable at the integration boundary. The legacy `src/word/smokeApply.ts` helpers are marked `@deprecated` and retained only to preserve the reproducible Stage 18 live-smoke harness; Dashboard redirection is intentionally deferred because UI wiring is outside Stage 21. Stage 22 remains responsible for any additional re-hash confirmation workflow.
+- **Implementation evidence**: `src/reformat/orchestrator.ts`, `src/reformat/index.ts`, `tests/integration/reformatOrchestrator.test.ts`, and the `src/reformat/**/*.ts` ESLint boundary.
+
 ### ADR-0026 — Break enums resolve from the Word global at runtime
 
 - **Status**: Accepted (2026-09-22)

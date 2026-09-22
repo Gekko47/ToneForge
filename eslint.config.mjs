@@ -177,6 +177,27 @@ export default [
     },
   },
   {
+    // Enforces docs/architecture.md: reformat/ is the orchestrator and may
+    // compose analysis, changes, word/documentReader, word/formattingReader,
+    // word/revisionAdapter, ai/providers, and shared/utils. It must never
+    // import taskpane or commands (Stage 22 UI confirmation is out of scope).
+    files: ["src/reformat/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/taskpane/*", "**/commands/*"],
+              message:
+                "reformat/ must not import ui or commands; mutations go through word/revisionAdapter (architecture.md).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Enforces docs/architecture.md: ai/providers must not depend on word or ui.
     files: ["src/ai/**/*.ts"],
     rules: {
