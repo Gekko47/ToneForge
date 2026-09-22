@@ -450,19 +450,11 @@ export default function ProfileEditor(): React.ReactNode {
   }
 
   function restoreHistorySnapshot(snapshot: StyleProfile): void {
-    upsertProfile(snapshot);
-    setActiveProfile(snapshot.id);
     setContext((prev) => ({
       ...prev,
       baseProfile: snapshot,
-      draftBaseProfile: snapshot,
-      savedProfile: snapshot,
-      profiles: prev.profiles.some((item) => item.id === snapshot.id)
-        ? prev.profiles.map((item) => (item.id === snapshot.id ? snapshot : item))
-        : [...prev.profiles, snapshot],
-      history: appendSnapshot(prev.history, snapshot),
       values: profileToValues(snapshot),
-      dirty: false,
+      dirty: !sameEditableSnapshot(snapshot, prev.savedProfile ?? prev.baseProfile),
       savedAt: null,
       fieldErrors: {},
       error: null,
@@ -667,6 +659,7 @@ export default function ProfileEditor(): React.ReactNode {
             autoComplete="on"
             options={comboBoxOptions(toneSuggestions)}
             errorMessage={fieldErrors["semantic.tone"] ?? ""}
+            buttonIconProps={{ iconName: "caret" }}
             onInputValueChange={(value) => patch({ tone: value ?? "" })}
             onChange={(_event, optionValue, _index, value) =>
               patch({ tone: comboBoxValue(optionValue, value) })
@@ -680,6 +673,7 @@ export default function ProfileEditor(): React.ReactNode {
             autoComplete="on"
             options={comboBoxOptions(voiceSuggestions)}
             errorMessage={fieldErrors["semantic.voice"] ?? ""}
+            buttonIconProps={{ iconName: "caret" }}
             onInputValueChange={(value) => patch({ voice: value ?? "" })}
             onChange={(_event, optionValue, _index, value) =>
               patch({ voice: comboBoxValue(optionValue, value) })
@@ -727,6 +721,7 @@ export default function ProfileEditor(): React.ReactNode {
             autoComplete="on"
             options={comboBoxOptions(rhetoricalStyleSuggestions)}
             errorMessage={fieldErrors["semantic.rhetoricalStyle"] ?? ""}
+            buttonIconProps={{ iconName: "caret" }}
             onInputValueChange={(value) => patch({ rhetoricalStyle: value ?? "" })}
             onChange={(_event, optionValue, _index, value) =>
               patch({ rhetoricalStyle: comboBoxValue(optionValue, value) })

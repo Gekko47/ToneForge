@@ -285,7 +285,7 @@ describe("ProfileEditor", () => {
     expect(inputByValue(document.body, "formal")).toBeInTheDocument();
   });
 
-  it("restores a history snapshot and immediately switches the active profile", async () => {
+  it("restores a history snapshot as an unsaved draft without writing to persistence", async () => {
     const user = userEvent.setup();
     const previous = {
       ...profile,
@@ -304,12 +304,33 @@ describe("ProfileEditor", () => {
     render(<ProfileEditor />);
     await user.click(within(document.body).getByRole("button", { name: /Restore v1.2.3/ }));
 
-    await waitFor(() => {
-      expect(mocks.upsertProfile).toHaveBeenCalledWith(
-        expect.objectContaining({ id: previous.id }),
-      );
-    });
-    expect(mocks.setActiveProfile).toHaveBeenCalledWith(previous.id);
+    expect(mocks.upsertProfile).not.toHaveBeenCalled();
+    expect(mocks.setActiveProfile).not.toHaveBeenCalled();
     expect(inputByValue(document.body, "formal")).toBeInTheDocument();
+    expect(lastByRole("button", { name: "Save profile" })).toBeEnabled();
+    expect(lastByRole("button", { name: "Reset changes" })).toBeEnabled();
+  });
+
+  it("renders a visible caret icon on the tone, voice, and rhetorical style combo boxes", () => {
+    const { container } = render(<ProfileEditor />);
+    const toneField = within(container).getByRole("combobox", {
+      name: (name) => name.startsWith("Tone"),
+    });
+    const voiceField = within(container).getByRole("combobox", {
+      name: (name) => name.startsWith("Voice"),
+    });
+    const rhetoricField = within(container).getByRole("combobox", {
+      name: (name) => name.startsWith("Rhetorical style"),
+    });
+
+    for (const field of [toneField, voiceField, rhetoricField]) {
+      const wrapper = field.parentElement;
+      expect(wrapper).toBeTruthy();
+      const caretButton = wrapper?.querySelector("button.ms-ComboBox-CaretDown-button");
+      expect(caretButton).toBeTruthy();
+      const icon = caretButton?.querySelector("i.ms-Icon");
+      expect(icon).toBeTruthy();
+      expect(icon?.getAttribute("data-icon-name")).toBe("caret");
+    }
   });
 });
