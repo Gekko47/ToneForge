@@ -235,19 +235,19 @@ async function applySingleChange(change: Change): Promise<void> {
         break;
       }
       case "insertBreak": {
-        // Desktop Stage 01 did not expose Office.InsertBreakBehavior.
         requireVerifiedCapability(change.id, "supportsInsertBreak", "insertBreak");
         const range = await getRangeByOffset(context, change.range);
         const breakType = (change.payload as { breakType?: "line" | "page" | "nextParagraph" })
           .breakType;
+        const enums = resolveBreakEnums(change.id);
         const breakValues: Record<string, Office.BreakType> = {
-          line: Office.BreakType.LineBreak,
-          page: Office.BreakType.PageBreak,
-          nextParagraph: Office.BreakType.NextParagraph,
+          line: enums.breakType.LineBreak,
+          page: enums.breakType.PageBreak,
+          nextParagraph: enums.breakType.NextParagraph,
         };
         const breakValue =
-          breakValues[breakType ?? "nextParagraph"] ?? Office.BreakType.NextParagraph;
-        range.insertBreak(breakValue, Office.InsertLocation.After);
+          breakValues[breakType ?? "nextParagraph"] ?? enums.breakType.NextParagraph;
+        range.insertBreak(breakValue, enums.insertLocation.After);
         break;
       }
       case "setListLevel": {
@@ -264,6 +264,51 @@ async function applySingleChange(change: Change): Promise<void> {
     }
     await context.sync();
   });
+}
+
+/**
+ * Resolve break enums from the live host at runtime.
+ *
+ * Live Desktop Word (WebView2, 2026-09-22 diagnostics) exposes
+ * `Word.BreakType` / `Word.InsertLocation` while `Office.InsertBreakBehavior`
+ * (and `Office.BreakType`, which exists only as a TypeScript namespace
+ * merge, not a runtime property) is absent. Reading `Office.BreakType`
+ * directly would yield `undefined` and crash `insertBreak` in production.
+ * Prefer the `Word` global; fall back to the `Office` test-double values so
+ * unit tests keep working without a live host.
+ */
+function resolveBreakEnums(changeId: string): {
+  breakType: {
+    NextParagraph: Office.BreakType;
+    LineBreak: Office.BreakType;
+    PageBreak: Office.BreakType;
+  };
+  insertLocation: { After: Office.InsertLocation };
+} {
+  const globals = globalThis as unknown as {
+    Word?: {
+      BreakType?: {
+        NextParagraph: Office.BreakType;
+        LineBreak: Office.BreakType;
+        PageBreak: Office.BreakType;
+      };
+      InsertLocation?: { After: Office.InsertLocation };
+    };
+    Office?: {
+      BreakType?: {
+        NextParagraph: Office.BreakType;
+        LineBreak: Office.BreakType;
+        PageBreak: Office.BreakType;
+      };
+      InsertLocation?: { After: Office.InsertLocation };
+    };
+  };
+  const breakType = globals.Word?.BreakType ?? globals.Office?.BreakType;
+  const insertLocation = globals.Word?.InsertLocation ?? globals.Office?.InsertLocation;
+  if (!breakType || !insertLocation) {
+    throw new Error(`insertBreak enums are unavailable in this host (change ${changeId})`);
+  }
+  return { breakType, insertLocation };
 }
 
 /**

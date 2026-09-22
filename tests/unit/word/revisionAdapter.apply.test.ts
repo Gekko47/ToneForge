@@ -343,6 +343,76 @@ describe("applyChangePlan apply path", () => {
     expect(rangeMock.listFormat.set).toHaveBeenCalled();
   });
 
+  it("resolves break enums from the Word global when Office values are absent", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const { rangeMock } = installApplyMock();
+    const previousWord = (globalThis as { Word?: unknown }).Word;
+    const previousOffice = (globalThis as { Office?: unknown }).Office;
+    // Simulate the live host: Word global carries the enums, Office does not.
+    const officeWithoutEnums = {
+      ...(previousOffice as Record<string, unknown>),
+    };
+    delete officeWithoutEnums.BreakType;
+    delete officeWithoutEnums.InsertLocation;
+    delete officeWithoutEnums.InsertBreakBehavior;
+    (globalThis as { Office?: unknown }).Office = officeWithoutEnums;
+    (globalThis as { Word?: unknown }).Word = {
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
+    };
+    try {
+      const plan = createChangePlan("hash-123", "doc-1", [
+        {
+          id: "123e4567-e89b-12d3-a456-426614174006",
+          type: "insertBreak",
+          range: { start: 5, end: 5 },
+          payload: { breakType: "page" },
+          rationale: "test",
+          reversible: true,
+        },
+      ]);
+      const results = await applyChangePlan(plan, "hash-123");
+      expect(results[0]?.applied).toBe(true);
+      expect(rangeMock.insertBreak).toHaveBeenCalledWith(2, 1);
+    } finally {
+      (globalThis as { Word?: unknown }).Word = previousWord;
+      (globalThis as { Office?: unknown }).Office = previousOffice;
+    }
+  });
+
+  it("reports applied:false when break enums are unavailable in the host", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    installApplyMock();
+    const previousWord = (globalThis as { Word?: unknown }).Word;
+    const previousOffice = (globalThis as { Office?: unknown }).Office;
+    const officeWithoutEnums = {
+      ...(previousOffice as Record<string, unknown>),
+    };
+    delete officeWithoutEnums.BreakType;
+    delete officeWithoutEnums.InsertLocation;
+    delete officeWithoutEnums.InsertBreakBehavior;
+    (globalThis as { Office?: unknown }).Office = officeWithoutEnums;
+    (globalThis as { Word?: unknown }).Word = undefined;
+    try {
+      const plan = createChangePlan("hash-123", "doc-1", [
+        {
+          id: "123e4567-e89b-12d3-a456-426614174006",
+          type: "insertBreak",
+          range: { start: 5, end: 5 },
+          payload: { breakType: "line" },
+          rationale: "test",
+          reversible: true,
+        },
+      ]);
+      const results = await applyChangePlan(plan, "hash-123");
+      expect(results[0]?.applied).toBe(false);
+      expect(results[0]?.error).toContain("unavailable in this host");
+    } finally {
+      (globalThis as { Word?: unknown }).Word = previousWord;
+      (globalThis as { Office?: unknown }).Office = previousOffice;
+    }
+  });
+
   it("reports applied:false and error for unsupported applyStyle", async () => {
     setStage01Passed(true, { ...FULL_CAPABILITIES, supportsStyles: false });
     installApplyMock();

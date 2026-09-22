@@ -89,7 +89,7 @@ export default function Dashboard(): React.ReactNode {
           )}
           {diag && (
             <pre style={{ marginTop: "1rem", whiteSpace: "pre-wrap" }} aria-live="polite">
-              {JSON.stringify(diag, null, 2)}
+              {diag}
             </pre>
           )}
         </main>

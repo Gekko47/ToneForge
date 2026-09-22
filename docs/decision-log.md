@@ -168,6 +168,13 @@
 - **Decision**: Add an `eslint.config.mjs` scope for `src/analysis/**/*.ts` with `no-restricted-imports` forbidding `**/taskpane/*`, `**/commands/*`, and `**/word/revisionAdapter*`. This mirrors the existing `core/domain`, `word/`, `rules/`, `formatting/`, and `ai/` scopes and keeps `analysis/` free of UI and mutation dependencies.
 - **Consequences**: Boundary violations fail `npm run lint`. The scope is intentionally permissive about `rules/` and `formatting/` because Stage 16 consumes their `Finding` outputs; if a future stage needs `analysis/` to call a deterministic engine directly, that is already permitted. `npm run verify` remains green.
 
+### ADR-0026 — Break enums resolve from the Word global at runtime
+
+- **Status**: Accepted (2026-09-22)
+- **Context**: Live Desktop Word diagnostics (WebView2, 2026-09-22) showed `Word.InsertLocation: true` while `Office.InsertBreakBehavior` is absent. Two defects followed: (1) the capability probe checked only `Office.InsertBreakBehavior`, reporting a false-negative `supportsInsertBreak: false` on a capable host; (2) the revision adapter read `Office.BreakType` / `Office.InsertLocation`, which typecheck via TypeScript namespace merging but are `undefined` at runtime, so `insertBreak` would crash in production.
+- **Decision**: Probe break support via `hasWordBreakSupport()`, which checks `Word.BreakType` / `Word.InsertLocation` key presence first and falls back to the legacy `Office.InsertBreakBehavior` check for test doubles and older hosts. Resolve adapter enums at runtime in `resolveBreakEnums()` preferring the `Word` global, falling back to `Office` test-double values, and throwing an explicit per-change `unavailable in this host` error when neither exists. Harden the styles probe with a `getByNameOrNullObject` fallback signal when the loaded items array is empty. `supportsRevisions: false` (`document.trackedChanges` unavailable) remains a genuine host limitation with the insert/replace fallback per ADR-0005/ADR-0008.
+- **Consequences**: Re-probing live Word is expected to flip `supportsInsertBreak` to true. Styles and revisions still need a live re-probe before they can be trusted. The taskpane diagnostics view now renders the preformatted string directly instead of double-encoding newlines.
+
 ### ADR-0025 — Revision adapter range resolution via whole-body Range plus set()
 
 - **Status**: Accepted (2026-09-22)

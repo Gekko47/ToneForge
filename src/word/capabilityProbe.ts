@@ -93,9 +93,7 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
       async () => {
         const result = await runInWordSafe(async (context) => {
           const range = getProbeRange(context);
-          return (
-            range !== null && hasMethod(range, "insertBreak") && hasOfficeInsertBreakBehavior()
-          );
+          return range !== null && hasMethod(range, "insertBreak") && hasWordBreakSupport();
         });
         return result === true;
       },
@@ -108,8 +106,20 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
           if (!styles || typeof styles.load !== "function") return false;
           styles.load("name");
           await context.sync();
-          const items = (styles as unknown as { items?: unknown[] }).items;
-          return Array.isArray(items) && items.length > 0;
+          const stylesView = styles as unknown as {
+            items?: unknown[];
+            getByNameOrNullObject?: unknown;
+          };
+          if (Array.isArray(stylesView.items) && stylesView.items.length > 0) {
+            return true;
+          }
+          // Fallback signal: an empty items array after load may be a
+          // load-semantics quirk rather than absence of the styles API.
+          // A named-style lookup method proves the API surface exists, which
+          // is all `range.style = name` (applyStyle) needs. Live Desktop Word
+          // reported false here on 2026-09-22, so this path still needs a
+          // live re-probe before it can be trusted.
+          return typeof stylesView.getByNameOrNullObject === "function";
         });
         return result === true;
       },
@@ -177,6 +187,28 @@ function getProbeRange(context: Office.Context): Office.Range | null {
 
 function hasMethod(target: unknown, methodName: string): boolean {
   return typeof (target as { [key: string]: unknown })[methodName] === "function";
+}
+
+function hasWordBreakSupport(): boolean {
+  // Live Desktop Word (WebView2, 2026-09-22 diagnostics) exposes break enums
+  // on the `Word` global (`Word.InsertLocation: true`) while
+  // `Office.InsertBreakBehavior` is absent. Check the Word global first so
+  // the probe does not report a false negative on a capable host.
+  const word = (
+    globalThis as unknown as {
+      Word?: { BreakType?: unknown; InsertLocation?: unknown };
+    }
+  ).Word;
+  if (
+    word?.BreakType !== undefined &&
+    word?.InsertLocation !== undefined &&
+    Object.prototype.hasOwnProperty.call(word.BreakType, "NextParagraph") &&
+    Object.prototype.hasOwnProperty.call(word.InsertLocation, "After")
+  ) {
+    return true;
+  }
+  // Legacy fallback for test doubles and older hosts.
+  return hasOfficeInsertBreakBehavior();
 }
 
 function hasOfficeInsertBreakBehavior(): boolean {

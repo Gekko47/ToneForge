@@ -155,6 +155,56 @@ describe("probeWordCapabilities", () => {
     expect(caps.hostVersion).toBeNull();
   });
 
+  it("detects break support from the Word global when Office.InsertBreakBehavior is absent", async () => {
+    // Reproduces the live Desktop Word (WebView2, 2026-09-22) diagnostics:
+    // `Word.InsertLocation: true` but `Office.InsertBreakBehavior: false`.
+    const previousWord = (globalThis as { Word?: unknown }).Word;
+    const previousOffice = (globalThis as { Office?: unknown }).Office;
+    const officeWithoutBreakBehavior = fullOffice();
+    delete (officeWithoutBreakBehavior as Record<string, unknown>).InsertBreakBehavior;
+    setOffice(officeWithoutBreakBehavior);
+    (globalThis as { Word?: unknown }).Word = {
+      // Route Word.run through the full mock so the probe range resolves;
+      // the setup.ts Office double's getSelection lacks getRange.
+      run: officeWithoutBreakBehavior.run,
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
+    };
+    try {
+      const caps = await probeWordCapabilities();
+      expect(caps.supportsInsertBreak).toBe(true);
+    } finally {
+      (globalThis as { Word?: unknown }).Word = previousWord;
+      setOffice(previousOffice);
+    }
+  });
+
+  it("reports supportsStyles:true when the styles lookup API exists but items load empty", async () => {
+    setOffice(
+      fullOffice({
+        document: {
+          body: {
+            text: "",
+            load: vi.fn(),
+            getRange: vi.fn(() => ({ insertText: vi.fn(), load: vi.fn() })),
+          },
+          getSelection: vi.fn(() => ({
+            getRange: vi.fn(() => ({ insertText: vi.fn(), load: vi.fn() })),
+          })),
+          styles: {
+            name: "",
+            load: vi.fn(),
+            items: [],
+            getByNameOrNullObject: vi.fn(),
+          },
+          trackedChanges: { load: vi.fn(), items: [] },
+        },
+      }),
+    );
+    const caps = await probeWordCapabilities();
+    expect(caps.supportsStyles).toBe(true);
+  });
+
   it("supportsInsertText and supportsReplaceText share the same underlying probe", async () => {
     setOffice(fullOffice());
     const caps = await probeWordCapabilities();

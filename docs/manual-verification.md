@@ -2,10 +2,62 @@
 
 This file records manual Word host results. **Status: IN PROGRESS — Stage 01 Desktop Word result recorded; full Stage 27 matrix still pending.**
 
+## Stage 18 live diagnosis — 2026-09-22 (taskpane probe + runtime diagnostics)
+
+Sideloaded Desktop Word taskpane returned:
+
+```json
+{
+  "supportsInsertText": true,
+  "supportsReplaceText": true,
+  "supportsInsertParagraph": true,
+  "supportsInsertBreak": false,
+  "supportsStyles": false,
+  "supportsRevisions": false,
+  "hostName": "Word",
+  "hostVersion": null
+}
+```
+
+Runtime diagnostics reported `Word.run: true`, `Word.InsertLocation: true`,
+`Office.InsertBreakBehavior: false`, `Office.run: false`,
+`Office.roamingSettings: false`, and no `Office.context.host`.
+
+Root causes identified (see ADR-0026):
+
+- `supportsInsertBreak: false` was a **probe bug, not a host gap**. The probe
+  checked `Office.InsertBreakBehavior`, which this host does not expose, while
+  the host _does_ expose `Word.BreakType` / `Word.InsertLocation`. Fixed by
+  `hasWordBreakSupport()` (Word global first, Office fallback). Re-probing is
+  expected to flip this flag to true.
+- The adapter's `insertBreak` read `Office.BreakType` / `Office.InsertLocation`,
+  which are `undefined` at runtime (TypeScript namespace merge only). Fixed by
+  `resolveBreakEnums()` (Word global first, Office test-double fallback,
+  explicit per-change error when neither exists).
+- `supportsStyles: false` root cause is still unknown (loaded items empty).
+  The probe now also accepts a named-style lookup method as a secondary
+  signal; a live re-probe must confirm before trusting it.
+- `supportsRevisions: false` (`document.trackedChanges` unavailable) is a
+  genuine host limitation; the insert/replace fallback per ADR-0005/ADR-0008
+  stands.
+- `Office.roamingSettings: false` means persistence uses the localStorage
+  fallback in this host (already handled per ADR-0007/ADR-0010).
+- The diagnostics view double-encoded newlines (`JSON.stringify` on a string);
+  fixed to render the preformatted text directly.
+
+**To close the Stage 18 hard gate, re-run in live Word after rebuilding:**
+
+1. `npm run build`, sideload per `docs/onboarding.md`, open a test document.
+2. Click **Probe Word capabilities** — expect `supportsInsertBreak: true`;
+   record the full JSON below with host version.
+3. Apply a minimal `ChangePlan` (one `replaceText` + one `insertText`) via the
+   adapter and record per-change `applied` flags plus any exceptions.
+4. Record results in the host matrix and the Stage 18 smoke section below.
+
 ## Stage 18 unit verification note
 
-- `tests/unit/word/revisionAdapter.test.ts` (16 tests) plus `tests/unit/word/revisionAdapter.apply.test.ts` (12 tests) cover gate refusal, validation failure, missing `currentDocHash`, hash mismatch, successful application, `body.getRange("Whole")` plus `range.set({ start, end })` offset resolution, all eight change kinds, reverse-offset application order, out-of-bounds range errors, unsupported-host refusal, per-change isolation, invalid-range and missing-payload pre-flight checks, and the `setStage01Passed(true)` capability-snapshot requirement.
-- `npx tsc --noEmit`, `npx eslint src tests --max-warnings 0`, `npx vitest run` (401 tests), `npm run build`, and `npm run validate` pass for the Stage 18 code and tests. `npm run stage:verify` reports format FAIL only on pre-existing unformatted files outside Stage 18 scope (e.g. `src/core/state/persistence.ts`, `src/taskpane/`); all Stage 18 files are Prettier-clean.
+- `tests/unit/word/revisionAdapter.test.ts` (16 tests) plus `tests/unit/word/revisionAdapter.apply.test.ts` (14 tests) plus `tests/unit/word/capabilityProbe.test.ts` (11 tests) cover gate refusal, validation failure, missing `currentDocHash`, hash mismatch, successful application, `body.getRange("Whole")` plus `range.set({ start, end })` offset resolution, all eight change kinds, reverse-offset application order, out-of-bounds range errors, unsupported-host refusal, per-change isolation, invalid-range and missing-payload pre-flight checks, the `setStage01Passed(true)` capability-snapshot requirement, Word-global break-enum resolution (plus the unavailable-enums failure path), Word-global break detection, and the styles lookup-method fallback.
+- `npx tsc --noEmit`, `npx eslint src tests --max-warnings 0`, `npx vitest run` (415 tests), `npm run build`, `npm run validate`, and `npm run stage:verify` all pass.
 - Live in-Word adapter smoke is still pending; no mutation was attempted in this repository run. The adapter targets the documented Word JavaScript API (`body.getRange("Whole")`, `range.set`, `range.style`, `range.paragraphFormat.set`, `range.font.set`, `range.listFormat.set`, `range.insertBreak` with `Word.BreakType` plus `Word.InsertLocation`) but live host behavior for `range.set` (WordApiDesktop 1.4) and formatting paths remains unproven until a human sideload session records results below.
 
 ## Host matrix
