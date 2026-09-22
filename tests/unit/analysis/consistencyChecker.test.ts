@@ -67,6 +67,7 @@ describe("checkConsistency", () => {
     expect(report.summary.total).toBe(0);
     expect(report.profileId).toBe(PROFILE.id);
     expect(report.docHash).toMatch(/^[0-9a-f]{8}$/);
+    expect(report.semanticStatus).toBe("skipped");
     expect(complete).not.toHaveBeenCalled();
   });
 
@@ -108,6 +109,7 @@ describe("checkConsistency", () => {
 
     expect(complete).not.toHaveBeenCalled();
     expect(report.summary.byKind.semantic).toBe(0);
+    expect(report.semanticStatus).toBe("skipped");
   });
 
   it("runs semantic when includeRawText is true via MockAdapter", async () => {
@@ -130,6 +132,7 @@ describe("checkConsistency", () => {
     expect(report.summary.byKind.deterministic).toBe(0);
     expect(report.findings[0]?.kind).toBe("semantic");
     expect(report.findings[0]?.category).toBe("semantic-deviation");
+    expect(report.semanticStatus).toBe("ok");
   });
 
   it("continues without semantic findings when the provider throws", async () => {
@@ -145,6 +148,8 @@ describe("checkConsistency", () => {
 
     expect(report.summary.byKind.semantic).toBe(0);
     expect(report.findings.length).toBeGreaterThan(0);
+    expect(report.semanticStatus).toBe("degraded");
+    expect(report.semanticError).toContain("network down");
   });
 
   it("propagates caller abort instead of returning a partial report", async () => {
@@ -245,6 +250,8 @@ describe("checkConsistency", () => {
 
     expect(report.summary.byKind.semantic).toBe(0);
     expect(report.findings.length).toBeGreaterThan(0);
+    expect(report.semanticStatus).toBe("degraded");
+    expect(report.semanticError).toContain("not valid JSON");
   });
 
   it("computes a deterministic docHash when none is supplied", async () => {

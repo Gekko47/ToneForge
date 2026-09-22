@@ -13,7 +13,11 @@
 
 import { checkConsistency, type ConsistencyReport } from "../analysis/consistencyChecker";
 import { planChanges } from "../changes/planner";
-import { applyChangePlanWithTracking, type ApplyWithTrackingResult } from "../word/revisionAdapter";
+import {
+  applyChangePlanWithTracking,
+  STAGE_01_PASSED,
+  type ApplyWithTrackingResult,
+} from "../word/revisionAdapter";
 import { getDocumentSnapshot, hashDocument, type DocumentSnapshot } from "../word/documentReader";
 import { getFormattingSnapshot } from "../word/formattingReader";
 import { type FormattingSnapshot } from "../formatting/formattingSnapshot";
@@ -64,7 +68,8 @@ const DEFAULT_MAX_CHARS = 500_000;
  *
  * Empty text short-circuits to an empty report and plan with no apply step.
  * Provider failures are logged and skipped inside the checker; caller abort
- * is propagated. The Stage 01 capability gate is enforced inside the adapter.
+ * is propagated. The Stage 01 capability gate is enforced by the orchestrator
+ * pre-entry; the adapter check remains defense-in-depth.
  */
 export async function reformatDocument(options: ReformatOptions): Promise<ReformatResult> {
   const {
@@ -120,6 +125,38 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
       report,
       plan,
       results: [],
+      tracking: { managed: false },
+      snapshot,
+      stale: plan.stale,
+      applied: false,
+    };
+  }
+
+  // Stale plans never enter the mutation adapter. The adapter guard remains
+  // defense-in-depth, but the orchestrator already knows the plan is doomed.
+  if (plan.stale) {
+    return {
+      report,
+      plan,
+      results: [],
+      tracking: { managed: false },
+      snapshot,
+      stale: plan.stale,
+      applied: false,
+    };
+  }
+
+  // Stage 01 gate pre-entry refusal. Snapshot/analyze/plan are read-only/pure,
+  // so the mutation gate is enforced at exactly the boundary that matters.
+  if (!STAGE_01_PASSED) {
+    return {
+      report,
+      plan,
+      results: plan.changes.map((change) => ({
+        changeId: change.id,
+        applied: false,
+        error: "Stage 01 Office.js capability probe has not passed; mutation blocked",
+      })),
       tracking: { managed: false },
       snapshot,
       stale: plan.stale,

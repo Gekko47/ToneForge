@@ -62,6 +62,8 @@ export const ConsistencyReportSchema = z.object({
   summary: ConsistencySummarySchema,
   profileId: z.string().uuid(),
   docHash: z.string().trim().min(1),
+  semanticStatus: z.enum(["ok", "skipped", "degraded"]).default("ok"),
+  semanticError: z.string().optional(),
 });
 
 export type ConsistencyReport = z.infer<typeof ConsistencyReportSchema>;
@@ -95,12 +97,34 @@ function summarize(findings: Finding[]): ConsistencySummary {
   return summary;
 }
 
-function buildReport(findings: Finding[], profileId: string, docHash: string): ConsistencyReport {
+export interface SemanticStatus {
+  status: "ok" | "skipped" | "degraded";
+  error?: string;
+}
+
+function buildReport(
+  findings: Finding[],
+  profileId: string,
+  docHash: string,
+  semantic?: SemanticStatus,
+): ConsistencyReport {
+  const status = semantic?.status ?? "ok";
+  if (status === "degraded" && semantic?.error !== undefined) {
+    return ConsistencyReportSchema.parse({
+      findings,
+      summary: summarize(findings),
+      profileId,
+      docHash,
+      semanticStatus: status,
+      semanticError: semantic.error,
+    });
+  }
   return ConsistencyReportSchema.parse({
     findings,
     summary: summarize(findings),
     profileId,
     docHash,
+    semanticStatus: status,
   });
 }
 
@@ -125,7 +149,7 @@ export async function checkConsistency(
   const snapshot = options.snapshot ? FormattingSnapshotSchema.parse(options.snapshot) : undefined;
 
   if (text.trim().length === 0) {
-    return buildReport([], profile.id, docHash ?? hashText(text));
+    return buildReport([], profile.id, docHash ?? hashText(text), { status: "skipped" });
   }
 
   const deterministic: Finding[] = [];
@@ -135,6 +159,7 @@ export async function checkConsistency(
   const formatting: Finding[] = snapshot ? findFormattingIssues({ snapshot, profile }) : [];
 
   let semantic: Finding[] = [];
+  let semanticStatus: SemanticStatus = includeRawText ? { status: "ok" } : { status: "skipped" };
   if (includeRawText) {
     const deviationOpts: DeviationOptions = {
       includeRawText: true,
@@ -150,13 +175,15 @@ export async function checkConsistency(
       if (signal?.aborted) {
         throw err;
       }
+      const message = err instanceof Error ? err.message : String(err);
       logger.warn("Semantic consistency check failed; continuing without semantic findings", {
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
       });
+      semanticStatus = { status: "degraded", error: message };
     }
   }
 
   const findings = unifyFindings({ deterministic, formatting, semantic });
 
-  return buildReport(findings, profile.id, docHash ?? hashText(text));
+  return buildReport(findings, profile.id, docHash ?? hashText(text), semanticStatus);
 }

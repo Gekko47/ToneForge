@@ -220,10 +220,10 @@ describe("reformatDocument integration", () => {
     });
 
     expect(result.plan.stale).toBe(true);
-    expect(result.results.every((item) => !item.applied)).toBe(true);
-    expect(result.results[0]?.error).toContain("stale");
+    expect(result.results).toEqual([]);
+    expect(result.tracking).toEqual({ managed: false });
     expect(result.applied).toBe(false);
-    expect(applySpy).toHaveBeenCalledTimes(1);
+    expect(applySpy).not.toHaveBeenCalled();
   });
 
   it("respects the Stage 01 capability gate", async () => {
@@ -236,10 +236,12 @@ describe("reformatDocument integration", () => {
       includeRawText: false,
     });
 
+    expect(result.results.length).toBeGreaterThan(0);
     expect(result.results.every((item) => !item.applied)).toBe(true);
     expect(result.results[0]?.error).toContain("capability probe");
+    expect(result.tracking).toEqual({ managed: false });
     expect(result.applied).toBe(false);
-    expect(applySpy).toHaveBeenCalledTimes(1);
+    expect(applySpy).not.toHaveBeenCalled();
   });
 
   it("propagates caller abort", async () => {
