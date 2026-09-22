@@ -59,6 +59,14 @@ function makeState(profile: StyleProfile = makeProfile()) {
   };
 }
 
+function withVersion(profile: StyleProfile, patch: number): StyleProfile {
+  return {
+    ...profile,
+    version: { major: 1, minor: 0, patch },
+    updatedAt: `2024-01-0${patch + 1}T00:00:00.000Z`,
+  };
+}
+
 function lastByRole(
   role: Parameters<typeof screen.getAllByRole>[0],
   options?: Parameters<typeof screen.getAllByRole>[1],
@@ -75,14 +83,14 @@ describe("ProfileEditor", () => {
   const profile = makeProfile();
 
   beforeEach(() => {
-    localStorage.clear();
+    window.localStorage.clear();
     vi.clearAllMocks();
     mocks.loadState.mockReturnValue(makeState(profile));
   });
 
   afterEach(() => {
     cleanup();
-    localStorage.clear();
+    window.localStorage.clear();
     vi.restoreAllMocks();
   });
 
@@ -309,6 +317,128 @@ describe("ProfileEditor", () => {
     expect(inputByValue(document.body, "formal")).toBeInTheDocument();
     expect(lastByRole("button", { name: "Save profile" })).toBeEnabled();
     expect(lastByRole("button", { name: "Reset changes" })).toBeEnabled();
+  });
+
+  it("saves a restored earlier revision as the next patch of the latest revision", async () => {
+    const user = userEvent.setup();
+    const latest = withVersion(makeProfile(), 2);
+    const previous = {
+      ...latest,
+      semantic: {
+        ...latest.semantic,
+        tone: "formal",
+        rhetoricalStyle: "narrative",
+      },
+      version: { major: 1, minor: 0, patch: 1 },
+      updatedAt: "2024-01-02T00:00:00.000Z",
+    };
+    mocks.loadState.mockReturnValue({
+      version: 2,
+      profiles: [latest],
+      profileHistory: { [latest.id]: [previous, latest] },
+      activeProfileId: latest.id,
+      settings: { telemetryDisabled: true },
+    });
+
+    const { container } = render(<ProfileEditor />);
+    await user.click(within(document.body).getByRole("button", { name: /Restore v1.0.1/ }));
+
+    expect(inputByValue(container, "formal")).toBeInTheDocument();
+    expect(inputByValue(container, "narrative")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Resolve validation errors to preview profile changes."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Save this profile to establish a baseline for change previews."),
+    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        within(container).getByText((content) =>
+          content.includes("Profile changes from v1.0.2 to v1.0.2"),
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(container).queryByText((content) =>
+          content.includes("Profile changes from v1.0.2 to v1.0.1"),
+        ),
+      ).not.toBeInTheDocument();
+    });
+
+    await user.click(lastByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.upsertProfile).toHaveBeenCalledTimes(1);
+    });
+    const saved = mocks.upsertProfile.mock.calls[0]?.[0] as StyleProfile;
+    expect(saved.id).toBe(latest.id);
+    expect(saved.version).toEqual({ major: 1, minor: 0, patch: 3 });
+    expect(saved.semantic.tone).toBe("formal");
+    expect(saved.semantic.rhetoricalStyle).toBe("narrative");
+    expect(mocks.setActiveProfile).toHaveBeenCalledWith(latest.id);
+  });
+
+  it("resets a restored snapshot to the latest revision data", async () => {
+    const user = userEvent.setup();
+    const latest = withVersion(makeProfile(), 2);
+    const previous = {
+      ...latest,
+      semantic: {
+        ...latest.semantic,
+        tone: "formal",
+        rhetoricalStyle: "narrative",
+      },
+      version: { major: 1, minor: 0, patch: 1 },
+      updatedAt: "2024-01-02T00:00:00.000Z",
+    };
+    mocks.loadState.mockReturnValue({
+      version: 2,
+      profiles: [latest],
+      profileHistory: { [latest.id]: [previous, latest] },
+      activeProfileId: latest.id,
+      settings: { telemetryDisabled: true },
+    });
+
+    const { container } = render(<ProfileEditor />);
+    await user.click(within(document.body).getByRole("button", { name: /Restore v1.0.1/ }));
+    await user.click(lastByRole("button", { name: "Reset changes" }));
+
+    expect(inputByValue(container, "neutral")).toBeInTheDocument();
+    expect(inputByValue(container, "direct")).toBeInTheDocument();
+    expect(within(container).getByRole("textbox", { name: "Version" })).toHaveValue("v1.0.2");
+    expect(lastByRole("button", { name: "Save profile" })).toBeDisabled();
+    expect(lastByRole("button", { name: "Reset changes" })).toBeDisabled();
+    expect(mocks.upsertProfile).not.toHaveBeenCalled();
+    expect(mocks.setActiveProfile).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-bump again after an explicit patch following restore", async () => {
+    const user = userEvent.setup();
+    const latest = withVersion(makeProfile(), 2);
+    const previous = {
+      ...latest,
+      semantic: { ...latest.semantic, tone: "formal" },
+      version: { major: 1, minor: 0, patch: 1 },
+      updatedAt: "2024-01-02T00:00:00.000Z",
+    };
+    mocks.loadState.mockReturnValue({
+      version: 2,
+      profiles: [latest],
+      profileHistory: { [latest.id]: [previous, latest] },
+      activeProfileId: latest.id,
+      settings: { telemetryDisabled: true },
+    });
+
+    render(<ProfileEditor />);
+    await user.click(within(document.body).getByRole("button", { name: /Restore v1.0.1/ }));
+    await user.click(lastByRole("button", { name: "Patch" }));
+    expect(within(document.body).getByRole("textbox", { name: "Version" })).toHaveValue("v1.0.3");
+    await user.click(lastByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.upsertProfile).toHaveBeenCalledTimes(1);
+    });
+    const saved = mocks.upsertProfile.mock.calls[0]?.[0] as StyleProfile;
+    expect(saved.version).toEqual({ major: 1, minor: 0, patch: 3 });
   });
 
   it("renders a visible caret icon on the tone, voice, and rhetorical style combo boxes", () => {

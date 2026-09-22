@@ -450,16 +450,30 @@ export default function ProfileEditor(): React.ReactNode {
   }
 
   function restoreHistorySnapshot(snapshot: StyleProfile): void {
-    setContext((prev) => ({
-      ...prev,
-      baseProfile: snapshot,
-      draftBaseProfile: snapshot,
-      values: profileToValues(snapshot),
-      dirty: !sameEditableSnapshot(snapshot, prev.savedProfile ?? prev.baseProfile),
-      savedAt: null,
-      fieldErrors: {},
-      error: null,
-    }));
+    setContext((prev) => {
+      // Preserve the latest baseline so Save bumps the latest patch and Reset
+      // reverts to latest revision data. Snapshot content is loaded as an
+      // unsaved draft but keeps the latest version so VersionDiff shows content
+      // changes only, never a version downgrade.
+      const latest = prev.savedProfile ?? prev.draftBaseProfile;
+      const restored: StyleProfile = {
+        ...snapshot,
+        id: latest.id,
+        version: latest.version,
+        createdAt: latest.createdAt,
+        measured: latest.measured,
+        sourceSampleIds: latest.sourceSampleIds,
+      };
+      return {
+        ...prev,
+        baseProfile: restored,
+        values: profileToValues(restored),
+        dirty: !sameEditableSnapshot(restored, prev.savedProfile ?? prev.baseProfile),
+        savedAt: null,
+        fieldErrors: {},
+        error: null,
+      };
+    });
   }
 
   function save(): void {

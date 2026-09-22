@@ -1,26 +1,42 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createEmptyProfile } from "../../../../src/core/domain/index";
 import {
   loadState,
   upsertProfile,
   removeProfile,
   setActiveProfile,
+  saveState,
 } from "../../../../src/core/state/index";
 
 describe("persistence", () => {
+  let originalOffice: unknown;
+
   beforeEach(() => {
-    localStorage.clear();
+    originalOffice = (globalThis as { Office?: unknown }).Office;
+    (globalThis as { Office?: unknown }).Office = undefined;
+    window.localStorage.clear();
   });
 
   afterEach(() => {
-    localStorage.clear();
+    (globalThis as { Office?: unknown }).Office = originalOffice;
+    window.localStorage.clear();
   });
 
-  it("returns default state when empty", () => {
-    const state = loadState();
-    expect(state.profiles).toEqual([]);
-    expect(state.profileHistory).toEqual({});
-    expect(state.activeProfileId).toBeNull();
+  it("reads and writes through jsdom window storage", () => {
+    const getItem = vi.spyOn(Storage.prototype, "getItem");
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+    saveState({
+      version: 2,
+      profiles: [],
+      profileHistory: {},
+      activeProfileId: null,
+      settings: { telemetryDisabled: false },
+    });
+
+    expect(loadState().settings.telemetryDisabled).toBe(false);
+    expect(getItem).toHaveBeenCalled();
+    expect(setItem).toHaveBeenCalled();
   });
 
   it("round-trips a profile", () => {

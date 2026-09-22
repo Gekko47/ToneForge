@@ -94,12 +94,48 @@ async function setRoamingSettingsAsync(value: Record<string, unknown>): Promise<
   });
 }
 
+function createMemoryStorage(): Storage {
+  const store = new Map<string, string>();
+  return {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => {
+      store.clear();
+    },
+    key: (index: number) => Array.from(store.keys())[index] ?? null,
+    get length(): number {
+      return store.size;
+    },
+  };
+}
+
+const memoryStorage = createMemoryStorage();
+
+function getSafeStorage(): Storage {
+  if (typeof window !== "undefined") {
+    try {
+      return window.localStorage ?? memoryStorage;
+    } catch {
+      return memoryStorage;
+    }
+  }
+
+  // Do not probe Node's experimental global localStorage getter. Non-browser
+  // callers still get a usable, process-local fallback.
+  return memoryStorage;
+}
+
 function getLocalStorage(): Record<string, unknown> | null {
-  if (typeof localStorage === "undefined") return null;
+  const storage = getSafeStorage();
   try {
     return (
-      parsePersistedValue(localStorage.getItem(STORAGE_KEY)) ??
-      parsePersistedValue(localStorage.getItem(LEGACY_STORAGE_KEY))
+      parsePersistedValue(storage.getItem(STORAGE_KEY)) ??
+      parsePersistedValue(storage.getItem(LEGACY_STORAGE_KEY))
     );
   } catch {
     return null;
@@ -107,11 +143,10 @@ function getLocalStorage(): Record<string, unknown> | null {
 }
 
 function setLocalStorage(value: Record<string, unknown>): void {
-  if (typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    getSafeStorage().setItem(STORAGE_KEY, JSON.stringify(value));
   } catch {
-    // localStorage may be full or unavailable; ignore silently.
+    // Storage may be unavailable or full; ignore silently.
   }
 }
 

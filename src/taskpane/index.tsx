@@ -4,9 +4,11 @@ import { ErrorBoundary } from "react-error-boundary";
 import { initializeIcons } from "@fluentui/react/lib/Icons";
 import App from "./App";
 
-// Register Fluent UI icons (caret, chevrondown, etc.) before any component renders.
+// Register Fluent UI icons (ChevronDown, etc.) before any component renders.
 // Without this call, Fluent UI emits "icon not registered" warnings for every
-// ComboBox, Dropdown, and icon-bearing control in the taskpane.
+// ComboBox, Dropdown, and icon-bearing control in the taskpane. The ComboBox
+// caret is the default ChevronDown icon once fonts are registered; no custom
+// buttonIconProps is needed.
 initializeIcons();
 
 function renderFallback(): React.ReactNode {

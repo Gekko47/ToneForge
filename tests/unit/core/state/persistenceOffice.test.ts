@@ -14,7 +14,7 @@ describe("persistence with Office roamingSettings", () => {
     | undefined;
 
   beforeEach(() => {
-    localStorage.clear();
+    window.localStorage.clear();
     officeRuntime = {
       roamingSettings: {
         get: () => null,
@@ -29,7 +29,7 @@ describe("persistence with Office roamingSettings", () => {
 
   afterEach(() => {
     (globalThis as unknown as { Office?: typeof officeRuntime }).Office = undefined;
-    localStorage.clear();
+    window.localStorage.clear();
   });
 
   it("reads from roamingSettings when available", () => {
