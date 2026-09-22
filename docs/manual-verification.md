@@ -2,6 +2,12 @@
 
 This file records manual Word host results. **Status: IN PROGRESS — Stage 01 Desktop Word result recorded; full Stage 27 matrix still pending.**
 
+## Stage 18 unit verification note
+
+- `tests/unit/word/revisionAdapter.test.ts` covers gate refusal, validation failure, hash mismatch, successful application, per-change isolation, empty-plan handling, and out-of-bounds range errors.
+- Full `npm run verify` passes for the Stage 18 code and tests.
+- Live in-Word adapter smoke is still pending; no mutation was attempted in this repository run.
+
 ## Host matrix
 
 | Host                     | Version | Browser/Engine    | Sideload OK | Taskpane renders | Probe passes | Notes                                                                 |

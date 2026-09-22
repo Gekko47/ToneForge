@@ -18,12 +18,12 @@ Add the native Word revision adapter — the single mutation path.
 
 ## Verification
 
-- [ ] `npm run typecheck` passes
-- [ ] `npm run test` passes
+- [x] `npm run typecheck` passes
+- [x] `npm run test` passes
 - [ ] Adapter runs inside Word without unhandled exceptions
-- [ ] Results recorded in `docs/manual-verification.md`
-- [ ] `docs/project-state.md` updated
+- [ ] Live results recorded in `docs/manual-verification.md`
+- [x] `docs/project-state.md` updated
 
 ## Status
 
-PENDING — must run inside Word.
+PARTIAL — automated verification is complete, but the live in-Word smoke test remains pending.
