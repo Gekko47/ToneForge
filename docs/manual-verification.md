@@ -80,6 +80,56 @@ preview-before-apply at every step; nothing mutates without an explicit click:
    findings preview, then **Apply plan** and record the outcome.
 5. Record everything in the host matrix and the Stage 18 smoke section below.
 
+## Stage 18 live smoke result — 2026-09-22 (Desktop Word, Edge 153)
+
+Human-run SmokePanel session on a Lorem Ipsum test document with Track
+Changes enabled in the Word UI. No unhandled exceptions in any run.
+
+Observed panel log (abridged, oldest first):
+
+```text
+Selection text was not found in the document body — re-select and try again.
+Found 1 finding(s) producing 1 change(s). Review below, then Apply.
+Applied 0 of 1 change(s). ... failed: Stage 01 ... not passed; mutation blocked
+Found 2 finding(s) producing 2 change(s). Review below, then Apply.
+Applied 0 of 2 change(s). ... failed: Stage 01 ... not passed (x2)
+Stage 01 gate enabled for this session. Mutations allowed.
+Found 1 finding(s) producing 1 change(s). Review below, then Apply.
+Applied 1 of 1 change(s). Tracking [managed: yes, before: TrackAll, after: TrackAll, recorded: 1].
+Found 2 finding(s) producing 2 change(s). Review below, then Apply.
+Applied 2 of 2 change(s). Tracking [managed: yes, before: TrackAll, after: TrackAll, recorded: 3].
+Demo plan ready with 2 change(s). Review below, then Apply.
+Applied 2 of 2 change(s). Tracking [managed: yes, before: TrackAll, after: TrackAll, recorded: 5].
+(+ 6 further demo cycles, each Applied 2 of 2, recorded: 5)
+```
+
+What this proves:
+
+- Gate refusal works live (per-change `applied: false`, never fatal), then the
+  explicit gate enable unblocks mutations — the exact safety sequence designed.
+- `changeTrackingMode` management works live: `managed: yes` on every apply,
+  which independently confirms the host carries WordApi 1.4 tracking control
+  (the old `document.trackedChanges` probe could never have shown this).
+- Selection flow applies 1/1 and 2/2 with recorded counts; demo flow applies
+  2/2 repeatedly; document text visibly mutates (smoke markers appended).
+- Hash/stale refusal and per-change isolation are unit-proven; the live log
+  shows the gate path, which is the same refusal shape.
+
+Caveats recorded honestly:
+
+- `recorded` plateaued at 5 across later runs while text kept changing. Word
+  likely coalesces adjacent same-author revisions, so the recorded count is
+  best-effort evidence, not an exact audit counter. Per-change `applied` flags
+  remain the tool's record.
+- Repeated runs on one document compound edits (7 appended markers; opening
+  characters re-tweaked each run). For clean evidence, use a **fresh test
+  document per run**: paste the Lorem Ipsum text, run one demo cycle, record.
+- Single-letter insertions observed (`Mmountains`, `Llive`, `FAR F!Far`) are
+  consistent with repeated-run compounding, but insert-vs-replace range
+  semantics deserve a dedicated fresh-doc single-change check as follow-up.
+- Only `insertText`/`replaceText` were exercised live. `insertBreak`,
+  `applyStyle`, `setListLevel`, and formatting paths remain mock-verified.
+
 ## Stage 18 unit verification note
 
 - `tests/unit/word/revisionAdapter.test.ts` (16 tests) plus `tests/unit/word/revisionAdapter.apply.test.ts` (17 tests) plus `tests/unit/word/capabilityProbe.test.ts` (12 tests) plus `tests/unit/word/smokeApply.test.ts` (5 tests) plus `tests/unit/taskpane/components/smokePlan.test.ts` (9 tests) cover gate refusal, validation failure, missing `currentDocHash`, hash mismatch, successful application, `body.getRange("Whole")` plus `range.set({ start, end })` offset resolution, all eight change kinds, reverse-offset application order, out-of-bounds range errors, unsupported-host refusal, per-change isolation, invalid-range and missing-payload pre-flight checks, the `setStage01Passed(true)` capability-snapshot requirement, Word-global break-enum resolution (plus the unavailable-enums failure path), Word-global break detection, the styles lookup-method fallback, `changeTrackingMode`/`trackRevisions` manageability, tracked apply with restore and fallback, demo-plan building, stale refusal, and selection locating/planning.

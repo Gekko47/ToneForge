@@ -417,35 +417,37 @@ describe("applyChangePlan apply path", () => {
   it("manages revision tracking around the plan when the API is available", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
     const { rangeMock } = installApplyMock();
-    const docMock: Record<string, unknown> = {
-      load: vi.fn(),
-      changeTrackingMode: "Off",
-    };
-    const getTrackedChanges = vi.fn(() => ({
-      load: vi.fn(),
-      items: [{}, {}, {}],
-    }));
-    const context = {
-      document: {
-        body: {
-          text: "hello world",
-          load: vi.fn(),
-          getRange: vi.fn(() => rangeMock),
-          getTrackedChanges,
-        },
-        getSelection: vi.fn(),
-        styles: { load: vi.fn(), items: [] },
-        ...docMock,
-      },
-      host: { name: "Word", version: "16.0" },
-      sync: vi.fn(),
-    };
     // Share one mutable document object across runInWord sessions so mode
-    // transitions are observable.
-    const sharedDoc = context.document as Record<string, unknown>;
+    // transitions are observable. A setter records every assigned mode so the
+    // test proves tracking is enabled for "Just Me" before the mutations.
+    let currentMode: unknown = "Off";
+    const seenModes: unknown[] = [];
+    const sharedDoc: Record<string, unknown> = {
+      load: vi.fn(),
+      body: {
+        text: "hello world",
+        load: vi.fn(),
+        getRange: vi.fn(() => rangeMock),
+        getTrackedChanges: vi.fn(() => ({ load: vi.fn(), items: [{}, {}, {}] })),
+      },
+      getSelection: vi.fn(),
+      styles: { load: vi.fn(), items: [] },
+    };
+    Object.defineProperty(sharedDoc, "changeTrackingMode", {
+      configurable: true,
+      get: () => currentMode,
+      set: (value: unknown) => {
+        currentMode = value;
+        seenModes.push(value);
+      },
+    });
     (globalThis as { Office?: unknown }).Office = {
       run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> =>
-        func({ ...context, document: sharedDoc }),
+        func({
+          document: sharedDoc,
+          host: { name: "Word", version: "16.0" },
+          sync: vi.fn(),
+        }),
       roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
       InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
       BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
@@ -470,7 +472,8 @@ describe("applyChangePlan apply path", () => {
     expect(tracking.modeBefore).toBe("Off");
     expect(tracking.modeAfter).toBe("Off");
     expect(tracking.recordedCount).toBe(3);
-    // Tracking was enabled for the mutations, then restored.
+    // Tracking was enabled for "Just Me" for the mutations, then restored.
+    expect(seenModes).toEqual(["TrackMineOnly", "Off"]);
     expect(sharedDoc["changeTrackingMode"]).toBe("Off");
     expect(rangeMock.insertText).toHaveBeenCalledWith("X", "Replace");
   });

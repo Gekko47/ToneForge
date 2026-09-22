@@ -23,10 +23,10 @@ Add the native Word revision adapter — the single mutation path.
 
 - [x] `npm run typecheck` passes
 - [x] `npm run test` passes
-- [ ] Adapter runs inside Word without unhandled exceptions
-- [ ] Live results recorded in `docs/manual-verification.md`
+- [x] Adapter runs inside Word without unhandled exceptions (2026-09-22 SmokePanel session, Desktop Word Edge 153)
+- [x] Live results recorded in `docs/manual-verification.md` (gate sequence, tracked applies, recorded counts)
 - [x] `docs/project-state.md` updated
 
 ## Status
 
-PARTIAL — automated verification is complete (typecheck, lint, 37 mock tests, build, manifest validate), but the live in-Word smoke test remains pending (human-only; cannot pass in CI).
+PASS WITH DOCUMENTED LIMITATION — the live smoke run proves gate refusal, explicit enablement, tracked insert/replace application with managed tracking and recorded counts, and no unhandled exceptions. Limitation: only `insertText`/`replaceText` were exercised live; `insertBreak`, `applyStyle`, `setListLevel`, and formatting paths remain mock-verified, and a fresh-doc single-change check is still wanted for insert-vs-replace range semantics (see the live smoke result notes).

@@ -157,9 +157,10 @@ export interface ApplyWithTrackingResult {
  *
  * When the host exposes tracking control (`Document.changeTrackingMode`,
  * WordApi 1.4, or `Document.trackRevisions`, WordApiDesktop 1.4), tracking is
- * switched on before the first change and restored afterwards, so every
- * applied change is natively recorded as a tracked revision. The per-change
- * `RevisionResult[]` is still the tool's record of what it changed.
+ * switched on for the current user (`TrackMineOnly`, "Just Me") before the
+ * first change and restored afterwards, so every applied change is natively
+ * recorded as a tracked revision. The per-change `RevisionResult[]` is still
+ * the tool's record of what it changed.
  *
  * When tracking control is unavailable, edits are applied normally and
  * reported as `tracking.managed: false` — they are still tracked if the user
@@ -246,13 +247,19 @@ async function enableRevisionTracking(): Promise<TrackingEnablement> {
   if (read.mode !== "Off") {
     return { managed: true, modeBefore: read.mode, changed: false, desktop: read.desktop };
   }
+  // Enable tracking for the current user only ("Just Me"). This is the least
+  // invasive choice in shared documents — it does not start tracking other
+  // people's changes — and it still captures every edit this tool applies,
+  // because those edits are made through the current user's Word session.
+  // The desktop-only trackRevisions boolean has no per-user mode, so it
+  // simply turns tracking on.
   try {
     await runInWord(async (context) => {
       const doc = trackingDocument(context);
       if (read.desktop) {
         (doc as { trackRevisions?: unknown }).trackRevisions = true;
       } else {
-        (doc as { changeTrackingMode?: unknown }).changeTrackingMode = "TrackAll";
+        (doc as { changeTrackingMode?: unknown }).changeTrackingMode = "TrackMineOnly";
       }
       await context.sync();
     });
