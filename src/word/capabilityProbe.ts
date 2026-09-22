@@ -168,7 +168,7 @@ function getProbeRange(context: Office.Context): Office.Range | null {
   try {
     const selection = context.document.getSelection();
     if (typeof selection.getRange !== "function") return null;
-    const range = selection.getRange(0, 0);
+    const range = selection.getRange("Start");
     return range;
   } catch {
     return null;

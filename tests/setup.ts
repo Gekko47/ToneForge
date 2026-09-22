@@ -22,11 +22,19 @@ const officeMock = {
           paragraphs: { load: vi.fn(), items: [] },
           getRange: vi.fn(() => ({
             text: "",
-            insertText: vi.fn(),
+            insertText: vi.fn(function (this: unknown) {
+              return this;
+            }),
             insertBreak: vi.fn(),
             insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
             paragraphs: { load: vi.fn(), items: [] },
-            font: { name: "", size: 0, color: "", load: vi.fn() },
+            font: { name: "", size: 0, color: "", load: vi.fn(), set: vi.fn() },
+            paragraphFormat: { set: vi.fn() },
+            listFormat: { set: vi.fn() },
+            style: "",
+            set: vi.fn(function (this: unknown) {
+              return this;
+            }),
             load: vi.fn(),
           })),
         },
@@ -61,6 +69,8 @@ const officeMock = {
     }),
   },
   InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+  BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+  InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
 };
 
 (globalThis as { Office?: unknown }).Office = officeMock;

@@ -12,12 +12,38 @@ import { runInWord } from "../shared/office/officeHelpers";
 import { type ChangePlan } from "../core/domain/ChangePlan";
 import { type Change } from "../core/domain/Change";
 import { logger } from "../shared/utils/logger";
+import { type WordCapabilities } from "./capabilityProbe";
 
-/** Set to true only after Stage 01 probe passes in Word. */
+/** Set to true only after the Stage 01 probe passes in Word. */
 export let STAGE_01_PASSED = false;
+let STAGE_01_CAPABILITIES: WordCapabilities | undefined;
 
-export function setStage01Passed(passed: boolean): void {
+export function setStage01Passed(passed: boolean, capabilities?: WordCapabilities): void {
+  if (passed && capabilities === undefined) {
+    throw new Error("setStage01Passed(true) requires a verified WordCapabilities snapshot");
+  }
   STAGE_01_PASSED = passed;
+  STAGE_01_CAPABILITIES = passed ? capabilities : undefined;
+}
+
+function requireVerifiedCapability(
+  changeId: string,
+  capability: keyof Pick<
+    WordCapabilities,
+    "supportsInsertText" | "supportsReplaceText" | "supportsInsertBreak" | "supportsStyles"
+  >,
+  changeLabel: string,
+): void {
+  if (STAGE_01_CAPABILITIES === undefined) {
+    throw new Error(
+      `${changeLabel} requires a verified Stage 01 capability snapshot (change ${changeId})`,
+    );
+  }
+  if (STAGE_01_CAPABILITIES[capability] === false) {
+    throw new Error(
+      `${changeLabel} is not supported by the verified Stage 01 host (change ${changeId})`,
+    );
+  }
 }
 
 export interface RevisionResult {
@@ -30,16 +56,38 @@ export interface RevisionResult {
  * Apply a ChangePlan to the live Word document.
  * Each change is attempted independently; failures are collected, never fatal.
  *
- * Before any mutation, the live document hash is compared against the
- * ChangePlan's recorded docHash. If they differ the plan is stale and
- * application is refused — this prevents silent corruption when the
- * document has been edited since the plan was created.
+ * Before any mutation, the caller must provide the current live document hash.
+ * It is compared against the ChangePlan's recorded docHash. A missing or
+ * differing hash refuses application and prevents silent corruption when the
+ * document has changed since the plan was created.
+ *
+ * Changes are applied from the end of the original document toward the start.
+ * This preserves the planner's original offsets for non-overlapping changes as
+ * earlier text is inserted or deleted. Conflicting plans remain a Stage 22
+ * safety concern and are not resolved by this adapter.
  */
 export async function applyChangePlan(
   plan: ChangePlan,
-  currentDocHash?: string,
+  currentDocHash: string,
 ): Promise<RevisionResult[]> {
   const results: RevisionResult[] = [];
+  const problems = validatePlanBeforeApply(plan);
+
+  if (!currentDocHash || currentDocHash.trim().length === 0) {
+    problems.push("currentDocHash is required");
+  }
+
+  if (problems.length > 0) {
+    logger.warn("ChangePlan validation failed", { planId: plan.id, problems });
+    for (const change of plan.changes) {
+      results.push({
+        changeId: change.id,
+        applied: false,
+        error: `Plan validation failed: ${problems.join("; ")}`,
+      });
+    }
+    return results;
+  }
 
   if (!STAGE_01_PASSED) {
     logger.warn("Stage 01 gate not passed; refusing to apply ChangePlan", {
@@ -55,23 +103,7 @@ export async function applyChangePlan(
     return results;
   }
 
-  const problems = validatePlanBeforeApply(plan);
-  if (problems.length > 0) {
-    logger.warn("ChangePlan validation failed", { planId: plan.id, problems });
-    for (const change of plan.changes) {
-      results.push({
-        changeId: change.id,
-        applied: false,
-        error: `Plan validation failed: ${problems.join("; ")}`,
-      });
-    }
-    return results;
-  }
-
-  // docHash equality check: if the caller provides a current hash, it must
-  // match the plan's recorded hash. A mismatch means the document changed
-  // after the plan was created — applying would corrupt the document.
-  if (currentDocHash !== undefined && currentDocHash !== plan.docHash) {
+  if (currentDocHash !== plan.docHash) {
     logger.warn("Document hash mismatch; refusing to apply ChangePlan", {
       planId: plan.id,
       expected: plan.docHash,
@@ -87,7 +119,11 @@ export async function applyChangePlan(
     return results;
   }
 
-  for (const change of plan.changes) {
+  const orderedChanges = [...plan.changes].sort(
+    (left, right) => right.range.start - left.range.start || right.range.end - left.range.end,
+  );
+
+  for (const change of orderedChanges) {
     try {
       await applySingleChange(change);
       results.push({ changeId: change.id, applied: true });
@@ -103,94 +139,124 @@ export async function applyChangePlan(
 async function applySingleChange(change: Change): Promise<void> {
   await runInWord(async (context) => {
     switch (change.type) {
+      // Stage 01 Desktop Word verified text insertion and replacement. When
+      // revision tracking is enabled by the host, these mutations are tracked.
       case "insertText": {
+        requireVerifiedCapability(change.id, "supportsInsertText", "insertText");
         const range = await getRangeByOffset(context, change.range);
         range.insertText(String(change.payload.text ?? ""), "Replace");
         break;
       }
       case "replaceText": {
+        requireVerifiedCapability(change.id, "supportsReplaceText", "replaceText");
         const range = await getRangeByOffset(context, change.range);
         range.insertText(String(change.payload.text ?? ""), "Replace");
         break;
       }
       case "deleteRange": {
+        requireVerifiedCapability(change.id, "supportsReplaceText", "deleteRange");
         const range = await getRangeByOffset(context, change.range);
         range.insertText("", "Replace");
         break;
       }
       case "setParagraphFormat": {
         const range = await getRangeByOffset(context, change.range);
-        const paragraphs = range.paragraphs;
-        paragraphs.load("format");
-        await context.sync();
-        const format = (paragraphs as unknown as { format?: Record<string, unknown> }).format;
-        if (format && change.payload) {
-          Object.assign(format, change.payload);
+        const paragraphFormat = range.paragraphFormat;
+        if (!paragraphFormat) {
+          throw new Error("setParagraphFormat is not supported in this host");
+        }
+
+        const alignmentByDomain: Record<"left" | "center" | "right" | "justified", string> = {
+          left: "left",
+          center: "centered",
+          right: "right",
+          justified: "justified",
+        };
+        const payload = change.payload as {
+          alignment?: "left" | "center" | "right" | "justified";
+          lineSpacing?: number;
+          listLevel?: number;
+          spaceAfter?: number;
+          spaceBefore?: number;
+        };
+        const properties: Record<string, unknown> = {};
+        if (payload.alignment) {
+          properties.alignment = alignmentByDomain[payload.alignment];
+        }
+        if (payload.spaceAfter !== undefined) {
+          properties.spaceAfter = payload.spaceAfter;
+        }
+        if (payload.spaceBefore !== undefined) {
+          properties.spaceBefore = payload.spaceBefore;
+        }
+        if (Object.keys(properties).length > 0) {
+          paragraphFormat.set(properties);
+        }
+
+        if (change.payload.lineSpacing !== undefined) {
+          const paragraphs = range.paragraphs as unknown as {
+            space1?: () => void;
+            space1Pt5?: () => void;
+            space2?: () => void;
+          };
+          if (change.payload.lineSpacing === 1 && paragraphs.space1) {
+            paragraphs.space1();
+          } else if (change.payload.lineSpacing === 1.5 && paragraphs.space1Pt5) {
+            paragraphs.space1Pt5();
+          } else if (change.payload.lineSpacing === 2 && paragraphs.space2) {
+            paragraphs.space2();
+          } else {
+            throw new Error(
+              "setParagraphFormat supports lineSpacing values 1, 1.5, or 2 in this host",
+            );
+          }
+        }
+
+        if (change.payload.listLevel !== undefined) {
+          range.listFormat.set({ listLevelNumber: change.payload.listLevel });
         }
         break;
       }
       case "setCharacterFormat": {
         const range = await getRangeByOffset(context, change.range);
-        range.font.load("name", "size", "color", "bold", "italic", "underline");
-        await context.sync();
-        if (change.payload) {
-          const payload = change.payload as Record<string, unknown>;
-          if (typeof payload.name === "string")
-            (range.font as { name: string }).name = payload.name;
-          if (typeof payload.size === "number")
-            (range.font as { size: number }).size = payload.size;
-          if (typeof payload.color === "string")
-            (range.font as { color: string }).color = payload.color;
-          if (typeof payload.bold === "boolean")
-            (range.font as { bold: boolean }).bold = payload.bold;
-          if (typeof payload.italic === "boolean")
-            (range.font as { italic: boolean }).italic = payload.italic;
-          if (typeof payload.underline === "boolean")
-            (range.font as { underline: boolean }).underline = payload.underline;
-        }
+        range.font.set(change.payload);
         break;
       }
       case "applyStyle": {
-        await getRangeByOffset(context, change.range);
+        // Desktop Stage 01 did not verify style application, so callers must
+        // provide a positive capability result before this path is reachable.
+        requireVerifiedCapability(change.id, "supportsStyles", "applyStyle");
+        const range = await getRangeByOffset(context, change.range);
         const styleName = change.payload.styleName;
         if (typeof styleName !== "string" || !styleName.trim()) {
           throw new Error("applyStyle requires payload.styleName");
         }
-        const styles = context.document.styles;
-        styles.load("name");
-        await context.sync();
-        // Apply via style object if available; otherwise throw unsupported.
-        const styleObj = (
-          styles as unknown as { items: Array<{ name: string; apply?: () => void }> }
-        ).items.find((s) => s.name === styleName);
-        if (!styleObj || typeof styleObj.apply !== "function") {
-          throw new Error(`Style "${styleName}" not found or not applicable`);
-        }
-        styleObj.apply();
+        range.style = styleName;
         break;
       }
       case "insertBreak": {
+        // Desktop Stage 01 did not expose Office.InsertBreakBehavior.
+        requireVerifiedCapability(change.id, "supportsInsertBreak", "insertBreak");
         const range = await getRangeByOffset(context, change.range);
-        range.insertBreak(Office.InsertBreakBehavior.Paragraph);
+        const breakType = (change.payload as { breakType?: "line" | "page" | "nextParagraph" })
+          .breakType;
+        const breakValues: Record<string, Office.BreakType> = {
+          line: Office.BreakType.LineBreak,
+          page: Office.BreakType.PageBreak,
+          nextParagraph: Office.BreakType.NextParagraph,
+        };
+        const breakValue =
+          breakValues[breakType ?? "nextParagraph"] ?? Office.BreakType.NextParagraph;
+        range.insertBreak(breakValue, Office.InsertLocation.After);
         break;
       }
       case "setListLevel": {
         const range = await getRangeByOffset(context, change.range);
-        const paragraphs = range.paragraphs;
-        paragraphs.load("format");
-        await context.sync();
-        const level = change.payload.level;
-        if (typeof level !== "number") {
-          throw new Error("setListLevel requires payload.level as number");
+        const listFormat = range.listFormat;
+        if (!listFormat) {
+          throw new Error("setListLevel is not supported in this host");
         }
-        // Word JS: paragraph.format.setListLevel is available in newer hosts.
-        const format = (
-          paragraphs as unknown as { format?: { setListLevel?: (n: number) => void } }
-        ).format;
-        if (!format || typeof format.setListLevel !== "function") {
-          throw new Error("setListLevel not supported in this host");
-        }
-        format.setListLevel(level);
+        listFormat.set({ listLevelNumber: change.payload.level });
         break;
       }
       default:
@@ -202,7 +268,13 @@ async function applySingleChange(change: Change): Promise<void> {
 
 /**
  * Resolve a Range by character offset within the document body.
- * Uses body.search to find the range at the given offset.
+ *
+ * Uses the documented Word JavaScript API: `body.getRange("Whole")` returns
+ * a Range covering the entire body, then `range.set({ start, end })`
+ * (WordApiDesktop 1.4) narrows it to the planner's character offsets.
+ * Bounds are validated against the loaded body text before narrowing so
+ * out-of-range plans fail with a clear per-change error instead of a host
+ * exception.
  */
 async function getRangeByOffset(
   context: Office.Context,
@@ -217,11 +289,9 @@ async function getRangeByOffset(
       `Range [${range.start}, ${range.end}] is out of bounds for document of length ${text.length}`,
     );
   }
-  // Use getRange to obtain a Range at the offset.
-  const bodyWithGetRange = body as unknown as {
-    getRange: (start: number, length: number) => Office.Range;
-  };
-  return bodyWithGetRange.getRange(range.start, range.end - range.start);
+  const whole = body.getRange("Whole");
+  whole.set({ start: range.start, end: range.end });
+  return whole;
 }
 
 export function validatePlanBeforeApply(plan: ChangePlan): string[] {
@@ -235,5 +305,50 @@ export function validatePlanBeforeApply(plan: ChangePlan): string[] {
   if (plan.stale) {
     problems.push("ChangePlan is stale; re-plan before applying");
   }
+  for (const change of plan.changes) {
+    if (
+      !Number.isInteger(change.range.start) ||
+      !Number.isInteger(change.range.end) ||
+      change.range.start < 0 ||
+      change.range.end < 0 ||
+      change.range.start > change.range.end
+    ) {
+      problems.push(
+        `Change ${change.id} has an invalid range [${change.range.start}, ${change.range.end}]`,
+      );
+    }
+    const payloadProblem = validatePayloadForType(change);
+    if (payloadProblem !== undefined) {
+      problems.push(`Change ${change.id}: ${payloadProblem}`);
+    }
+  }
   return problems;
+}
+
+function validatePayloadForType(change: Change): string | undefined {
+  const payload = change.payload as Record<string, unknown>;
+  switch (change.type) {
+    case "insertText":
+    case "replaceText":
+      if (typeof payload["text"] !== "string" || payload["text"].length === 0) {
+        return `${change.type} requires a non-empty payload.text`;
+      }
+      return undefined;
+    case "applyStyle":
+      if (typeof payload["styleName"] !== "string" || payload["styleName"].trim().length === 0) {
+        return "applyStyle requires a non-empty payload.styleName";
+      }
+      return undefined;
+    case "setListLevel":
+      if (
+        typeof payload["level"] !== "number" ||
+        !Number.isInteger(payload["level"]) ||
+        payload["level"] < 0
+      ) {
+        return "setListLevel requires a non-negative integer payload.level";
+      }
+      return undefined;
+    default:
+      return undefined;
+  }
 }

@@ -6,6 +6,18 @@ import {
   validatePlanBeforeApply,
   setStage01Passed,
 } from "../../../src/word/revisionAdapter";
+import type { WordCapabilities } from "../../../src/word/capabilityProbe";
+
+const FULL_CAPABILITIES: WordCapabilities = {
+  supportsInsertText: true,
+  supportsReplaceText: true,
+  supportsInsertParagraph: true,
+  supportsInsertBreak: true,
+  supportsStyles: true,
+  supportsRevisions: false,
+  hostName: "Word",
+  hostVersion: "16.0",
+};
 
 describe("applyChangePlan gate", () => {
   beforeEach(() => {
@@ -30,7 +42,7 @@ describe("applyChangePlan gate", () => {
         reversible: true,
       },
     ]);
-    const results = await applyChangePlan(plan);
+    const results = await applyChangePlan(plan, "hash-123");
     expect(results).toHaveLength(1);
     expect(results[0]?.applied).toBe(false);
     expect(results[0]?.error).toContain("Stage 01");
@@ -41,13 +53,13 @@ describe("applyChangePlan gate", () => {
   });
 
   it("flags empty plan via validatePlanBeforeApply", async () => {
-    setStage01Passed(true);
+    setStage01Passed(true, FULL_CAPABILITIES);
     const plan = createChangePlan("hash-123", "doc-1", []);
     const problems = validatePlanBeforeApply(plan);
     expect(problems).toContain("ChangePlan has no changes");
     // applyChangePlan on an empty plan produces no results (vacuous), so the
     // meaningful assertion is the validation message above.
-    const results = await applyChangePlan(plan);
+    const results = await applyChangePlan(plan, "hash-123");
     expect(results).toHaveLength(0);
     expect(logger.warn).toHaveBeenCalledWith(
       "ChangePlan validation failed",
@@ -70,12 +82,12 @@ describe("applyChangePlan gate", () => {
   });
 
   it("blocks when plan is stale", async () => {
-    setStage01Passed(true);
+    setStage01Passed(true, FULL_CAPABILITIES);
     const plan = createChangePlan("hash", "doc", []);
     (plan as { stale: boolean }).stale = true;
     const problems = validatePlanBeforeApply(plan);
     expect(problems).toContain("ChangePlan is stale; re-plan before applying");
-    await applyChangePlan(plan);
+    await applyChangePlan(plan, "hash");
     expect(logger.warn).toHaveBeenCalledWith(
       "ChangePlan validation failed",
       expect.objectContaining({ planId: plan.id }),
@@ -83,7 +95,7 @@ describe("applyChangePlan gate", () => {
   });
 
   it("passes validation for a well-formed plan", async () => {
-    setStage01Passed(true);
+    setStage01Passed(true, FULL_CAPABILITIES);
     const plan = createChangePlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174000",
@@ -96,6 +108,10 @@ describe("applyChangePlan gate", () => {
     ]);
     const problems = validatePlanBeforeApply(plan);
     expect(problems).toHaveLength(0);
+  });
+
+  it("requires capabilities when enabling the gate", () => {
+    expect(() => setStage01Passed(true)).toThrow("requires a verified WordCapabilities snapshot");
   });
 });
 
@@ -115,9 +131,29 @@ describe("applyChangePlan apply path", () => {
     vi.restoreAllMocks();
   });
 
+  function makeRangeMock() {
+    return {
+      text: "",
+      insertText: vi.fn(function (this: unknown) {
+        return this;
+      }),
+      insertBreak: vi.fn(),
+      insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+      paragraphs: { load: vi.fn(), items: [] },
+      font: { name: "", size: 0, color: "", load: vi.fn(), set: vi.fn() },
+      paragraphFormat: { set: vi.fn() },
+      listFormat: { set: vi.fn() },
+      style: "",
+      set: vi.fn(function (this: unknown) {
+        return this;
+      }),
+      load: vi.fn(),
+    };
+  }
+
   function installApplyMock() {
-    const insertText = vi.fn();
-    const getRange = vi.fn(() => ({ insertText, load: vi.fn() }));
+    const rangeMock = makeRangeMock();
+    const getRange = vi.fn(() => rangeMock);
     const body = {
       text: "hello world",
       load: vi.fn(),
@@ -141,13 +177,15 @@ describe("applyChangePlan apply path", () => {
         saveAsync: vi.fn(),
       },
       InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
     };
-    return { insertText, getRange };
+    return { rangeMock, getRange };
   }
 
-  it("applies insertText to the range returned by body.getRange", async () => {
-    setStage01Passed(true);
-    const { insertText, getRange } = installApplyMock();
+  it("applies insertText via body.getRange(Whole) plus range.set", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const { rangeMock, getRange } = installApplyMock();
     const plan = createChangePlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174000",
@@ -159,17 +197,154 @@ describe("applyChangePlan apply path", () => {
       },
     ]);
 
-    const results = await applyChangePlan(plan);
+    const results = await applyChangePlan(plan, "hash-123");
     expect(results).toHaveLength(1);
     expect(results[0]?.applied).toBe(true);
-    expect(getRange).toHaveBeenCalledWith(0, 5);
-    expect(insertText).toHaveBeenCalledWith("REPLACED", "Replace");
+    expect(getRange).toHaveBeenCalledWith("Whole");
+    expect(rangeMock.set).toHaveBeenCalledWith({ start: 0, end: 5 });
+    expect(rangeMock.insertText).toHaveBeenCalledWith("REPLACED", "Replace");
     expect(logger.warn).not.toHaveBeenCalled();
     expect(logger.error).not.toHaveBeenCalled();
   });
 
+  it("applies changes in reverse offset order", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const seen: Array<{ start: number; end: number }> = [];
+    const rangeMock = makeRangeMock();
+    (
+      rangeMock.set as unknown as {
+        mockImplementation: (fn: (props: { start: number; end: number }) => unknown) => void;
+      }
+    ).mockImplementation((props: { start: number; end: number }) => {
+      seen.push({ ...props });
+      return rangeMock;
+    });
+    const getRange = vi.fn(() => rangeMock);
+    const context = {
+      document: {
+        body: { text: "hello world, hello world", load: vi.fn(), getRange },
+        getSelection: vi.fn(() => ({ getRange })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+    };
+
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "A" },
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: "123e4567-e89b-12d3-a456-426614174001",
+        type: "insertText",
+        range: { start: 13, end: 18 },
+        payload: { text: "B" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => r.applied)).toBe(true);
+    expect(seen).toEqual([
+      { start: 13, end: 18 },
+      { start: 0, end: 5 },
+    ]);
+  });
+
+  it("applies all eight change kinds", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const { rangeMock } = installApplyMock();
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 0 },
+        payload: { text: "A" },
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: "123e4567-e89b-12d3-a456-426614174001",
+        type: "replaceText",
+        range: { start: 0, end: 5 },
+        payload: { text: "B" },
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: "123e4567-e89b-12d3-a456-426614174002",
+        type: "deleteRange",
+        range: { start: 0, end: 5 },
+        payload: {},
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: "123e4567-e89b-12d3-a456-426614174003",
+        type: "setParagraphFormat",
+        range: { start: 0, end: 5 },
+        payload: { alignment: "center" },
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: "123e4567-e89b-12d3-a456-426614174004",
+        type: "setCharacterFormat",
+        range: { start: 0, end: 5 },
+        payload: { bold: true },
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: "123e4567-e89b-12d3-a456-426614174005",
+        type: "applyStyle",
+        range: { start: 0, end: 5 },
+        payload: { styleName: "Heading 1" },
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: "123e4567-e89b-12d3-a456-426614174006",
+        type: "insertBreak",
+        range: { start: 5, end: 5 },
+        payload: { breakType: "nextParagraph" },
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: "123e4567-e89b-12d3-a456-426614174007",
+        type: "setListLevel",
+        range: { start: 0, end: 5 },
+        payload: { level: 1 },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results).toHaveLength(8);
+    expect(results.every((r) => r.applied)).toBe(true);
+    expect(rangeMock.insertText).toHaveBeenCalled();
+    expect(rangeMock.paragraphFormat.set).toHaveBeenCalled();
+    expect(rangeMock.font.set).toHaveBeenCalled();
+    expect(rangeMock.insertBreak).toHaveBeenCalled();
+    expect(rangeMock.listFormat.set).toHaveBeenCalled();
+  });
+
   it("reports applied:false and error for unsupported applyStyle", async () => {
-    setStage01Passed(true);
+    setStage01Passed(true, { ...FULL_CAPABILITIES, supportsStyles: false });
     installApplyMock();
     const plan = createChangePlan("hash-123", "doc-1", [
       {
@@ -182,18 +357,68 @@ describe("applyChangePlan apply path", () => {
       },
     ]);
 
-    const results = await applyChangePlan(plan);
+    const results = await applyChangePlan(plan, "hash-123");
     expect(results).toHaveLength(1);
     expect(results[0]?.applied).toBe(false);
-    expect(results[0]?.error).toContain("Style");
+    expect(results[0]?.error).toContain("not supported");
     expect(logger.error).toHaveBeenCalledWith(
       "Failed to apply change",
       expect.objectContaining({ changeId: plan.changes[0]?.id }),
     );
   });
 
+  it("isolates per-change failures", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const goodRange = makeRangeMock();
+    let calls = 0;
+    const getRange = vi.fn(() => {
+      calls += 1;
+      if (calls === 1) throw new Error("first range failed");
+      return goodRange;
+    });
+    const context = {
+      document: {
+        body: { text: "hello world, hello world", load: vi.fn(), getRange },
+        getSelection: vi.fn(() => ({ getRange })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+    };
+
+    const plan = createChangePlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "A" },
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: "123e4567-e89b-12d3-a456-426614174001",
+        type: "insertText",
+        range: { start: 13, end: 18 },
+        payload: { text: "B" },
+        rationale: "test",
+        reversible: true,
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results).toHaveLength(2);
+    // Reverse order: the later offset is attempted first and fails.
+    expect(results[0]?.applied).toBe(false);
+    expect(results[1]?.applied).toBe(true);
+  });
+
   it("refuses to apply when currentDocHash mismatches", async () => {
-    setStage01Passed(true);
+    setStage01Passed(true, FULL_CAPABILITIES);
     installApplyMock();
     const plan = createChangePlan("hash-123", "doc-1", [
       {

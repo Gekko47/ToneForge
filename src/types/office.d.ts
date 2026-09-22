@@ -6,6 +6,27 @@ declare global {
       PageBreak,
     }
 
+    /**
+     * Word.BreakType mirrors the Office.InsertBreakBehavior enum values.
+     * Desktop Word (2026-09-21 probe) does not expose Office.InsertBreakBehavior,
+     * so the adapter references Word.BreakType directly when available.
+     */
+    enum BreakType {
+      NextParagraph = 0,
+      LineBreak = 1,
+      PageBreak = 2,
+    }
+
+    /**
+     * Word.InsertLocation controls where `Range.insertBreak` inserts the break.
+     */
+    enum InsertLocation {
+      Before = 0,
+      After = 1,
+      Start = 2,
+      End = 3,
+    }
+
     interface Context {
       document: Document;
       host: {
@@ -28,18 +49,46 @@ declare global {
       text: string;
       load: (prop: "text") => Body;
       paragraphs?: ParagraphCollection;
-      getRange?: (start: number, length: number) => Range;
+      /**
+       * Word JavaScript API: `Body.getRange(rangeLocation)` accepts a
+       * RangeLocation ("Start", "End", "All", "Whole", or a custom range
+       * object). It is NOT a numeric (start, length) API.
+       */
+      getRange: (rangeLocation: RangeLocation) => Range;
     }
+
+    /**
+     * RangeLocation accepted by Body.getRange / Selection.getRange.
+     */
+    type RangeLocation = "Start" | "End" | "All" | "Whole" | { start: number; end: number };
 
     interface Range {
       text: string;
       insertText(text: string, insertMode?: "Replace" | "Insert" | "Start" | "End"): Range;
-      insertBreak(breakType: InsertBreakBehavior): void;
+      /**
+       * Word JavaScript API (WordApiDesktop 1.4): `Range.set({ start, end })`
+       * narrows a Range to the given character offsets. This is the supported
+       * way to resolve a Change.range offset pair into a live Range.
+       */
+      set: (properties: { start?: number; end?: number }) => Range;
+      /**
+       * Word JavaScript API: named style on the range.
+       */
+      style: string;
+      /**
+       * Word JavaScript API: paragraph formatting object.
+       */
+      paragraphFormat: ParagraphFormat;
+      /**
+       * Word JavaScript API: list formatting object.
+       */
+      listFormat: ListFormat;
+      insertBreak(breakType: BreakType, insertLocation: InsertLocation): void;
       insertParagraph(text: string): Paragraph;
       paragraphs: ParagraphCollection;
       font: Font;
       load: (...props: Array<string>) => Range;
-      getRange?: (start: number, length: number) => Range;
+      getRange?: (rangeLocation: RangeLocation) => Range;
     }
 
     interface ParagraphCollection {
@@ -55,7 +104,15 @@ declare global {
     }
 
     interface ParagraphFormat {
+      set: (properties: Record<string, unknown>) => ParagraphFormat;
       setListLevel?: (level: number) => void;
+      space1?: () => ParagraphFormat;
+      space1Pt5?: () => ParagraphFormat;
+      space2?: () => ParagraphFormat;
+    }
+
+    interface ListFormat {
+      set: (properties: Record<string, unknown>) => ListFormat;
     }
 
     interface Font {
@@ -66,6 +123,7 @@ declare global {
       italic?: boolean;
       underline?: boolean;
       load: (...props: Array<string>) => Font;
+      set: (properties: Record<string, unknown>) => Font;
     }
 
     interface Styles {
@@ -131,6 +189,8 @@ declare global {
 
   const Word: {
     run: Office.Run;
+    BreakType: typeof Office.BreakType;
+    InsertLocation: typeof Office.InsertLocation;
   };
 }
 

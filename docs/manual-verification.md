@@ -4,9 +4,9 @@ This file records manual Word host results. **Status: IN PROGRESS — Stage 01 D
 
 ## Stage 18 unit verification note
 
-- `tests/unit/word/revisionAdapter.test.ts` covers gate refusal, validation failure, hash mismatch, successful application, per-change isolation, empty-plan handling, and out-of-bounds range errors.
-- Full `npm run verify` passes for the Stage 18 code and tests.
-- Live in-Word adapter smoke is still pending; no mutation was attempted in this repository run.
+- `tests/unit/word/revisionAdapter.test.ts` (16 tests) plus `tests/unit/word/revisionAdapter.apply.test.ts` (12 tests) cover gate refusal, validation failure, missing `currentDocHash`, hash mismatch, successful application, `body.getRange("Whole")` plus `range.set({ start, end })` offset resolution, all eight change kinds, reverse-offset application order, out-of-bounds range errors, unsupported-host refusal, per-change isolation, invalid-range and missing-payload pre-flight checks, and the `setStage01Passed(true)` capability-snapshot requirement.
+- `npx tsc --noEmit`, `npx eslint src tests --max-warnings 0`, `npx vitest run` (401 tests), `npm run build`, and `npm run validate` pass for the Stage 18 code and tests. `npm run stage:verify` reports format FAIL only on pre-existing unformatted files outside Stage 18 scope (e.g. `src/core/state/persistence.ts`, `src/taskpane/`); all Stage 18 files are Prettier-clean.
+- Live in-Word adapter smoke is still pending; no mutation was attempted in this repository run. The adapter targets the documented Word JavaScript API (`body.getRange("Whole")`, `range.set`, `range.style`, `range.paragraphFormat.set`, `range.font.set`, `range.listFormat.set`, `range.insertBreak` with `Word.BreakType` plus `Word.InsertLocation`) but live host behavior for `range.set` (WordApiDesktop 1.4) and formatting paths remains unproven until a human sideload session records results below.
 
 ## Host matrix
 

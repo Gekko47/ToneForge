@@ -168,6 +168,13 @@
 - **Decision**: Add an `eslint.config.mjs` scope for `src/analysis/**/*.ts` with `no-restricted-imports` forbidding `**/taskpane/*`, `**/commands/*`, and `**/word/revisionAdapter*`. This mirrors the existing `core/domain`, `word/`, `rules/`, `formatting/`, and `ai/` scopes and keeps `analysis/` free of UI and mutation dependencies.
 - **Consequences**: Boundary violations fail `npm run lint`. The scope is intentionally permissive about `rules/` and `formatting/` because Stage 16 consumes their `Finding` outputs; if a future stage needs `analysis/` to call a deterministic engine directly, that is already permitted. `npm run verify` remains green.
 
+### ADR-0025 — Revision adapter range resolution via whole-body Range plus set()
+
+- **Status**: Accepted (2026-09-22)
+- **Context**: Stage 18's `getRangeByOffset()` used an unproven `body.getRange(start, length)` numeric API shape that does not exist in the documented Word JavaScript API (a COM/VBA-style assumption). The official API exposes `body.getRange(rangeLocation)` with a `RangeLocation` ("Start"/"End"/"All"/"Whole") and `range.set({ start, end })` (WordApiDesktop 1.4) for narrowing. `range.insertBreak` likewise requires both a `Word.BreakType` and a `Word.InsertLocation`, not a single numeric enum.
+- **Decision**: Resolve planner character offsets by loading the body text for bounds validation, obtaining `body.getRange("Whole")`, then calling `range.set({ start, end })`. Declare `Range.set`, `Range.style`, `Range.paragraphFormat`, `Range.listFormat`, `Word.BreakType`, and `Word.InsertLocation` in the local `src/types/office.d.ts`. Apply `insertBreak` as `range.insertBreak(breakValue, Office.InsertLocation.After)`. Require a complete verified `WordCapabilities` snapshot in `setStage01Passed(true)` and enforce per-kind capability checks before text, style, and break mutations. Validate per-change ranges and per-kind payloads in `validatePlanBeforeApply`, and apply changes in reverse offset order.
+- **Consequences**: The adapter now targets only documented API shapes, but `range.set` (WordApiDesktop 1.4) and the formatting paths remain unproven in a live host until the human-only Stage 18 smoke test records results in `docs/manual-verification.md`. Test doubles model `getRange("Whole")` plus `range.set`. Stage 18 stays PARTIAL until live evidence closes the hard gate.
+
 ### ADR-0024 — Pure change planning and conflict/staleness boundary
 
 - **Status**: Accepted (2026-09-21)

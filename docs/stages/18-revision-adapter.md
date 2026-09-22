@@ -8,9 +8,12 @@ Add the native Word revision adapter — the single mutation path.
 
 ## Scope
 
-- `src/word/revisionAdapter.ts` — apply `ChangePlan` to Word via `Office.run`.
+- `src/word/revisionAdapter.ts` — apply `ChangePlan` to Word via `runInWord()` (`Word.run` in production, legacy `Office.run` test-double fallback).
 - Each change is attempted independently; failures are collected, never fatal.
-- `validatePlanBeforeApply` — pre-flight validation.
+- `validatePlanBeforeApply` — pre-flight validation (docHash, empty changes, stale flag, per-change range bounds, per-kind payload requirements).
+- `getRangeByOffset` — offset-to-Range mapping via `body.getRange("Whole")` plus `range.set({ start, end })` (WordApiDesktop 1.4) with bounds validation.
+- `setStage01Passed(true)` requires a verified `WordCapabilities` snapshot; per-kind capability enforcement (`supportsInsertText`, `supportsReplaceText`, `supportsInsertBreak`, `supportsStyles`).
+- Changes applied in reverse offset order to preserve planner offsets for non-overlapping changes.
 
 ## Critical ordering rule
 
@@ -26,4 +29,4 @@ Add the native Word revision adapter — the single mutation path.
 
 ## Status
 
-PARTIAL — automated verification is complete, but the live in-Word smoke test remains pending.
+PARTIAL — automated verification is complete (typecheck, lint, 37 mock tests, build, manifest validate), but the live in-Word smoke test remains pending (human-only; cannot pass in CI).
