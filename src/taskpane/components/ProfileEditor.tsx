@@ -453,6 +453,7 @@ export default function ProfileEditor(): React.ReactNode {
     setContext((prev) => ({
       ...prev,
       baseProfile: snapshot,
+      draftBaseProfile: snapshot,
       values: profileToValues(snapshot),
       dirty: !sameEditableSnapshot(snapshot, prev.savedProfile ?? prev.baseProfile),
       savedAt: null,
@@ -568,7 +569,7 @@ export default function ProfileEditor(): React.ReactNode {
           errorMessage={fieldErrors.name ?? ""}
           onChange={(_event, value) => patch({ name: value ?? "" })}
         />
-        <TextField label="Version" disabled value={versionLabel} />
+        <TextField label="Version" disabled readOnly value={versionLabel} />
       </div>
 
       <div
