@@ -55,3 +55,4 @@ Per-stage status per the Stage protocol in `ROADMAP.md`. Updated after each stag
 - **R1.3** — Docs drift closed: `architecture.md` manifest v1.10 → v1.30, Fluent v8 noted, `exactOptionalPropertyTypes` added to `tsconfig.json` (compiles clean), ADR-0012 corrected to describe the no-arg non-destructive probe.
 - **R1.4** — Stage statuses synced: 01 PASS WITH DOCUMENTED LIMITATION (Desktop Word recorded; tracking management proven live 2026-09-22; web/Mac pending), 02/03/04/05/06 PASS, 18 PASS WITH DOCUMENTED LIMITATION (live smoke run recorded 2026-09-22: gate sequence, tracked applies, no unhandled exceptions; text paths only).
 - **R1.5** — `rewritePrompts.test.ts` added; `MockAdapter` checks `failOn` before `responses` and honors `request.signal`.
+  `n## Phase B - Incremental observer plus live governance`n`n- **Status**: PASS`n- **Gate**: Yes`n- **Commit**: feat(word): add incremental document observer
