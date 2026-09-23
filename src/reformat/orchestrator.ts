@@ -13,6 +13,7 @@
 
 import { checkConsistency, type ConsistencyReport } from "../analysis/consistencyChecker";
 import { planChanges } from "../changes/planner";
+import { isStale } from "../changes/staleGuard";
 import {
   applyChangePlanWithTracking,
   STAGE_01_PASSED,
@@ -42,6 +43,12 @@ export interface ReformatOptions {
    * snapshot hash is reused for the immediate apply path.
    */
   currentDocHash?: string;
+  /**
+   * Stage 22 safety flag. Conflicting plans are refused by default; set this
+   * only when the caller has explicitly reviewed the conflict list and
+   * acknowledged that applying may produce contradictory edits.
+   */
+  allowConflictingApply?: boolean;
 }
 
 export interface ReformatResult {
@@ -81,6 +88,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     maxChars,
     preview = false,
     currentDocHash,
+    allowConflictingApply = false,
   } = options;
   const readLimit = maxChars ?? DEFAULT_MAX_CHARS;
 
@@ -132,8 +140,9 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     };
   }
 
-  // Stale plans never enter the mutation adapter. The adapter guard remains
-  // defense-in-depth, but the orchestrator already knows the plan is doomed.
+  // Stage 22: stale plans never enter the mutation adapter. The adapter guard
+  // remains defense-in-depth, but the orchestrator already knows the plan is
+  // doomed, so it refuses here with a preview-shaped outcome.
   if (plan.stale) {
     return {
       report,
@@ -142,6 +151,44 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
       tracking: { managed: false },
       snapshot,
       stale: plan.stale,
+      applied: false,
+    };
+  }
+
+  // Stage 22: conflicting plans are refused unless the caller explicitly
+  // acknowledges the risk via allowConflictingApply. This is a safety gate,
+  // not a resolution step — the conflict list is preserved on the plan for
+  // the caller to review.
+  if (plan.conflicts.length > 0 && !allowConflictingApply) {
+    return {
+      report,
+      plan,
+      results: plan.changes.map((change) => ({
+        changeId: change.id,
+        applied: false,
+        error: `ChangePlan has ${plan.conflicts.length} unresolved conflict(s); review before applying`,
+      })),
+      tracking: { managed: false },
+      snapshot,
+      stale: plan.stale,
+      applied: false,
+    };
+  }
+
+  // Stage 22: re-hash the live document immediately before mutation. The
+  // caller-supplied currentDocHash is advisory; the orchestrator re-reads the
+  // document so a user edit between preview and apply cannot silently
+  // corrupt the plan. Abort is propagated through the re-read.
+  const liveSnapshot = await getDocumentSnapshot({ maxChars: readLimit });
+  const liveHash = liveSnapshot.hash ?? hashDocument(liveSnapshot.text);
+  if (isStale(plan, liveHash)) {
+    return {
+      report,
+      plan,
+      results: [],
+      tracking: { managed: false },
+      snapshot,
+      stale: true,
       applied: false,
     };
   }
@@ -164,7 +211,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     };
   }
 
-  const applyResult = await applyChangePlanWithTracking(plan, currentDocHash ?? docHash);
+  const applyResult = await applyChangePlanWithTracking(plan, liveHash, allowConflictingApply);
 
   return {
     report,

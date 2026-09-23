@@ -2,13 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { reformatDocument } from "../../src/reformat";
 import * as formattingReader from "../../src/word/formattingReader";
+import * as planner from "../../src/changes/planner";
 import * as revisionAdapter from "../../src/word/revisionAdapter";
 import { setStage01Passed } from "../../src/word/revisionAdapter";
 import type { WordCapabilities } from "../../src/word/capabilityProbe";
 import { withSemanticHelpers } from "../../src/ai/providers/LlmProvider";
 import { MockAdapter } from "../../src/ai/providers/mockAdapter";
+import { v4 as uuidv4 } from "uuid";
 import { StyleProfileSchema } from "../../src/core/domain/StyleProfile";
 import { SAMPLE_PROFILE } from "../fixtures/sampleDocs";
+import type { ChangePlan } from "../../src/core/domain/ChangePlan";
+import { ChangePlanSchema } from "../../src/core/domain/ChangePlan";
+import { hashDocument } from "../../src/word/documentReader";
 
 const PROFILE = StyleProfileSchema.parse(SAMPLE_PROFILE);
 
@@ -53,15 +58,18 @@ function makeFormattingSnapshot(text: string) {
   };
 }
 
-function installOffice(bodyText: string, trackingMode: unknown = "Off") {
+function installOffice(
+  bodyText: string,
+  trackingMode: unknown = "Off",
+  textProvider?: () => string,
+) {
   const rangeMock = makeRangeMock();
   const sharedDoc: Record<string, unknown> = {
     id: "doc-1",
     load: vi.fn(),
     changeTrackingMode: trackingMode,
   };
-  const body = {
-    text: bodyText,
+  const body: Record<string, unknown> = {
     load: vi.fn(),
     getRange: vi.fn(() => rangeMock),
     getTrackedChanges: vi.fn(() => ({ load: vi.fn(), items: [{}] })),
@@ -70,7 +78,6 @@ function installOffice(bodyText: string, trackingMode: unknown = "Off") {
       items: [
         {
           load: vi.fn(),
-          text: bodyText,
           style: { name: "Normal" },
           format: { alignment: null, lineSpacing: null, spaceAfter: null, spaceBefore: null },
           font: { name: null, size: null, color: null, bold: null, italic: null, underline: null },
@@ -78,6 +85,11 @@ function installOffice(bodyText: string, trackingMode: unknown = "Off") {
       ],
     },
   };
+  Object.defineProperty(body, "text", {
+    get: () => (textProvider ? textProvider() : bodyText),
+    configurable: true,
+  });
+  sharedDoc["body"] = body;
   sharedDoc["body"] = body;
   sharedDoc["getSelection"] = vi.fn(() => ({ getRange: vi.fn(() => rangeMock) }));
   sharedDoc["styles"] = { load: vi.fn(), items: [] };
@@ -329,4 +341,96 @@ describe("reformatDocument integration", () => {
     expect(result.tracking).toEqual({ managed: false });
     expect(result.applied).toBe(true);
   });
+
+  it("aborts before the adapter when the live document hash differs", async () => {
+    let tick = 0;
+    installOffice("hello world", "Off", () => (tick++ === 0 ? "hello world" : "hello world!"));
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
+
+    const result = await reformatDocument({
+      profile: PROFILE,
+      includeRawText: false,
+    });
+
+    expect(result.plan.changes.length).toBeGreaterThan(0);
+    expect(result.plan.stale).toBe(false);
+    expect(result.results).toEqual([]);
+    expect(result.tracking).toEqual({ managed: false });
+    expect(result.applied).toBe(false);
+    expect(applySpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses conflicting plans without explicit override", async () => {
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
+    const conflictingPlan = createConflictingPlan();
+    vi.spyOn(planner, "planChanges").mockReturnValue(conflictingPlan);
+
+    const result = await reformatDocument({
+      profile: PROFILE,
+      includeRawText: false,
+      allowConflictingApply: false,
+    });
+
+    expect(result.results.length).toBeGreaterThan(0);
+    expect(result.results.every((item) => !item.applied)).toBe(true);
+    expect(result.results[0]?.error).toContain("conflict");
+    expect(result.tracking).toEqual({ managed: false });
+    expect(result.applied).toBe(false);
+    expect(applySpy).not.toHaveBeenCalled();
+  });
+
+  it("applies conflicting plans when the caller explicitly acknowledges", async () => {
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
+    const conflictingPlan = createConflictingPlan();
+    vi.spyOn(planner, "planChanges").mockReturnValue(conflictingPlan);
+
+    const result = await reformatDocument({
+      profile: PROFILE,
+      includeRawText: false,
+      allowConflictingApply: true,
+    });
+
+    expect(result.results.length).toBeGreaterThan(0);
+    expect(result.results.every((item) => item.applied)).toBe(true);
+    expect(result.applied).toBe(true);
+    expect(applySpy).toHaveBeenCalledTimes(1);
+  });
 });
+
+function createConflictingPlan(): ChangePlan {
+  const docHash = hashDocument("hello world");
+  return ChangePlanSchema.parse({
+    id: uuidv4(),
+    docHash,
+    baseDocId: "doc-1",
+    createdAt: new Date().toISOString(),
+    changes: [
+      {
+        id: uuidv4(),
+        type: "insertText",
+        range: { start: 0, end: 0 },
+        payload: { text: "a" },
+        rationale: "test",
+        reversible: true,
+      },
+      {
+        id: uuidv4(),
+        type: "replaceText",
+        range: { start: 0, end: 0 },
+        payload: { text: "b" },
+        rationale: "test",
+        reversible: true,
+      },
+    ],
+    conflicts: [
+      "Changes aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa and bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb conflict: same range has insertText and replaceText changes.",
+    ],
+    stale: false,
+    findings: [],
+  });
+}

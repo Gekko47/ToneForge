@@ -54,9 +54,10 @@ Rule/Formatting Engine   LLM Semantic Engine
 1. **Capture**: `style/sampleCapture` → quality gate → `style/metrics` (deterministic) + `ai/providers` (semantic).
 2. **Profile**: `core/domain/StyleProfile` is the canonical, editable, versioned object.
 3. **Analyze**: `analysis/consistencyChecker` composes deterministic `rules`/`formatting` findings with optional semantic `ai` deviations and returns a findings-only report.
-4. **Orchestrate**: `reformat/orchestrator` snapshots the document, delegates analysis, plans the report, and exposes preview or tracked apply without importing UI or commands.
+4. **Orchestrate**: `reformat/orchestrator` snapshots the document, delegates analysis, plans the report, and exposes preview or tracked apply without importing UI or commands. Before apply it performs a live re-hash to detect document changes since planning and refuses plans with unresolved conflicts unless explicitly allowed.
 5. **Plan**: `changes/planner` turns `Findings[]` into `ChangePlan` with conflict/stale metadata.
-6. **Apply**: `word/revisionAdapter` is the ONLY module that calls `Office.run` to mutate Word; the legacy Stage 18 smoke helpers are deprecated and retained only for historical live-smoke reproduction.
+6. **Apply**: `word/revisionAdapter` is the ONLY module that calls `Office.run` to mutate Word; the legacy Stage 18 smoke helpers are deprecated and retained only for historical live-smoke reproduction. The adapter accepts an `allowConflicts` parameter as defense-in-depth against plans with unresolved conflicts.
+7. **Confirm**: `taskpane/components/ReformatPanel` provides a preview/confirm/apply workflow; the user sees the plan summary, conflict warnings, and stale status before applying. `Dashboard.tsx` wires the panel via `resolveActiveProfile`.
 
 ## Technology stack
 

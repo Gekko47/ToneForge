@@ -63,15 +63,17 @@ export interface RevisionResult {
  *
  * Changes are applied from the end of the original document toward the start.
  * This preserves the planner's original offsets for non-overlapping changes as
- * earlier text is inserted or deleted. Conflicting plans remain a Stage 22
- * safety concern and are not resolved by this adapter.
+ * earlier text is inserted or deleted. Conflicting plans are refused by
+ * default (Stage 22 safety gate); the caller may pass allowConflicts: true
+ * only after explicitly reviewing the conflict list on the plan.
  */
 export async function applyChangePlan(
   plan: ChangePlan,
   currentDocHash: string,
+  allowConflicts = false,
 ): Promise<RevisionResult[]> {
   const results: RevisionResult[] = [];
-  const problems = validatePlanBeforeApply(plan);
+  const problems = validatePlanBeforeApply(plan, allowConflicts);
 
   if (!currentDocHash || currentDocHash.trim().length === 0) {
     problems.push("currentDocHash is required");
@@ -171,9 +173,10 @@ export interface ApplyWithTrackingResult {
 export async function applyChangePlanWithTracking(
   plan: ChangePlan,
   currentDocHash: string,
+  allowConflicts = false,
 ): Promise<ApplyWithTrackingResult> {
   const enablement = await enableRevisionTracking();
-  const results = await applyChangePlan(plan, currentDocHash);
+  const results = await applyChangePlan(plan, currentDocHash, allowConflicts);
   const modeAfter = await restoreRevisionTracking(enablement);
   const recordedCount = enablement.managed ? await countRecordedRevisions() : undefined;
   const tracking: TrackingReport = { managed: enablement.managed };
@@ -514,7 +517,7 @@ async function getRangeByOffset(
   return whole;
 }
 
-export function validatePlanBeforeApply(plan: ChangePlan): string[] {
+export function validatePlanBeforeApply(plan: ChangePlan, allowConflicts = false): string[] {
   const problems: string[] = [];
   if (!plan.docHash || plan.docHash.trim().length === 0) {
     problems.push("ChangePlan.docHash is required");
@@ -524,6 +527,11 @@ export function validatePlanBeforeApply(plan: ChangePlan): string[] {
   }
   if (plan.stale) {
     problems.push("ChangePlan is stale; re-plan before applying");
+  }
+  if (plan.conflicts.length > 0 && !allowConflicts) {
+    problems.push(
+      `ChangePlan has ${plan.conflicts.length} unresolved conflict(s); review before applying`,
+    );
   }
   for (const change of plan.changes) {
     if (

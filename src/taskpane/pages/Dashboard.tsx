@@ -5,9 +5,22 @@ import { createDefaultTheme } from "../fluentTheme";
 import { probeWordCapabilities } from "../../word/capabilityProbe";
 import { probeOfficeRuntime, formatDiagnostics } from "../../shared/office/diagnostics";
 import SmokePanel from "../components/SmokePanel";
+import ReformatPanel from "../components/ReformatPanel";
+import { loadState } from "../../core/state/persistence";
+import type { StyleProfile } from "../../core/domain/StyleProfile";
 
 const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
+
+function resolveActiveProfile(): StyleProfile {
+  const state = loadState();
+  const profile =
+    state.profiles.find((item) => item.id === state.activeProfileId) ?? state.profiles[0];
+  if (!profile) {
+    throw new Error("No style profile found — create one under Style profile first.");
+  }
+  return profile;
+}
 
 export default function Dashboard(): React.ReactNode {
   const [caps, setCaps] = React.useState<{
@@ -94,6 +107,7 @@ export default function Dashboard(): React.ReactNode {
             </pre>
           )}
           <SmokePanel />
+          <ReformatPanel profile={resolveActiveProfile()} />
         </main>
       </ThemeProvider>
     </LocalThemeProvider>
