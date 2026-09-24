@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ToneForge — XML add-in only manifest (fallback for platforms that do not
+  support the unified manifest v1.30).
+
+  This file mirrors manifest.json and must stay in sync. If you modify
+  manifest.json, mirror those changes here as well.
+-->
+<OfficeApp
+    xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+    xsi:type="TaskPaneApp">
+  <Id>96df86d6-ce2f-42e9-8fba-916143aeeb5c</Id>
+  <Version>1.0</Version>
+  <ProviderName>Gekko47</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="ToneForge" />
+  <Description DefaultValue="ToneForge is a Word Web Add-in that learns an editable style profile from writing samples, runs deterministic micro-consistency checks, uses AI only where interpretation is required, and applies safe native Word revisions." />
+  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-80.png" />
+  <SupportUrl DefaultValue="https://github.com/Gekko47/ToneForge/issues" />
+  <AppDomains>
+    <AppDomain>https://localhost:3000</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Document" />
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="WordApi" MinVersion="1.1" />
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/taskpane.html" />
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+                    xsi:type="VersionOverridesV1_0">
+    <Requirements>
+      <bt:Sets DefaultMinVersion="1.1">
+        <bt:Set Name="AddinCommands" MinVersion="1.1" />
+      </bt:Sets>
+    </Requirements>
+    <Hosts>
+      <Host xsi:type="Document">
+        <DesktopFormFactor>
+          <FunctionFile resid="ToneForge.Commands.Url" />
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="ToneForgeGroup">
+                <Label resid="ToneForge.GroupLabel" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Control xsi:type="Button" id="ToneForgeTaskpane">
+                  <Label resid="ToneForge.TaskpaneLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.TaskpaneLabel" />
+                    <Description resid="ToneForge.TaskpaneDescription" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+            <OfficeTab id="ToneForge">
+              <Group id="ToneForgeGovernanceGroup">
+                <Label resid="ToneForge.GovernanceGroupLabel" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Control xsi:type="Button" id="ToneForgeScan">
+                  <Label resid="ToneForge.ScanLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.ScanLabel" />
+                    <Description resid="ToneForge.ScanDescription" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+                <Control xsi:type="Button" id="ToneForgeFindings">
+                  <Label resid="ToneForge.FindingsLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.FindingsLabel" />
+                    <Description resid="ToneForge.FindingsDescription" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+              <Group id="ToneForgeAIReviewGroup">
+                <Label resid="ToneForge.AIReviewGroupLabel" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Control xsi:type="Button" id="ToneForgeReviewSelection">
+                  <Label resid="ToneForge.ReviewSelectionLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.ReviewSelectionLabel" />
+                    <Description resid="ToneForge.ReviewSelDesc" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+                <Control xsi:type="Button" id="ToneForgeReviewDocument">
+                  <Label resid="ToneForge.ReviewDocumentLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.ReviewDocumentLabel" />
+                    <Description resid="ToneForge.ReviewDocDesc" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+              <Group id="ToneForgeProfileGroup">
+                <Label resid="ToneForge.ProfileGroupLabel" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Control xsi:type="Button" id="ToneForgeActiveProfile">
+                  <Label resid="ToneForge.ActiveProfileLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.ActiveProfileLabel" />
+                    <Description resid="ToneForge.ActiveProfileDesc" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+                <Control xsi:type="Button" id="ToneForgeEditProfile">
+                  <Label resid="ToneForge.EditProfileLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.EditProfileLabel" />
+                    <Description resid="ToneForge.EditProfileDesc" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+              <Group id="ToneForgeChangesGroup">
+                <Label resid="ToneForge.ChangesGroupLabel" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Control xsi:type="Button" id="ToneForgePendingChanges">
+                  <Label resid="ToneForge.PendingChangesLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.PendingChangesLabel" />
+                    <Description resid="ToneForge.PendingChangesDesc" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3000/assets/icon-16.png" />
+        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:3000/assets/icon-32.png" />
+        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:3000/assets/icon-80.png" />
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="ToneForge.Commands.Url" DefaultValue="https://localhost:3000/commands.html" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html" />
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="ToneForge.GroupLabel" DefaultValue="ToneForge" />
+        <bt:String id="ToneForge.TaskpaneLabel" DefaultValue="ToneForge task pane" />
+        <bt:String id="ToneForge.TabLabel" DefaultValue="ToneForge" />
+        <bt:String id="ToneForge.GovernanceGroupLabel" DefaultValue="Governance" />
+        <bt:String id="ToneForge.AIReviewGroupLabel" DefaultValue="AI Review" />
+        <bt:String id="ToneForge.ProfileGroupLabel" DefaultValue="Profile" />
+        <bt:String id="ToneForge.ChangesGroupLabel" DefaultValue="Changes" />
+        <bt:String id="ToneForge.ScanLabel" DefaultValue="Scan Now" />
+        <bt:String id="ToneForge.FindingsLabel" DefaultValue="Findings" />
+        <bt:String id="ToneForge.ReviewSelectionLabel" DefaultValue="Review Selection" />
+        <bt:String id="ToneForge.ReviewDocumentLabel" DefaultValue="Review Document" />
+        <bt:String id="ToneForge.ActiveProfileLabel" DefaultValue="Active Profile" />
+        <bt:String id="ToneForge.EditProfileLabel" DefaultValue="Edit Profile" />
+        <bt:String id="ToneForge.PendingChangesLabel" DefaultValue="Pending Changes" />
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="ToneForge.TaskpaneDescription" DefaultValue="Learn a style from samples and check consistency across Word documents." />
+        <bt:String id="ToneForge.ScanDescription" DefaultValue="Scan the document for style issues." />
+        <bt:String id="ToneForge.FindingsDescription" DefaultValue="View detected findings." />
+        <bt:String id="ToneForge.ReviewSelDesc" DefaultValue="Review the selected text with AI." />
+        <bt:String id="ToneForge.ReviewDocDesc" DefaultValue="Review the entire document with AI." />
+        <bt:String id="ToneForge.ActiveProfileDesc" DefaultValue="View the active style profile." />
+        <bt:String id="ToneForge.EditProfileDesc" DefaultValue="Edit the active style profile." />
+        <bt:String id="ToneForge.PendingChangesDesc" DefaultValue="View pending changes." />
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

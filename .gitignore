@@ -31,6 +31,7 @@ Thumbs.db
 office-addin-debugging.log
 manifest*.xml
 !manifest.json
+!manifest.xml
 
 ## TypeScript
 *.tsbuildinfo
