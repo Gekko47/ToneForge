@@ -1,9 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { ThemeProvider } from "@fluentui/react";
-import { ThemeProvider as LocalThemeProvider } from "../theme";
-import { createDefaultTheme } from "../fluentTheme";
-import { probeWordCapabilities, type WordCapabilities } from "../../word/capabilityProbe";
-import { probeOfficeRuntime, formatDiagnostics } from "../../shared/office/diagnostics";
+import { type WordCapabilities } from "../../word/capabilityProbe";
 import {
   getDocumentSnapshot,
   getSelectedParagraphText,
@@ -14,10 +10,17 @@ import { createLlmRegistry } from "../../ai/providers/registry";
 import { reviewSpot, type SpotReviewResult } from "../../ai/review/spotReview";
 import { createGovernanceProfile } from "../../core/domain/GovernanceProfile";
 import { createDocumentObserver, type DocumentObserverStatus } from "../../word/documentObserver";
-import { applyReviewedPlan, reviewEntireDocument, type FullReviewResult } from "../../reformat";
+import {
+  applyReviewedPlan,
+  prepareReformatHost,
+  reviewEntireDocument,
+  type FullReviewResult,
+  type ReformatResult,
+} from "../../reformat";
 import { consumeTaskpaneTarget } from "../../shared/office/taskpaneNavigation";
-import SmokePanel from "../components/SmokePanel";
 import ReformatPanel from "../components/ReformatPanel";
+import DebuggingPanel from "../components/DebuggingPanel";
+import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
 import GovernanceDashboard from "../components/GovernanceDashboard";
 import FindingsList from "../components/FindingsList";
 import CoverageBanner from "../components/CoverageBanner";
@@ -36,6 +39,8 @@ const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
 
 const IGNORED_FINDINGS_KEY = "ToneForge.IgnoredFindingIds";
+
+type DashboardPage = "home" | "ai-review" | "profile" | "settings" | "troubleshooting";
 
 function resolveActiveProfile(): ReturnType<(typeof StyleProfileSchema)["parse"]> {
   const state = loadState();
@@ -61,10 +66,10 @@ function readIgnoredFindingIds(): Set<string> {
 
 export default function Dashboard(): React.ReactNode {
   const [caps, setCaps] = useState<WordCapabilities | null>(null);
-  const [diag, setDiag] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
+  const [page, setPage] = useState<DashboardPage>("home");
+  const [findingsOpen, setFindingsOpen] = useState(false);
+  const [pendingOpen, setPendingOpen] = useState(false);
+  const [reformatResult, setReformatResult] = useState<ReformatResult | null>(null);
   const [status, setStatus] = useState<DocumentObserverStatus | null>(null);
   const [ignoredFindingIds, setIgnoredFindingIds] = useState<Set<string>>(readIgnoredFindingIds);
   const [activeTarget, setActiveTarget] = useState<string>("governance");
@@ -87,28 +92,20 @@ export default function Dashboard(): React.ReactNode {
   const fullAbortRef = useRef<AbortController | null>(null);
   const [fullReviewMessage, setFullReviewMessage] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
+  const activeProfile = resolveActiveProfile();
+  const activeProfileKey = `${activeProfile.id}:${activeProfile.version.major}:${activeProfile.version.minor}:${activeProfile.version.patch}`;
 
-  async function runProbe(): Promise<void> {
-    setRunning(true);
-    try {
-      setCaps(await probeWordCapabilities());
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  function runDiagnostics(): void {
-    const formatted = formatDiagnostics(probeOfficeRuntime());
-    // eslint-disable-next-line no-console
-    console.log(formatted);
-    setDiag(formatted);
-  }
+  useEffect(() => {
+    void prepareReformatHost()
+      .then(setCaps)
+      .catch(() => setCaps(null));
+  }, []);
 
   useEffect(() => {
     const observer = createDocumentObserver({
       debounceMs: 300,
       onStatus: setStatus,
-      profile: resolveActiveProfile(),
+      profile: activeProfile,
     });
     observerRef.current = observer;
     observer.startObserver();
@@ -116,11 +113,30 @@ export default function Dashboard(): React.ReactNode {
       observer.stopObserver();
       observerRef.current = null;
     };
-  }, []);
+  }, [activeProfileKey]);
 
   useEffect(() => {
     const target = consumeTaskpaneTarget();
     if (target) {
+      if (target === "debugging") {
+        setPage("troubleshooting");
+        return;
+      }
+      if (target === "profile") {
+        setPage("profile");
+        return;
+      }
+      if (target.startsWith("ai-review-")) {
+        setPage("ai-review");
+      }
+      if (target === "findings") {
+        setPage("home");
+        setFindingsOpen(true);
+      }
+      if (target === "pending-changes") {
+        setPage("home");
+        setPendingOpen(true);
+      }
       setActiveTarget(target);
       if (target === "ai-review-selection") void runSpotReview("spot_selection");
       if (target === "ai-review-paragraph") void runSpotReview("spot_paragraph");
@@ -147,6 +163,17 @@ export default function Dashboard(): React.ReactNode {
 
   function ignoreFinding(id: string): void {
     setIgnoredFindingIds((previous) => new Set(previous).add(id));
+  }
+
+  function navigate(destination: TaskPaneDestination): void {
+    setPage(destination);
+    setActiveTarget(
+      destination === "home"
+        ? "governance"
+        : destination === "ai-review"
+          ? "ai-review-selection"
+          : destination,
+    );
   }
 
   async function runSpotReview(operation: "spot_selection" | "spot_paragraph"): Promise<void> {
@@ -228,6 +255,7 @@ export default function Dashboard(): React.ReactNode {
         (node) => !node.editable || Boolean(node.protectionReason),
       ).length,
     });
+    setPage("ai-review");
     setActiveTarget("ai-review-document");
   }
 
@@ -282,28 +310,34 @@ export default function Dashboard(): React.ReactNode {
     setFullProgress((previous) => (previous ? { ...previous, partial: true } : previous));
   }
 
-  async function applyPendingPlan(): Promise<void> {
-    const plan = fullResult?.plan ?? aiReview?.plan ?? null;
-    if (!plan) return;
+  async function applyPendingPlan(): Promise<boolean> {
+    const plan = reformatResult?.plan ?? fullResult?.plan ?? aiReview?.plan ?? null;
+    if (!plan) return false;
     setApplyMessage(null);
     try {
       const result = await applyReviewedPlan({
         plan,
-        allowConflictingApply: plan.conflicts.length > 0,
+        allowConflictingApply: false,
       });
-      if (result.applied) {
+      if (result.applied && result.verified) {
         setApplyMessage(
-          `Applied ${result.results.filter((item) => item.applied).length} of ${result.results.length} change(s).`,
+          `Applied and verified ${result.results.filter((item) => item.applied).length} change(s).`,
         );
+        setReformatResult(null);
+        setPendingOpen(false);
         observerRef.current?.onDocumentChanged();
-      } else {
-        setApplyMessage(
-          result.results.find((item) => !item.applied)?.error ??
-            "Apply refused; preview the changes again.",
-        );
+        return true;
       }
+
+      setApplyMessage(
+        result.verificationError ??
+          result.results.find((item) => !item.applied)?.error ??
+          "Apply refused; preview the changes again.",
+      );
+      return false;
     } catch (error: unknown) {
       setApplyMessage(error instanceof Error ? error.message : String(error));
+      return false;
     }
   }
 
@@ -322,48 +356,198 @@ export default function Dashboard(): React.ReactNode {
     );
   }
 
-  if (showSettings || showProfile) {
+  if (page === "settings" || page === "profile" || page === "troubleshooting") {
     return (
-      <Suspense fallback={<div className="tf-card">Loading…</div>}>
-        {showSettings ? <Settings /> : <Profile />}
-      </Suspense>
+      <main className="tf-card" tabIndex={0}>
+        <TaskPaneHeader
+          activePage={page}
+          profileName={activeProfile.name}
+          profileVersion={`${activeProfile.version.major}.${activeProfile.version.minor}.${activeProfile.version.patch}`}
+          onNavigate={navigate}
+        />
+        <Suspense fallback={<div role="status">Loading…</div>}>
+          {page === "settings" ? (
+            <Settings onBack={() => navigate("home")} />
+          ) : page === "profile" ? (
+            <Profile onBack={() => navigate("home")} />
+          ) : (
+            <DebuggingPanel onBack={() => navigate("home")} />
+          )}
+        </Suspense>
+      </main>
     );
   }
 
-  const findings = (status?.findings ?? []).filter((finding) => !ignoredFindingIds.has(finding.id));
-  const showFindings = activeTarget === "findings" || activeTarget === "governance";
+  const observerFindings = (status?.findings ?? []).filter(
+    (finding) => !ignoredFindingIds.has(finding.id),
+  );
+  const currentGovernanceFindings = (reformatResult?.report.findings ?? observerFindings).filter(
+    (finding) => !ignoredFindingIds.has(finding.id),
+  );
+  const findings = currentGovernanceFindings;
+  const currentStatus = status;
+  const scanPhase = currentStatus?.phase ?? "notStarted";
+  const canReviewFindings = scanPhase === "fresh" || scanPhase === "clean";
 
   return (
-    <LocalThemeProvider>
-      <ThemeProvider theme={createDefaultTheme()}>
-        <main className="tf-card" tabIndex={0}>
-          <header>
-            <h1 className="tf-title">ToneForge</h1>
-            <p>
-              {resolveActiveProfile().name} · profile version {resolveActiveProfile().version.major}
-              .{resolveActiveProfile().version.minor}.{resolveActiveProfile().version.patch}
-            </p>
-            <nav aria-label="Task pane sections">
-              <button type="button" onClick={() => setActiveTarget("governance")}>
-                Document Governance
-              </button>
-              <button type="button" onClick={() => setActiveTarget("findings")}>
-                Findings
-              </button>
-              <button type="button" onClick={() => setActiveTarget("ai-review-selection")}>
-                AI Review
-              </button>
-              <button type="button" onClick={() => setActiveTarget("pending-changes")}>
-                Pending Changes
-              </button>
-            </nav>
-          </header>
+    <main className="tf-card" tabIndex={0}>
+      <TaskPaneHeader
+        activePage="home"
+        profileName={activeProfile.name}
+        profileVersion={`${activeProfile.version.major}.${activeProfile.version.minor}.${activeProfile.version.patch}`}
+        onNavigate={navigate}
+      />
 
+      {page === "home" && findingsOpen && (
+        <section className="tf-collapsible" aria-label="Findings section">
+          <button
+            type="button"
+            className="tf-collapsible-header"
+            onClick={() => setFindingsOpen((open) => !open)}
+            aria-expanded={findingsOpen}
+          >
+            Findings <span>{findings.length}</span>
+          </button>
+          {findingsOpen && (
+            <FindingsList findings={findings} onApply={markForReview} onIgnore={ignoreFinding} />
+          )}
+        </section>
+      )}
+      {page === "home" && !findingsOpen && (
+        <button
+          type="button"
+          className="tf-collapsible-header"
+          onClick={() => setFindingsOpen(true)}
+          aria-expanded={false}
+        >
+          Findings <span>{findings.length}</span>
+        </button>
+      )}
+      {page === "ai-review" &&
+        activeTarget === "ai-review-document" &&
+        fullPreflight &&
+        !fullResult &&
+        !fullProgress && (
+          <FullReviewPreflight
+            nodeCount={fullPreflight.nodeCount}
+            approximateWords={fullPreflight.wordCount}
+            protectedCount={fullPreflight.protectedCount}
+            providerName={loadState().settings.llmProvider}
+            onStart={() => void startFullReview()}
+            onCancel={() => {
+              setPage("home");
+              setActiveTarget("governance");
+            }}
+          />
+        )}
+      {page === "ai-review" && activeTarget === "ai-review-document" && fullProgress && (
+        <FullReviewProgress
+          completed={fullProgress.completed}
+          total={fullProgress.total}
+          partial={fullProgress.partial}
+          onCancel={cancelFullReview}
+        />
+      )}
+      {page === "ai-review" && activeTarget === "ai-review-document" && fullResult && (
+        <FullReviewResults
+          findings={fullResult.findings}
+          plan={fullResult.plan}
+          onReviewFindings={() => {
+            setPage("home");
+            setFindingsOpen(true);
+          }}
+          onCreatePlan={() => {
+            setPage("home");
+            setPendingOpen(true);
+          }}
+        />
+      )}
+      {page === "ai-review" && fullReviewMessage && <p role="alert">{fullReviewMessage}</p>}
+      {page === "home" && !pendingOpen ? (
+        <button
+          type="button"
+          className="tf-collapsible-header"
+          onClick={() => setPendingOpen(true)}
+          aria-expanded={false}
+        >
+          Pending changes{" "}
+          <span>
+            {(reformatResult?.plan ?? fullResult?.plan ?? aiReview?.plan)?.changes.length ?? 0}
+          </span>
+        </button>
+      ) : (
+        <section className="tf-collapsible" aria-label="Pending changes section">
+          <button
+            type="button"
+            className="tf-collapsible-header"
+            onClick={() => setPendingOpen(false)}
+            aria-expanded
+          >
+            Pending changes{" "}
+            <span>
+              {(reformatResult?.plan ?? fullResult?.plan ?? aiReview?.plan)?.changes.length ?? 0}
+            </span>
+          </button>
+          <PendingChanges
+            plan={reformatResult?.plan ?? fullResult?.plan ?? aiReview?.plan ?? null}
+            findings={
+              reformatResult?.report.findings ??
+              fullResult?.findings ??
+              aiReview?.findings ??
+              currentGovernanceFindings
+            }
+            onApply={applyPendingPlan}
+          />
+          {applyMessage && <p role="status">{applyMessage}</p>}
+        </section>
+      )}
+      {page === "ai-review" && aiReviewBusy && (
+        <p role="status" aria-live="polite">
+          Reviewing selected context with AI…
+        </p>
+      )}
+      {page === "ai-review" && aiReview && (
+        <AiReviewResult
+          findings={aiReview.findings}
+          plan={aiReview.plan}
+          provider={aiReview.provider}
+          onPreview={() => {
+            setPage("home");
+            setPendingOpen(true);
+          }}
+          onDismiss={() => setAiReview(null)}
+        />
+      )}
+      {page === "ai-review" && aiReviewMessage && <p role="alert">{aiReviewMessage}</p>}
+      {page === "ai-review" && (
+        <AiReviewEntry
+          supportsSelection={caps?.supportsSelection ?? false}
+          supportsParagraphResolution={caps?.supportsParagraphResolution ?? false}
+          hasSelection={hasSelection}
+          providerConfigured={
+            Boolean(loadState().settings.openAiApiKey) ||
+            loadState().settings.llmProvider === "mock"
+          }
+          hasConsent={loadState().settings.spotReviewConsent}
+          hasFullDocumentConsent={loadState().settings.fullDocumentReviewConsent}
+          onReviewSelection={() => void runSpotReview("spot_selection")}
+          onReviewParagraph={() => void runSpotReview("spot_paragraph")}
+          onReviewDocument={() => void openFullReviewPreflight()}
+          onOpenSettings={() => setPage("settings")}
+        />
+      )}
+      {page === "home" && (
+        <section
+          className="tf-governance-reformat"
+          aria-label="Document governance and safe reformat"
+        >
           <GovernanceDashboard
             findings={findings}
             lastScan={status?.lastScan ?? null}
-            stale={status?.stale ?? false}
-            onViewFindings={() => setActiveTarget("findings")}
+            phase={scanPhase}
+            error={status?.error ?? null}
+            canReviewFindings={canReviewFindings}
+            onViewFindings={() => setFindingsOpen(true)}
             onRescan={() => observerRef.current?.onDocumentChanged()}
           />
           <StaleBanner
@@ -372,121 +556,19 @@ export default function Dashboard(): React.ReactNode {
             onRescan={() => observerRef.current?.onDocumentChanged()}
           />
           <CoverageBanner coverage={status?.coverage ?? null} />
-
-          {showFindings && (
-            <FindingsList findings={findings} onApply={markForReview} onIgnore={ignoreFinding} />
-          )}
-          {activeTarget === "ai-review-document" &&
-            fullPreflight &&
-            !fullResult &&
-            !fullProgress && (
-              <FullReviewPreflight
-                nodeCount={fullPreflight.nodeCount}
-                approximateWords={fullPreflight.wordCount}
-                protectedCount={fullPreflight.protectedCount}
-                providerName={loadState().settings.llmProvider}
-                onStart={() => void startFullReview()}
-                onCancel={() => setActiveTarget("governance")}
-              />
-            )}
-          {activeTarget === "ai-review-document" && fullProgress && (
-            <FullReviewProgress
-              completed={fullProgress.completed}
-              total={fullProgress.total}
-              partial={fullProgress.partial}
-              onCancel={cancelFullReview}
-            />
-          )}
-          {activeTarget === "ai-review-document" && fullResult && (
-            <FullReviewResults
-              findings={fullResult.findings}
-              plan={fullResult.plan}
-              onReviewFindings={() => setActiveTarget("findings")}
-              onCreatePlan={() => setActiveTarget("pending-changes")}
-            />
-          )}
-          {fullReviewMessage && <p role="alert">{fullReviewMessage}</p>}
-          {activeTarget === "pending-changes" && (
-            <>
-              <PendingChanges
-                plan={fullResult?.plan ?? aiReview?.plan ?? null}
-                findings={fullResult?.findings ?? aiReview?.findings ?? findings}
-                onApply={applyPendingPlan}
-              />
-              {applyMessage && <p role="status">{applyMessage}</p>}
-            </>
-          )}
-          {aiReviewBusy && (
-            <p role="status" aria-live="polite">
-              Reviewing selected context with AI…
-            </p>
-          )}
-          {aiReview && (
-            <AiReviewResult
-              findings={aiReview.findings}
-              plan={aiReview.plan}
-              provider={aiReview.provider}
-              onPreview={() => setActiveTarget("pending-changes")}
-              onDismiss={() => setAiReview(null)}
-            />
-          )}
-          {aiReviewMessage && <p role="alert">{aiReviewMessage}</p>}
-          <AiReviewEntry
-            supportsSelection={caps?.supportsSelection ?? false}
-            supportsParagraphResolution={caps?.supportsParagraphResolution ?? false}
-            hasSelection={hasSelection}
-            providerConfigured={
-              Boolean(loadState().settings.openAiApiKey) ||
-              loadState().settings.llmProvider === "mock"
-            }
-            hasConsent={loadState().settings.spotReviewConsent}
-            hasFullDocumentConsent={loadState().settings.fullDocumentReviewConsent}
-            onReviewSelection={() => void runSpotReview("spot_selection")}
-            onReviewParagraph={() => void runSpotReview("spot_paragraph")}
-            onReviewDocument={() => void openFullReviewPreflight()}
-            onOpenSettings={() => setShowSettings(true)}
+          <ReformatPanel
+            profile={activeProfile}
+            capabilities={caps}
+            onPreview={(result) => setReformatResult(result)}
           />
-          <section aria-label="Reserved content consistency section">
-            <h2>CONTENT CONSISTENCY</h2>
-            <p>Reserved for a future phase. No content-consistency engine is active.</p>
-          </section>
-          <ReformatPanel profile={resolveActiveProfile()} />
+        </section>
+      )}
 
-          <section aria-label="Diagnostics" style={{ marginTop: "1.5rem" }}>
-            <button type="button" onClick={runProbe} disabled={running}>
-              {running ? "Probing…" : "Probe Word capabilities"}
-            </button>
-            <button type="button" onClick={runDiagnostics} style={{ marginLeft: "0.5rem" }}>
-              Diagnose Office runtime
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSettings(true)}
-              style={{ marginLeft: "0.5rem" }}
-            >
-              Settings
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowProfile(true)}
-              style={{ marginLeft: "0.5rem" }}
-            >
-              Style profile
-            </button>
-            {caps && (
-              <pre aria-live="polite" style={{ whiteSpace: "pre-wrap" }}>
-                {JSON.stringify(caps, null, 2)}
-              </pre>
-            )}
-            {diag && (
-              <pre aria-live="polite" style={{ whiteSpace: "pre-wrap" }}>
-                {diag}
-              </pre>
-            )}
-          </section>
-          <SmokePanel />
-        </main>
-      </ThemeProvider>
-    </LocalThemeProvider>
+      {caps === null && (
+        <p className="tf-sub">
+          Host readiness is checked when a review or safe reformat is attempted.
+        </p>
+      )}
+    </main>
   );
 }

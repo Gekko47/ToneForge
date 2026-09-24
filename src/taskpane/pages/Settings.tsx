@@ -1,15 +1,19 @@
 import React from "react";
-import { ThemeProvider } from "@fluentui/react";
-import { ThemeProvider as LocalThemeProvider } from "../theme";
-import { createDefaultTheme } from "../fluentTheme";
 import SettingsForm from "../components/SettingsForm";
 
-export default function Settings(): React.ReactNode {
+export interface SettingsProps {
+  onBack: () => void;
+}
+
+export default function Settings({ onBack }: SettingsProps): React.ReactNode {
   return (
-    <LocalThemeProvider>
-      <ThemeProvider theme={createDefaultTheme()}>
-        <SettingsForm />
-      </ThemeProvider>
-    </LocalThemeProvider>
+    <div className="tf-card" data-page="settings">
+      <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
+        <button type="button" onClick={onBack}>
+          Back to Document Governance
+        </button>
+      </nav>
+      <SettingsForm />
+    </div>
   );
 }

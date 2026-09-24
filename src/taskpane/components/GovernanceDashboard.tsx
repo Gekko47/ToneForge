@@ -7,11 +7,15 @@
 
 import React from "react";
 import type { Finding } from "../../core/domain/Finding";
+import type { DocumentScanPhase } from "../../word/documentObserver";
 
 export interface GovernanceDashboardProps {
   findings: readonly Finding[];
   lastScan: string | null;
-  stale: boolean;
+  phase?: DocumentScanPhase;
+  stale?: boolean;
+  error?: string | null;
+  canReviewFindings?: boolean;
   onViewFindings: () => void;
   onRescan: () => void;
 }
@@ -44,7 +48,10 @@ function countCategories(findings: readonly Finding[]): Map<string, number> {
 export default function GovernanceDashboard({
   findings,
   lastScan,
-  stale,
+  phase = "fresh",
+  stale = false,
+  error = null,
+  canReviewFindings = !stale,
   onViewFindings,
   onRescan,
 }: GovernanceDashboardProps): React.ReactNode {
@@ -62,11 +69,16 @@ export default function GovernanceDashboard({
     <section aria-label="Document Governance" style={{ marginTop: "1rem" }}>
       <h2>Document Governance</h2>
       <p role="status" aria-live="polite">
-        {stale
-          ? "Findings need a fresh scan before changes can be reviewed."
-          : openFindings.length === 0
-            ? "No open governance findings."
-            : `${openFindings.length} open finding(s) require review.`}
+        {phase === "notStarted" && "Scan the document to assess governance."}
+        {phase === "scanning" &&
+          "Scanning the document. Current findings will appear when complete."}
+        {phase === "clean" && "No open governance findings in the current scan."}
+        {phase === "fresh" && `${openFindings.length} open finding(s) require review.`}
+        {phase === "stale" &&
+          "The document changed since the last scan. Re-scan to review current findings."}
+        {phase === "incomplete" &&
+          "The scan did not cover all required content. Re-scan or review coverage details."}
+        {phase === "failed" && (error ?? "The scan could not be completed. Re-scan to try again.")}
       </p>
       <p style={{ fontSize: "0.85rem" }}>
         Last scan: {lastScan ? new Date(lastScan).toLocaleString() : "never"}
@@ -97,11 +109,17 @@ export default function GovernanceDashboard({
       )}
 
       <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
-        <button type="button" onClick={onViewFindings} disabled={openFindings.length === 0}>
+        <button
+          type="button"
+          onClick={onViewFindings}
+          disabled={!canReviewFindings || openFindings.length === 0}
+        >
           View findings
         </button>
-        <button type="button" onClick={onRescan}>
-          Scan now
+        <button type="button" onClick={onRescan} disabled={phase === "scanning"}>
+          {phase === "stale" || phase === "failed" || phase === "incomplete"
+            ? "Re-scan now"
+            : "Scan now"}
         </button>
       </div>
     </section>

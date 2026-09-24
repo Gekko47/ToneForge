@@ -275,6 +275,39 @@ describe("findTypographyIssues", () => {
     expect(findings.map((f) => f.range.start)).toEqual([4, 10]);
   });
 
+  it("flags decimal and thousands separators against the profile", () => {
+    const findings = findTypographyIssues({
+      text: "Total 1,234.56",
+      rules: { ...defaultRules, decimalSeparator: "dot", thousandsSeparator: "none" },
+    });
+
+    expect(findings).toHaveLength(2);
+    expect(findings.map((finding) => finding.category)).toEqual([
+      "typography.decimalSeparator",
+      "typography.thousandsSeparator",
+    ]);
+    expect(findings.map((finding) => finding.range.start)).toEqual([7, 7]);
+  });
+
+  it("converts alternate locale separators to the configured punctuation", () => {
+    const decimalFindings = findTypographyIssues({
+      text: "Total 1234.56",
+      rules: { ...defaultRules, decimalSeparator: "comma", thousandsSeparator: "comma" },
+    });
+    const thousandsFindings = findTypographyIssues({
+      text: "Total 1 234",
+      rules: { ...defaultRules, thousandsSeparator: "comma" },
+    });
+
+    expect(decimalFindings.map((finding) => finding.category)).toEqual([
+      "typography.decimalSeparator",
+    ]);
+    expect(thousandsFindings.map((finding) => finding.category)).toEqual([
+      "typography.thousandsSeparator",
+    ]);
+    expect(thousandsFindings[0]?.evidence).toBe(" ");
+  });
+
   it("flags multiple consecutive spaces", () => {
     const findings = findTypographyIssues({
       text: "hello  world",

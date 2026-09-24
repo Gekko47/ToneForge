@@ -15,6 +15,10 @@ const FULL_CAPABILITIES: WordCapabilities = {
   supportsInsertParagraph: true,
   supportsInsertBreak: true,
   supportsStyles: true,
+  supportsParagraphFormat: true,
+  supportsCharacterFormat: true,
+  supportsResetCharacterFormatting: true,
+  supportsListLevel: true,
   supportsRevisions: false,
   supportsSelection: true,
   supportsParagraphResolution: true,
@@ -602,7 +606,7 @@ describe("applyChangePlan apply path", () => {
     expect(docMock["changeTrackingMode"]).toBe("TrackAll");
   });
 
-  it("applies unmanaged with a clear report when tracking control is missing", async () => {
+  it("refuses without managed tracking when the tracking control is missing", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
     installApplyMock();
     const plan = createChangePlan("hash-123", "doc-1", [
@@ -622,9 +626,8 @@ describe("applyChangePlan apply path", () => {
 
     const { results, tracking } = await applyChangePlanWithTracking(plan, "hash-123");
 
-    // installApplyMock's document has no load/changeTrackingMode, so tracking
-    // is unmanaged — but the edit itself still applies.
-    expect(results[0]?.applied).toBe(true);
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.error).toContain("Managed Track Changes");
     expect(tracking.managed).toBe(false);
     expect(tracking.modeBefore).toBeUndefined();
     expect(tracking.recordedCount).toBeUndefined();

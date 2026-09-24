@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyReviewedPlan, reformatDocument } from "../../src/reformat";
 import * as formattingReader from "../../src/word/formattingReader";
+import * as capabilityProbe from "../../src/word/capabilityProbe";
 import * as planner from "../../src/changes/planner";
 import * as revisionAdapter from "../../src/word/revisionAdapter";
 import { setStage01Passed } from "../../src/word/revisionAdapter";
@@ -14,6 +15,7 @@ import { SAMPLE_PROFILE } from "../fixtures/sampleDocs";
 import type { ChangePlan } from "../../src/core/domain/ChangePlan";
 import { ChangePlanSchema } from "../../src/core/domain/ChangePlan";
 import { hashDocument } from "../../src/word/documentReader";
+import type { FormattingSnapshot } from "../../src/formatting/formattingSnapshot";
 
 const PROFILE = StyleProfileSchema.parse(SAMPLE_PROFILE);
 
@@ -23,6 +25,10 @@ const FULL_CAPABILITIES: WordCapabilities = {
   supportsInsertParagraph: true,
   supportsInsertBreak: true,
   supportsStyles: true,
+  supportsParagraphFormat: true,
+  supportsCharacterFormat: true,
+  supportsResetCharacterFormatting: true,
+  supportsListLevel: true,
   supportsRevisions: true,
   supportsSelection: true,
   supportsParagraphResolution: true,
@@ -42,7 +48,7 @@ function makeRangeMock(onInsert?: (text: string) => void) {
     insertBreak: vi.fn(),
     insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
     paragraphs: { load: vi.fn(), items: [] },
-    font: { name: "", size: 0, color: "", load: vi.fn(), set: vi.fn() },
+    font: { name: "", size: 0, color: "", load: vi.fn(), set: vi.fn(), reset: vi.fn() },
     paragraphFormat: { set: vi.fn() },
     listFormat: { set: vi.fn() },
     style: "",
@@ -53,7 +59,7 @@ function makeRangeMock(onInsert?: (text: string) => void) {
   };
 }
 
-function makeFormattingSnapshot(text: string) {
+function makeFormattingSnapshot(text: string): FormattingSnapshot {
   return {
     id: "snapshot-1",
     text,
@@ -130,7 +136,9 @@ describe("reformatDocument integration", () => {
     const hostGlobals = globalThis as { Office?: unknown; Word?: unknown };
     originalOffice = hostGlobals.Office;
     originalWord = hostGlobals.Word;
+    window.localStorage.setItem("ToneForge.TrackedEditingEnabled", "true");
     setStage01Passed(false);
+    vi.spyOn(capabilityProbe, "probeWordCapabilities").mockResolvedValue(FULL_CAPABILITIES);
   });
 
   afterEach(() => {
@@ -138,6 +146,7 @@ describe("reformatDocument integration", () => {
     hostGlobals.Office = originalOffice;
     hostGlobals.Word = originalWord;
     setStage01Passed(false);
+    window.localStorage.removeItem("ToneForge.TrackedEditingEnabled");
     vi.restoreAllMocks();
   });
 
@@ -246,9 +255,9 @@ describe("reformatDocument integration", () => {
     expect(applySpy).not.toHaveBeenCalled();
   });
 
-  it("respects the Stage 01 capability gate", async () => {
+  it("refuses immediately when tracked editing is disabled", async () => {
     installOffice("hello world");
-    setStage01Passed(false);
+    window.localStorage.setItem("ToneForge.TrackedEditingEnabled", "false");
     const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
 
     const result = await reformatDocument({
@@ -258,7 +267,7 @@ describe("reformatDocument integration", () => {
 
     expect(result.results.length).toBeGreaterThan(0);
     expect(result.results.every((item) => !item.applied)).toBe(true);
-    expect(result.results[0]?.error).toContain("capability probe");
+    expect(result.results[0]?.error).toContain("Tracked editing is disabled");
     expect(result.tracking).toEqual({ managed: false });
     expect(result.applied).toBe(false);
     expect(applySpy).not.toHaveBeenCalled();
@@ -335,7 +344,7 @@ describe("reformatDocument integration", () => {
     expect(formattingSpy).not.toHaveBeenCalled();
   });
 
-  it("applies unmanaged when the host exposes no tracking control", async () => {
+  it("refuses to apply when the host exposes no managed tracking control", async () => {
     installOffice("hello world", null);
     setStage01Passed(true, FULL_CAPABILITIES);
 
@@ -345,9 +354,11 @@ describe("reformatDocument integration", () => {
     });
 
     expect(result.results.length).toBeGreaterThan(0);
-    expect(result.results.every((item) => item.applied)).toBe(true);
+    expect(result.results.every((item) => !item.applied)).toBe(true);
+    expect(result.results[0]?.error).toContain("Managed Track Changes");
     expect(result.tracking).toEqual({ managed: false });
-    expect(result.applied).toBe(true);
+    expect(result.applied).toBe(false);
+    expect(result.verified).toBe(false);
   });
 
   it("aborts before the adapter when the live document hash differs", async () => {
@@ -390,7 +401,7 @@ describe("reformatDocument integration", () => {
     expect(applySpy).not.toHaveBeenCalled();
   });
 
-  it("applies conflicting plans when the caller explicitly acknowledges", async () => {
+  it("refuses conflicting plans even when a legacy acknowledgement flag is supplied", async () => {
     installOffice("hello world");
     setStage01Passed(true, FULL_CAPABILITIES);
     const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
@@ -404,9 +415,117 @@ describe("reformatDocument integration", () => {
     });
 
     expect(result.results.length).toBeGreaterThan(0);
-    expect(result.results.every((item) => item.applied)).toBe(true);
+    expect(result.results.every((item) => !item.applied)).toBe(true);
+    expect(result.applied).toBe(false);
+    expect(result.verified).toBe(false);
+    expect(applySpy).not.toHaveBeenCalled();
+  });
+
+  it("verifies formatting readback for non-text plans", async () => {
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const plan = ChangePlanSchema.parse({
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: uuidv4(),
+          type: "applyStyle",
+          range: { start: 0, end: 1 },
+          payload: { styleName: "Heading 2" },
+          rationale: "test style readback",
+          reversible: true,
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockResolvedValue({
+      results: [{ changeId: plan.changes[0]?.id ?? "", applied: true }],
+      tracking: { managed: true },
+    });
+    const formattingSnapshot = makeFormattingSnapshot("hello world");
+    formattingSnapshot.paragraphs = [
+      {
+        index: 0,
+        text: "hello world",
+        styleName: "Heading 2",
+        alignment: null,
+        lineSpacing: null,
+        spaceAfter: null,
+        spaceBefore: null,
+        listLevel: null,
+        fontName: null,
+        fontSize: null,
+        fontColor: null,
+        bold: null,
+        italic: null,
+        underline: null,
+      },
+    ];
+    vi.spyOn(formattingReader, "getFormattingSnapshot").mockResolvedValue(formattingSnapshot);
+
+    const result = await applyReviewedPlan({ plan });
+
     expect(result.applied).toBe(true);
-    expect(applySpy).toHaveBeenCalledTimes(1);
+    expect(result.verified).toBe(true);
+  });
+
+  it("reports formatting readback mismatch instead of claiming success", async () => {
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const plan = ChangePlanSchema.parse({
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: uuidv4(),
+          type: "setListLevel",
+          range: { start: 0, end: 1 },
+          payload: { level: 2 },
+          rationale: "test list readback",
+          reversible: true,
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockResolvedValue({
+      results: [{ changeId: plan.changes[0]?.id ?? "", applied: true }],
+      tracking: { managed: true },
+    });
+    const formattingSnapshot = makeFormattingSnapshot("hello world");
+    formattingSnapshot.paragraphs = [
+      {
+        index: 0,
+        text: "hello world",
+        styleName: "Normal",
+        alignment: null,
+        lineSpacing: null,
+        spaceAfter: null,
+        spaceBefore: null,
+        listLevel: 0,
+        fontName: null,
+        fontSize: null,
+        fontColor: null,
+        bold: null,
+        italic: null,
+        underline: null,
+      },
+    ];
+    vi.spyOn(formattingReader, "getFormattingSnapshot").mockResolvedValue(formattingSnapshot);
+
+    const result = await applyReviewedPlan({ plan });
+
+    expect(result.applied).toBe(false);
+    expect(result.verified).toBe(false);
+    expect(result.verificationError).toContain("expected list level 2");
   });
 
   it("applies a previously reviewed plan with a fresh structured protection check", async () => {

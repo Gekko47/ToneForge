@@ -34,19 +34,18 @@ const baseState = {
     openAiApiKey: "sk-live-secret-key-1234",
     openAiBaseUrl: "https://api.openai.com/v1",
     openAiModel: "gpt-4o-mini",
+    llmProvider: "openai" as const,
+    spotReviewConsent: false,
+    fullDocumentReviewConsent: false,
+    semanticOptIn: false,
     telemetryDisabled: true,
   },
 };
 
-/** Fluent renders duplicate controls under React StrictMode in jsdom; pick the last. */
-function lastByRole(role: Parameters<typeof screen.getAllByRole>[0], options: unknown) {
-  const all = screen.getAllByRole(role, options as never);
-  return all[all.length - 1] as HTMLElement;
-}
-
 describe("SettingsForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mocks.loadState.mockReturnValue({ ...baseState });
   });
 
@@ -82,27 +81,30 @@ describe("SettingsForm", () => {
     expect(mocks.redact).toHaveBeenCalledWith("sk-live-secret-key-1234");
   });
 
-  it("marks dirty and enables save when a field changes", async () => {
+  it("marks only the LLM section dirty and enables its save action", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
-    const saveBtn = lastByRole("button", { name: "Save" });
-    expect(saveBtn).toBeDisabled();
+    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const saveButton = within(llmSection).getByRole("button", { name: "Save LLM" });
+    const stylingSave = within(
+      within(container).getByRole("region", { name: "Styling" }),
+    ).getByRole("button", { name: "Save styling" });
+    expect(saveButton).toBeDisabled();
+    expect(stylingSave).toBeDisabled();
 
-    const modelInput = within(container)
-      .getAllByDisplayValue("gpt-4o-mini")
-      .pop() as HTMLInputElement;
+    const modelInput = within(llmSection).getByDisplayValue("gpt-4o-mini") as HTMLInputElement;
     await user.type(modelInput, "-changed");
-    expect(saveBtn).toBeEnabled();
+    expect(saveButton).toBeEnabled();
+    expect(stylingSave).toBeDisabled();
   });
 
-  it("persists settings on save", async () => {
+  it("persists LLM settings on the LLM section action", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
-    const modelInput = within(container)
-      .getAllByDisplayValue("gpt-4o-mini")
-      .pop() as HTMLInputElement;
+    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const modelInput = within(llmSection).getByDisplayValue("gpt-4o-mini") as HTMLInputElement;
     await user.type(modelInput, "-changed");
-    await user.click(lastByRole("button", { name: "Save" }));
+    await user.click(within(llmSection).getByRole("button", { name: "Save LLM" }));
 
     await waitFor(() => {
       expect(mocks.saveState).toHaveBeenCalledTimes(1);
@@ -117,11 +119,10 @@ describe("SettingsForm", () => {
   it("logs only the redacted key, never the raw value", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
-    const modelInput = within(container)
-      .getAllByDisplayValue("gpt-4o-mini")
-      .pop() as HTMLInputElement;
+    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const modelInput = within(llmSection).getByDisplayValue("gpt-4o-mini") as HTMLInputElement;
     await user.type(modelInput, "-changed");
-    await user.click(lastByRole("button", { name: "Save" }));
+    await user.click(within(llmSection).getByRole("button", { name: "Save LLM" }));
 
     await waitFor(() => {
       expect(mocks.loggerInfo).toHaveBeenCalled();
@@ -131,15 +132,16 @@ describe("SettingsForm", () => {
     expect(logged).not.toContain("sk-live-secret-key-1234");
   });
 
-  it("shows error and does not save on invalid base URL", async () => {
+  it("shows an LLM error and does not save on an invalid base URL", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
-    const baseUrlInput = within(container)
-      .getAllByDisplayValue("https://api.openai.com/v1")
-      .pop() as HTMLInputElement;
+    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const baseUrlInput = within(llmSection).getByDisplayValue(
+      "https://api.openai.com/v1",
+    ) as HTMLInputElement;
     await user.clear(baseUrlInput);
     await user.type(baseUrlInput, "not-a-url");
-    await user.click(lastByRole("button", { name: "Save" }));
+    await user.click(within(llmSection).getByRole("button", { name: "Save LLM" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Base URL is not a valid URL.");
     expect(mocks.saveState).not.toHaveBeenCalled();
@@ -164,18 +166,33 @@ describe("SettingsForm", () => {
     expect(semantic).toBeChecked();
   });
 
-  it("cancel restores original values and clears dirty state", async () => {
+  it("cancelling LLM restores only the LLM values and clears its dirty state", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
-    const modelInput = within(container)
-      .getAllByDisplayValue("gpt-4o-mini")
-      .pop() as HTMLInputElement;
+    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const modelInput = within(llmSection).getByDisplayValue("gpt-4o-mini") as HTMLInputElement;
+    const saveButton = within(llmSection).getByRole("button", { name: "Save LLM" });
     await user.type(modelInput, "-changed");
-    expect(lastByRole("button", { name: "Save" })).toBeEnabled();
-    await user.click(lastByRole("button", { name: "Cancel" }));
-    expect(lastByRole("button", { name: "Save" })).toBeDisabled();
-    expect(
-      (within(container).getAllByDisplayValue("gpt-4o-mini").pop() as HTMLInputElement).value,
-    ).toBe("gpt-4o-mini");
+    expect(saveButton).toBeEnabled();
+    await user.click(within(llmSection).getByRole("button", { name: "Cancel" }));
+    expect(saveButton).toBeDisabled();
+    expect((within(llmSection).getByDisplayValue("gpt-4o-mini") as HTMLInputElement).value).toBe(
+      "gpt-4o-mini",
+    );
+  });
+
+  it("persists telemetry independently and leaves LLM unchanged", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<SettingsForm />);
+    const telemetrySection = within(container).getByRole("region", { name: "Telemetry" });
+    await user.click(within(telemetrySection).getByRole("switch", { name: "Disable telemetry" }));
+    await user.click(within(telemetrySection).getByRole("button", { name: "Save telemetry" }));
+
+    await waitFor(() => expect(mocks.saveState).toHaveBeenCalledTimes(1));
+    const saved = mocks.saveState.mock.calls[0]?.[0] as {
+      settings: { telemetryDisabled: boolean; openAiModel: string };
+    };
+    expect(saved.settings.telemetryDisabled).toBe(false);
+    expect(saved.settings.openAiModel).toBe("gpt-4o-mini");
   });
 });

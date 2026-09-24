@@ -8,6 +8,7 @@ export const TASKPANE_NAVIGATION_KEY = "ToneForge.TaskpaneNavigation";
 
 export type TaskpaneTarget =
   | "governance"
+  | "debugging"
   | "findings"
   | "ai-review-selection"
   | "ai-review-paragraph"
@@ -38,6 +39,7 @@ export function consumeTaskpaneTarget(): TaskpaneTarget | null {
 function isTaskpaneTarget(value: string | null): value is TaskpaneTarget {
   return (
     value === "governance" ||
+    value === "debugging" ||
     value === "findings" ||
     value === "ai-review-selection" ||
     value === "ai-review-paragraph" ||

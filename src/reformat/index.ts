@@ -1,4 +1,12 @@
 export type { FullReviewResult } from "../ai/review/documentEditorialReview";
+export { prepareReformatHost } from "./orchestrator";
+export {
+  getUnsupportedChangeIds,
+  isTrackedEditingEnabled,
+  prepareTrackedEditing,
+  setTrackedEditingEnabled,
+  type TrackedEditingPreparation,
+} from "./trackedEditing";
 export {
   applyReviewedPlan,
   reformatDocument,

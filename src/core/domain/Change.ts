@@ -16,6 +16,7 @@ export const ChangeTypeSchema = z.enum([
   "deleteRange",
   "setParagraphFormat",
   "setCharacterFormat",
+  "resetCharacterFormatting",
   "applyStyle",
   "insertBreak",
   "setListLevel",
@@ -76,6 +77,8 @@ const SetCharacterFormatPayloadSchema = z
   })
   .partial();
 
+const ResetCharacterFormattingPayloadSchema = z.object({}).partial();
+
 const ApplyStylePayloadSchema = z.object({
   styleName: z.string().trim().min(1, "applyStyle requires a non-empty styleName"),
 });
@@ -100,6 +103,10 @@ export const ChangePayloadSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("deleteRange"), payload: DeleteRangePayloadSchema }),
   z.object({ type: z.literal("setParagraphFormat"), payload: SetParagraphFormatPayloadSchema }),
   z.object({ type: z.literal("setCharacterFormat"), payload: SetCharacterFormatPayloadSchema }),
+  z.object({
+    type: z.literal("resetCharacterFormatting"),
+    payload: ResetCharacterFormattingPayloadSchema,
+  }),
   z.object({ type: z.literal("applyStyle"), payload: ApplyStylePayloadSchema }),
   z.object({ type: z.literal("insertBreak"), payload: InsertBreakPayloadSchema }),
   z.object({ type: z.literal("setListLevel"), payload: SetListLevelPayloadSchema }),

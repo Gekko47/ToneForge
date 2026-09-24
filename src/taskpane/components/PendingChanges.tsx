@@ -10,7 +10,7 @@ import type { Finding } from "../../core/domain/Finding";
 export interface PendingChangesProps {
   plan: ChangePlan | null;
   findings: Finding[];
-  onApply?: () => void | Promise<void>;
+  onApply?: () => boolean | Promise<boolean>;
   onReject?: () => void;
 }
 
@@ -28,8 +28,10 @@ export default function PendingChanges({
     setApplying(true);
     setResult(null);
     try {
-      await onApply?.();
-      setResult("Changes applied successfully.");
+      const applied = await onApply?.();
+      setResult(
+        applied ? "Changes applied and verified." : "Apply was refused; no success was reported.",
+      );
     } catch (err) {
       setResult(`Apply failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

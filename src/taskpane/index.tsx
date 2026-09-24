@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { ErrorBoundary } from "react-error-boundary";
 import { initializeIcons } from "@fluentui/react/lib/Icons";
 import App from "./App";
+import "./taskpane.css";
 
 // Register Fluent UI icons (ChevronDown, etc.) before any component renders.
 // Without this call, Fluent UI emits "icon not registered" warnings for every

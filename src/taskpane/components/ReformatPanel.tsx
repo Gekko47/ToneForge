@@ -11,17 +11,23 @@
  */
 
 import React from "react";
-import { reformatDocument, type ReformatResult } from "../../reformat";
+import { applyReviewedPlan, reformatDocument, type ReformatResult } from "../../reformat";
+import { loadState } from "../../core/state/persistence";
 import type { StyleProfile } from "../../core/domain/StyleProfile";
 import type { LlmSemanticProvider } from "../../ai/providers/LlmProvider";
+import type { WordCapabilities } from "../../word/capabilityProbe";
 
 export interface ReformatPanelProps {
   /** Active style profile driving analysis and planning. */
   profile: StyleProfile;
+  /** Called when a preview is ready so the main page can show the exact plan. */
+  onPreview?: (result: ReformatResult) => void;
   /** Optional max chars for document reads. */
   maxChars?: number;
   /** Optional semantic provider; tests inject a MockAdapter-backed registry. */
   registry?: LlmSemanticProvider;
+  /** Read-only host capability snapshot; absence blocks actionable Apply. */
+  capabilities?: WordCapabilities | null;
 }
 
 type PanelPhase = "idle" | "previewing" | "ready" | "applying" | "applied" | "refused";
@@ -37,25 +43,17 @@ function messageStyle(kind: PanelMessage["kind"]): React.CSSProperties {
   };
 }
 
-function formatTracking(result: ReformatResult): string {
-  const tracking = result.tracking;
-  const parts = [`managed: ${tracking.managed ? "yes" : "no"}`];
-  if (tracking.modeBefore !== undefined) parts.push(`before: ${tracking.modeBefore}`);
-  if (tracking.modeAfter !== undefined) parts.push(`after: ${tracking.modeAfter}`);
-  if (tracking.recordedCount !== undefined) parts.push(`recorded: ${tracking.recordedCount}`);
-  return parts.join(", ");
-}
-
 export default function ReformatPanel({
   profile,
   maxChars,
   registry,
+  capabilities,
+  onPreview,
 }: ReformatPanelProps): React.ReactNode {
   const [phase, setPhase] = React.useState<PanelPhase>("idle");
   const [result, setResult] = React.useState<ReformatResult | null>(null);
   const [messages, setMessages] = React.useState<PanelMessage[]>([]);
-  const [includeRawText, setIncludeRawText] = React.useState(false);
-  const [acknowledgeConflicts, setAcknowledgeConflicts] = React.useState(false);
+  const includeRawText = loadState().settings.semanticOptIn;
 
   function pushMessages(next: PanelMessage[]): void {
     setMessages((previous) => [...previous, ...next]);
@@ -64,7 +62,6 @@ export default function ReformatPanel({
   async function runPreview(): Promise<void> {
     setPhase("previewing");
     setResult(null);
-    setAcknowledgeConflicts(false);
     try {
       const preview = await reformatDocument({
         profile,
@@ -74,6 +71,7 @@ export default function ReformatPanel({
         ...(registry ? { registry } : {}),
       });
       setResult(preview);
+      onPreview?.(preview);
       setPhase("ready");
       if (preview.plan.changes.length === 0) {
         pushMessages([
@@ -107,70 +105,85 @@ export default function ReformatPanel({
   }
 
   async function runApply(): Promise<void> {
-    if (!result) return;
+    if (!result || !canApply) return;
     setPhase("applying");
+    setMessages([]);
     try {
-      const applied = await reformatDocument({
-        profile,
-        includeRawText,
-        allowConflictingApply: acknowledgeConflicts,
+      const applied = await applyReviewedPlan({
+        plan: result.plan,
+        allowConflictingApply: false,
         ...(maxChars !== undefined ? { maxChars } : {}),
-        ...(registry ? { registry } : {}),
       });
-      setResult(applied);
-      if (applied.applied) {
+      if (applied.applied && applied.verified) {
         setPhase("applied");
         pushMessages([
-          {
-            kind: "success",
-            text: `Applied ${applied.results.filter((item) => item.applied).length} of ${applied.results.length} change(s). Tracking [${formatTracking(applied)}].`,
-          },
+          { kind: "success", text: "All reviewed changes were applied and verified." },
+        ]);
+      } else if (applied.stale) {
+        setPhase("refused");
+        pushMessages([
+          { kind: "error", text: "The document changed since preview. Preview again." },
         ]);
       } else {
         setPhase("refused");
-        const failed = applied.results.filter((item) => !item.applied);
-        if (applied.stale) {
-          pushMessages([
-            {
-              kind: "error",
-              text: "Apply refused: the document changed since the preview. Re-run preview.",
-            },
-          ]);
-        } else if (applied.plan.conflicts.length > 0) {
-          pushMessages([
-            {
-              kind: "error",
-              text: `Apply refused: ${applied.plan.conflicts.length} unresolved conflict(s). Acknowledge the conflicts to proceed.`,
-            },
-          ]);
-        } else if (failed.length > 0) {
-          pushMessages([
-            {
-              kind: "error",
-              text: `Apply blocked: ${failed[0]?.error ?? "mutation gate refused the plan"}.`,
-            },
-          ]);
-        } else {
-          pushMessages([{ kind: "info", text: "Apply completed with no changes applied." }]);
-        }
+        const failed = applied.results.find((item) => !item.applied);
+        pushMessages([
+          {
+            kind: "error",
+            text: applied.verificationError ?? failed?.error ?? "Apply was not completed.",
+          },
+        ]);
       }
     } catch (err) {
+      setPhase("ready");
       pushMessages([
         {
           kind: "error",
           text: `Apply failed: ${err instanceof Error ? err.message : String(err)}`,
         },
       ]);
-      setPhase("ready");
     }
   }
 
   const busy = phase === "previewing" || phase === "applying";
+  const capabilitiesVerified = capabilities !== null && capabilities !== undefined;
+  const requiredCapabilities = result
+    ? [
+        ...new Set(
+          result.plan.changes.map((change) => {
+            switch (change.type) {
+              case "insertText":
+                return "supportsInsertText" as const;
+              case "replaceText":
+              case "deleteRange":
+                return "supportsReplaceText" as const;
+              case "insertBreak":
+                return "supportsInsertBreak" as const;
+              case "applyStyle":
+                return "supportsStyles" as const;
+              case "setParagraphFormat":
+                return "supportsParagraphFormat" as const;
+              case "setCharacterFormat":
+                return "supportsCharacterFormat" as const;
+              case "resetCharacterFormatting":
+                return "supportsResetCharacterFormatting" as const;
+              case "setListLevel":
+                return "supportsListLevel" as const;
+            }
+          }),
+        ),
+      ]
+    : [];
+  const unsupportedCapabilities = capabilitiesVerified
+    ? requiredCapabilities.filter((capability) => capabilities[capability] === false)
+    : [];
+  const hostSupportsPlan =
+    capabilitiesVerified && capabilities.supportsRevisions && unsupportedCapabilities.length === 0;
   const canApply =
     result !== null &&
     result.plan.changes.length > 0 &&
     !result.plan.stale &&
-    (result.plan.conflicts.length === 0 || acknowledgeConflicts);
+    result.plan.conflicts.length === 0;
 
   return (
     <section aria-label="Safe reformat" style={{ marginTop: "1.5rem" }}>
@@ -181,15 +194,22 @@ export default function ReformatPanel({
         refuses stale or conflicting plans.
       </p>
 
-      <label style={{ display: "block", marginTop: "0.5rem" }}>
-        <input
-          type="checkbox"
-          checked={includeRawText}
-          onChange={(event) => setIncludeRawText(event.target.checked)}
-          disabled={busy}
-        />{" "}
-        Allow semantic analysis on document text (explicit opt-in)
-      </label>
+      <p className="tf-sub">
+        Semantic reformat follows the scope-specific consent saved in Settings. Deterministic
+        reformat remains available when semantic analysis is disabled.
+      </p>
+
+      {!capabilitiesVerified && (
+        <p role="status" className="tf-sub">
+          Word is checking mutation readiness. Preview is available while the host is inspected.
+        </p>
+      )}
+      {capabilitiesVerified && !hostSupportsPlan && (
+        <p role="status" className="tf-sub">
+          This Word host does not support every operation in the reviewed plan. Preview remains
+          available; unsupported operations must be fixed in the plan before apply.
+        </p>
+      )}
 
       <div style={{ marginTop: "0.75rem" }}>
         <button type="button" onClick={runPreview} disabled={busy}>
@@ -199,26 +219,34 @@ export default function ReformatPanel({
           type="button"
           onClick={runApply}
           disabled={busy || !canApply}
+          aria-describedby={!canApply ? "apply-readiness" : undefined}
           style={{ marginLeft: "0.5rem" }}
         >
           {phase === "applying" ? "Applying…" : "Apply changes"}
         </button>
       </div>
+      {!capabilitiesVerified && (
+        <p id="apply-readiness" className="tf-sub">
+          Apply performs a fresh host capability check immediately before any tracked edit.
+        </p>
+      )}
+      {capabilitiesVerified && !canApply && result !== null && (
+        <ul id="apply-readiness" className="tf-sub">
+          {result.plan.stale && <li>Preview again because the document changed.</li>}
+          {result.plan.conflicts.length > 0 && <li>Resolve plan conflicts before applying.</li>}
+          {unsupportedCapabilities.map((capability) => (
+            <li key={capability}>This host cannot perform {capability.replace("supports", "")}.</li>
+          ))}
+          {!result.tracking.managed && <li>Managed Track Changes is unavailable.</li>}
+        </ul>
+      )}
 
       {result && result.plan.conflicts.length > 0 && (
         <div style={{ marginTop: "0.75rem" }}>
           <p style={{ color: "#a4262c" }}>
-            {result.plan.conflicts.length} conflict(s) require review before applying.
+            {result.plan.conflicts.length} conflict(s) block application. Regenerate the preview
+            after reviewing the conflict list.
           </p>
-          <label>
-            <input
-              type="checkbox"
-              checked={acknowledgeConflicts}
-              onChange={(event) => setAcknowledgeConflicts(event.target.checked)}
-              disabled={busy}
-            />{" "}
-            I have reviewed the conflicts and accept the risk of contradictory edits.
-          </label>
           <ul aria-live="polite">
             {result.plan.conflicts.map((conflict, index) => {
               const message = typeof conflict === "string" ? conflict : conflict.message;

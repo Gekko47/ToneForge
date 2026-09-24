@@ -32,7 +32,14 @@ function requireVerifiedCapability(
   changeId: string,
   capability: keyof Pick<
     WordCapabilities,
-    "supportsInsertText" | "supportsReplaceText" | "supportsInsertBreak" | "supportsStyles"
+    | "supportsInsertText"
+    | "supportsReplaceText"
+    | "supportsInsertBreak"
+    | "supportsStyles"
+    | "supportsParagraphFormat"
+    | "supportsCharacterFormat"
+    | "supportsResetCharacterFormatting"
+    | "supportsListLevel"
   >,
   changeLabel: string,
 ): void {
@@ -186,18 +193,10 @@ export interface ApplyWithTrackingResult {
 /**
  * Apply a ChangePlan with revision tracking managed around the mutations.
  *
- * When the host exposes tracking control (`Document.changeTrackingMode`,
- * WordApi 1.4, or `Document.trackRevisions`, WordApiDesktop 1.4), tracking is
- * switched on for the current user (`TrackMineOnly`, "Just Me") before the
- * first change and restored afterwards, so every applied change is natively
- * recorded as a tracked revision. The per-change `RevisionResult[]` is still
- * the tool's record of what it changed.
- *
- * When tracking control is unavailable, edits are applied normally and
- * reported as `tracking.managed: false` — they are still tracked if the user
- * has Track Changes enabled in the Word UI, but the add-in cannot guarantee
- * or verify it. Failures to enable, restore, or count revisions are never
- * fatal to the plan itself.
+ * Production application is fail-closed: if the host does not expose a
+ * controllable tracking mode, no mutation is attempted. The previous mode is
+ * restored after the plan, and the result includes the observed revision
+ * count when Word exposes it.
  */
 export async function applyChangePlanWithTracking(
   plan: ChangePlan,
@@ -206,6 +205,16 @@ export async function applyChangePlanWithTracking(
   nodes?: readonly DocumentNode[],
 ): Promise<ApplyWithTrackingResult> {
   const enablement = await enableRevisionTracking();
+  if (!enablement.managed) {
+    return {
+      results: plan.changes.map((change) => ({
+        changeId: change.id,
+        applied: false,
+        error: "Managed Track Changes could not be established; no changes were applied.",
+      })),
+      tracking: { managed: false },
+    };
+  }
   const results = await applyChangePlan(plan, currentDocHash, allowConflicts, nodes);
   const modeAfter = await restoreRevisionTracking(enablement);
   const recordedCount = enablement.managed ? await countRecordedRevisions() : undefined;
@@ -369,6 +378,7 @@ async function applySingleChange(change: Change): Promise<void> {
       }
       case "setParagraphFormat": {
         const range = await getRangeByOffset(context, change.range);
+        requireVerifiedCapability(change.id, "supportsParagraphFormat", "setParagraphFormat");
         const paragraphFormat = range.paragraphFormat;
         if (!paragraphFormat) {
           throw new Error("setParagraphFormat is not supported in this host");
@@ -427,7 +437,21 @@ async function applySingleChange(change: Change): Promise<void> {
       }
       case "setCharacterFormat": {
         const range = await getRangeByOffset(context, change.range);
+        requireVerifiedCapability(change.id, "supportsCharacterFormat", "setCharacterFormat");
         range.font.set(change.payload);
+        break;
+      }
+      case "resetCharacterFormatting": {
+        const range = await getRangeByOffset(context, change.range);
+        requireVerifiedCapability(
+          change.id,
+          "supportsResetCharacterFormatting",
+          "resetCharacterFormatting",
+        );
+        if (typeof range.font.reset !== "function") {
+          throw new Error("resetCharacterFormatting is not supported in this host");
+        }
+        range.font.reset();
         break;
       }
       case "applyStyle": {
@@ -460,6 +484,7 @@ async function applySingleChange(change: Change): Promise<void> {
       }
       case "setListLevel": {
         const range = await getRangeByOffset(context, change.range);
+        requireVerifiedCapability(change.id, "supportsListLevel", "setListLevel");
         const listFormat = range.listFormat;
         if (!listFormat) {
           throw new Error("setListLevel is not supported in this host");
@@ -637,13 +662,19 @@ function validatePayloadForType(change: Change): string | undefined {
         return "applyStyle requires a non-empty payload.styleName";
       }
       return undefined;
+    case "resetCharacterFormatting":
+      if (Object.keys(payload).length > 0) {
+        return "resetCharacterFormatting does not accept a payload";
+      }
+      return undefined;
     case "setListLevel":
       if (
         typeof payload["level"] !== "number" ||
         !Number.isInteger(payload["level"]) ||
-        payload["level"] < 0
+        payload["level"] < 0 ||
+        payload["level"] > 8
       ) {
-        return "setListLevel requires a non-negative integer payload.level";
+        return "setListLevel requires an integer payload.level from 0 through 8";
       }
       return undefined;
     default:

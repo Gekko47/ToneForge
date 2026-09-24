@@ -124,6 +124,7 @@ declare global {
       underline?: boolean;
       load: (...props: Array<string>) => Font;
       set: (properties: Record<string, unknown>) => Font;
+      reset: () => void;
     }
 
     interface Styles {

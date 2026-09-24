@@ -14,11 +14,8 @@
 import { checkConsistency, type ConsistencyReport } from "../analysis/consistencyChecker";
 import { planChanges } from "../changes/planner";
 import { isStale } from "../changes/staleGuard";
-import {
-  applyChangePlanWithTracking,
-  STAGE_01_PASSED,
-  type ApplyWithTrackingResult,
-} from "../word/revisionAdapter";
+import { applyChangePlanWithTracking, type ApplyWithTrackingResult } from "../word/revisionAdapter";
+import { probeWordCapabilities, type WordCapabilities } from "../word/capabilityProbe";
 import {
   getDocumentSnapshot,
   getStructuredSnapshot,
@@ -28,6 +25,7 @@ import {
 import { getFormattingSnapshot } from "../word/formattingReader";
 import { type FormattingSnapshot } from "../formatting/formattingSnapshot";
 import type { StyleProfile } from "../core/domain/StyleProfile";
+import type { Change } from "../core/domain/Change";
 import type { ChangePlan } from "../core/domain/ChangePlan";
 import type { LlmProvider, LlmSemanticProvider } from "../ai/providers/LlmProvider";
 import type { DocumentSnapshot as StructuredDocumentSnapshot } from "../core/domain/DocumentSnapshot";
@@ -36,6 +34,7 @@ import {
   reviewEntireDocument as runDocumentEditorialReview,
   type FullReviewResult,
 } from "../ai/review/documentEditorialReview";
+import { prepareTrackedEditing } from "./trackedEditing";
 
 export interface ReformatOptions {
   profile: StyleProfile;
@@ -69,8 +68,24 @@ export interface ReformatResult {
   tracking: ApplyWithTrackingResult["tracking"];
   snapshot: DocumentSnapshot;
   stale: boolean;
-  /** True only when every planned change was applied. */
+  /** True only when every planned change was applied and verified. */
   applied: boolean;
+  verified: boolean;
+  verificationError?: string;
+}
+
+export interface ApplyReviewedPlanResult {
+  results: ApplyWithTrackingResult["results"];
+  tracking: ApplyWithTrackingResult["tracking"];
+  stale: boolean;
+  applied: boolean;
+  verified: boolean;
+  verificationError?: string;
+}
+
+/** Inspect the non-destructive host probe without arming the mutation adapter. */
+export async function prepareReformatHost(): Promise<WordCapabilities> {
+  return probeWordCapabilities();
 }
 
 const DEFAULT_MAX_CHARS = 500_000;
@@ -99,7 +114,6 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     maxChars,
     preview = false,
     currentDocHash,
-    allowConflictingApply = false,
   } = options;
   const readLimit = maxChars ?? DEFAULT_MAX_CHARS;
 
@@ -148,6 +162,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
       snapshot,
       stale: plan.stale,
       applied: false,
+      verified: false,
     };
   }
 
@@ -163,14 +178,14 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
       snapshot,
       stale: plan.stale,
       applied: false,
+      verified: false,
     };
   }
 
-  // Stage 22: conflicting plans are refused unless the caller explicitly
-  // acknowledges the risk via allowConflictingApply. This is a safety gate,
-  // not a resolution step — the conflict list is preserved on the plan for
-  // the caller to review.
-  if (plan.conflicts.length > 0 && !allowConflictingApply) {
+  // Production application is fail-closed for unresolved conflicts. A preview
+  // remains available so the user can inspect the conflict list, but the
+  // mutation path never accepts a risk acknowledgement.
+  if (plan.conflicts.length > 0) {
     return {
       report,
       plan,
@@ -183,6 +198,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
       snapshot,
       stale: plan.stale,
       applied: false,
+      verified: false,
     };
   }
 
@@ -201,24 +217,26 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
       snapshot,
       stale: true,
       applied: false,
+      verified: false,
     };
   }
 
-  // Stage 01 gate pre-entry refusal. Snapshot/analyze/plan are read-only/pure,
-  // so the mutation gate is enforced at exactly the boundary that matters.
-  if (!STAGE_01_PASSED) {
+  const editingPreparation = await prepareTrackedEditing(plan.changes);
+  if (editingPreparation.error) {
     return {
       report,
       plan,
       results: plan.changes.map((change) => ({
         changeId: change.id,
         applied: false,
-        error: "Stage 01 Office.js capability probe has not passed; mutation blocked",
+        error: editingPreparation.error ?? "Tracked editing is unavailable; mutation blocked.",
       })),
       tracking: { managed: false },
       snapshot,
       stale: plan.stale,
       applied: false,
+      verified: false,
+      verificationError: editingPreparation.error ?? undefined,
     };
   }
 
@@ -226,14 +244,37 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   const applyResult = await applyChangePlanWithTracking(
     plan,
     liveHash,
-    allowConflictingApply,
+    false,
     liveStructured.nodes,
   );
   const verificationSnapshot = await getDocumentSnapshot({ maxChars: readLimit });
   const verificationHash = verificationSnapshot.hash ?? hashDocument(verificationSnapshot.text);
   const allApplied =
     applyResult.results.length > 0 && applyResult.results.every((result) => result.applied);
-  if (allApplied && verificationHash === liveHash) {
+  if (!applyResult.tracking.managed) {
+    return {
+      report,
+      plan,
+      results: applyResult.results.map((result) => ({
+        changeId: result.changeId,
+        applied: false,
+        error: "Managed Track Changes could not be established; no changes were applied.",
+      })),
+      tracking: applyResult.tracking,
+      snapshot,
+      stale: false,
+      applied: false,
+      verified: false,
+      verificationError: "Managed Track Changes is required.",
+    };
+  }
+  if (
+    allApplied &&
+    verificationHash === liveHash &&
+    plan.changes.some((change) =>
+      ["insertText", "replaceText", "deleteRange"].includes(change.type),
+    )
+  ) {
     return {
       report,
       plan,
@@ -246,6 +287,8 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
       snapshot,
       stale: false,
       applied: false,
+      verified: false,
+      verificationError: "Post-apply verification found no document change.",
     };
   }
 
@@ -257,26 +300,156 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     snapshot,
     stale: plan.stale,
     applied: allApplied,
+    verified: allApplied,
   };
 }
 
 export interface ApplyReviewedPlanOptions {
   plan: ChangePlan;
+  /** Retained for compatibility; conflicts are always refused in production. */
   allowConflictingApply?: boolean;
   maxChars?: number;
 }
 
-export interface ApplyReviewedPlanResult {
-  results: ApplyWithTrackingResult["results"];
-  tracking: ApplyWithTrackingResult["tracking"];
-  stale: boolean;
-  applied: boolean;
+interface PlanReadback {
+  verified: boolean;
+  error?: string;
+}
+
+function paragraphAt(
+  after: FormattingSnapshot,
+  change: Change,
+): FormattingSnapshot["paragraphs"][number] | undefined {
+  return after.paragraphs.find((paragraph) => paragraph.index === change.range.start);
+}
+
+function verifyFormattingChange(
+  change: Change,
+  after: FormattingSnapshot,
+): { verified: boolean; error: string } {
+  const paragraph = paragraphAt(after, change);
+  if (paragraph === undefined) {
+    return { verified: false, error: "Formatting readback did not contain the target paragraph." };
+  }
+
+  switch (change.type) {
+    case "applyStyle":
+      return paragraph.styleName === change.payload.styleName
+        ? { verified: true, error: "" }
+        : {
+            verified: false,
+            error: `Readback expected style "${String(change.payload.styleName)}" but found "${paragraph.styleName}".`,
+          };
+    case "resetCharacterFormatting":
+      return paragraph.fontName === null &&
+        paragraph.fontSize === null &&
+        paragraph.fontColor === null &&
+        paragraph.bold !== true &&
+        paragraph.italic !== true &&
+        paragraph.underline !== true
+        ? { verified: true, error: "" }
+        : { verified: false, error: "Readback still contains direct character formatting." };
+    case "setCharacterFormat": {
+      const payload = change.payload as {
+        name?: string;
+        size?: number;
+        color?: string;
+        bold?: boolean;
+        italic?: boolean;
+        underline?: boolean;
+      };
+      const matches =
+        (payload.name === undefined || paragraph.fontName === payload.name) &&
+        (payload.size === undefined || paragraph.fontSize === payload.size) &&
+        (payload.color === undefined || paragraph.fontColor === payload.color) &&
+        (payload.bold === undefined || paragraph.bold === payload.bold) &&
+        (payload.italic === undefined || paragraph.italic === payload.italic) &&
+        (payload.underline === undefined || paragraph.underline === payload.underline);
+      return matches
+        ? { verified: true, error: "" }
+        : { verified: false, error: "Readback did not match the requested character formatting." };
+    }
+    case "setParagraphFormat": {
+      const payload = change.payload as {
+        alignment?: "left" | "center" | "right" | "justified";
+        lineSpacing?: number;
+        spaceAfter?: number;
+        spaceBefore?: number;
+        listLevel?: number;
+      };
+      const matches =
+        (payload.alignment === undefined || paragraph.alignment === payload.alignment) &&
+        (payload.lineSpacing === undefined || paragraph.lineSpacing === payload.lineSpacing) &&
+        (payload.spaceAfter === undefined || paragraph.spaceAfter === payload.spaceAfter) &&
+        (payload.spaceBefore === undefined || paragraph.spaceBefore === payload.spaceBefore) &&
+        (payload.listLevel === undefined || paragraph.listLevel === payload.listLevel);
+      return matches
+        ? { verified: true, error: "" }
+        : { verified: false, error: "Readback did not match the requested paragraph formatting." };
+    }
+    case "setListLevel":
+      return paragraph.listLevel === change.payload.level
+        ? { verified: true, error: "" }
+        : {
+            verified: false,
+            error: `Readback expected list level ${String(change.payload.level)} but found ${String(paragraph.listLevel)}.`,
+          };
+    default:
+      return { verified: true, error: "" };
+  }
+}
+
+async function verifyPlanReadback(plan: ChangePlan, maxChars?: number): Promise<PlanReadback> {
+  const hasTextChange = plan.changes.some((change) =>
+    ["insertText", "replaceText", "deleteRange"].includes(change.type),
+  );
+  if (hasTextChange) {
+    const after = await getDocumentSnapshot(maxChars === undefined ? {} : { maxChars });
+    return (after.hash ?? hashDocument(after.text)) !== plan.docHash
+      ? { verified: true }
+      : { verified: false, error: "Readback did not show the planned text change." };
+  }
+
+  const formattingChanges = plan.changes.filter((change) =>
+    [
+      "applyStyle",
+      "resetCharacterFormatting",
+      "setCharacterFormat",
+      "setParagraphFormat",
+      "setListLevel",
+    ].includes(change.type),
+  );
+  if (formattingChanges.length === 0) return { verified: true };
+
+  const after = await getFormattingSnapshot(maxChars === undefined ? {} : { maxChars });
+  for (const change of formattingChanges) {
+    const readback = verifyFormattingChange(change, after);
+    if (!readback.verified) return readback;
+  }
+  return { verified: true };
 }
 
 /** Apply a previously reviewed plan after a fresh structured protection check. */
 export async function applyReviewedPlan(
   options: ApplyReviewedPlanOptions,
 ): Promise<ApplyReviewedPlanResult> {
+  const editingPreparation = await prepareTrackedEditing(options.plan.changes);
+  if (editingPreparation.error) {
+    return {
+      results: options.plan.changes.map((change) => ({
+        changeId: change.id,
+        applied: false,
+        error:
+          editingPreparation.error ?? "Tracked editing is unavailable; no changes were applied.",
+      })),
+      tracking: { managed: false },
+      stale: false,
+      applied: false,
+      verified: false,
+      verificationError: editingPreparation.error,
+    };
+  }
+
   const live = await getStructuredSnapshot(
     options.maxChars === undefined ? {} : { maxChars: options.maxChars },
   );
@@ -290,16 +463,63 @@ export async function applyReviewedPlan(
       tracking: { managed: false },
       stale: true,
       applied: false,
+      verified: false,
+      verificationError: "The document changed after preview.",
+    };
+  }
+  if (options.plan.conflicts.length > 0) {
+    return {
+      results: options.plan.changes.map((change) => ({
+        changeId: change.id,
+        applied: false,
+        error: "The plan contains unresolved conflicts; regenerate the preview before applying.",
+      })),
+      tracking: { managed: false },
+      stale: false,
+      applied: false,
+      verified: false,
+      verificationError: "Unresolved conflicts block application.",
     };
   }
   const result = await applyChangePlanWithTracking(
     options.plan,
     live.contentHash,
-    options.allowConflictingApply ?? false,
+    false,
     live.nodes,
   );
   const allApplied = result.results.length > 0 && result.results.every((item) => item.applied);
-  return { ...result, stale: false, applied: allApplied };
+  if (!result.tracking.managed) {
+    return {
+      ...result,
+      results: result.results.map((item) => ({
+        changeId: item.changeId,
+        applied: false,
+        error: "Managed Track Changes could not be established; no changes were applied.",
+      })),
+      stale: false,
+      applied: false,
+      verified: false,
+      verificationError: "Managed Track Changes is required.",
+    };
+  }
+  if (!allApplied) {
+    return {
+      ...result,
+      stale: false,
+      applied: false,
+      verified: false,
+      verificationError:
+        result.results.find((item) => !item.applied)?.error ?? "One or more changes failed.",
+    };
+  }
+  const readback = await verifyPlanReadback(options.plan, options.maxChars);
+  return {
+    ...result,
+    stale: false,
+    applied: readback.verified,
+    verified: readback.verified,
+    ...(readback.error === undefined ? {} : { verificationError: readback.error }),
+  };
 }
 
 export interface FullDocumentReviewOptions {

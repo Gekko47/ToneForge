@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import { initializeOffice } from "./officeInit";
 import { logger } from "../shared/utils/logger";
+import { ThemeProvider as LocalThemeProvider } from "./theme";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 
@@ -25,26 +26,20 @@ export default function App(): React.ReactNode {
     };
   }, []);
 
-  if (error) {
-    return (
-      <div className="tf-card" role="alert">
-        <p className="tf-error">{error}</p>
-      </div>
-    );
-  }
-
-  if (!ready) {
-    return (
-      <div className="tf-card" aria-live="polite">
-        <p className="tf-title">ToneForge</p>
-        <p>Loading…</p>
-      </div>
-    );
-  }
-
-  return (
+  const content = error ? (
+    <div className="tf-card" role="alert">
+      <p className="tf-error">{error}</p>
+    </div>
+  ) : !ready ? (
+    <div className="tf-card" aria-live="polite">
+      <p className="tf-title">ToneForge</p>
+      <p>Loading…</p>
+    </div>
+  ) : (
     <Suspense fallback={<div className="tf-card">Loading…</div>}>
       <Dashboard />
     </Suspense>
   );
+
+  return <LocalThemeProvider>{content}</LocalThemeProvider>;
 }

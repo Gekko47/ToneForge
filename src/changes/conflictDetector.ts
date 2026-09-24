@@ -8,7 +8,11 @@
 import type { Change, ChangeType } from "../core/domain/Change";
 
 const STYLE_TYPES: readonly ChangeType[] = ["applyStyle"];
-const DIRECT_FORMAT_TYPES: readonly ChangeType[] = ["setCharacterFormat", "setParagraphFormat"];
+const DIRECT_FORMAT_TYPES: readonly ChangeType[] = [
+  "setCharacterFormat",
+  "resetCharacterFormatting",
+  "setParagraphFormat",
+];
 
 function rangesOverlap(left: Change["range"], right: Change["range"]): boolean {
   const leftIsEmpty = left.start === left.end;

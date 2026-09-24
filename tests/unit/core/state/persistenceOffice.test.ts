@@ -82,6 +82,7 @@ describe("persistence with Office roamingSettings", () => {
         llmProvider: "mock",
         spotReviewConsent: false,
         fullDocumentReviewConsent: false,
+        semanticOptIn: false,
         telemetryDisabled: true,
       },
     });

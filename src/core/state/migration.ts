@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS: PersistedState["settings"] = {
   spotReviewConsent: false,
   fullDocumentReviewConsent: false,
   telemetryDisabled: true,
+  semanticOptIn: false,
 };
 
 const DEFAULT_GOVERNANCE_PROFILES: Record<string, GovernanceProfile> = {};

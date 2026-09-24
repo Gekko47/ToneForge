@@ -80,6 +80,20 @@ describe("Phase C task-pane components", () => {
     expect(screen.getByRole("button", { name: "View findings" })).toBeInTheDocument();
   });
 
+  it("labels deterministic and AI findings by review context", () => {
+    render(
+      <FindingsList
+        findings={[
+          finding(),
+          finding({ id: "22222222-2222-4222-8222-222222222222", source: "ai" }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/Document scan/)).toBeInTheDocument();
+    expect(screen.getByText(/Current AI review/)).toBeInTheDocument();
+  });
+
   it("exposes finding navigation and actions", () => {
     const item = finding();
     const onApply = vi.fn();

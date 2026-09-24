@@ -48,16 +48,9 @@ export function normalizeFormatting(options: NormalizeOptions): Change[] {
       case "formatting.directFormatting":
         changes.push(
           createChange({
-            type: "setCharacterFormat",
+            type: "resetCharacterFormatting",
             range,
-            payload: {
-              name: para.fontName ?? undefined,
-              size: para.fontSize ?? undefined,
-              color: para.fontColor ?? undefined,
-              bold: para.bold ?? undefined,
-              italic: para.italic ?? undefined,
-              underline: para.underline ?? undefined,
-            },
+            payload: {},
             rationale: `Clear direct formatting on paragraph ${paraIndex}`,
             findingId: finding.id,
           }),

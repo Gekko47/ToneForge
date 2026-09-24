@@ -21,6 +21,10 @@ export interface WordCapabilities {
   supportsInsertParagraph: boolean;
   supportsInsertBreak: boolean;
   supportsStyles: boolean;
+  supportsParagraphFormat: boolean;
+  supportsCharacterFormat: boolean;
+  supportsResetCharacterFormatting: boolean;
+  supportsListLevel: boolean;
   supportsRevisions: boolean;
   supportsSelection: boolean;
   supportsParagraphResolution: boolean;
@@ -36,6 +40,10 @@ const DEFAULT_CAPABILITIES: WordCapabilities = {
   supportsInsertParagraph: false,
   supportsInsertBreak: false,
   supportsStyles: false,
+  supportsParagraphFormat: false,
+  supportsCharacterFormat: false,
+  supportsResetCharacterFormatting: false,
+  supportsListLevel: false,
   supportsRevisions: false,
   supportsSelection: false,
   supportsParagraphResolution: false,
@@ -128,6 +136,46 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
           // reported false here on 2026-09-22, so this path still needs a
           // live re-probe before it can be trusted.
           return typeof stylesView.getByNameOrNullObject === "function";
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsParagraphFormat",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range.paragraphFormat, "set");
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsCharacterFormat",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range.font, "set");
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsResetCharacterFormatting",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range.font, "reset");
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsListLevel",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range.listFormat, "set");
         });
         return result === true;
       },

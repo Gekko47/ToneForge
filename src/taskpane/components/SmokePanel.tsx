@@ -89,7 +89,12 @@ function resolveActiveProfile(): { profile: StyleProfile } | { error: string } {
   return { profile };
 }
 
-export default function SmokePanel(): React.ReactNode {
+export interface SmokePanelProps {
+  /** Historical controls remain disabled until the troubleshooting user confirms mutation risk. */
+  confirmed?: boolean;
+}
+
+export default function SmokePanel({ confirmed = false }: SmokePanelProps = {}): React.ReactNode {
   const [busy, setBusy] = React.useState(false);
   const [gateEnabled, setGateEnabled] = React.useState(false);
   const [selectionPreview, setSelectionPreview] = React.useState<SelectionPreview | null>(null);
@@ -160,7 +165,7 @@ export default function SmokePanel(): React.ReactNode {
   }
 
   async function applySelectionPlan(): Promise<void> {
-    if (!selectionPreview) return;
+    if (!selectionPreview || !confirmed) return;
     setBusy(true);
     try {
       const snapshot = await getDocumentSnapshot();
@@ -183,6 +188,7 @@ export default function SmokePanel(): React.ReactNode {
   }
 
   async function enableGate(): Promise<void> {
+    if (!confirmed) return;
     setBusy(true);
     try {
       const caps = await probeWordCapabilities();
@@ -237,7 +243,7 @@ export default function SmokePanel(): React.ReactNode {
   }
 
   async function applyDemo(): Promise<void> {
-    if (!demoPreview) return;
+    if (!demoPreview || !confirmed) return;
     setBusy(true);
     try {
       const snapshot = await getDocumentSnapshot();
@@ -274,7 +280,7 @@ export default function SmokePanel(): React.ReactNode {
       <button
         type="button"
         onClick={applySelectionPlan}
-        disabled={busy || !selectionPreview || selectionPreview.findings.length === 0}
+        disabled={busy || !confirmed || !selectionPreview || selectionPreview.findings.length === 0}
         style={{ marginLeft: "0.5rem" }}
       >
         Apply plan
@@ -290,7 +296,7 @@ export default function SmokePanel(): React.ReactNode {
       )}
 
       <h3>2. ChangePlan smoke test</h3>
-      <button type="button" onClick={enableGate} disabled={busy || gateEnabled}>
+      <button type="button" onClick={enableGate} disabled={busy || gateEnabled || !confirmed}>
         {gateEnabled ? "Gate enabled" : "Enable mutations (Stage 01 gate)"}
       </button>
       <button type="button" onClick={buildDemo} disabled={busy} style={{ marginLeft: "0.5rem" }}>
@@ -299,7 +305,7 @@ export default function SmokePanel(): React.ReactNode {
       <button
         type="button"
         onClick={applyDemo}
-        disabled={busy || !demoPreview || !gateEnabled}
+        disabled={busy || !confirmed || !demoPreview || !gateEnabled}
         style={{ marginLeft: "0.5rem" }}
       >
         Apply demo plan
@@ -312,6 +318,11 @@ export default function SmokePanel(): React.ReactNode {
         </ul>
       )}
 
+      {!confirmed && (
+        <p role="status">
+          Confirm the mutation warning in Troubleshooting before using these controls.
+        </p>
+      )}
       {messages.length > 0 && (
         <ul aria-live="polite">
           {messages.map((message, index) => (

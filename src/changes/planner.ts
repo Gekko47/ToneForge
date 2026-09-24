@@ -122,24 +122,10 @@ function listLevelChange(finding: Finding, level: number): Change | null {
 }
 
 function directFormatChange(finding: Finding): Change {
-  const payload: Record<string, unknown> = {};
-  if (/\bbold\b/i.test(finding.message)) payload.bold = true;
-  if (/\bitalic\b/i.test(finding.message)) payload.italic = true;
-  if (/\bunderline\b/i.test(finding.message)) payload.underline = true;
-
-  const fontMatch = /font=([^\s,)]+)/i.exec(finding.message);
-  if (fontMatch?.[1] !== undefined) payload.name = fontMatch[1];
-
-  const sizeMatch = /size=(\d+(?:\.\d+)?)pt/i.exec(finding.message);
-  if (sizeMatch?.[1] !== undefined) payload.size = Number.parseFloat(sizeMatch[1]);
-
-  const colorMatch = /color=(#[0-9a-f]{3,8})/i.exec(finding.message);
-  if (colorMatch?.[1] !== undefined) payload.color = colorMatch[1];
-
   return makeChange({
-    type: "setCharacterFormat",
+    type: "resetCharacterFormatting",
     range: toChangeRange(finding.range),
-    payload,
+    payload: {},
     rationale: finding.message,
     finding,
   });
@@ -199,6 +185,12 @@ function typographyReplacement(finding: Finding): string | null {
     case "typography.singleQuotes":
     case "typography.apostrophes":
       return /^use curly/i.test(message) ? RIGHT_SINGLE_QUOTE : "'";
+    case "typography.decimalSeparator":
+      return /dot \(\.\)/i.test(message) ? "." : ",";
+    case "typography.thousandsSeparator":
+      if (/remove/i.test(message)) return "";
+      if (/comma/i.test(message)) return ",";
+      return " ";
     case "typography.ellipsis":
       if (/^use ellipsis character/i.test(message)) return ELLIPSIS;
       if (/spaced dots/i.test(message)) return ". . .";
@@ -247,6 +239,8 @@ function changesForFinding(finding: Finding): Change[] {
     case "typography.doubleQuotes":
     case "typography.singleQuotes":
     case "typography.apostrophes":
+    case "typography.decimalSeparator":
+    case "typography.thousandsSeparator":
     case "typography.ellipsis":
     case "typography.whitespace": {
       const replacement = typographyReplacement(finding);

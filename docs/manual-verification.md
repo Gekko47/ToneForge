@@ -85,17 +85,31 @@ Demo plan applied 2 of 2 change(s) — tracking managed: yes.
 For each host:
 
 1. Build with `npm run build` and sideload using `npm run sideload`.
-2. Run `probeWordCapabilities()` and record the full JSON.
-3. Verify task-pane load, settings, profile access, governance status, and
-   findings navigation.
-4. Verify selection, paragraph, break, style, list, and tracking behavior
+2. Confirm the task pane loads with compact Office/Fluent styling; the hamburger
+   opens navigation at the narrowest task-pane width, Escape/overlay dismissal
+   works, and the active profile/version remains in the fixed header.
+3. In Settings, change and save Styling, LLM, and Telemetry independently. Reload
+   and confirm the committed Styling choice restores the matching Fluent/CSS
+   palette; API keys must remain masked and must not appear in logs.
+4. In Troubleshooting, turn **Enable tracked editing** off and confirm Apply is
+   refused while Preview still works. Turn it on, confirm the fresh host probe,
+   then perform the host capability probe and record the full JSON.
+5. Create a deterministic formatting deviation that produces a
+   `resetCharacterFormatting` change. Confirm Governance counts, Findings, the
+   Safe Reformat preview, and Pending Changes all describe the same current scan.
+6. Edit the document after preview and confirm stale Apply refusal. Resolve no
+   conflicts through mutation; verify protected-content and conflict refusal.
+7. Apply a current plan and record managed Track Changes, the exact applied count,
+   and successful readback. Any `applied: false`, unsupported operation,
+   unverified result, or thrown error must be reported as failure/refusal—not
+   success.
+8. Verify selection, paragraph, break, style, list, and tracking behavior
    appropriate to the host.
-5. Verify protected content and stale/conflict refusals.
-6. Verify Phase C ribbon, navigation/highlight, and context-menu behavior.
-7. Verify Phase D consent, provider, and failure states.
-8. Verify Phase E preflight, bounded progress, cancellation, and result states.
-9. Record failures and limitations; do not mark a host complete without
-   evidence.
+9. Verify Phase C ribbon, navigation/highlight, and context-menu behavior.
+10. Verify Phase D consent, provider, and failure states.
+11. Verify Phase E preflight, bounded progress, cancellation, and result states.
+12. Record failures and limitations; do not mark a host complete without
+    evidence.
 
 ## Known limitations
 

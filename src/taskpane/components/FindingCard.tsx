@@ -42,58 +42,38 @@ export default function FindingCard({
   }
 
   return (
-    <article
-      aria-label={`Finding: ${finding.category}`}
-      style={{
-        border: "1px solid #ccc",
-        borderRadius: "4px",
-        padding: "0.75rem",
-        marginBottom: "0.5rem",
-        backgroundColor: "#fff",
-      }}
-    >
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "0.5rem",
-        }}
-      >
-        <span style={{ fontWeight: "bold", fontSize: "0.9rem" }}>{finding.category}</span>
-        <span style={{ fontSize: "0.8rem", color: "#666" }}>
-          {sourceLabel} · {severityLabel} · Risk: {riskLabel}
+    <article aria-label={`Finding: ${finding.category}`} className="tf-finding-card">
+      <header className="tf-finding-card-header">
+        <strong className="tf-finding-category">{finding.category}</strong>
+        <span className="tf-finding-meta">
+          {sourceLabel} · {finding.source === "ai" ? "Current AI review" : "Document scan"} ·{" "}
+          {severityLabel} · Risk: {riskLabel}
         </span>
       </header>
 
-      <p style={{ margin: "0 0 0.25rem 0", fontSize: "0.85rem" }}>{finding.message}</p>
+      <p className="tf-finding-message">{finding.message}</p>
 
       {finding.explanation && (
-        <p style={{ margin: "0 0 0.25rem 0", fontSize: "0.8rem", color: "#555" }}>
-          Explanation: {finding.explanation}
-        </p>
+        <p className="tf-finding-explanation">Explanation: {finding.explanation}</p>
       )}
 
       {finding.actual && (
-        <p style={{ margin: "0 0 0.1rem 0", fontSize: "0.8rem" }}>
+        <p className="tf-finding-detail">
           <strong>Actual:</strong> {finding.actual}
         </p>
       )}
       {finding.expected && (
-        <p style={{ margin: "0 0 0.1rem 0", fontSize: "0.8rem" }}>
+        <p className="tf-finding-detail">
           <strong>Expected:</strong> {finding.expected}
         </p>
       )}
 
-      <footer style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "#888" }}>
+      <footer className="tf-finding-location">
         Location: {finding.range.start}–{finding.range.end} ({finding.range.unit})
         {finding.nodeIds.length > 0 && ` · Node: ${finding.nodeIds[0]}`}
       </footer>
 
-      <nav
-        style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem" }}
-        aria-label="Finding actions"
-      >
+      <nav className="tf-finding-actions" aria-label="Finding actions">
         <button type="button" onClick={handleGoToText}>
           Go to text
         </button>

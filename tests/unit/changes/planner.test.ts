@@ -116,6 +116,11 @@ describe("planChanges", () => {
     ],
     ["typography.apostrophes", "Use curly apostrophe (’) instead of straight apostrophe (')", "’"],
     ["typography.apostrophes", "Use straight apostrophe (') instead of curly apostrophe (’)", "'"],
+    ["typography.decimalSeparator", "Use dot (.) as the decimal separator", "."],
+    ["typography.decimalSeparator", "Use comma (,) as the decimal separator", ","],
+    ["typography.thousandsSeparator", "Remove the thousands separator", ""],
+    ["typography.thousandsSeparator", "Use a comma (,) as the thousands separator", ","],
+    ["typography.thousandsSeparator", "Use a space ( ) as the thousands separator", " "],
     ["typography.ellipsis", "Use ellipsis character (…) instead of three dots (...)", "…"],
     ["typography.ellipsis", "Use three dots (...) instead of ellipsis character (…)", "..."],
     [
@@ -262,29 +267,21 @@ describe("planChanges", () => {
     expect(soleChange(plan).payload).toEqual({ styleName: "Heading 2" });
   });
 
-  it("maps direct formatting evidence to a validated character-format payload", () => {
-    const message =
-      'Direct formatting overrides style "Custom": bold, italic, underline, font=Arial, size=12.5pt, color=#0f8a2d';
+  it("maps direct formatting findings to a reset that restores style control", () => {
     const plan = planFor([
       finding({
         category: "formatting.directFormatting",
         start: 0,
         end: 1,
         unit: "paragraph",
-        message,
+        message:
+          "Paragraph has direct character formatting; clear it so the applied Word style controls appearance",
       }),
     ]);
     const change = soleChange(plan);
 
-    expect(change.type).toBe("setCharacterFormat");
-    expect(change.payload).toEqual({
-      bold: true,
-      italic: true,
-      underline: true,
-      name: "Arial",
-      size: 12.5,
-      color: "#0f8a2d",
-    });
+    expect(change.type).toBe("resetCharacterFormatting");
+    expect(change.payload).toEqual({});
     expect(ChangeSchema.safeParse(change).success).toBe(true);
   });
 

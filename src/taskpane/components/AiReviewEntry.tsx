@@ -74,8 +74,16 @@ export default function AiReviewEntry({
 
   return (
     <section aria-label="AI Review" style={{ marginTop: "1.5rem" }}>
-      <h2>AI Review</h2>
-      <p>AI review is optional. Deterministic checks do not send document text externally.</p>
+      <h2>AI Review (optional)</h2>
+      <p>
+        Deterministic checks do not send document text externally. If you opt in, selection or
+        paragraph review sends only the minimized selected context; full-document review sends the
+        eligible document content in bounded batches after a coverage check.
+      </p>
+      <p className="tf-sub">
+        Consent is scope-specific. You can withdraw it in Settings at any time. Declining leaves
+        deterministic governance, formatting checks, and safe reformat available.
+      </p>
       {!providerConfigured && (
         <div role="status">
           <p>No AI provider is configured. Deterministic review remains available.</p>
@@ -84,6 +92,10 @@ export default function AiReviewEntry({
           </button>
         </div>
       )}
+      <p className="tf-sub">
+        Repeated document changes do not start a review automatically. Review actions start only
+        when you explicitly choose them.
+      </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
         <button
           type="button"

@@ -91,7 +91,7 @@ describe("normalizeFormatting", () => {
     expect(change.payload).toEqual({ styleName: "Normal" });
   });
 
-  it("maps direct formatting findings to setCharacterFormat changes", () => {
+  it("maps direct formatting findings to a native character-format reset", () => {
     const findings = [
       finding("formatting.directFormatting", { start: 0, end: 1, unit: "paragraph" }),
     ];
@@ -108,11 +108,10 @@ describe("normalizeFormatting", () => {
       findings,
     });
     const change = firstChange(changes);
-    expect(change).toMatchObject({ type: "setCharacterFormat" });
-    expect(change.payload).toMatchObject({ bold: true, name: "Arial", size: 12, color: "#000" });
+    expect(change).toMatchObject({ type: "resetCharacterFormatting", payload: {} });
   });
 
-  it("omits unavailable character-format fields when normalizing direct formatting", () => {
+  it("uses the same reset for a direct-format finding with no enabled booleans", () => {
     const findings = [
       finding("formatting.directFormatting", { start: 0, end: 1, unit: "paragraph" }),
     ];
@@ -120,14 +119,9 @@ describe("normalizeFormatting", () => {
       snapshot: snapshot([{ ...paragraph(0, "Plain"), italic: false }]),
       findings,
     });
-    const change = firstChange(changes);
-    expect(change.payload).toEqual({
-      name: undefined,
-      size: undefined,
-      color: undefined,
-      bold: undefined,
-      italic: false,
-      underline: undefined,
+    expect(firstChange(changes)).toMatchObject({
+      type: "resetCharacterFormatting",
+      payload: {},
     });
   });
 

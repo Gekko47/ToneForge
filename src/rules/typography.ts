@@ -43,6 +43,8 @@ export function findTypographyIssues(options: TypographyCheckOptions): Finding[]
   findings.push(...checkSingleQuotes(text, rules));
   findings.push(...checkApostrophes(text, rules));
   findings.push(...checkEllipsis(text, rules));
+  findings.push(...checkDecimalSeparator(text, rules));
+  findings.push(...checkThousandsSeparator(text, rules));
   findings.push(...checkWhitespace(text));
   return findings;
 }
@@ -312,6 +314,66 @@ function checkApostrophes(text: string, rules: TypographyRules): Finding[] {
       );
     });
   }
+
+  return findings;
+}
+
+function checkDecimalSeparator(text: string, rules: TypographyRules): Finding[] {
+  const findings: Finding[] = [];
+  const wrongSeparator = rules.decimalSeparator === "dot" ? "," : ".";
+
+  const escapedSeparator = wrongSeparator.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  findMatches(text, new RegExp(`\\d${escapedSeparator}\\d`, "g")).forEach((m) => {
+    const separator = text.charAt(m.start + 1);
+    if (separator === undefined) return;
+    findings.push(
+      makeFinding({
+        category: "typography.decimalSeparator",
+        range: { start: m.start + 1, end: m.start + 2, unit: "character" },
+        message: `Use ${rules.decimalSeparator === "dot" ? "dot (.)" : "comma (,)"} as the decimal separator`,
+        severity: "warning",
+        evidence: separator,
+      }),
+    );
+  });
+
+  return findings;
+}
+
+function checkThousandsSeparator(text: string, rules: TypographyRules): Finding[] {
+  const findings: Finding[] = [];
+  if (rules.thousandsSeparator === "none") {
+    findMatches(text, /(?<=\d)[,.\u00a0\u202f](?=\d{3}(?!\d))/g).forEach((m) => {
+      findings.push(
+        makeFinding({
+          category: "typography.thousandsSeparator",
+          range: { start: m.start, end: m.end, unit: "character" },
+          message: "Remove the thousands separator",
+          severity: "warning",
+          evidence: text.slice(m.start, m.end),
+        }),
+      );
+    });
+    return findings;
+  }
+
+  const wrongPattern = rules.thousandsSeparator === "comma" ? /[.\u00a0\u202f ]/g : /,/g;
+  findMatches(text, wrongPattern).forEach((m) => {
+    const before = m.start > 0 ? text[m.start - 1] : "";
+    const after = text.slice(m.end, m.end + 3);
+    if (before === undefined || !/\d/.test(before) || !/^\d{3}(?!\d)/.test(after)) return;
+    findings.push(
+      makeFinding({
+        category: "typography.thousandsSeparator",
+        range: { start: m.start, end: m.end, unit: "character" },
+        message: `Use ${
+          rules.thousandsSeparator === "comma" ? "a comma (,)" : "a space ( )"
+        } as the thousands separator`,
+        severity: "warning",
+        evidence: text.slice(m.start, m.end),
+      }),
+    );
+  });
 
   return findings;
 }

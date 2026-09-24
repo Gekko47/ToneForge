@@ -72,6 +72,13 @@ const prod = {
           priority: -20,
           reuseExistingChunk: true,
         },
+        fluent: {
+          test: /[\\/]node_modules[\\/]@fluentui[\\/]/,
+          name: "fluent",
+          chunks: "async",
+          priority: 10,
+          reuseExistingChunk: true,
+        },
       },
     },
   },

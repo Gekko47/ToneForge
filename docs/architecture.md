@@ -78,8 +78,50 @@ Deterministic rules/formatting   Optional AI review
 9. `word/revisionAdapter` is the only mutation path. It validates stale state,
    conflicts, capabilities, ranges, payloads, dependencies, protection, and
    preservation before applying changes.
-10. `taskpane` renders preview, confirmation, findings, coverage, stale, AI, and
-    pending-change states. UI code does not import the adapter directly.
+10. `taskpane` renders a production governance workflow and a separate
+    troubleshooting surface. UI code does not import the adapter directly.
+    Capability, runtime, gate, and historical smoke controls never render in the
+    normal main view.
+11. The observer exposes a single current scan phase and accepted run identity.
+    Debounced document events replace scheduled work, and obsolete async results
+    are discarded before they can update findings.
+12. Safe reformat preview retains one exact `ChangePlan`; apply consumes that
+    reviewed plan through `applyReviewedPlan`, re-checks freshness, and reports
+    mutation/verification outcomes separately.
+13. Apply is operation-specific: text, style, paragraph, character, character-reset,
+    and list-level mutations each require their verified Word capability. Non-text
+    plans are verified from a fresh formatting snapshot rather than inferred from
+    adapter success.
+
+## StyleProfile field enforcement
+
+The editable profile is the single source for analysis and planning. Measured
+fields are observational evidence from the captured sample; they are deliberately
+not converted into unsupported Word formatting commands.
+
+| Profile field                              | Consumer                                                        | Planned change                                 |
+| ------------------------------------------ | --------------------------------------------------------------- | ---------------------------------------------- |
+| `semantic.*`                               | Consent-gated semantic deviation prompt and spot/full AI review | Validated AI replacement or advisory finding   |
+| `typography.emDash`                        | `findTypographyIssues`                                          | `replaceText` or `deleteRange`                 |
+| `typography.emDashSpacing`                 | `findTypographyIssues`                                          | `replaceText`                                  |
+| `typography.enDashSpacing`                 | `findTypographyIssues`                                          | `replaceText`                                  |
+| `typography.doubleQuotes`                  | `findTypographyIssues`                                          | `replaceText`                                  |
+| `typography.singleQuotes`                  | `findTypographyIssues`                                          | `replaceText`                                  |
+| `typography.apostrophes`                   | `findTypographyIssues`                                          | `replaceText`                                  |
+| `typography.decimalSeparator`              | `findTypographyIssues`                                          | `replaceText`                                  |
+| `typography.thousandsSeparator`            | `findTypographyIssues`                                          | `replaceText` or `deleteRange`                 |
+| `typography.ellipsis`                      | `findTypographyIssues`                                          | `replaceText`                                  |
+| `houseStyle.preferredTerminology`          | `findHouseStyleIssues`                                          | `replaceText`                                  |
+| `houseStyle.bannedTerms`                   | `findHouseStyleIssues`                                          | `deleteRange`                                  |
+| `houseStyle.capitalization.sentenceCase`   | `findHouseStyleIssues`                                          | `replaceText`                                  |
+| `houseStyle.capitalization.titleCaseWords` | `findHouseStyleIssues`                                          | `replaceText`                                  |
+| `houseStyle.spellingVariant`               | `findHouseStyleIssues`                                          | `replaceText`                                  |
+| `measured.*`                               | `computeMeasuredProfile` and read-only Profile UI               | No mutation without an explicit normative rule |
+
+Word-format findings (heading hierarchy, unknown/empty styles, direct formatting,
+and list level) are governed by the applied document styles and Word object
+model. Direct character formatting is cleared with `Font.reset()` so the
+profile does not overload terminology records with undocumented formatting keys.
 
 ## Current implementation boundaries
 
@@ -94,10 +136,12 @@ scoped.
 
 ### Observer
 
-The observer is debounced and emits findings, coverage, and stale status. It
-currently has no verified live Word change-range event, so it can conservatively
-scan all current nodes. The helper functions for dirty-node mapping exist, but
-the original performance goal is not yet proven in Word.
+The observer is debounced and emits one mutually exclusive phase, findings,
+coverage, current run identity, and the last accepted run identity. It has no
+verified live Word change-range event, so it can conservatively scan all current
+nodes. Repeated document events coalesce; a superseded asynchronous scan cannot
+commit findings after a newer run is scheduled. The original incremental
+performance goal is not yet proven in Word.
 
 ### AI review
 
@@ -109,8 +153,16 @@ coverage-gated, but token-aware limits and live host behavior remain qualified.
 ### Safety
 
 The adapter retains the Stage 01 mutation gate and reverse-offset application.
-The orchestrator performs live re-hash and conflict refusal before apply. The
-deprecated smoke helpers are retained only for historical Stage 18 reproduction.
+Every strict Apply calls `prepareTrackedEditing()` first: when enabled, it runs a
+fresh non-destructive host probe, maps every planned change to its required Word
+capability, and arms the adapter only when the complete plan is supported. The
+Troubleshooting-only **Enable tracked editing** control persists an operator
+preference; disabling it immediately disarms mutation while leaving preview and
+review available. The orchestrator still performs live re-hash, conflict and
+protection refusal, managed Track Changes, and post-apply readback. It refuses a
+plan when managed tracking cannot be established. The UI presents the exact
+previewed plan in Pending Changes and never bypasses these gates. Deprecated smoke
+helpers are not rendered in the production taskpane.
 
 ## Technology stack
 

@@ -11,24 +11,22 @@
 
 import { v4 as uuidv4 } from "uuid";
 import type { Finding, Range, Severity } from "../core/domain/Finding";
-import type { StyleProfile } from "../core/domain/StyleProfile";
 import type { FormattingSnapshot, FormattingParagraph } from "./formattingSnapshot";
 import { lookupWordStyle, HEADING_STYLE_NAMES } from "./wordStyles";
 
 export interface FormattingCheckOptions {
   snapshot: FormattingSnapshot;
-  profile: StyleProfile;
 }
 
-/** Scan a formatting snapshot against the profile and return findings. */
+/** Scan a formatting snapshot for structural formatting deviations. */
 export function findFormattingIssues(options: FormattingCheckOptions): Finding[] {
-  const { snapshot, profile } = options;
+  const { snapshot } = options;
   if (snapshot.paragraphs.length === 0) return [];
 
   const findings: Finding[] = [];
   findings.push(...checkHeadingHierarchy(snapshot));
   findings.push(...checkUnknownStyles(snapshot));
-  findings.push(...checkDirectFormatting(snapshot, profile));
+  findings.push(...checkDirectFormatting(snapshot));
   findings.push(...checkListLevel(snapshot));
   findings.push(...checkEmptyHeadings(snapshot));
   return findings;
@@ -137,32 +135,32 @@ function checkUnknownStyles(snapshot: FormattingSnapshot): Finding[] {
   return findings;
 }
 
-/** Direct character/paragraph formatting that overrides the applied style. */
-function checkDirectFormatting(snapshot: FormattingSnapshot, _profile: StyleProfile): Finding[] {
+/** Manual character formatting that should be cleared in favor of the Word style. */
+function checkDirectFormatting(snapshot: FormattingSnapshot): Finding[] {
   const findings: Finding[] = [];
 
   snapshot.paragraphs.forEach((para) => {
-    const overrides: string[] = [];
-    if (para.bold === true) overrides.push("bold");
-    if (para.italic === true) overrides.push("italic");
-    if (para.underline === true) overrides.push("underline");
-    if (para.fontName !== null && para.fontName.trim().length > 0)
-      overrides.push(`font=${para.fontName}`);
-    if (para.fontSize !== null && para.fontSize > 0) overrides.push(`size=${para.fontSize}pt`);
-    if (para.fontColor !== null && para.fontColor.trim().length > 0)
-      overrides.push(`color=${para.fontColor}`);
-
-    if (overrides.length > 0) {
-      findings.push(
-        makeFinding({
-          category: "formatting.directFormatting",
-          range: paragraphRange(para),
-          message: `Direct formatting overrides style "${para.styleName}": ${overrides.join(", ")}`,
-          severity: "warning",
-          evidence: para.text.slice(0, 40),
-        }),
-      );
+    if (
+      para.fontName === null &&
+      para.fontSize === null &&
+      para.fontColor === null &&
+      para.bold !== true &&
+      para.italic !== true &&
+      para.underline !== true
+    ) {
+      return;
     }
+
+    findings.push(
+      makeFinding({
+        category: "formatting.directFormatting",
+        range: paragraphRange(para),
+        message:
+          "Paragraph has direct character formatting; clear it so the applied Word style controls appearance",
+        severity: "warning",
+        evidence: para.text.slice(0, 40),
+      }),
+    );
   });
 
   return findings;

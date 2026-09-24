@@ -21,6 +21,10 @@ const FULL_CAPABILITIES: WordCapabilities = {
   supportsInsertParagraph: true,
   supportsInsertBreak: true,
   supportsStyles: true,
+  supportsParagraphFormat: true,
+  supportsCharacterFormat: true,
+  supportsResetCharacterFormatting: true,
+  supportsListLevel: true,
   supportsRevisions: false,
   supportsSelection: true,
   supportsParagraphResolution: true,
@@ -39,7 +43,7 @@ function makeRangeMock() {
     insertBreak: vi.fn(),
     insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
     paragraphs: { load: vi.fn(), items: [] },
-    font: { name: "", size: 0, color: "", load: vi.fn(), set: vi.fn() },
+    font: { name: "", size: 0, color: "", load: vi.fn(), set: vi.fn(), reset: vi.fn() },
     paragraphFormat: { set: vi.fn() },
     listFormat: { set: vi.fn() },
     style: "",
@@ -369,6 +373,30 @@ describe("revisionAdapter", () => {
       const problems = validatePlanBeforeApply(plan);
 
       expect(problems.some((p) => p.includes("invalid range"))).toBe(true);
+    });
+
+    it("accepts an empty reset-character-formatting payload", () => {
+      const base = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = {
+        ...base,
+        changes: [{ ...makeChange(), type: "resetCharacterFormatting" as const, payload: {} }],
+      };
+
+      expect(validatePlanBeforeApply(plan)).toHaveLength(0);
+    });
+
+    it("rejects malformed setListLevel payloads independently of reset formatting", () => {
+      const base = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = {
+        ...base,
+        changes: [{ ...makeChange(), type: "setListLevel" as const, payload: { level: -1 } }],
+      };
+
+      expect(
+        validatePlanBeforeApply(plan).some((problem) =>
+          problem.includes("integer payload.level from 0 through 8"),
+        ),
+      ).toBe(true);
     });
 
     it("reports missing insertText payload", () => {

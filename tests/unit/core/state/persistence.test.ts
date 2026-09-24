@@ -35,6 +35,7 @@ describe("persistence", () => {
         llmProvider: "mock",
         spotReviewConsent: false,
         fullDocumentReviewConsent: false,
+        semanticOptIn: false,
         telemetryDisabled: false,
       },
       governanceProfiles: {},

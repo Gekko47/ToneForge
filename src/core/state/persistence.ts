@@ -30,6 +30,7 @@ const StateSchema = z.object({
       spotReviewConsent: z.boolean().default(false),
       fullDocumentReviewConsent: z.boolean().default(false),
       telemetryDisabled: z.boolean().default(true),
+      semanticOptIn: z.boolean().default(false),
     })
     .default({}),
 });

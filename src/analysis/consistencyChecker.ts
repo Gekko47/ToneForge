@@ -187,7 +187,7 @@ export async function checkConsistency(
   deterministic.push(...findTypographyIssues({ text, rules: profile.typography }));
   deterministic.push(...findHouseStyleIssues({ text, rules: profile.houseStyle }));
 
-  const formatting: Finding[] = snapshot ? findFormattingIssues({ snapshot, profile }) : [];
+  const formatting: Finding[] = snapshot ? findFormattingIssues({ snapshot }) : [];
 
   let semantic: Finding[] = [];
   let semanticStatus: SemanticStatus = includeRawText ? { status: "ok" } : { status: "skipped" };
