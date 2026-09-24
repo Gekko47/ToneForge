@@ -17,12 +17,15 @@ import {
 export interface CoverageOptions {
   nodes: DocumentNode[];
   text: string;
+  /** Node types required for a complete in-scope review. */
+  requiredNodeTypes?: readonly string[];
   exclusions?: Array<{ reason: string; nodeTypes?: string[] }>;
 }
 
 /** Enumerate node types and produce a coverage report. */
 export function buildCoverage(options: CoverageOptions): CoverageReport {
   const { nodes, exclusions = [] } = options;
+  const requiredNodeTypes = options.requiredNodeTypes ?? ["body", "paragraph/heading"];
 
   const counts = new Map<string, CoverageItem>();
   const excluded: CoverageReport["excluded"] = [];
@@ -61,11 +64,13 @@ export function buildCoverage(options: CoverageOptions): CoverageReport {
   }
 
   // Check for inaccessible required in-scope nodes
-  const hasBody = nodes.some((n) => n.type === "body");
-  const hasParagraphs = nodes.some((n) => n.type === "paragraph" || n.type === "heading");
-  if (!hasBody || !hasParagraphs) {
-    unprocessed.push("Required in-scope node inaccessible");
-  }
+  requiredNodeTypes.forEach((requiredType) => {
+    const alternatives = requiredType.split("/");
+    const matches = nodes.some(
+      (node) => alternatives.includes(node.type) && node.includedInGovernance,
+    );
+    if (!matches) unprocessed.push(`Required in-scope node type inaccessible: ${requiredType}`);
+  });
 
   const totalProcessed = Array.from(counts.values()).reduce(
     (sum, item) => sum + item.processedCharacterCount,

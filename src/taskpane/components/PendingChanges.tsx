@@ -10,7 +10,7 @@ import type { Finding } from "../../core/domain/Finding";
 export interface PendingChangesProps {
   plan: ChangePlan | null;
   findings: Finding[];
-  onApply?: () => void;
+  onApply?: () => void | Promise<void>;
   onReject?: () => void;
 }
 
@@ -22,6 +22,7 @@ export default function PendingChanges({
 }: PendingChangesProps): React.ReactNode {
   const [result, setResult] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+  const canApply = onApply !== undefined;
 
   async function handleApply(): Promise<void> {
     setApplying(true);
@@ -102,8 +103,8 @@ export default function PendingChanges({
       </table>
 
       <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button type="button" onClick={handleApply} disabled={applying}>
-          {applying ? "Applying…" : "Apply"}
+        <button type="button" onClick={handleApply} disabled={applying || !canApply}>
+          {applying ? "Applying…" : canApply ? "Apply" : "Apply unavailable"}
         </button>
         <button type="button" onClick={handleReject} disabled={applying}>
           Reject

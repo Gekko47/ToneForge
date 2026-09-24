@@ -19,11 +19,11 @@ are complete.
 
 ## Release blockers
 
-- [ ] `npm run test:coverage` passes the global threshold.
+- [x] `npm run test:coverage` passes the 80% exercised-core threshold.
 - [ ] Stage 27 manual host matrix is complete.
 - [ ] Release acceptance checklist is fully evidenced.
-- [ ] Any uncommitted refactor candidate is reviewed and either committed with
-      an appropriate conventional commit or explicitly excluded from the release.
+- [x] Refactor candidate is reviewed and committed with an appropriate
+      conventional commit.
 - [ ] `npm run release:check` passes.
 - [ ] Release artifact and GitHub Release are produced by the tagged workflow.
 

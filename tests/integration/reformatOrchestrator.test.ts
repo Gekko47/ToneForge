@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { reformatDocument } from "../../src/reformat";
+import { applyReviewedPlan, reformatDocument } from "../../src/reformat";
 import * as formattingReader from "../../src/word/formattingReader";
 import * as planner from "../../src/changes/planner";
 import * as revisionAdapter from "../../src/word/revisionAdapter";
@@ -32,10 +32,11 @@ const FULL_CAPABILITIES: WordCapabilities = {
   hostVersion: "16.0",
 };
 
-function makeRangeMock() {
+function makeRangeMock(onInsert?: (text: string) => void) {
   return {
     text: "",
-    insertText: vi.fn(function (this: unknown) {
+    insertText: vi.fn(function (this: unknown, text: string) {
+      onInsert?.(text);
       return this;
     }),
     insertBreak: vi.fn(),
@@ -67,7 +68,10 @@ function installOffice(
   trackingMode: unknown = "Off",
   textProvider?: () => string,
 ) {
-  const rangeMock = makeRangeMock();
+  let currentText = bodyText;
+  const rangeMock = makeRangeMock((text) => {
+    currentText = `${currentText}${text}`;
+  });
   const sharedDoc: Record<string, unknown> = {
     id: "doc-1",
     load: vi.fn(),
@@ -90,7 +94,7 @@ function installOffice(
     },
   };
   Object.defineProperty(body, "text", {
-    get: () => (textProvider ? textProvider() : bodyText),
+    get: () => (textProvider ? textProvider() : currentText),
     configurable: true,
   });
   sharedDoc["body"] = body;
@@ -403,6 +407,47 @@ describe("reformatDocument integration", () => {
     expect(result.results.every((item) => item.applied)).toBe(true);
     expect(result.applied).toBe(true);
     expect(applySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies a previously reviewed plan with a fresh structured protection check", async () => {
+    const { sharedDoc } = installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const preview = await reformatDocument({
+      profile: PROFILE,
+      includeRawText: false,
+      preview: true,
+    });
+    const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
+
+    const result = await applyReviewedPlan({ plan: preview.plan });
+
+    expect(applySpy).toHaveBeenCalledWith(
+      preview.plan,
+      preview.plan.docHash,
+      false,
+      expect.any(Array),
+    );
+    expect(result.applied).toBe(true);
+    expect(result.stale).toBe(false);
+    expect(sharedDoc["body"]).toBeDefined();
+  });
+
+  it("refuses a reviewed plan when the document hash changed", async () => {
+    let tick = 0;
+    installOffice("hello world", "Off", () => (tick++ === 0 ? "hello world" : "changed"));
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const preview = await reformatDocument({
+      profile: PROFILE,
+      includeRawText: false,
+      preview: true,
+    });
+    const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
+
+    const result = await applyReviewedPlan({ plan: preview.plan });
+
+    expect(result.stale).toBe(true);
+    expect(result.applied).toBe(false);
+    expect(applySpy).not.toHaveBeenCalled();
   });
 });
 

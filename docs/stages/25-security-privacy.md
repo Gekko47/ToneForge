@@ -6,7 +6,7 @@
 
 Harden AI and document-data handling without weakening deterministic governance.
 
-## Implemented in the current worktree
+## Implemented in the refactor candidate
 
 - Separate spot-review and full-document consent settings.
 - Context minimization and protected-node exclusion.

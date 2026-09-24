@@ -11,9 +11,9 @@
  * platforms that do not yet support the unified manifest. The two must
  * stay in sync; see README.md for the conversion procedure.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -106,12 +106,38 @@ function main() {
   // `ribbons`, and nested `runtimes`. The taskpane and function-command
   // runtimes are both required for the Phase C ribbon navigation seam.
   const extensions = manifest.extensions ?? [];
+  const commandActionIds = new Set();
   if (extensions.length === 0) {
     errors.push("manifest.extensions must contain at least one extension");
   }
   for (const ext of extensions) {
     if (!Array.isArray(ext.ribbons) || ext.ribbons.length === 0) {
       errors.push("manifest.extensions[].ribbons must be a non-empty array for Word ribbon UI");
+    }
+    for (const ribbon of ext.ribbons ?? []) {
+      for (const tab of ribbon.tabs ?? []) {
+        for (const group of tab.groups ?? []) {
+          for (const control of group.controls ?? []) {
+            if (control.actionId) commandActionIds.add(control.actionId);
+          }
+        }
+      }
+    }
+    const runtimeActionIds = new Set();
+    for (const runtime of ext.runtimes ?? []) {
+      for (const action of runtime.actions ?? []) {
+        if (action.type === "executeFunction") runtimeActionIds.add(action.id);
+      }
+    }
+    for (const actionId of commandActionIds) {
+      if (!runtimeActionIds.has(actionId)) {
+        errors.push(`Ribbon actionId lacks an executeFunction action: ${actionId}`);
+      }
+    }
+    for (const actionId of runtimeActionIds) {
+      if (!commandActionIds.has(actionId)) {
+        errors.push(`executeFunction action lacks a ribbon control: ${actionId}`);
+      }
     }
     if (ext.host !== undefined) {
       errors.push(
@@ -185,6 +211,30 @@ function main() {
   } else {
     const xmlErrors = validateXmlFallback(xmlManifestPath, manifest.id);
     for (const e of xmlErrors) errors.push(e);
+  }
+
+  const commandsSource = readFileSync(
+    new URL("../src/commands/commands.ts", import.meta.url),
+    "utf8",
+  );
+  for (const actionId of commandActionIds) {
+    if (!new RegExp(`\\b${actionId}\\b`).test(commandsSource)) {
+      errors.push(`Manifest action is not associated in src/commands/commands.ts: ${actionId}`);
+    }
+  }
+
+  // The npm validator currently rejects the documented v1.30 array shape at
+  // `extensions` even though Microsoft's schema and samples require an array.
+  // Keep the structural checks above authoritative until that upstream defect
+  // is corrected; changing the manifest to an object would ship an invalid file.
+  if (process.platform !== "win32" && existsSync("node_modules/.bin/office-addin-manifest")) {
+    try {
+      execFileSync("node_modules/.bin/office-addin-manifest", ["validate", "manifest.json"], {
+        stdio: "pipe",
+      });
+    } catch {
+      errors.push("office-addin-manifest validation failed for manifest.json");
+    }
   }
 
   if (errors.length > 0) {

@@ -6,7 +6,7 @@ import { probeWordCapabilities, type WordCapabilities } from "../../word/capabil
 import { probeOfficeRuntime, formatDiagnostics } from "../../shared/office/diagnostics";
 import {
   getDocumentSnapshot,
-  getParagraphRange,
+  getSelectedParagraphText,
   getSelectionText,
   getStructuredSnapshot,
 } from "../../word/documentReader";
@@ -14,7 +14,7 @@ import { createLlmRegistry } from "../../ai/providers/registry";
 import { reviewSpot, type SpotReviewResult } from "../../ai/review/spotReview";
 import { createGovernanceProfile } from "../../core/domain/GovernanceProfile";
 import { createDocumentObserver, type DocumentObserverStatus } from "../../word/documentObserver";
-import { reviewEntireDocument, type FullReviewResult } from "../../reformat";
+import { applyReviewedPlan, reviewEntireDocument, type FullReviewResult } from "../../reformat";
 import { consumeTaskpaneTarget } from "../../shared/office/taskpaneNavigation";
 import SmokePanel from "../components/SmokePanel";
 import ReformatPanel from "../components/ReformatPanel";
@@ -86,6 +86,7 @@ export default function Dashboard(): React.ReactNode {
   const [fullResult, setFullResult] = useState<FullReviewResult | null>(null);
   const fullAbortRef = useRef<AbortController | null>(null);
   const [fullReviewMessage, setFullReviewMessage] = useState<string | null>(null);
+  const [applyMessage, setApplyMessage] = useState<string | null>(null);
 
   async function runProbe(): Promise<void> {
     setRunning(true);
@@ -158,7 +159,7 @@ export default function Dashboard(): React.ReactNode {
       const selected = await getSelectionText();
       const text =
         operation === "spot_paragraph" && !selected.trim()
-          ? ((await getParagraphRange(0, 1))[0] ?? "")
+          ? await getSelectedParagraphText()
           : selected;
       if (!text?.trim()) throw new Error("Select text or place the cursor in a paragraph first.");
       const profile = resolveActiveProfile();
@@ -171,7 +172,21 @@ export default function Dashboard(): React.ReactNode {
       const targetNodeIds = structured.nodes
         .filter((node) => node.text?.includes(text))
         .map((node) => node.nodeId);
-      const registry = createLlmRegistry({ provider: state.settings.llmProvider });
+      const startOffset = snapshot.text.indexOf(text);
+      if (startOffset < 0)
+        throw new Error("The selected text is no longer present in the document.");
+      const registry = createLlmRegistry({
+        provider: state.settings.llmProvider,
+        ...(state.settings.llmProvider === "openai"
+          ? {
+              openai: {
+                ...(state.settings.openAiApiKey ? { apiKey: state.settings.openAiApiKey } : {}),
+                ...(state.settings.openAiBaseUrl ? { baseUrl: state.settings.openAiBaseUrl } : {}),
+                ...(state.settings.openAiModel ? { model: state.settings.openAiModel } : {}),
+              },
+            }
+          : {}),
+      });
       const result = await reviewSpot({
         request: {
           id: crypto.randomUUID(),
@@ -188,6 +203,7 @@ export default function Dashboard(): React.ReactNode {
         nodes: structured.nodes,
         includeRawText: true,
         registry,
+        rangeOffset: startOffset,
       });
       setAiReview(result);
       setAiReviewMessage(null);
@@ -233,7 +249,20 @@ export default function Dashboard(): React.ReactNode {
         snapshot,
         profile: governance,
         includeRawText: true,
-        registry: createLlmRegistry({ provider: state.settings.llmProvider }),
+        registry: createLlmRegistry({
+          provider: state.settings.llmProvider,
+          ...(state.settings.llmProvider === "openai"
+            ? {
+                openai: {
+                  ...(state.settings.openAiApiKey ? { apiKey: state.settings.openAiApiKey } : {}),
+                  ...(state.settings.openAiBaseUrl
+                    ? { baseUrl: state.settings.openAiBaseUrl }
+                    : {}),
+                  ...(state.settings.openAiModel ? { model: state.settings.openAiModel } : {}),
+                },
+              }
+            : {}),
+        }),
         signal: controller.signal,
         onProgress: (completed, total) => setFullProgress({ completed, total, partial: false }),
       });
@@ -251,6 +280,31 @@ export default function Dashboard(): React.ReactNode {
   function cancelFullReview(): void {
     fullAbortRef.current?.abort();
     setFullProgress((previous) => (previous ? { ...previous, partial: true } : previous));
+  }
+
+  async function applyPendingPlan(): Promise<void> {
+    const plan = fullResult?.plan ?? aiReview?.plan ?? null;
+    if (!plan) return;
+    setApplyMessage(null);
+    try {
+      const result = await applyReviewedPlan({
+        plan,
+        allowConflictingApply: plan.conflicts.length > 0,
+      });
+      if (result.applied) {
+        setApplyMessage(
+          `Applied ${result.results.filter((item) => item.applied).length} of ${result.results.length} change(s).`,
+        );
+        observerRef.current?.onDocumentChanged();
+      } else {
+        setApplyMessage(
+          result.results.find((item) => !item.applied)?.error ??
+            "Apply refused; preview the changes again.",
+        );
+      }
+    } catch (error: unknown) {
+      setApplyMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   function markForReview(finding: Finding): void {
@@ -353,7 +407,14 @@ export default function Dashboard(): React.ReactNode {
           )}
           {fullReviewMessage && <p role="alert">{fullReviewMessage}</p>}
           {activeTarget === "pending-changes" && (
-            <PendingChanges plan={fullResult?.plan ?? null} findings={findings} />
+            <>
+              <PendingChanges
+                plan={fullResult?.plan ?? aiReview?.plan ?? null}
+                findings={fullResult?.findings ?? aiReview?.findings ?? findings}
+                onApply={applyPendingPlan}
+              />
+              {applyMessage && <p role="status">{applyMessage}</p>}
+            </>
           )}
           {aiReviewBusy && (
             <p role="status" aria-live="polite">

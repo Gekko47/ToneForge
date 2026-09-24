@@ -8,9 +8,12 @@ const checks = [
   { name: "typecheck", cmd: "npm run typecheck" },
   { name: "lint", cmd: "npm run lint" },
   { name: "format", cmd: "npm run format" },
+  { name: "secrets", cmd: "npm run secrets:scan" },
+  { name: "docs", cmd: "npm run docs:validate" },
   { name: "test", cmd: "npm run test" },
   { name: "build", cmd: "npm run build" },
   { name: "validate", cmd: "npm run validate" },
+  { name: "package", cmd: "npm run release:package" },
 ];
 
 function main() {
@@ -18,7 +21,7 @@ function main() {
   for (const check of checks) {
     try {
       console.log(`[stage-verify] running: ${check.name}`);
-      execSync(check.cmd, { stdio: "pipe" });
+      execSync(check.cmd, { stdio: "inherit" });
       console.log(`[stage-verify] PASS: ${check.name}`);
     } catch (err) {
       console.error(`[stage-verify] FAIL: ${check.name}`);

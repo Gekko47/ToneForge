@@ -56,7 +56,15 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
         };
       }
 
-      const range = body.getRange({ start, end }) as NavigableRange;
+      const range = body.getRange("Whole") as NavigableRange;
+      if (typeof range.set !== "function") {
+        return {
+          navigated: false,
+          method: "unsupported" as const,
+          message: "This Word host cannot narrow a body range to character offsets.",
+        };
+      }
+      range.set({ start, end });
       if (typeof range.select !== "function") {
         return {
           navigated: false,

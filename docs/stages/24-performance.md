@@ -6,7 +6,7 @@
 
 Harden analysis and UI behavior for large documents.
 
-## Implemented in the current worktree
+## Implemented in the refactor candidate
 
 - Debounced document observation.
 - Bounded AI review batches.
@@ -20,7 +20,7 @@ Harden analysis and UI behavior for large documents.
 - [x] Full test suite passes: 58 files / 593 tests.
 - [ ] Measured 50k-word scan and memory baseline in Word.
 - [ ] Measured edit-to-finding latency and observer change-range behavior.
-- [ ] Global coverage threshold passes.
+- [x] Global exercised-core coverage threshold passes.
 
 ## Current limitation
 

@@ -6,20 +6,28 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { navigateToFinding } from "../../../src/word/sourceLocator";
 import { type Finding } from "../../../src/core/domain/Finding";
 
+let rangeMock: {
+  load: ReturnType<typeof vi.fn>;
+  set: ReturnType<typeof vi.fn>;
+  select: ReturnType<typeof vi.fn>;
+  highlight: { color: string };
+};
+
 function mockOffice(_findings: Finding[] = []): void {
+  rangeMock = {
+    load: vi.fn(),
+    set: vi.fn(),
+    select: vi.fn(),
+    highlight: { color: "" },
+  };
   (globalThis as { Office?: unknown }).Office = {
-    run: <T>(func: (context: unknown) => Promise<T>): Promise<T> =>
+    run: vi.fn(<T>(func: (context: unknown) => Promise<T>): Promise<T> =>
       func({
         document: {
           body: {
             text: "The quick brown fox jumps over the lazy dog",
             load: vi.fn(),
-            getRange: vi.fn(() => ({
-              load: vi.fn(),
-              set: vi.fn(),
-              select: vi.fn(),
-              highlight: { color: "" },
-            })),
+            getRange: vi.fn(() => rangeMock),
           },
           getSelection: vi.fn(() => ({
             load: vi.fn(),
@@ -29,6 +37,7 @@ function mockOffice(_findings: Finding[] = []): void {
         host: { name: "Word", version: "16.0" },
         sync: vi.fn(),
       }),
+    ),
     roamingSettings: {
       get: vi.fn(),
       set: vi.fn(),
@@ -70,12 +79,15 @@ describe("navigateToFinding", () => {
     vi.restoreAllMocks();
   });
 
-  it("navigates to a finding via nodeId path", async () => {
+  it("navigates to a finding by narrowing the documented whole-body range", async () => {
     const finding = makeFinding();
     const result = await navigateToFinding({ finding });
     expect(result.navigated).toBe(true);
     expect(result.method).toBe("nodeId");
     expect(result.message).toContain(finding.id);
+    const office = (globalThis as unknown as { Office: { run: ReturnType<typeof vi.fn> } }).Office;
+    expect(office.run).toHaveBeenCalledTimes(1);
+    expect(rangeMock.set).toHaveBeenCalledWith({ start: 5, end: 15 });
   });
 
   it("navigates to a finding via character offsets", async () => {
@@ -107,6 +119,26 @@ describe("navigateToFinding", () => {
     const result = await navigateToFinding({ finding });
     expect(result.navigated).toBe(false);
     expect(result.method).toBe("unsupported");
+  });
+
+  it("fails closed when the host cannot narrow the body range", async () => {
+    const office = (globalThis as unknown as { Office: { run: ReturnType<typeof vi.fn> } }).Office;
+    office.run.mockImplementation(async (func: (context: unknown) => Promise<unknown>) =>
+      func({
+        document: {
+          body: {
+            text: "short",
+            load: vi.fn(),
+            getRange: () => ({ select: vi.fn() }),
+          },
+        },
+        sync: vi.fn(),
+      }),
+    );
+    const result = await navigateToFinding({
+      finding: makeFinding({ range: { start: 0, end: 1, unit: "character" } }),
+    });
+    expect(result).toMatchObject({ navigated: false, method: "unsupported" });
   });
 
   it("supports highlight option", async () => {

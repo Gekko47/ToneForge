@@ -5,7 +5,7 @@
 ## Objective
 
 Record real Word host behavior for the current release candidate and the
-uncommitted refactor candidate.
+refactor candidate.
 
 ## Evidence recorded
 

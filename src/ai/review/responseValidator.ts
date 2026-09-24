@@ -10,8 +10,14 @@ export interface ValidatedReview {
 
 export function validateReviewResponse(
   raw: unknown,
-  context: { requestId: string; targetNodeIds: readonly string[]; sourceText: string },
+  context: {
+    requestId: string;
+    targetNodeIds: readonly string[];
+    sourceText: string;
+    rangeOffset?: number;
+  },
 ): ValidatedReview {
+  const rangeOffset = context.rangeOffset ?? 0;
   const response: SpotResponse = SpotResponseSchema.parse(raw);
   const findings: Finding[] = [];
   const changes: Change[] = [];
@@ -27,7 +33,11 @@ export function validateReviewResponse(
       id: uuidv4(),
       kind: "semantic",
       category: entry.category,
-      range: { start: entry.start, end: entry.end, unit: "character" },
+      range: {
+        start: entry.start + rangeOffset,
+        end: entry.end + rangeOffset,
+        unit: "character",
+      },
       message: entry.explanation ?? entry.category,
       severity: entry.severity,
       evidence: entry.actual ?? "",
@@ -47,7 +57,7 @@ export function validateReviewResponse(
         ChangeSchema.parse({
           id: uuidv4(),
           type: "replaceText",
-          range: { start: entry.start, end: entry.end },
+          range: { start: entry.start + rangeOffset, end: entry.end + rangeOffset },
           payload: { text: entry.expected },
           rationale: entry.explanation ?? entry.category,
           source: "ai",

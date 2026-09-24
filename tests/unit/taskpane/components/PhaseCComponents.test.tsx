@@ -117,7 +117,7 @@ describe("Phase C task-pane components", () => {
 
     expect(screen.getByText("Before: --")).toBeInTheDocument();
     expect(screen.getByText("After: —")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
   });
 

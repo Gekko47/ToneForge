@@ -16,6 +16,8 @@ export interface FullReviewOptions {
   includeRawText: true;
   registry: LlmProvider;
   currentDocumentVersion?: string;
+  /** Read the live content hash before and after every provider batch. */
+  getCurrentDocumentHash?: () => Promise<string>;
   signal?: AbortSignal;
   onProgress?: (completed: number, total: number) => void;
 }
@@ -44,19 +46,8 @@ export async function reviewEntireDocument(options: FullReviewOptions): Promise<
     };
   }
 
-  if (
-    options.currentDocumentVersion !== undefined &&
-    options.currentDocumentVersion !== options.snapshot.versionToken
-  ) {
-    return {
-      status: "stale",
-      coverage,
-      batches: [],
-      findings: [],
-      plan: emptyPlan(options.snapshot),
-      provider: options.registry.name,
-      partial: false,
-    };
+  if (await isDocumentStale(options)) {
+    return staleResult(options.snapshot, coverage, [], options.registry.name, false);
   }
   const batches = partitionReviewBatches(options.snapshot.nodes);
   const findings: Finding[] = [];
@@ -64,19 +55,8 @@ export async function reviewEntireDocument(options: FullReviewOptions): Promise<
   for (const [index, batch] of batches.entries()) {
     if (options.signal?.aborted)
       return cancelledResult(options.snapshot, coverage, batches, options.registry.name);
-    if (
-      options.currentDocumentVersion !== undefined &&
-      options.currentDocumentVersion !== options.snapshot.versionToken
-    ) {
-      return {
-        status: "stale",
-        coverage,
-        batches,
-        findings: [],
-        plan: emptyPlan(options.snapshot),
-        provider: options.registry.name,
-        partial: true,
-      };
+    if (await isDocumentStale(options)) {
+      return staleResult(options.snapshot, coverage, batches, options.registry.name, true);
     }
     const result = await reviewSpot({
       request: {
@@ -94,8 +74,12 @@ export async function reviewEntireDocument(options: FullReviewOptions): Promise<
       nodes: options.snapshot.nodes,
       includeRawText: options.includeRawText,
       registry: options.registry,
+      rangeOffset: batch.startOffset,
       ...(options.signal ? { signal: options.signal } : {}),
     });
+    if (await isDocumentStale(options)) {
+      return staleResult(options.snapshot, coverage, batches, options.registry.name, true);
+    }
     findings.push(...result.findings);
     changes.push(...result.changes);
     options.onProgress?.(index + 1, batches.length);
@@ -123,6 +107,35 @@ export async function reviewEntireDocument(options: FullReviewOptions): Promise<
     plan,
     provider: options.registry.name,
     partial: false,
+  };
+}
+
+async function isDocumentStale(options: FullReviewOptions): Promise<boolean> {
+  if (
+    options.currentDocumentVersion !== undefined &&
+    options.currentDocumentVersion !== options.snapshot.versionToken
+  ) {
+    return true;
+  }
+  if (!options.getCurrentDocumentHash) return false;
+  return (await options.getCurrentDocumentHash()) !== options.snapshot.contentHash;
+}
+
+function staleResult(
+  snapshot: DocumentSnapshot,
+  coverage: CoverageReport,
+  batches: ReviewBatch[],
+  provider: string,
+  partial: boolean,
+): FullReviewResult {
+  return {
+    status: "stale",
+    coverage,
+    batches,
+    findings: [],
+    plan: emptyPlan(snapshot),
+    provider,
+    partial,
   };
 }
 

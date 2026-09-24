@@ -109,11 +109,14 @@ describe("AI review contracts and pipeline", () => {
       includeRawText: true,
       registry: adapter,
       nodes: [node("aaaa1111", "The quick brown fox")],
+      rangeOffset: 4,
     });
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0]?.source).toBe("ai");
     expect(result.changes[0]?.source).toBe("ai");
     expect(result.plan.changes).toHaveLength(1);
+    expect(result.findings[0]?.range).toEqual({ start: 8, end: 19, unit: "character" });
+    expect(result.changes[0]?.range).toEqual({ start: 8, end: 19 });
   });
 
   it("fails malformed provider output instead of guessing", async () => {
@@ -141,12 +144,49 @@ describe("AI review contracts and pipeline", () => {
     ).rejects.toThrow(/abort/i);
   });
 
-  it("partitions editable nodes without protected content", () => {
+  it("partitions editable nodes without protected content and preserves offsets", () => {
+    const source = DocumentNodeSchema.parse({
+      nodeId: "dddd4444",
+      type: "paragraph",
+      text: "one",
+      sourcePath: "body/paragraph/0",
+      sourceRange: {
+        nodeId: "dddd4444",
+        startOffset: 10,
+        endOffset: 13,
+        structuralPath: "body/paragraph/0",
+      },
+      editable: true,
+      includedInGovernance: true,
+      includedInAIReview: true,
+    });
     const batches = partitionReviewBatches(
-      [node("aaaa1111", "one"), node("bbbb2222", "two", true), node("cccc3333", "three")],
+      [source, node("bbbb2222", "two", true), node("cccc3333", "three")],
       { maxCharacters: 6, maxNodes: 10 },
     );
-    expect(batches.flatMap((batch) => batch.nodeIds)).toEqual(["aaaa1111", "cccc3333"]);
+    expect(batches.flatMap((batch) => batch.nodeIds)).toEqual(["dddd4444", "cccc3333"]);
+    expect(batches[0]?.startOffset).toBe(10);
+  });
+
+  it("splits oversized nodes into bounded batches with absolute offsets", () => {
+    const source = DocumentNodeSchema.parse({
+      nodeId: "eeee5555",
+      type: "paragraph",
+      text: "abcdefgh",
+      sourcePath: "body/paragraph/0",
+      sourceRange: {
+        nodeId: "eeee5555",
+        startOffset: 20,
+        endOffset: 28,
+        structuralPath: "body/paragraph/0",
+      },
+      editable: true,
+      includedInGovernance: true,
+      includedInAIReview: true,
+    });
+    const batches = partitionReviewBatches([source], { maxCharacters: 3 });
+    expect(batches.map((batch) => batch.text)).toEqual(["abc", "def", "gh"]);
+    expect(batches.map((batch) => batch.startOffset)).toEqual([20, 23, 26]);
   });
 
   it("completes a covered full-document review through the normal plan contract", async () => {
@@ -192,6 +232,38 @@ describe("AI review contracts and pipeline", () => {
     expect(result.status).toBe("complete");
     expect(result.plan.changes).toHaveLength(1);
     expect(result.coverage.complete).toBe(true);
+  });
+
+  it("fails closed when the live document changes between batches", async () => {
+    const body = DocumentNodeSchema.parse({
+      nodeId: "body0000",
+      type: "body",
+      sourcePath: "body",
+      editable: true,
+      includedInGovernance: true,
+      includedInAIReview: true,
+    });
+    const snapshot: DocumentSnapshot = {
+      documentId: "doc",
+      versionToken: "v1",
+      contentHash: "hash",
+      structuralHash: "structure",
+      capturedAt: new Date().toISOString(),
+      nodes: [body, node("aaaa1111", "one"), node("bbbb2222", "two")],
+    };
+    const adapter = new MockAdapter({
+      defaultResponse: JSON.stringify({ findings: [] }),
+    });
+    const result = await reviewEntireDocument({
+      snapshot,
+      profile: request("text").profile,
+      includeRawText: true,
+      registry: adapter,
+      getCurrentDocumentHash: async () => "changed",
+    });
+    expect(result.status).toBe("stale");
+    expect(result.findings).toEqual([]);
+    expect(adapter.name).toBe("mock");
   });
 
   it("blocks full-document review when coverage is incomplete", async () => {

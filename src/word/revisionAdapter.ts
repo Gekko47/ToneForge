@@ -101,9 +101,10 @@ export async function applyChangePlan(
   plan: ChangePlan,
   currentDocHash: string,
   allowConflicts = false,
+  nodes?: readonly DocumentNode[],
 ): Promise<RevisionResult[]> {
   const results: RevisionResult[] = [];
-  const problems = validatePlanBeforeApply(plan, allowConflicts);
+  const problems = validatePlanBeforeApply(plan, allowConflicts, nodes);
 
   if (!currentDocHash || currentDocHash.trim().length === 0) {
     problems.push("currentDocHash is required");
@@ -202,9 +203,10 @@ export async function applyChangePlanWithTracking(
   plan: ChangePlan,
   currentDocHash: string,
   allowConflicts = false,
+  nodes?: readonly DocumentNode[],
 ): Promise<ApplyWithTrackingResult> {
   const enablement = await enableRevisionTracking();
-  const results = await applyChangePlan(plan, currentDocHash, allowConflicts);
+  const results = await applyChangePlan(plan, currentDocHash, allowConflicts, nodes);
   const modeAfter = await restoreRevisionTracking(enablement);
   const recordedCount = enablement.managed ? await countRecordedRevisions() : undefined;
   const tracking: TrackingReport = { managed: enablement.managed };
@@ -548,7 +550,7 @@ async function getRangeByOffset(
 export function validatePlanBeforeApply(
   plan: ChangePlan,
   allowConflicts = false,
-  nodes?: DocumentNode[],
+  nodes?: readonly DocumentNode[],
 ): string[] {
   const problems: string[] = [];
   if (!plan.docHash || plan.docHash.trim().length === 0) {

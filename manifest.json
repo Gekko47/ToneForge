@@ -38,7 +38,7 @@
       },
       "ribbons": [
         {
-          "contexts": ["word"],
+          "contexts": ["default"],
           "tabs": [
             {
               "id": "ToneForge",

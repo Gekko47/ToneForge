@@ -222,7 +222,32 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     };
   }
 
-  const applyResult = await applyChangePlanWithTracking(plan, liveHash, allowConflictingApply);
+  const liveStructured = await getStructuredSnapshot({ maxChars: readLimit });
+  const applyResult = await applyChangePlanWithTracking(
+    plan,
+    liveHash,
+    allowConflictingApply,
+    liveStructured.nodes,
+  );
+  const verificationSnapshot = await getDocumentSnapshot({ maxChars: readLimit });
+  const verificationHash = verificationSnapshot.hash ?? hashDocument(verificationSnapshot.text);
+  const allApplied =
+    applyResult.results.length > 0 && applyResult.results.every((result) => result.applied);
+  if (allApplied && verificationHash === liveHash) {
+    return {
+      report,
+      plan,
+      results: applyResult.results.map((result) => ({
+        ...result,
+        applied: false,
+        error: "Post-apply verification found no document change.",
+      })),
+      tracking: applyResult.tracking,
+      snapshot,
+      stale: false,
+      applied: false,
+    };
+  }
 
   return {
     report,
@@ -231,9 +256,50 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     tracking: applyResult.tracking,
     snapshot,
     stale: plan.stale,
-    applied:
-      applyResult.results.length > 0 && applyResult.results.every((result) => result.applied),
+    applied: allApplied,
   };
+}
+
+export interface ApplyReviewedPlanOptions {
+  plan: ChangePlan;
+  allowConflictingApply?: boolean;
+  maxChars?: number;
+}
+
+export interface ApplyReviewedPlanResult {
+  results: ApplyWithTrackingResult["results"];
+  tracking: ApplyWithTrackingResult["tracking"];
+  stale: boolean;
+  applied: boolean;
+}
+
+/** Apply a previously reviewed plan after a fresh structured protection check. */
+export async function applyReviewedPlan(
+  options: ApplyReviewedPlanOptions,
+): Promise<ApplyReviewedPlanResult> {
+  const live = await getStructuredSnapshot(
+    options.maxChars === undefined ? {} : { maxChars: options.maxChars },
+  );
+  if (isStale(options.plan, live.contentHash)) {
+    return {
+      results: options.plan.changes.map((change) => ({
+        changeId: change.id,
+        applied: false,
+        error: "Reviewed plan is stale; preview again before applying.",
+      })),
+      tracking: { managed: false },
+      stale: true,
+      applied: false,
+    };
+  }
+  const result = await applyChangePlanWithTracking(
+    options.plan,
+    live.contentHash,
+    options.allowConflictingApply ?? false,
+    live.nodes,
+  );
+  const allApplied = result.results.length > 0 && result.results.every((item) => item.applied);
+  return { ...result, stale: false, applied: allApplied };
 }
 
 export interface FullDocumentReviewOptions {
@@ -243,6 +309,7 @@ export interface FullDocumentReviewOptions {
   snapshot?: StructuredDocumentSnapshot;
   currentDocumentVersion?: string;
   signal?: AbortSignal;
+  getCurrentDocumentHash?: () => Promise<string>;
   onProgress?: (completed: number, total: number) => void;
 }
 
@@ -259,6 +326,9 @@ export async function reviewEntireDocument(
     ...(options.currentDocumentVersion !== undefined
       ? { currentDocumentVersion: options.currentDocumentVersion }
       : {}),
+    getCurrentDocumentHash:
+      options.getCurrentDocumentHash ??
+      (async () => hashDocument((await getDocumentSnapshot()).text)),
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });

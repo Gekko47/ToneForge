@@ -1,6 +1,6 @@
 # ToneForge — Changelog
 
-## 0.2.0 — Refactor candidate (unreleased worktree)
+## 0.2.0 — Refactor candidate (unreleased)
 
 - Added additive domain contracts for structured document nodes, governance
   profiles, review requests, and enriched findings/changes/plans.
@@ -10,11 +10,14 @@
   observer foundations.
 - Added Word-native ribbon/task-pane governance surfaces, consent-gated spot
   review, bounded full-document review, UI states, and coverage-gated exports.
-- Added safe-apply preservation/dependency checks and expanded privacy and
-  performance documentation.
-- Automated verification currently passes typecheck, lint, format, tests, build,
-  and manifest validation. Global coverage and the complete Word host matrix
-  remain open; see [`ROADMAP.md`](../ROADMAP.md) for the canonical status.
+- Added safe-apply preservation/dependency/protection checks, post-apply hash
+  verification, command-action registration, absolute AI ranges, bounded review
+  batches with freshness re-checks, release staging, and release gates.
+- Automated verification passes typecheck, lint, format, secret/docs scans,
+  tests, 80% core coverage, build, manifest validation, and staging checks.
+- Release acceptance remains blocked only by the external Word host matrix and
+  live performance/accessibility/security evidence; see
+  [`ROADMAP.md`](../ROADMAP.md) for canonical status.
 
 ## 0.1.0 — 2026-09-19 — Scaffold
 

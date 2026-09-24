@@ -1,5 +1,10 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { getStructuredSnapshot, resolveSourceRange } from "../../../src/word/documentReader";
+import {
+  getSelectedParagraphText,
+  getStructuredSnapshot,
+  resolveSourceRange,
+  splitParagraphRanges,
+} from "../../../src/word/documentReader";
 
 function setOffice(office: unknown) {
   (globalThis as unknown as { Office?: unknown }).Office = office;
@@ -57,6 +62,22 @@ describe("getStructuredSnapshot", () => {
       },
       InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
     });
+  });
+
+  it("returns the paragraph at the current insertion point", async () => {
+    const paragraph = { text: "Current paragraph", load: vi.fn() };
+    setOffice({
+      run: async (func: (context: unknown) => Promise<unknown>) =>
+        func({
+          document: {
+            getSelection: () => ({ paragraphs: { getFirst: () => paragraph } }),
+          },
+          sync: vi.fn(),
+        }),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+    });
+    await expect(getSelectedParagraphText()).resolves.toBe("Current paragraph");
+    expect(paragraph.load).toHaveBeenCalledWith("text");
   });
 
   it("returns a DocumentSnapshot with nodes", async () => {
@@ -171,5 +192,15 @@ describe("resolveSourceRange", () => {
     expect(result.structuralPath).toBe("body/paragraph/0");
     expect(result.start).toBeUndefined();
     expect(result.end).toBeUndefined();
+  });
+});
+
+describe("splitParagraphRanges", () => {
+  it("preserves exact document offsets around trimmed paragraph whitespace", () => {
+    const ranges = splitParagraphRanges("  first  \n\n  second  ");
+    expect(ranges).toEqual([
+      { text: "first", start: 2, end: 7 },
+      { text: "second", start: 13, end: 19 },
+    ]);
   });
 });

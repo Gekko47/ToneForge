@@ -36,6 +36,12 @@ jobs:
       - name: Format check
         run: npm run format
 
+      - name: Secret scan
+        run: npm run secrets:scan
+
+      - name: Documentation links
+        run: npm run docs:validate
+
       - name: Test with coverage
         run: npm run test:coverage
 
@@ -44,6 +50,19 @@ jobs:
 
       - name: Validate manifest
         run: npm run validate
+
+      - name: Package release staging
+        run: npm run release:package
+
+      - name: Reject tracked generated artifacts
+        run: |
+          if git diff --quiet -- dist coverage build; then
+            echo "Generated outputs are not tracked."
+          else
+            echo "Generated outputs changed in the working tree." >&2
+            git diff -- dist coverage build
+            exit 1
+          fi
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

@@ -5,6 +5,7 @@ export interface ReviewBatch {
   nodeIds: string[];
   text: string;
   characterCount: number;
+  startOffset: number;
 }
 
 export interface BatcherOptions {
@@ -33,8 +34,26 @@ export function partitionReviewBatches(
       nodeIds: current.map((node) => node.nodeId),
       text,
       characterCount: text.length,
+      startOffset: current[0]?.sourceRange?.startOffset ?? 0,
     });
     current = [];
+  };
+
+  const appendChunks = (node: DocumentNode, text: string): void => {
+    if (text.length === 0) return;
+    const chunks = Math.ceil(text.length / maxCharacters);
+    Array.from({ length: chunks }, (_, index) => index).forEach((index) => {
+      const start = index * maxCharacters;
+      const chunk = text.slice(start, start + maxCharacters);
+      const sourceRange = node.sourceRange;
+      batches.push({
+        index: batches.length,
+        nodeIds: [node.nodeId],
+        text: chunk,
+        characterCount: chunk.length,
+        startOffset: (sourceRange?.startOffset ?? 0) + start,
+      });
+    });
   };
 
   nodes.forEach((node) => {
@@ -42,8 +61,7 @@ export function partitionReviewBatches(
     const text = node.text ?? "";
     if (text.length > maxCharacters) {
       flush();
-      current = [node];
-      flush();
+      appendChunks(node, text);
       return;
     }
     const projected =

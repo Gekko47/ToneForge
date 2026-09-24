@@ -19,12 +19,12 @@ newer Phase C/E host paths remain open.
 
 ## Host matrix
 
-| Host                     | Version | Browser/engine    | Sideload | Task pane | Probe   | Current evidence                                                                           |
-| ------------------------ | ------- | ----------------- | -------- | --------- | ------- | ------------------------------------------------------------------------------------------ |
-| Word on Windows          | unknown | Edge WebView2 153 | PASS     | PASS      | PARTIAL | Desktop text insert/replace and tracking smoke recorded below. Breaks/styles remain false. |
-| Word on the web (Chrome) | —       | Chrome            | PENDING  | PENDING   | PENDING | Not recorded.                                                                              |
-| Word on the web (Edge)   | —       | Edge              | PENDING  | PENDING   | PENDING | Not recorded.                                                                              |
-| Word on Mac              | —       | Safari/WebKit     | PENDING  | PENDING   | PENDING | Not recorded; Mac is conditional on the release-host decision.                             |
+| Host                     | Version | Browser/engine    | Sideload | Task pane | Probe   | Current evidence                                                                                                                           |
+| ------------------------ | ------- | ----------------- | -------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Word on Windows          | unknown | Edge WebView2 153 | PASS     | PASS      | PARTIAL | Desktop text insert/replace and tracking smoke recorded below. Breaks/styles remain false; Phase C/E and accessibility matrix remain open. |
+| Word on the web (Chrome) | —       | Chrome            | PENDING  | PENDING   | PENDING | Not recorded.                                                                                                                              |
+| Word on the web (Edge)   | —       | Edge              | PENDING  | PENDING   | PENDING | Not recorded.                                                                                                                              |
+| Word on Mac              | —       | Safari/WebKit     | PENDING  | PENDING   | PENDING | Not recorded; Mac is conditional on the release-host decision.                                                                             |
 
 ## Desktop evidence — 2026-09-22
 
@@ -101,6 +101,6 @@ For each host:
 
 - Desktop Word: break/style limitations and unavailable host version.
 - Web and Mac: no evidence yet.
-- Full-document AI review and observer change-range behavior: no live evidence
-  yet.
+- Full-document AI review, observer change-range behavior, keyboard/screen-reader
+  behavior, and long-document measurements: no live evidence yet.
 - The consistency seam is reserved and no C1–C10 engine is present.

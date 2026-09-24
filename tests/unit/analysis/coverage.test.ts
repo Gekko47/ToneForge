@@ -50,7 +50,7 @@ describe("buildCoverage", () => {
     const nodes = [makeNode("textBox")];
     const report = buildCoverage({ nodes, text: "hello" });
     expect(report.complete).toBe(false);
-    expect(report.unprocessed).toContain("Required in-scope node inaccessible");
+    expect(report.unprocessed).toContain("Required in-scope node type inaccessible: body");
   });
 
   it("handles empty nodes array", () => {
@@ -58,7 +58,7 @@ describe("buildCoverage", () => {
     expect(report.counts).toEqual([]);
     expect(report.processedCharacterCount).toBe(0);
     expect(report.complete).toBe(false);
-    expect(report.unprocessed).toContain("Required in-scope node inaccessible");
+    expect(report.unprocessed).toContain("Required in-scope node type inaccessible: body");
   });
 
   it("applies exclusions", () => {

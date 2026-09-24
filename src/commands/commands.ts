@@ -76,3 +76,49 @@ export async function openPendingChanges(): Promise<void> {
 export async function scanNow(): Promise<void> {
   await showTaskpane("governance");
 }
+
+interface CommandEvent {
+  completed(): void;
+}
+
+type CommandHandler = (event: CommandEvent) => Promise<void>;
+
+const COMMAND_HANDLERS: Readonly<Record<string, () => Promise<void>>> = {
+  ToneForgeScan: scanNow,
+  ToneForgeFindings: openFindings,
+  ToneForgeReviewSelection: reviewSelection,
+  ToneForgeReviewDocument: reviewDocument,
+  ToneForgeActiveProfile: openProfile,
+  ToneForgeEditProfile: editProfile,
+  ToneForgePendingChanges: openPendingChanges,
+};
+
+/** Associate every manifest executeFunction action with its navigation handler. */
+export function associateCommandActions(): void {
+  const office = (
+    globalThis as {
+      Office?: {
+        actions?: { associate: (id: string, handler: CommandHandler) => void };
+      };
+    }
+  ).Office;
+  if (!office?.actions) return;
+  Object.entries(COMMAND_HANDLERS).forEach(([id, handler]) => {
+    office.actions?.associate(id, async (event) => {
+      try {
+        await handler();
+      } finally {
+        event.completed();
+      }
+    });
+  });
+}
+
+const officeGlobal = (
+  globalThis as unknown as {
+    Office?: { onReady?: (callback: () => void) => void };
+  }
+).Office;
+if (typeof officeGlobal?.onReady === "function") {
+  officeGlobal.onReady(() => associateCommandActions());
+}

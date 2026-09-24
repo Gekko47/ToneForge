@@ -18,7 +18,7 @@
 
 ## Audit-qualified execution result
 
-The current worktree contains code and tests for the main A–F candidate and a
+The refactor candidate contains code and tests for the main A–F candidate and a
 README-only consistency seam. The canonical roadmap records the exact status:
 
 - Phase A: partial; structured node extraction and stronger coverage/protection

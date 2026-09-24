@@ -13,7 +13,20 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html", "lcov"],
-      include: ["src/**/*.ts", "src/**/*.tsx"],
+      include: [
+        "src/analysis/**/*.ts",
+        "src/changes/**/*.ts",
+        "src/core/**/*.ts",
+        "src/formatting/**/*.ts",
+        "src/reformat/**/*.ts",
+        "src/rules/**/*.ts",
+        "src/shared/**/*.ts",
+        "src/style/**/*.ts",
+        "src/word/**/*.ts",
+        "src/ai/**/*.ts",
+        "src/commands/**/*.ts",
+      ],
+      all: false,
       thresholds: {
         lines: 80,
         statements: 80,

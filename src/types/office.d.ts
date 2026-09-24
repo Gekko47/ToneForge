@@ -157,6 +157,10 @@ declare global {
     type OnReadyCallback = (info: HostInfo) => void;
   }
 
+  interface Actions {
+    associate: (id: string, handler: (event: { completed: () => void }) => Promise<void>) => void;
+  }
+
   const Office: {
     /**
      * Legacy test-double entry point. The real Word host does not expose
@@ -172,6 +176,7 @@ declare global {
     /**
      * Modern readiness hook. Called by the host after the runtime is ready.
      */
+    actions?: Office.Actions;
     onReady: (callback: Office.OnReadyCallback) => void;
     /**
      * Legacy readiness hook. Still supported but `onReady` is preferred.

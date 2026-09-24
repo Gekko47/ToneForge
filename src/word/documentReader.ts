@@ -80,6 +80,21 @@ export async function getSelectionText(): Promise<string> {
   });
 }
 
+/** Read the complete paragraph containing the current selection or insertion point. */
+export async function getSelectedParagraphText(): Promise<string> {
+  return runInWord(async (context) => {
+    const selection = context.document.getSelection();
+    const paragraphs = selection.paragraphs as unknown as {
+      getFirst?: () => { load: (property: string) => unknown; text?: string };
+    };
+    if (typeof paragraphs.getFirst !== "function") return "";
+    const paragraph = paragraphs.getFirst();
+    paragraph.load("text");
+    await context.sync();
+    return paragraph.text ?? "";
+  });
+}
+
 /** Read a specific paragraph range by index. */
 export async function getParagraphRange(startIndex: number, count: number): Promise<string[]> {
   return runInWord(async (context) => {
@@ -111,20 +126,30 @@ export async function getParagraphRange(startIndex: number, count: number): Prom
  * Build a structured node graph snapshot alongside the text-only snapshot.
  * The node graph is additive — the text path remains the live-proven path.
  */
-export async function getStructuredSnapshot(): Promise<DocumentSnapshotSchemaType> {
-  const textSnapshot = await getDocumentSnapshot();
+export async function getStructuredSnapshot(
+  opts: ChunkOptions = {},
+): Promise<DocumentSnapshotSchemaType> {
+  const textSnapshot = await getDocumentSnapshot(opts);
   const fullText = textSnapshot.text;
-  const paragraphs = splitParagraphs(fullText);
+  const paragraphRanges = splitParagraphRanges(fullText);
 
-  const nodes: DocumentNode[] = paragraphs.map((paraText, index) => {
+  const nodes: DocumentNode[] = paragraphRanges.map(({ text: paraText, start, end }, index) => {
     const isHeading = paraText.match(/^(Heading\s*\d+\s*:?\s*)/i) !== null;
     const nodeType = isHeading ? "heading" : "paragraph";
     const sourcePath = `body/paragraph/${index}`;
+    const nodeId = buildNodeId(nodeType, sourcePath);
     return DocumentNodeSchema.parse({
-      nodeId: buildNodeId(nodeType, sourcePath),
+      nodeId,
       type: nodeType,
       text: paraText,
       sourcePath,
+      sourceRange: {
+        nodeId,
+        paragraphIndex: index,
+        startOffset: start,
+        endOffset: end,
+        structuralPath: sourcePath,
+      },
       editable: true,
       includedInGovernance: true,
       includedInAIReview: true,
@@ -153,6 +178,39 @@ export async function getStructuredSnapshot(): Promise<DocumentSnapshotSchemaTyp
     capturedAt: textSnapshot.capturedAt,
     nodes: allNodes,
   });
+}
+
+export interface ParagraphRange {
+  text: string;
+  start: number;
+  end: number;
+}
+
+/** Split paragraphs while retaining exact offsets into the full body text. */
+export function splitParagraphRanges(text: string): ParagraphRange[] {
+  const ranges: ParagraphRange[] = [];
+  const separator = /\n\s*\n/g;
+  let cursor = 0;
+  for (const match of text.matchAll(separator)) {
+    appendTrimmedRange(ranges, text, cursor, match.index ?? cursor);
+    cursor = (match.index ?? cursor) + match[0].length;
+  }
+  appendTrimmedRange(ranges, text, cursor, text.length);
+  return ranges;
+}
+
+function appendTrimmedRange(
+  ranges: ParagraphRange[],
+  text: string,
+  rawStart: number,
+  rawEnd: number,
+): void {
+  const leading = text.slice(rawStart, rawEnd).search(/\S/);
+  if (leading < 0) return;
+  const raw = text.slice(rawStart, rawEnd);
+  const trailingWhitespace = raw.length - raw.trimEnd().length;
+  const start = rawStart + leading;
+  ranges.push({ text: raw.trim(), start, end: rawEnd - trailingWhitespace });
 }
 
 /**

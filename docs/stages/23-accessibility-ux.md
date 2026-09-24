@@ -7,7 +7,7 @@
 Harden accessibility and task-pane UX for the Word-native governance and
 review surfaces.
 
-## Implemented in the current worktree
+## Implemented in the refactor candidate
 
 - Keyboard-accessible task-pane navigation and controls.
 - Text status announcements for scanning, stale, coverage, AI, and progress

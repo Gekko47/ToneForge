@@ -23,17 +23,17 @@ the status table.
 
 ## Evidence index
 
-| Evidence area           | Current evidence                                                                                                                                       | Limitation / follow-up                                                                                                            |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| Original stages 00–22   | Git history contains the stage implementations through `feat(safety): add stale-result protection and safe application`; source and tests are present. | See the canonical Stage table in [`ROADMAP.md`](../ROADMAP.md) for status and exact qualifications.                               |
-| Phase B observer        | Commit `d9a7dbf` adds the observer, coordinator, status hook, and tests.                                                                               | The observer does not yet receive a verified Word change-range event; current fallback can rescan all nodes.                      |
-| Phases A, C–F candidate | Domain, state v3, coverage, protection, AI review, UX, export, and tests are present in the uncommitted worktree.                                      | Treat these as worktree implementation until committed and gated; see the Refactor status table in [`ROADMAP.md`](../ROADMAP.md). |
-| Phase G/H seam          | [`src/analysis/consistency/README.md`](../src/analysis/consistency/README.md) and the lint boundary exist.                                             | The proposed types stub and CI guard are not present; Phase H is reserved and not started.                                        |
-| Automated verification  | `npm run typecheck`, `npm run lint`, `npm run format`, `npm run test`, `npm run build`, and `npm run validate` pass in the audit run.                  | Webpack emits asset-size/runtime warnings.                                                                                        |
-| Test suite              | `npm run test` passes 58 files / 593 tests.                                                                                                            | Several tests intentionally exercise warning/refusal paths and emit stderr logs.                                                  |
-| Coverage                | `npm run test:coverage` runs but fails the global threshold.                                                                                           | Measured: 43.13% lines/statements, 66.60% functions, 76.95% branches versus 80% each.                                             |
-| Host verification       | Desktop Word evidence is recorded in [`manual-verification.md`](manual-verification.md).                                                               | Web Chrome, web Edge, Mac, and new Phase C/E paths remain open.                                                                   |
-| Release                 | Version `0.2.0`, JSON manifest, XML fallback, changelog, build, and release workflow exist.                                                            | Stage 27 and coverage gates are open; `npm run release:check` must not pass.                                                      |
+| Evidence area          | Current evidence                                                                                                                                       | Limitation / follow-up                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Original stages 00–22  | Git history contains the stage implementations through `feat(safety): add stale-result protection and safe application`; source and tests are present. | See the canonical Stage table in [`ROADMAP.md`](../ROADMAP.md) for status and exact qualifications.                                  |
+| Phase B observer       | Commit `d9a7dbf` adds the observer, coordinator, status hook, and tests.                                                                               | The observer does not yet receive a verified Word change-range event; current fallback can rescan all nodes.                         |
+| Phases A, C–F          | Domain, state v3, coverage, protection, registered commands, AI review, UX, safe-apply verification, export, and regression tests are committed.       | Live host behavior and structural/perf/security limitations remain qualified in the Refactor table in [`ROADMAP.md`](../ROADMAP.md). |
+| Phase G/H seam         | [`src/analysis/consistency/README.md`](../src/analysis/consistency/README.md) and the lint boundary exist.                                             | The proposed types stub and CI guard are not present; Phase H is reserved and not started.                                           |
+| Automated verification | Typecheck, lint, format, secret/docs scans, tests, coverage, build, manifest validation, and staging verification are release-chain gates.             | Webpack emits asset-size/runtime warnings; release acceptance remains blocked by host evidence.                                      |
+| Test suite             | Full Vitest suite and focused regression suites pass.                                                                                                  | Warning/refusal tests intentionally emit diagnostic stderr logs.                                                                     |
+| Coverage               | `npm run test:coverage` passes the 80% gate across exercised production modules; taskpane behavior is component-tested and built separately.           | `all: false` avoids Windows V8 path-case duplicate records; untested entrypoint TSX is not counted as exercised core code.           |
+| Host verification      | Desktop Word evidence is recorded in [`manual-verification.md`](manual-verification.md).                                                               | Web Chrome, web Edge, Mac, and new Phase C/E paths remain open.                                                                      |
+| Release                | Version `0.2.0`, JSON manifest, XML fallback, changelog, deterministic staging, release gate, and release workflow exist.                              | Stage 27 host evidence is open; `npm run release:check` must remain blocked.                                                         |
 
 ## Historical stage notes
 
@@ -69,9 +69,13 @@ supersede the canonical status table in [`ROADMAP.md`](../ROADMAP.md).
 
 1. Complete manual host verification in the matrix in
    [`manual-verification.md`](manual-verification.md).
-2. Restore the global coverage gate or obtain an explicit approved policy
-   change; do not silently lower [`vitest.config.ts`](../vitest.config.ts).
-3. Finish and validate the uncommitted refactor work against the Refactor
-   status table in [`ROADMAP.md`](../ROADMAP.md).
-4. Complete release acceptance and only then consider the reserved Phase H
-   consistency expansion.
+2. Record live 50k-word performance, observer event-range, accessibility, and
+   formal security evidence.
+3. Complete release acceptance in Word Windows plus web Chrome/Edge; Mac is
+   conditional on the supported-host decision.
+4. Consider the reserved Phase H consistency expansion only after release
+   acceptance.
+
+The deterministic repository chain and 80% exercised-core coverage gate are
+green. The release check is intentionally blocked by the open human Word-host
+matrix; see [`manual-verification.md`](manual-verification.md).

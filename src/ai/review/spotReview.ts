@@ -17,6 +17,8 @@ export interface SpotReviewOptions {
   includeRawText: true;
   signal?: AbortSignal;
   registry?: LlmProvider;
+  /** Document offset corresponding to the first character of request.text. */
+  rangeOffset?: number;
 }
 
 export interface SpotReviewResult extends ValidatedReview {
@@ -28,6 +30,7 @@ const DEFAULT_RETRIES = 2;
 
 export async function reviewSpot(options: SpotReviewOptions): Promise<SpotReviewResult> {
   const request = ReviewRequestSchema.parse(options.request);
+  const rangeOffset = options.rangeOffset ?? 0;
   const context = buildMinimalContext({
     selectedText: request.text,
     nodes: options.nodes ?? [],
@@ -72,6 +75,7 @@ export async function reviewSpot(options: SpotReviewOptions): Promise<SpotReview
     requestId: request.id,
     targetNodeIds: request.targetNodeIds,
     sourceText: request.text,
+    rangeOffset,
   });
   const plan = createChangePlan(
     request.documentVersion,
