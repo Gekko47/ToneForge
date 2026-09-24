@@ -26,8 +26,8 @@ jobs:
       - name: Release check (Stage 28 gate)
         run: node scripts/release-check.mjs
 
-      - name: Build
-        run: npm run build
+      - name: Build and artifact budget check
+        run: npm run build:check
 
       - name: Package release staging
         run: npm run release:package

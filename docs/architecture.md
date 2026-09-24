@@ -117,12 +117,15 @@ deprecated smoke helpers are retained only for historical Stage 18 reproduction.
 - TypeScript 5.6 strict mode with `exactOptionalPropertyTypes` and
   `noUncheckedIndexedAccess`.
 - React 18 and Fluent UI v8.
-- Webpack 5 with content-hashed production bundles.
+- Webpack 5 with content-hashed production bundles, a separate runtime chunk,
+  vendor/common splitting, and explicit 600 KiB JavaScript asset/initial-page
+  budgets.
 - Zod runtime contracts and Vitest/jsdom tests.
 - ESLint, Prettier, Husky, lint-staged, and commitlint.
 - GitHub Actions CI runs typecheck, lint, format, coverage, build, and manifest
-  validation; the current local coverage command exposes the global threshold
-  failure tracked in [`ROADMAP.md`](../ROADMAP.md).
+  validation; `npm run build:check` fails on missing, unhashed, oversized, or
+  unreferenced production artifacts. Word-host evidence remains tracked in
+  [`ROADMAP.md`](../ROADMAP.md).
 
 ## Security and privacy posture
 

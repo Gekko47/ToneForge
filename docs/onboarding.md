@@ -49,16 +49,17 @@ npm run typecheck
 npm run lint
 npm run format
 npm run test
-npm run build
+npm run build:check
 npm run validate
 npm run stage:verify
 npm run verify
 ```
 
-`npm run verify` runs the ordered chain: typecheck → lint → format → test →
-build → manifest validation. `npm run test:coverage` is a separate release
-criterion and currently fails the global 80% threshold; see
-[`ROADMAP.md`](../ROADMAP.md) before making a release claim.
+`npm run verify` runs the ordered chain: typecheck → lint → format → secret
+scan → documentation links → test → build/artifact-budget check → manifest
+validation. `npm run test:coverage` is a separate 80% release criterion. The
+Word host matrix remains a human evidence gate; see [`ROADMAP.md`](../ROADMAP.md)
+before making a release claim.
 
 ## Troubleshooting
 

@@ -12,6 +12,7 @@ const checks = [
   { name: "docs", cmd: "npm run docs:validate" },
   { name: "test", cmd: "npm run test" },
   { name: "build", cmd: "npm run build" },
+  { name: "build-artifacts", cmd: "node scripts/check-build-artifacts.mjs" },
   { name: "validate", cmd: "npm run validate" },
   { name: "package", cmd: "npm run release:package" },
 ];

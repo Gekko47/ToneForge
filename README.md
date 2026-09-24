@@ -12,9 +12,10 @@ release gates are in [`ROADMAP.md`](ROADMAP.md). Read that file before making
 planning or release decisions.
 
 The repository contains an unreleased refactor candidate. Automated repository
-verification—including 80% exercised-core coverage, secret/docs scans, build,
-manifest, and staging checks—passes. The complete Word host matrix and release
-acceptance remain open. See [`docs/project-state.md`](docs/project-state.md) for
+verification—including 80% exercised-core coverage, secret/docs scans, production
+bundle budgets, manifest, and staging checks—passes without Webpack performance
+warnings. The complete Word host matrix and release acceptance remain open. See
+[`docs/project-state.md`](docs/project-state.md) for
 the evidence index and [`docs/manual-verification.md`](docs/manual-verification.md)
 for host results.
 
@@ -44,10 +45,10 @@ npm run verify
 ```
 
 The ordered repository chain is typecheck → lint → format → secret scan →
-documentation links → test → build → manifest validation. Coverage is a
-separate 80% release gate and passes. `npm run stage:verify` additionally builds
-deterministic release staging and checks the human-evidence release gate; it
-remains blocked until the Word host matrix is complete.
+documentation links → test → build/artifact-budget check → manifest validation.
+Coverage is a separate 80% release gate and passes. `npm run stage:verify`
+additionally builds deterministic release staging and checks the human-evidence
+release gate; it remains blocked until the Word host matrix is complete.
 
 ## Architecture and privacy
 

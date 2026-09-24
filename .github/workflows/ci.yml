@@ -45,8 +45,8 @@ jobs:
       - name: Test with coverage
         run: npm run test:coverage
 
-      - name: Build
-        run: npm run build
+      - name: Build and artifact budget check
+        run: npm run build:check
 
       - name: Validate manifest
         run: npm run validate

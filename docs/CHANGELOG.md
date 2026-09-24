@@ -15,6 +15,9 @@
   batches with freshness re-checks, release staging, and release gates.
 - Automated verification passes typecheck, lint, format, secret/docs scans,
   tests, 80% core coverage, build, manifest validation, and staging checks.
+- Hardened production bundling with a separate runtime chunk, vendor/common
+  splitting, dependency cleanup, and a 600 KiB asset/initial-page budget enforced
+  by `npm run build:check` without suppressing Webpack diagnostics.
 - Release acceptance remains blocked only by the external Word host matrix and
   live performance/accessibility/security evidence; see
   [`ROADMAP.md`](../ROADMAP.md) for canonical status.

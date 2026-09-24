@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "webpack serve --config webpack.dev.js --host localhost --port 3000",
     "build": "webpack --config webpack.prod.js",
+    "build:check": "npm run build && node scripts/check-build-artifacts.mjs",
     "build:dev": "webpack --config webpack.dev.js --mode development",
     "clean": "rm -rf dist build coverage .tsbuildinfo",
     "sideload": "npx office-addin-debugging start manifest.xml",
@@ -30,14 +31,13 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm run lint && npm run format && npm run secrets:scan && npm run docs:validate && npm run test && npm run build && npm run validate",
+    "verify": "npm run typecheck && npm run lint && npm run format && npm run secrets:scan && npm run docs:validate && npm run test && npm run build:check && npm run validate",
     "stage:verify": "node scripts/stage-verify.mjs",
     "prepare": "husky",
     "release:check": "node scripts/release-check.mjs"
   },
   "dependencies": {
     "@fluentui/react": "^8.120.0",
-    "lodash-es": "^4.17.21",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-error-boundary": "^4.1.1",
@@ -52,7 +52,6 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.5.0",
-    "@types/lodash-es": "^4.17.12",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
