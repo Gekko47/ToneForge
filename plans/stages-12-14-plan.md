@@ -1,5 +1,8 @@
 # Stages 12–14 Implementation Plan — Versioning plus Deterministic Rules Thread
 
+> Historical execution plan. The authoritative current status and sequencing are
+> in [`ROADMAP.md`](../ROADMAP.md). This file records the original plan only.
+
 Source of truth: [`ROADMAP.md`](ROADMAP.md:21), [`docs/stages/12-profile-versioning.md`](docs/stages/12-profile-versioning.md:1), [`docs/stages/13-typography-rules.md`](docs/stages/13-typography-rules.md:1), [`docs/stages/14-house-style-rules.md`](docs/stages/14-house-style-rules.md:1), [`docs/architecture.md`](docs/architecture.md:39), [`docs/project-state.md`](docs/project-state.md:20), [`docs/decision-log.md`](docs/decision-log.md:1), plus zoo skills in [`.roo/skills`](.roo/skills/toneforge-scaffold/SKILL.md:1) and zoo rules in [`.roo/rules`](.roo/rules/zoo-rules-build-manifest.md:1).
 
 > Note on timelines: per delivery policy no time-based estimates are provided. Sequencing, entry gates, and measurable exit criteria below define progress from Stage 12 through Stage 14.

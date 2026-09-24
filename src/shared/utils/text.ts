@@ -66,3 +66,14 @@ export function stdDev(values: readonly number[]): number | null {
 export function normalizeLineEndings(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
+
+/** FNV-1a 32-bit hash — fast, deterministic, good enough for stale guards. */
+export function hashText(text: string): string {
+  return [...text]
+    .reduce((hash, char) => {
+      const h = (hash ^ char.charCodeAt(0)) >>> 0;
+      return (h * 16777619) >>> 0;
+    }, 2166136261)
+    .toString(16)
+    .padStart(8, "0");
+}

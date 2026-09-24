@@ -5,7 +5,14 @@
  */
 
 import { runInWord } from "../shared/office/officeHelpers";
-import { splitParagraphs, splitSentences, countWords } from "../shared/utils/text";
+import { splitParagraphs, splitSentences, countWords, hashText } from "../shared/utils/text";
+import {
+  DocumentSnapshotSchema,
+  type DocumentSnapshot as DocumentSnapshotSchemaType,
+  DocumentNodeSchema,
+  type DocumentNode,
+  buildNodeId,
+} from "../core/domain/DocumentSnapshot";
 
 export interface DocumentSnapshot {
   id: string;
@@ -98,4 +105,83 @@ export async function getParagraphRange(startIndex: number, count: number): Prom
       return typeof para.text === "string" ? para.text : "";
     });
   });
+}
+
+/**
+ * Build a structured node graph snapshot alongside the text-only snapshot.
+ * The node graph is additive — the text path remains the live-proven path.
+ */
+export async function getStructuredSnapshot(): Promise<DocumentSnapshotSchemaType> {
+  const textSnapshot = await getDocumentSnapshot();
+  const fullText = textSnapshot.text;
+  const paragraphs = splitParagraphs(fullText);
+
+  const nodes: DocumentNode[] = paragraphs.map((paraText, index) => {
+    const isHeading = paraText.match(/^(Heading\s*\d+\s*:?\s*)/i) !== null;
+    const nodeType = isHeading ? "heading" : "paragraph";
+    const sourcePath = `body/paragraph/${index}`;
+    return DocumentNodeSchema.parse({
+      nodeId: buildNodeId(nodeType, sourcePath),
+      type: nodeType,
+      text: paraText,
+      sourcePath,
+      editable: true,
+      includedInGovernance: true,
+      includedInAIReview: true,
+    });
+  });
+
+  // Add a body node
+  const bodyNode = DocumentNodeSchema.parse({
+    nodeId: buildNodeId("body", "body"),
+    type: "body",
+    sourcePath: "body",
+    editable: true,
+    includedInGovernance: true,
+    includedInAIReview: true,
+  });
+
+  const allNodes = [bodyNode, ...nodes];
+  const contentHash = hashDocument(fullText);
+  const structuralHash = hashText(allNodes.map((n) => `${n.type}:${n.sourcePath}`).join("|"));
+
+  return DocumentSnapshotSchema.parse({
+    documentId: textSnapshot.id,
+    versionToken: `${textSnapshot.capturedAt}:${contentHash}`,
+    contentHash,
+    structuralHash,
+    capturedAt: textSnapshot.capturedAt,
+    nodes: allNodes,
+  });
+}
+
+/**
+ * Resolve a source range preferring nodeId + structuralPath when present,
+ * falling back to character offsets for adapter compatibility.
+ */
+export function resolveSourceRange(
+  nodeId: string | undefined,
+  structuralPath: string | undefined,
+  startOffset?: number,
+  endOffset?: number,
+): {
+  nodeId: string | undefined;
+  structuralPath: string | undefined;
+  start: number | undefined;
+  end: number | undefined;
+} {
+  if (nodeId || structuralPath) {
+    return {
+      nodeId,
+      structuralPath,
+      start: startOffset,
+      end: endOffset,
+    };
+  }
+  return {
+    nodeId: undefined,
+    structuralPath: undefined,
+    start: startOffset,
+    end: endOffset,
+  };
 }

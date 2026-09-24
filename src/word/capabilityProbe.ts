@@ -22,6 +22,10 @@ export interface WordCapabilities {
   supportsInsertBreak: boolean;
   supportsStyles: boolean;
   supportsRevisions: boolean;
+  supportsSelection: boolean;
+  supportsParagraphResolution: boolean;
+  supportsHighlight: boolean;
+  supportsContextMenu: boolean;
   hostName: "Word" | "Excel" | "PowerPoint" | "unknown";
   hostVersion: string | null;
 }
@@ -33,6 +37,10 @@ const DEFAULT_CAPABILITIES: WordCapabilities = {
   supportsInsertBreak: false,
   supportsStyles: false,
   supportsRevisions: false,
+  supportsSelection: false,
+  supportsParagraphResolution: false,
+  supportsHighlight: false,
+  supportsContextMenu: false,
   hostName: "unknown",
   hostVersion: null,
 };
@@ -163,7 +171,49 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
         return result === true;
       },
     ],
+    [
+      "supportsSelection",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          return typeof context.document.getSelection === "function";
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsParagraphResolution",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const paragraphs = context.document.body.paragraphs;
+          if (!paragraphs || typeof paragraphs.load !== "function") return false;
+          paragraphs.load("items");
+          await context.sync();
+          return Array.isArray(paragraphs.items);
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsHighlight",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range, "highlight");
+        });
+        return result === true;
+      },
+    ],
   ];
+
+  // Context menus are an Office UI extension point, not a Word document
+  // capability. This inspection is non-destructive and stays outside Office.run.
+  const office = (
+    globalThis as {
+      Office?: { contextMenus?: unknown; ui?: { contextMenus?: unknown } };
+    }
+  ).Office;
+  caps.supportsContextMenu =
+    typeof office?.contextMenus === "object" || typeof office?.ui?.contextMenus === "object";
 
   for (const [key, probe] of probes) {
     try {

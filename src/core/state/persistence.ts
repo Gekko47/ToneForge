@@ -11,18 +11,24 @@
 
 import { z } from "zod";
 import { StyleProfileSchema, type StyleProfile } from "../domain/StyleProfile";
+import { GovernanceProfileSchema } from "../domain/GovernanceProfile";
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(2),
+  version: z.number().int().nonnegative().default(3),
   profiles: z.array(StyleProfileSchema).default([]),
   profileHistory: z.record(z.string().uuid(), z.array(StyleProfileSchema)).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
+  governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
+  activeGovernanceProfileId: z.string().uuid().nullable().default(null),
   settings: z
     .object({
       openAiApiKey: z.string().optional(),
       openAiBaseUrl: z.string().url().optional(),
       openAiModel: z.string().optional(),
+      llmProvider: z.enum(["openai", "mock"]).default("mock"),
+      spotReviewConsent: z.boolean().default(false),
+      fullDocumentReviewConsent: z.boolean().default(false),
       telemetryDisabled: z.boolean().default(true),
     })
     .default({}),
@@ -30,8 +36,9 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v2";
-const LEGACY_STORAGE_KEY = "ToneForge.State.v1";
+const STORAGE_KEY = "ToneForge.State.v3";
+const LEGACY_STORAGE_KEY_V2 = "ToneForge.State.v2";
+const LEGACY_STORAGE_KEY_V1 = "ToneForge.State.v1";
 
 function isOfficeRuntime(): boolean {
   return typeof (globalThis as unknown as { Office?: unknown }).Office !== "undefined";
@@ -64,7 +71,8 @@ function getRoamingSettings(): Record<string, unknown> | null {
 
     return (
       parsePersistedValue(settings.get(STORAGE_KEY)) ??
-      parsePersistedValue(settings.get(LEGACY_STORAGE_KEY))
+      parsePersistedValue(settings.get(LEGACY_STORAGE_KEY_V2)) ??
+      parsePersistedValue(settings.get(LEGACY_STORAGE_KEY_V1))
     );
   } catch {
     return null;
@@ -135,7 +143,8 @@ function getLocalStorage(): Record<string, unknown> | null {
   try {
     return (
       parsePersistedValue(storage.getItem(STORAGE_KEY)) ??
-      parsePersistedValue(storage.getItem(LEGACY_STORAGE_KEY))
+      parsePersistedValue(storage.getItem(LEGACY_STORAGE_KEY_V2)) ??
+      parsePersistedValue(storage.getItem(LEGACY_STORAGE_KEY_V1))
     );
   } catch {
     return null;

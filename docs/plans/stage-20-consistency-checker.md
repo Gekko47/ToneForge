@@ -1,11 +1,13 @@
 # Stage 20 — Consistency Checker — Finalized Plan
 
+> Historical execution record. The authoritative current status is in
+> [`ROADMAP.md`](../../ROADMAP.md).
+
 ## 1. Authoritative alignment
 
-- [`ROADMAP.md`](ROADMAP.md:45) defines Stage 20 as `feat(checker): add hybrid consistency checker` with Gate Yes, consuming the canonical [`StyleProfile`](src/core/domain/StyleProfile.ts:80) for both Reformat and Consistency Check.
-- [`docs/stages/20-consistency-checker.md`](docs/stages/20-consistency-checker.md:1) scopes work to [`src/analysis/consistencyChecker.ts`](src/analysis/consistencyChecker.ts:1) plus [`tests/unit/analysis/`](tests/unit/analysis:1), verification via typecheck, test, and [`docs/project-state.md`](docs/project-state.md:1) update, status PENDING.
-- [`docs/project-state.md`](docs/project-state.md:28) confirms Stages 13–19 PASS, Stage 20 PENDING, Stages 21–22 PENDING; no hard-gate blocker remains for analysis-only work.
-- [`docs/architecture.md`](docs/architecture.md:45) constrains [`src/analysis/`](src/analysis/index.ts:1) to `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils`; forbids `ui` and [`word/revisionAdapter`](src/word/revisionAdapter.ts:1). Checker performs no mutation.
+- [`ROADMAP.md`](../../ROADMAP.md) is the authoritative current status and sequencing source.
+- The original Stage 20 implementation remains in [`src/analysis/consistencyChecker.ts`](../../src/analysis/consistencyChecker.ts) and its tests; its current status is recorded in the Stage 20 row of [`ROADMAP.md`](../../ROADMAP.md).
+- [`docs/architecture.md`](../architecture.md) defines the current analysis boundary. The checker performs no mutation.
 - [`docs/decision-log.md`](docs/decision-log.md:157) ADRs ADR-0019 through ADR-0024 plus ADR-0006 deterministic-first, ADR-0011 retry/abort, ADR-0013 boundaries govern this stage.
 
 ## 2. Locked contract — findings-only
@@ -85,8 +87,8 @@ flowchart TD
 2. Update [`src/analysis/index.ts`](src/analysis/index.ts:1) barrel to re-export checker and report types.
 3. Add [`tests/unit/analysis/consistencyChecker.test.ts`](tests/unit/analysis/consistencyChecker.test.ts:1) near [`tests/unit/analysis/deviationEngine.test.ts`](tests/unit/analysis/deviationEngine.test.ts:1) and [`tests/unit/analysis/unifiedFindings.test.ts`](tests/unit/analysis/unifiedFindings.test.ts:1). Cover empty text, deterministic-only, formatting absent versus present, semantic skipped versus [`MockAdapter`](src/ai/providers/mockAdapter.ts:1) success, invalid entries skipped, opt-in refusal, abort passthrough, ordering determinism, summary counts, `profileId` and `docHash` propagation. Reuse [`tests/fixtures/sampleDocs.ts`](tests/fixtures/sampleDocs.ts:1).
 4. Run [`npm run test`](package.json:22) focused on `tests/unit/analysis`, then full suite; run [`npm run lint`](package.json:25) with zero warnings; meet 80% lines, statements, functions, branches per [`vitest.config.ts`](vitest.config.ts:13).
-5. Run full [`npm run verify`](package.json:30) chain: [`npm run typecheck`](package.json:29), [`npm run lint`](package.json:25), [`npm run format`](package.json:27), [`npm run test`](package.json:22), [`npm run build`](package.json:15), [`npm run validate`](package.json:20), plus [`npm run stage:verify`](package.json:31) via [`scripts/stage-verify.mjs`](scripts/stage-verify.mjs:1).
-6. Update [`docs/project-state.md`](docs/project-state.md:28) to PASS, record ADR if report shape diverges, expand [`docs/stages/20-consistency-checker.md`](docs/stages/20-consistency-checker.md:1) verification checkboxes. Commit as `feat(checker): add hybrid consistency checker` per [`commitlint.config.cjs`](commitlint.config.cjs:1).
+5. Run the ordered verification chain documented in [`ROADMAP.md`](../../ROADMAP.md).
+6. Update the canonical status and evidence index when a gate result changes.
 
 ## 7. Risks and mitigations
 

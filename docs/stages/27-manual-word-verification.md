@@ -1,24 +1,39 @@
 # Stage 27 — Manual Word verification
 
-**Gate**: **Hard**
+**Canonical status:** see the Stage 27 row in [`ROADMAP.md`](../../ROADMAP.md).
 
 ## Objective
 
-Record Word host verification results.
+Record real Word host behavior for the current release candidate and the
+uncommitted refactor candidate.
 
-## Scope
+## Evidence recorded
 
-- Sideload the release candidate into Word on the web (Chrome, Edge) and Word desktop.
-- Run `probeWordCapabilities()` in each host.
-- Run the reformat pipeline on a test document in each host.
-- Record results in `docs/manual-verification.md`.
+Desktop Word evidence is recorded in
+[`docs/manual-verification.md`](../manual-verification.md), including:
 
-## Verification
+- non-destructive capability probing;
+- tracked text insert/replace smoke;
+- explicit gate refusal and enablement;
+- tracking restore and recorded counts;
+- known break/style/host-version limitations.
 
-- [ ] All hosts in `docs/manual-verification.md` marked complete
-- [ ] No unhandled exceptions in any host
-- [ ] `docs/project-state.md` updated
+## Required remaining checks
 
-## Status
+- [ ] Word on the web, Chrome.
+- [ ] Word on the web, Edge.
+- [ ] Word on Mac, if Mac is a release commitment.
+- [ ] Phase C ribbon, task-pane navigation, findings navigation/highlight, and
+      context-menu behavior.
+- [ ] Phase D selection/paragraph review consent and failure states.
+- [ ] Phase E full-document preflight, bounded batches, cancellation, and result
+      handling.
+- [ ] Observer event/change-range behavior in each supported host.
+- [ ] Breaks, styles, protection, comments, fields, and unsupported paths.
 
-PENDING — must run inside Word.
+## Current status
+
+The stage is **PARTIAL**. Desktop evidence is present, but the full host matrix
+is not. The matrix and interpretation are maintained in
+[`docs/manual-verification.md`](../manual-verification.md); this page is only
+the stage gate summary.

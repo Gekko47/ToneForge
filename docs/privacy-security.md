@@ -1,27 +1,63 @@
 # ToneForge — Privacy & Security
 
+The canonical implementation status and release gates are in
+[`ROADMAP.md`](../ROADMAP.md). This document describes the current privacy and
+security posture and known limitations.
+
 ## Data handling
 
-- **API keys**: Entered only via the Settings UI. Stored in `Office.roamingSettings`. Never committed to source.
-- **Document text**: Read locally by the add-in for analysis. Sent to an LLM provider only when the user explicitly opts in for semantic rewriting.
-- **Telemetry**: Disabled by default (`TELEMETRY_DISABLED=1`). No analytics endpoint configured.
+- **API keys**: entered only through Settings, stored in
+  `Office.roamingSettings`, and never committed. The localStorage fallback is
+  not encrypted by this repository and is a documented MVP limitation.
+- **Document text**: read locally for deterministic analysis. It is sent to an
+  LLM only after the user explicitly enables the corresponding review consent.
+- **Spot review consent**: selection and paragraph review share the explicit
+  spot consent and are limited by the context minimizer.
+- **Full-document consent**: whole-document review has a separate consent flag,
+  excludes protected nodes, and uses bounded batches. Partial results are never
+  presented as complete.
+- **Telemetry**: disabled by default. No analytics endpoint is configured.
 
 ## Prompt safety
 
-- Prompts are built by `src/ai/prompts/`. They include only what is necessary for the requested operation.
-- No raw document text is included in profiling prompts unless the user has explicitly enabled semantic analysis.
+- Prompt builders require `includeRawText: true` and fail closed without it.
+- Review requests are Zod-validated before provider use.
+- Provider responses are parsed as JSON and validated against structured review
+  schemas.
+- Out-of-range, invented-text, malformed, and protected-content responses fail
+  closed.
+- Deterministic governance works without an AI provider.
 
-## Logging
+## Logging and redaction
 
-- `src/shared/utils/logger.ts` redacts any context field whose name matches `/key|token|secret|password|auth/i`.
-- Logs are console-only; no network egress.
+- `src/shared/utils/logger.ts` redacts fields matching
+  `/key|token|secret|password|auth/i`.
+- The OpenAI adapter redacts email addresses, card numbers, API keys, bearer
+  tokens, and other configured secret patterns before logging.
+- Logs should contain operation metadata, hashes, statuses, and errors, not raw
+  document text. Review the logger call sites when adding a new operation.
 
-## Storage
+## Storage and manifest
 
-- `Office.roamingSettings` is encrypted at rest by the Office client.
-- localStorage fallback is unencrypted; used only when the Office runtime is unavailable (e.g. unit tests).
+- `Office.roamingSettings` is used when available; localStorage is the fallback.
+- Both stores are written when available, and legacy v1/v2 state keys are read
+  through the v3 migration path.
+- `manifest.json` v1.30 and `manifest.xml` are kept in sync and validated by
+  [`scripts/validate-manifest.mjs`](../scripts/validate-manifest.mjs).
+- The production build emits content-hashed bundles through
+  [`webpack.prod.js`](../webpack.prod.js).
 
-## Compliance notes
+## Safety boundaries
 
-- This is an MVP. Before production use, complete Stage 25 (Security/privacy hardening) and Stage 27 (Manual Word verification).
-- If handling regulated data, add a data processing agreement review and consider on-premises or private endpoint LLM options.
+- [`revisionAdapter.ts`](../src/word/revisionAdapter.ts) is the only mutation
+  path.
+- The orchestrator re-hashes before apply and refuses unresolved conflicts.
+- Protected nodes and preservation literals are rejected before application.
+- Coverage gaps block full-document review/export paths.
+
+## Open work
+
+- Complete formal security review and host-specific data-flow verification.
+- Decide the production treatment of the localStorage key-storage limitation.
+- Complete the host matrix and release acceptance checklist in
+  [`ROADMAP.md`](../ROADMAP.md).

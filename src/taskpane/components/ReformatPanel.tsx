@@ -220,9 +220,10 @@ export default function ReformatPanel({
             I have reviewed the conflicts and accept the risk of contradictory edits.
           </label>
           <ul aria-live="polite">
-            {result.plan.conflicts.map((conflict) => (
-              <li key={conflict}>{conflict}</li>
-            ))}
+            {result.plan.conflicts.map((conflict, index) => {
+              const message = typeof conflict === "string" ? conflict : conflict.message;
+              return <li key={index}>{message}</li>;
+            })}
           </ul>
         </div>
       )}

@@ -98,6 +98,11 @@ function makeFinding(params: {
     severity: params.severity,
     evidence: params.evidence,
     confidence: 1,
+    nodeIds: [],
+    source: "deterministic",
+    risk: "none",
+    reversible: true,
+    status: "new",
   };
 }
 

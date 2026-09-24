@@ -1,5 +1,8 @@
 # Stages 07–11 Implementation Plan — Style Learning Thread
 
+> Historical execution plan. The authoritative current status and sequencing are
+> in [`ROADMAP.md`](../ROADMAP.md). This file records the original plan only.
+
 Source of truth: [`ROADMAP.md`](ROADMAP.md:21), [`docs/stages/07-settings-ui.md`](docs/stages/07-settings-ui.md:1), [`docs/stages/08-style-sample.md`](docs/stages/08-style-sample.md:1), [`docs/stages/09-deterministic-metrics.md`](docs/stages/09-deterministic-metrics.md:1), [`docs/stages/10-style-profiler.md`](docs/stages/10-style-profiler.md:1), [`docs/stages/11-editable-profile-ui.md`](docs/stages/11-editable-profile-ui.md:1), [`docs/architecture.md`](docs/architecture.md:1), [`docs/project-state.md`](docs/project-state.md:1), [`docs/decision-log.md`](docs/decision-log.md:1), plus zoo skills in [`.roo/skills`](.roo/skills/toneforge-scaffold/SKILL.md:1) and zoo rules in [`.roo/rules`](.roo/rules/zoo-rules-build-manifest.md:1).
 
 ## 0. UI location decision — which is better

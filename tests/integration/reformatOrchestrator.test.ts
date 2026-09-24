@@ -24,6 +24,10 @@ const FULL_CAPABILITIES: WordCapabilities = {
   supportsInsertBreak: true,
   supportsStyles: true,
   supportsRevisions: true,
+  supportsSelection: true,
+  supportsParagraphResolution: true,
+  supportsHighlight: true,
+  supportsContextMenu: true,
   hostName: "Word",
   hostVersion: "16.0",
 };

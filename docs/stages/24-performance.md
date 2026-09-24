@@ -1,25 +1,30 @@
 # Stage 24 — Performance
 
-**Gate**: Yes
+**Canonical status:** see the Stage 24 row in [`ROADMAP.md`](../../ROADMAP.md).
 
 ## Objective
 
-Harden analysis for large documents.
+Harden analysis and UI behavior for large documents.
 
-## Scope
+## Implemented in the current worktree
 
-- Chunked document processing in `src/formatting/analyzer.ts`.
-- Worker-ready pure functions (no Office calls inside workers).
-- Performance budget tests for documents up to 100k words.
-- `src/shared/utils/debounce.ts` for UI responsiveness.
+- Debounced document observation.
+- Bounded AI review batches.
+- `AbortSignal` propagation and cancellation-aware progress.
+- Paginated/incremental finding-list rendering.
+- Performance collection notes in [`docs/perf-baselines.md`](../perf-baselines.md).
 
 ## Verification
 
-- [ ] `npm run typecheck` passes
-- [ ] `npm run test` passes
-- [ ] Performance budget test passes
-- [ ] `docs/project-state.md` updated
+- [x] Review pipeline, batcher, UI, and observer tests pass.
+- [x] Full test suite passes: 58 files / 593 tests.
+- [ ] Measured 50k-word scan and memory baseline in Word.
+- [ ] Measured edit-to-finding latency and observer change-range behavior.
+- [ ] Global coverage threshold passes.
 
-## Status
+## Current limitation
 
-PENDING
+The current observer does not receive a verified Word change-range event, so
+it conservatively scans the current structured nodes. The implementation is
+therefore bounded and tested, but the original small-edit performance goal is
+not yet proven.

@@ -8,3 +8,4 @@ export {
   ConsistencyReportSchema,
   ConsistencySummarySchema,
 } from "./consistencyChecker";
+export { buildCoverage, type CoverageOptions } from "./coverage";

@@ -23,6 +23,7 @@ import type { FormattingSnapshot } from "../formatting/formattingSnapshot";
 import { FormattingSnapshotSchema } from "../formatting/formattingSnapshot";
 import { unifyFindings } from "./unifiedFindings";
 import { detectSemanticDeviations } from "./deviationEngine";
+import { buildCoverage } from "./coverage";
 import { logger } from "../shared/utils/logger";
 import { FindingSchema } from "../core/domain/Finding";
 import type { Finding } from "../core/domain/Finding";
@@ -30,6 +31,7 @@ import { StyleProfileSchema } from "../core/domain/StyleProfile";
 import type { StyleProfile } from "../core/domain/StyleProfile";
 import type { DeviationOptions } from "./deviationEngine";
 import type { LlmSemanticProvider } from "../ai/providers/LlmProvider";
+import type { DocumentNode } from "../core/domain/DocumentSnapshot";
 
 /** Lightweight FNV-1a hash used when the caller does not supply one. */
 function hashText(text: string): string {
@@ -64,6 +66,31 @@ export const ConsistencyReportSchema = z.object({
   docHash: z.string().trim().min(1),
   semanticStatus: z.enum(["ok", "skipped", "degraded"]).default("ok"),
   semanticError: z.string().optional(),
+  coverage: z
+    .object({
+      runId: z.string().uuid(),
+      counts: z
+        .array(
+          z.object({
+            nodeType: z.string(),
+            count: z.number().int().nonnegative(),
+            processedCharacterCount: z.number().int().nonnegative(),
+            revisedCharacterCount: z.number().int().nonnegative(),
+            excluded: z
+              .array(z.object({ reason: z.string(), locations: z.array(z.string()).max(10) }))
+              .default([]),
+          }),
+        )
+        .default([]),
+      processedCharacterCount: z.number().int().nonnegative(),
+      revisedCharacterCount: z.number().int().nonnegative(),
+      excluded: z
+        .array(z.object({ reason: z.string(), locations: z.array(z.string()).max(10) }))
+        .default([]),
+      unprocessed: z.array(z.string()).default([]),
+      complete: z.boolean().default(true),
+    })
+    .optional(),
 });
 
 export type ConsistencyReport = z.infer<typeof ConsistencyReportSchema>;
@@ -77,6 +104,7 @@ export interface CheckConsistencyOptions {
   signal?: AbortSignal;
   /** Injected semantic provider; tests use MockAdapter only. */
   registry?: LlmSemanticProvider;
+  nodes?: DocumentNode[];
 }
 
 function emptySummary(): ConsistencySummary {
@@ -107,6 +135,7 @@ function buildReport(
   profileId: string,
   docHash: string,
   semantic?: SemanticStatus,
+  coverage?: ConsistencyReport["coverage"],
 ): ConsistencyReport {
   const status = semantic?.status ?? "ok";
   if (status === "degraded" && semantic?.error !== undefined) {
@@ -117,6 +146,7 @@ function buildReport(
       docHash,
       semanticStatus: status,
       semanticError: semantic.error,
+      coverage,
     });
   }
   return ConsistencyReportSchema.parse({
@@ -125,6 +155,7 @@ function buildReport(
     profileId,
     docHash,
     semanticStatus: status,
+    coverage,
   });
 }
 
@@ -185,5 +216,11 @@ export async function checkConsistency(
 
   const findings = unifyFindings({ deterministic, formatting, semantic });
 
-  return buildReport(findings, profile.id, docHash ?? hashText(text), semanticStatus);
+  // Build coverage report if nodes are provided
+  let coverage: ConsistencyReport["coverage"] | undefined;
+  if (options.nodes && options.nodes.length > 0) {
+    coverage = buildCoverage({ nodes: options.nodes, text });
+  }
+
+  return buildReport(findings, profile.id, docHash ?? hashText(text), semanticStatus, coverage);
 }

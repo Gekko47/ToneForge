@@ -1,5 +1,8 @@
 # Sideload Blank Pane — Root Cause Plan
 
+> Historical remediation plan. The authoritative current status and sequencing
+> are in [`ROADMAP.md`](../ROADMAP.md).
+
 Baseline: sideload of [`manifest.xml`](manifest.xml) via [`sideload`](package.json:18) into Word desktop on Windows. Shell chrome loads, body is blank dark as in screenshot. Dev server is [`dev`](package.json:14) on HTTPS port 3000.
 
 ## 1. Manifest audit

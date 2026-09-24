@@ -1,5 +1,8 @@
 # Stages 15–17 Implementation Plan — Formatting plus Findings plus Change Planning Thread
 
+> Historical execution plan. The authoritative current status and sequencing are
+> in [`ROADMAP.md`](../ROADMAP.md). This file records the original plan only.
+
 Source of truth: [`ROADMAP.md`](ROADMAP.md:21), [`docs/stages/15-formatting-engine.md`](docs/stages/15-formatting-engine.md:1), [`docs/stages/16-unified-findings.md`](docs/stages/16-unified-findings.md:1), [`docs/stages/17-change-planning.md`](docs/stages/17-change-planning.md:1), [`docs/architecture.md`](docs/architecture.md:39), [`docs/project-state.md`](docs/project-state.md:23), [`docs/decision-log.md`](docs/decision-log.md:1), plus zoo skills in [`.roo/skills`](.roo/skills/toneforge-scaffold/SKILL.md:1) and zoo rules in [`.roo/rules`](.roo/rules/zoo-rules-build-manifest.md:1).
 
 > Note on timelines: per delivery policy no time-based estimates are provided. Sequencing, entry gates, and measurable exit criteria below define progress from Stage 15 through Stage 17. User explicitly requested timelines and effort, which this plan satisfies via sequence-gated milestones and gate checks rather than hours or days.

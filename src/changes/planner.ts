@@ -54,6 +54,10 @@ function makeChange(params: CreateChangeParams): Change {
     payload: params.payload,
     rationale: params.rationale,
     reversible: params.reversible ?? true,
+    source: "deterministic",
+    risk: "none",
+    approvalRequired: false,
+    dependsOn: [],
     ...(params.finding.suggestedChangeId === undefined
       ? {}
       : { suggestedChangeId: params.finding.suggestedChangeId }),

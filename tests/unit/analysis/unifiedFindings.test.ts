@@ -28,6 +28,11 @@ function finding(params: {
     severity: params.severity ?? "warning",
     evidence: "",
     confidence: params.confidence ?? 1,
+    nodeIds: [],
+    source: "deterministic",
+    risk: "none",
+    reversible: true,
+    status: "new",
     ...(params.suggestedChangeId ? { suggestedChangeId: params.suggestedChangeId } : {}),
   };
 }
@@ -269,6 +274,11 @@ describe("unifyFindings", () => {
           severity: "warning",
           evidence: "",
           confidence: 1,
+          nodeIds: [],
+          source: "deterministic",
+          risk: "none",
+          reversible: true,
+          status: "new",
         },
         finding({ category: "valid", start: 0, end: 2 }),
       ],

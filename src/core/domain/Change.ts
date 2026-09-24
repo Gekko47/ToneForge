@@ -107,6 +107,9 @@ export const ChangePayloadSchema = z.discriminatedUnion("type", [
 
 export type ChangePayload = z.infer<typeof ChangePayloadSchema>;
 
+export const ChangeSourceSchema = z.enum(["deterministic", "ai", "user"]);
+export type ChangeSource = z.infer<typeof ChangeSourceSchema>;
+
 export const ChangeSchema = z
   .object({
     id: z.string().uuid(),
@@ -116,6 +119,12 @@ export const ChangeSchema = z
     rationale: z.string().trim().default(""),
     reversible: z.boolean().default(true),
     suggestedChangeId: z.string().optional(),
+    // --- additive fields (Phase A) ---
+    findingId: z.string().uuid().optional(),
+    source: ChangeSourceSchema.default("deterministic"),
+    risk: z.enum(["none", "low", "medium", "high"]).default("none"),
+    approvalRequired: z.boolean().default(false),
+    dependsOn: z.array(z.string().uuid()).default([]),
   })
   .superRefine((data, ctx) => {
     // Validate the payload against the discriminated union for the chosen

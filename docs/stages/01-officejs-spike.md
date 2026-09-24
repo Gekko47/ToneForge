@@ -1,64 +1,34 @@
 # Stage 01 — Office.js capability spike
 
-**Gate**: **Hard**
+**Canonical status:** see the Stage 01 row in [`ROADMAP.md`](../../ROADMAP.md).
 
 ## Objective
 
-Verify Word revision and document capabilities BEFORE building the reformatter.
+Verify the Word host capabilities required by the product before relying on
+mutation and review paths.
 
 ## Scope
 
-- Implement `src/word/capabilityProbe.ts` with `probeWordCapabilities()`.
-- Probe: insert text, replace text, insert paragraph, insert break, styles, revisions.
-- Record host name and version.
-- Run the probe inside Word on the web (Chrome/Edge) and Word desktop.
-- Document results in `docs/manual-verification.md`.
-
-## Critical ordering rule
-
-**Do not build the full reformatter before proving native Word revision behavior.**
-
-If `supportsRevisions` is false, the stage is PASS WITH DOCUMENTED LIMITATION and Stages 15-21 must use tracked-change insertion with explicit documentation.
+- Non-destructive `probeWordCapabilities()` in
+  [`src/word/capabilityProbe.ts`](../../src/word/capabilityProbe.ts).
+- Probe text insertion/replacement, paragraph insertion, breaks, styles,
+  tracking manageability, selection, paragraph resolution, highlight, and
+  context-menu signals.
+- Record host identity/version and results in
+  [`docs/manual-verification.md`](../manual-verification.md).
 
 ## Verification
 
-- [x] `probeWordCapabilities()` returns a complete `WordCapabilities` object
-- [x] `npm run typecheck` passes
-- [x] `npm run test` passes (probe structure + failure injection)
-- [x] Task pane loads via webpack-dev-server on https://localhost:3000
-- [x] "Probe Word capabilities" button renders and is clickable in the pane
-- [x] "Diagnose Office runtime" button added for non-destructive host inspection
-- [x] Probe runs inside Word without unhandled exceptions
-- [x] Results recorded in `docs/manual-verification.md`
+- [x] Probe and failure-injection tests pass.
+- [x] Task pane loads and diagnostics render.
+- [x] Desktop Word probe and tracked text smoke are recorded.
+- [ ] Web Chrome host matrix is recorded.
+- [ ] Web Edge host matrix is recorded.
+- [ ] Mac host matrix is recorded if Mac is a release commitment.
+- [ ] Phase C/E capabilities and observer events are re-probed.
 
 ## Status
 
-PASS WITH DOCUMENTED LIMITATION — Desktop Word in-word execution is recorded in
-`docs/manual-verification.md`. Native revisions, insert-break behavior, styles
-enumeration, and host version remain unavailable/limited in the tested host;
-Word on the web and Word on Mac remain untested.
-
-## Runtime findings
-
-- The task pane renders correctly when served from `https://localhost:3000/taskpane.html`.
-- The taskpane `<head>` must load Office.js explicitly from the Microsoft CDN;
-  without that bootstrap, Word can still render the iframe while `Office`
-  remains undefined.
-- The `Office` global is `undefined` when loaded directly in a browser (outside
-  Word), which is expected.
-- `probeOfficeRuntime()` (in `src/shared/office/diagnostics.ts`) reports this
-  state without throwing, and `officeInit.ts` resolves immediately when `Office`
-  is absent so the UI never blocks.
-- The favicon 404 from the dev server has been silenced with an inline SVG
-  data-URI in `src/taskpane/taskpane.html`.
-- A "Diagnose Office runtime" button on the Dashboard triggers
-  `probeOfficeRuntime()` and renders the formatted output, enabling quick
-  verification of host globals during sideload testing.
-- `probeWordCapabilities()` is wired to the "Probe Word capabilities" button;
-  it calls `Word.run` and is only meaningful when the add-in is loaded inside
-  Word (where `Office` and `Word` globals are present).
-- Desktop Word result (2026-09-21, Edge WebView2 153): `supportsInsertText`,
-  `supportsReplaceText`, and `supportsInsertParagraph` are true;
-  `supportsInsertBreak`, `supportsStyles`, and `supportsRevisions` are false;
-  `hostName` is `"Word"` via cached `Office.onReady(info)`; `hostVersion` is
-  null because `Office.context.host` is absent.
+**PASS WITH DOCUMENTED LIMITATION** for the original desktop text path. The
+full host matrix and newer refactor capabilities remain open; the canonical
+ledger is [`ROADMAP.md`](../../ROADMAP.md).

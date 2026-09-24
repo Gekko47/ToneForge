@@ -41,6 +41,11 @@ function finding(params: {
     severity: params.severity ?? "warning",
     evidence: params.evidence ?? "",
     confidence: params.confidence ?? 1,
+    nodeIds: [],
+    source: "deterministic",
+    risk: "none",
+    reversible: true,
+    status: "new",
     ...(params.suggestedChangeId === undefined
       ? {}
       : { suggestedChangeId: params.suggestedChangeId }),

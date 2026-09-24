@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ChangePlanSchema, createChangePlan } from "../../../../src/core/domain/index";
+import type { ChangeSource } from "../../../../src/core/domain/Change";
 
 const validChange = {
   id: "123e4567-e89b-12d3-a456-426614174000",
@@ -8,6 +9,10 @@ const validChange = {
   payload: { text: "hello" },
   rationale: "test",
   reversible: true,
+  source: "deterministic" as ChangeSource,
+  risk: "none" as const,
+  approvalRequired: false,
+  dependsOn: [],
 };
 
 describe("ChangePlanSchema", () => {

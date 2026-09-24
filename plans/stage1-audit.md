@@ -1,5 +1,9 @@
 # ToneForge — Stage 1 Comprehensive Audit Report
 
+> Historical audit record. The authoritative current status and sequencing are
+> in [`ROADMAP.md`](../ROADMAP.md). Findings below describe the repository at
+> the time of the audit and must not be used as current status.
+
 > Scope: all currently delivered code, configs, and docs regardless of stage mapping, per reviewer instruction.
 > Baseline: [`ROADMAP.md`](ROADMAP.md:1), [`plans/plan.md`](plans/plan.md:1), [`docs/project-state.md`](docs/project-state.md:1), `docs/stages/00-06`, [`docs/architecture.md`](docs/architecture.md:1), [`docs/decision-log.md`](docs/decision-log.md:1).
 > Method: systematic code inspection, requirements traceability, functional validation by reading, test plan review, config and docs cross-check.

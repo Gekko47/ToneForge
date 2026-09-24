@@ -16,6 +16,10 @@ const FULL_CAPABILITIES: WordCapabilities = {
   supportsInsertBreak: true,
   supportsStyles: true,
   supportsRevisions: false,
+  supportsSelection: true,
+  supportsParagraphResolution: true,
+  supportsHighlight: true,
+  supportsContextMenu: true,
   hostName: "Word",
   hostVersion: "16.0",
 };
@@ -41,6 +45,10 @@ describe("applyChangePlan gate", () => {
         payload: { text: "hello" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
     const results = await applyChangePlan(plan, "hash-123");
@@ -105,6 +113,10 @@ describe("applyChangePlan gate", () => {
         payload: { text: "hello" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
     const problems = validatePlanBeforeApply(plan);
@@ -195,6 +207,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "REPLACED" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
 
@@ -244,6 +260,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "A" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174001",
@@ -252,6 +272,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "B" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
 
@@ -275,6 +299,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "A" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174001",
@@ -283,6 +311,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "B" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174002",
@@ -291,6 +323,10 @@ describe("applyChangePlan apply path", () => {
         payload: {},
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174003",
@@ -299,6 +335,10 @@ describe("applyChangePlan apply path", () => {
         payload: { alignment: "center" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174004",
@@ -307,6 +347,10 @@ describe("applyChangePlan apply path", () => {
         payload: { bold: true },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174005",
@@ -315,6 +359,10 @@ describe("applyChangePlan apply path", () => {
         payload: { styleName: "Heading 1" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174006",
@@ -323,6 +371,10 @@ describe("applyChangePlan apply path", () => {
         payload: { breakType: "nextParagraph" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174007",
@@ -331,6 +383,10 @@ describe("applyChangePlan apply path", () => {
         payload: { level: 1 },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
 
@@ -370,6 +426,10 @@ describe("applyChangePlan apply path", () => {
           payload: { breakType: "page" },
           rationale: "test",
           reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          dependsOn: [],
         },
       ]);
       const results = await applyChangePlan(plan, "hash-123");
@@ -403,6 +463,10 @@ describe("applyChangePlan apply path", () => {
           payload: { breakType: "line" },
           rationale: "test",
           reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          dependsOn: [],
         },
       ]);
       const results = await applyChangePlan(plan, "hash-123");
@@ -461,6 +525,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "X" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
 
@@ -518,6 +586,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "X" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
 
@@ -541,6 +613,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "X" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
 
@@ -565,6 +641,10 @@ describe("applyChangePlan apply path", () => {
         payload: { styleName: "Nonexistent" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
 
@@ -610,6 +690,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "A" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174001",
@@ -618,6 +702,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "B" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
 
@@ -639,6 +727,10 @@ describe("applyChangePlan apply path", () => {
         payload: { text: "x" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
       },
     ]);
 

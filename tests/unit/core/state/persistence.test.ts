@@ -31,7 +31,14 @@ describe("persistence", () => {
       profiles: [],
       profileHistory: {},
       activeProfileId: null,
-      settings: { telemetryDisabled: false },
+      settings: {
+        llmProvider: "mock",
+        spotReviewConsent: false,
+        fullDocumentReviewConsent: false,
+        telemetryDisabled: false,
+      },
+      governanceProfiles: {},
+      activeGovernanceProfileId: null,
     });
 
     expect(loadState().settings.telemetryDisabled).toBe(false);

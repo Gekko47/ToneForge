@@ -1,5 +1,8 @@
 # Stages 18–19 Implementation Plan — Revision Adapter plus Semantic Deviation Thread
 
+> Historical execution plan. The authoritative current status and sequencing are
+> in [`ROADMAP.md`](../ROADMAP.md). This file records the original plan only.
+
 Source of truth: [`ROADMAP.md`](ROADMAP.md:21), [`docs/stages/18-revision-adapter.md`](docs/stages/18-revision-adapter.md:1), [`docs/stages/19-semantic-deviation.md`](docs/stages/19-semantic-deviation.md:1), [`docs/architecture.md`](docs/architecture.md:39), [`docs/project-state.md`](docs/project-state.md:26), [`docs/decision-log.md`](docs/decision-log.md:34), [`docs/manual-verification.md`](docs/manual-verification.md:1), plus zoo skills in [`.roo/skills`](.roo/skills/toneforge-scaffold/SKILL.md:1) and zoo rules in [`.roo/rules`](.roo/rules/zoo-rules-build-manifest.md:1).
 
 > Note on timelines and effort: per delivery policy no time-based estimates are provided. Sequencing, entry gates, and measurable exit criteria below define progress from Stage 18 through Stage 19. This satisfies the request for timelines and effort via sequence-gated milestones and gate checks rather than hours or days.

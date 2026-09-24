@@ -149,6 +149,41 @@ export default [
     },
   },
   {
+    // Explicit scope for coverage engine — pure, no Office/AI/UI imports.
+    files: ["src/analysis/coverage.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/word/*", "**/ai/*", "**/taskpane/*", "**/commands/*"],
+              message:
+                "coverage must stay pure: allowed imports are core/domain and shared/utils only.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Explicit scope for Phase H consistency seam — reserved, no engine.
+    files: ["src/analysis/consistency/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/taskpane/*", "**/commands/*", "**/word/revisionAdapter*"],
+              message: "consistency seam must not import ui or word/revisionAdapter.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Enforces docs/architecture.md: changes/ is pure and may import only
     // core/domain and shared/utils. It must never read Word, call AI, or touch UI.
     files: ["src/changes/**/*.ts"],

@@ -19,12 +19,23 @@ import {
   STAGE_01_PASSED,
   type ApplyWithTrackingResult,
 } from "../word/revisionAdapter";
-import { getDocumentSnapshot, hashDocument, type DocumentSnapshot } from "../word/documentReader";
+import {
+  getDocumentSnapshot,
+  getStructuredSnapshot,
+  hashDocument,
+  type DocumentSnapshot,
+} from "../word/documentReader";
 import { getFormattingSnapshot } from "../word/formattingReader";
 import { type FormattingSnapshot } from "../formatting/formattingSnapshot";
 import type { StyleProfile } from "../core/domain/StyleProfile";
 import type { ChangePlan } from "../core/domain/ChangePlan";
-import type { LlmSemanticProvider } from "../ai/providers/LlmProvider";
+import type { LlmProvider, LlmSemanticProvider } from "../ai/providers/LlmProvider";
+import type { DocumentSnapshot as StructuredDocumentSnapshot } from "../core/domain/DocumentSnapshot";
+import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
+import {
+  reviewEntireDocument as runDocumentEditorialReview,
+  type FullReviewResult,
+} from "../ai/review/documentEditorialReview";
 
 export interface ReformatOptions {
   profile: StyleProfile;
@@ -223,4 +234,32 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     applied:
       applyResult.results.length > 0 && applyResult.results.every((result) => result.applied),
   };
+}
+
+export interface FullDocumentReviewOptions {
+  profile: GovernanceProfile;
+  includeRawText: true;
+  registry: LlmProvider;
+  snapshot?: StructuredDocumentSnapshot;
+  currentDocumentVersion?: string;
+  signal?: AbortSignal;
+  onProgress?: (completed: number, total: number) => void;
+}
+
+/** Run the coverage-first, bounded full-document review without mutating Word. */
+export async function reviewEntireDocument(
+  options: FullDocumentReviewOptions,
+): Promise<FullReviewResult> {
+  const snapshot = options.snapshot ?? (await getStructuredSnapshot());
+  return runDocumentEditorialReview({
+    snapshot,
+    profile: options.profile,
+    includeRawText: options.includeRawText,
+    registry: options.registry,
+    ...(options.currentDocumentVersion !== undefined
+      ? { currentDocumentVersion: options.currentDocumentVersion }
+      : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+  });
 }

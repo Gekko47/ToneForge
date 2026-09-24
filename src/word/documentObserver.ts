@@ -21,7 +21,7 @@ import { findTypographyIssues } from "../rules/typography";
 import { findHouseStyleIssues } from "../rules/houseStyle";
 import { findFormattingIssues } from "../formatting/analyzer";
 import { buildCoverage } from "../analysis/coverage";
-import { type DocumentNode } from "../core/domain/DocumentSnapshot";
+import { type DocumentNode, type CoverageReport } from "../core/domain/DocumentSnapshot";
 import { type StyleProfile } from "../core/domain/StyleProfile";
 import { type Finding } from "../core/domain/Finding";
 import type { FormattingSnapshot } from "../formatting/formattingSnapshot";
@@ -31,7 +31,7 @@ export interface DocumentObserverStatus {
   dirtyCount: number;
   stale: boolean;
   findings: Finding[];
-  coverage: string | null;
+  coverage: CoverageReport | null;
 }
 
 export type DocumentObserverCallback = (status: DocumentObserverStatus) => void;
@@ -50,6 +50,7 @@ interface ObserverState {
   lastScan: string | null;
   dirtyCount: number;
   stale: boolean;
+  coverage: CoverageReport | null;
   debouncedScan: (() => void) | null;
 }
 
@@ -71,6 +72,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     lastScan: null,
     dirtyCount: 0,
     stale: false,
+    coverage: null,
     debouncedScan: null,
   };
 
@@ -135,7 +137,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       state.findings = mergeFindings(state.findings, dirtyNodeIds, () => newFindings);
 
       // Update coverage
-      buildCoverage({ nodes, text: fullText });
+      state.coverage = buildCoverage({ nodes, text: fullText });
 
       // Update state
       state.lastScan = new Date().toISOString();
@@ -218,7 +220,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
         dirtyCount: state.dirtyCount,
         stale: state.stale,
         findings: state.findings,
-        coverage: null,
+        coverage: state.coverage,
       });
     }
   }

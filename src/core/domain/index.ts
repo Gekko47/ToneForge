@@ -16,19 +16,60 @@ export {
 export {
   FindingSchema,
   FindingKindSchema,
+  FindingSourceSchema,
+  FindingRiskSchema,
+  FindingStatusSchema,
   SeveritySchema,
   RangeSchema,
   type Finding,
   type FindingKind,
+  type FindingSource,
+  type FindingRisk,
+  type FindingStatus,
   type Severity,
   type Range,
 } from "./Finding";
-export { ChangePlanSchema, type ChangePlan, createChangePlan } from "./ChangePlan";
+export {
+  ChangePlanSchema,
+  type ChangePlan,
+  createChangePlan,
+  ConflictEntrySchema,
+  type ConflictEntry,
+  ChangePlanValidationSchema,
+  type ChangePlanValidation,
+} from "./ChangePlan";
 export {
   ChangeSchema,
   ChangeTypeSchema,
   ChangePayloadSchema,
+  ChangeSourceSchema,
   type Change,
   type ChangeType,
   type ChangePayload,
+  type ChangeSource,
 } from "./Change";
+export {
+  GovernanceProfileSchema,
+  type GovernanceProfile,
+  createGovernanceProfile,
+} from "./GovernanceProfile";
+export {
+  ReviewRequestSchema,
+  ReviewOperationSchema,
+  type ReviewRequest,
+  type ReviewOperation,
+} from "./ReviewRequest";
+export {
+  DocumentSnapshotSchema,
+  type DocumentSnapshot,
+  SourceRangeSchema,
+  type SourceRange,
+  DocumentNodeSchema,
+  type DocumentNode,
+  CoverageReportSchema,
+  type CoverageReport,
+  CoverageItemSchema,
+  type CoverageItem,
+  buildNodeId,
+  computeStructuralHash,
+} from "./DocumentSnapshot";

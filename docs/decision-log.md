@@ -1,222 +1,77 @@
 # ToneForge — Architectural Decision Log
 
-## 2026-09-19 — Repository baseline and scaffold
+The canonical implementation status and plan are in [`ROADMAP.md`](../ROADMAP.md).
+This log records architectural decisions; it does not duplicate the status
+ledger.
 
-### ADR-0001 — Use unified JSON manifest (v1.30) over XML manifest
+## Existing decisions
 
-- **Status**: Accepted (superseded v1.10 decision on 2026-09-19)
-- **Context**: Roadmap targets a Word Web Add-in. The unified manifest for Microsoft 365 is the forward-looking format and supports richer capabilities. The originally-chosen v1.10 schema did not support the Office `extensions`/`runtimes` structure required for task-pane activation.
-- **Decision**: Use `manifest.json` (manifestVersion 1.30, schema `https://developer.microsoft.com/json-schemas/teams/v1.30/MicrosoftTeams.schema.json`) as the canonical manifest. Keep `manifest.xml` as a validated add-in-only fallback for platforms that do not yet support the unified manifest.
-- **Consequences**: The unified manifest must use `extensions[].requirements` + nested `extensions[].runtimes[]` with an `openPage` action and `code.page` only (no `script`, since the build emits content-hashed bundles). The XML fallback must declare `xmlns:bt`, use `Host Name="Document"` / `xsi:type="Document"`, include `<Permissions>ReadWriteDocument</Permissions>`, and use `bt:Urls`/`bt:ShortStrings`/`bt:LongStrings`. Both manifests are kept in sync by `scripts/validate-manifest.mjs`.
-- **Supersession note**: the earlier v1.10 decision is retained for historical traceability; new code must follow v1.30.
+ADR-0001 through ADR-0030 remain the historical decision record for the
+repository baseline, domain, persistence, LLM, Office.js, rules, formatting,
+findings, planning, orchestrator, and safe-application decisions. They are
+preserved for traceability. The key current decisions are:
 
-### ADR-0002 — TypeScript + React + Fluent UI v9 + Webpack + npm
+- Use the unified JSON manifest v1.30 and keep `manifest.xml` as a validated
+  fallback.
+- Use TypeScript strict contracts, Zod boundary validation, React 18, Fluent UI
+  v8, Webpack 5, Vitest, and local Office state persistence.
+- Keep deterministic engines free of Office, LLM, and UI imports.
+- Keep `runInWord()` as the Word access boundary and the revision adapter as the
+  sole mutation path.
+- Use provider-agnostic OpenAI/mock adapters, retry, abort handling, redaction,
+  and explicit raw-text consent.
+- Migrate persisted state rather than discarding legacy data, with corrupt-state
+  fallback to defaults.
+- Treat real Word host results as human-only evidence; unit mocks never close a
+  hard host gate.
 
-- **Status**: Accepted
-- **Context**: Office add-in tooling defaults to Yeoman + React + Webpack. Fluent UI v9 is the current supported UI framework.
-- **Decision**: TypeScript strict mode, React 18, Fluent UI v9, Webpack 5, npm.
-- **Consequences**: Larger bundle than vanilla JS; mitigated by code-splitting and lazy-loaded pages.
+## ADR-0031 — Evolution strategy: additive layering over replacement
 
-### ADR-0003 — Provider-agnostic LLM interface with OpenAI + mock adapters
+- **Status**: Accepted (2026-09-24)
+- **Context**: The refactor proposal used a different stage map and proposed
+  replacing the monolithic prompt/architecture. Replacing the repository would
+  discard committed work and break existing contracts.
+- **Decision**: Add structured document, governance, coverage, protection, and
+  review contracts around the existing `StyleProfile`, `Finding`, `Change`,
+  `ChangePlan`, text snapshot, checker, orchestrator, and adapter. Preserve
+  legacy fixtures through defaults/unions and retain deprecated smoke code only
+  for historical verification.
+- **Consequences**: The original 00–28 roadmap remains intact. The incoming
+  proposal is mapped to Phases A–G and reserved Phase H in
+  [`ROADMAP.md`](../ROADMAP.md). Worktree code is not treated as released or
+  passed merely because it exists.
+- **Evidence**: `src/core/domain/DocumentSnapshot.ts`,
+  `src/core/domain/GovernanceProfile.ts`, `src/core/state/migration.ts`,
+  `src/core/state/persistence.ts`, `src/analysis/coverage.ts`,
+  `src/rules/protection.ts`, and `src/rules/registry.ts`.
 
-- **Status**: Accepted
-- **Context**: Roadmap requires provider-agnostic integration and strong privacy. Azure OpenAI is deferred to a post-MVP ADR.
-- **Decision**: Define `LlmProvider` interface; implement `OpenAiAdapter` (fetch-based, no SDK) and `MockAdapter` for tests. `LlmRegistry` provides fallback and switching.
-- **Consequences**: Fetch-based adapter avoids SDK bloat but lacks SDK features (streaming, retries). Acceptable for MVP.
+## ADR-0032 — Consent-gated bounded AI review
 
-### ADR-0004 — Vitest + jsdom + Testing Library for tests
+- **Status**: Accepted (2026-09-24)
+- **Context**: UX entry points required a safe request contract, context
+  boundary, response validation, and separate consent for spot and full-document
+  review.
+- **Decision**: Use `ReviewRequest`, a bounded context minimizer, protected-node
+  exclusion, Zod-validated structured responses, separate consent settings, and
+  normal `ChangePlan` output. Review never mutates Word directly.
+- **Consequences**: Raw text is minimized and explicitly gated; malformed or
+  out-of-context output fails closed; preview/apply uses the existing safety
+  path. Full-document review is bounded and coverage-gated, but live host and
+  token/freshness evidence remains open.
+- **Evidence**: `src/core/domain/ReviewRequest.ts`, `src/ai/review/*`,
+  `src/ai/prompts/spotPrompts.ts`, and the Phase D/E component tests.
 
-- **Status**: Accepted
-- **Context**: Fast, modern test runner preferred over Jest for ESM + TypeScript ergonomics.
-- **Decision**: Vitest with jsdom environment, Testing Library for component tests, coverage thresholds at 80%.
-- **Consequences**: Mock `Office` global in `tests/setup.ts` so `word` modules can be imported in unit tests.
+## ADR-0033 — Release remains blocked on coverage and host evidence
 
-### ADR-0005 — One mutation path through `ChangePlan` → `revisionAdapter`
-
-- **Context**: Roadmap critical ordering rule.
-- **Decision**: `probeWordCapabilities()` must return `supportsRevisions: true` (or document the limitation) before any Stage 15-21 work is committed.
-- **Consequences**: Reformatter development may be blocked if Word lacks revision support; fallback is tracked-change insertion with explicit documentation.
-- **Context**: Roadmap "One mutation path" rule. Rules and UI must never mutate Word directly.
-- **Decision**: All changes are produced as `ChangePlan` objects; only `src/word/revisionAdapter.ts` calls `Office.run`.
-- **Consequences**: Adds an indirection layer; accepted for safety and auditability.
-
-### ADR-0006 — Deterministic first, AI only where interpretation is required
-
-- **Status**: Accepted
-- **Context**: Roadmap rules of the system.
-- **Decision**: `rules`, `formatting`, `style/metrics` are pure deterministic functions with no Office or LLM imports. `analysis/semantic` is the only consumer of `LlmProvider`.
-- **Consequences**: Semantic engines are harder to test; mitigated by `MockAdapter`.
-
-### ADR-0007 — Storage in `Office.roamingSettings` with localStorage fallback
-
-- **Status**: Accepted
-- **Context**: Add-ins must persist settings across sessions but also run in tests/outside Word.
-- **Decision**: `src/core/state/persistence.ts` writes to `Office.roamingSettings` when available, falls back to `localStorage`.
-- **Consequences**: Data may diverge between Word and localStorage if both are used; mitigated by always writing both.
-
-### ADR-0008 — Hard gate on Stage 01 Office.js spike before reformatter
-
-- **Status**: Accepted
-- **Context**: Roadmap critical ordering rule.
-- **Decision**: `probeWordCapabilities()` must return `supportsRevisions: true` (or document the limitation) before any Stage 15-21 work is committed.
-- **Consequences**: Reformatter development may be blocked if Word lacks revision support; fallback is tracked-change insertion with explicit documentation.
-
-### ADR-0009 — Discriminated-union payloads for Change schemas
-
-- **Status**: Accepted
-- **Context**: Stage 1 audit (R4) found `ChangeSchema` accepted any payload shape, allowing invalid change objects to pass validation.
-- **Decision**: `ChangeSchema` uses a discriminated union (`ChangePayloadSchema`) keyed on `kind`, with a `superRefine` that enforces per-kind payload requirements. `ChangeRangeSchema` uses a `refine` to reject inverted ranges. Factories use `uuid.v4()` for IDs.
-- **Consequences**: Invalid changes fail fast at the boundary; downstream engines can rely on the payload shape. New change kinds must extend the union.
-
-### ADR-0010 — Persistence falls back to defaults on corrupt state
-
-- **Status**: Accepted
-- **Context**: Stage 1 audit (R7) found `loadState()` threw on corrupted or version-incompatible persisted state, which could brick the taskpane on startup.
-- **Decision**: `loadState()` catches parse/validation failures and returns defaults (logging a warning); `saveState()` persists via `Office.roamingSettings.saveAsync` when available. Migrations are versioned (`version` field, v0→v1 implemented).
-- **Consequences**: Users never see a startup crash from bad state, but silently lose corrupted settings. Mitigation: the warning is logged and surfaced in diagnostics.
-
-### ADR-0011 — OpenAI adapter delegates retry to `withRetry()` and distinguishes abort causes
-
-- **Status**: Accepted
-- **Context**: Stage 1 audit (R5) found the OpenAI adapter implemented its own retry loop, ignored `request.signal`, and treated caller-abort the same as timeout.
-- **Decision**: The adapter uses `AbortSignal.any([request.signal, timeoutSignal])` to honor caller cancellation, distinguishes caller-abort (non-retryable) from timeout (retryable), delegates retry/backoff to the shared `withRetry()` helper, and implements real `redact()` (emails, card numbers, API keys, bearer tokens).
-- **Consequences**: Retry policy is consistent across providers; caller cancellation is immediate and never retried. New providers must follow the same contract.
-
-### ADR-0012 — Capability probe is non-destructive by default
-
-- **Status**: Accepted (corrected 2026-09-19 to match implementation)
-- **Context**: Stage 1 audit (R1) found the capability probe inserted and deleted text in the user's document as a side effect of probing. The original decision text described a `dryRun` parameter that was never implemented.
-- **Decision**: `probeWordCapabilities()` takes no arguments and is _always_ non-destructive. It inspects the host object model only (`getSelection().getRange(0,0)` + `hasMethod` checks, `styles.load`, `trackedChanges.load`) and never calls `insertText`, `insertParagraph`, or `insertBreak`. There is no opt-in mutation path — the probe cannot mutate the document by design. `supportsStyles`/`supportsRevisions` return truthful values derived from the probe, not hardcoded `true`.
-- **Consequences**: Probing is safe to run on any document. Because there is no `dryRun: false` escape hatch, a live write test must be implemented as a separate, explicitly opt-in utility if ever needed (deferred to Stage 27).
-
-### ADR-0013 — Enforce module boundaries with ESLint `no-restricted-imports`
-
-- **Status**: Accepted
-- **Context**: Stage 1 audit (R9) found `docs/architecture.md` forbids `core/domain` from importing `Office`, but no lint rule enforced it — the boundary was documentation-only.
-- **Decision**: `eslint.config.mjs` adds scoped `no-restricted-imports` rules: `core/domain` may only import `zod`/`shared/utils`; `word/` may not import `ai`/`ui`; `ai/` may not import `word`/`ui`; `ui` (`taskpane/`, `commands/`) may not import `word/revisionAdapter` directly.
-- **Consequences**: Boundary violations fail `npm run lint`. New modules must declare their allowed imports in `architecture.md` and add a matching ESLint scope.
-
-### ADR-0014 — `exactOptionalPropertyTypes` enabled in tsconfig
-
-- **Status**: Accepted (2026-09-19)
-- **Context**: Stage 00–06 audit (G2.3) found `tsconfig.json` omitted `exactOptionalPropertyTypes`, which `plans/plan.md` mandates.
-- **Decision**: Add `"exactOptionalPropertyTypes": true` to `tsconfig.json` compilerOptions. Verified `tsc --noEmit` passes with the flag enabled.
-- **Consequences**: Optional properties now distinguish `undefined` from absence. Code that explicitly passes `undefined` for optional fields must use the property name explicitly; existing code already compiles cleanly.
-
-### ADR-0016 — Agent-facing zoo rules as scoped markdown files
-
-- **Status**: Accepted (2026-09-20)
-- **Context**: The four existing `.roo/skills/` packages cover LLM, Office.js, scaffold, and testing, but several recurring concerns had no agent-facing rule: TypeScript strict-mode discipline, deterministic-purity enforcement, prompt-privacy opt-in, graceful state persistence, per-module coverage expectations, manifest/build verification before commit, and commit-scope alignment with ROADMAP stages. These gaps were documented in `plans/zoo-rules.md`.
-- **Decision**: Create 8 scoped rule files under `.roo/rules/`, each with YAML frontmatter (`name`, `description`) and evidence-backed content referencing `tsconfig.json`, `eslint.config.mjs`, `vitest.config.ts`, ADRs, and source files. Rules are intentionally non-duplicative of existing skills and ESLint config.
-- **Consequences**: Agents now have explicit, scoping rules for each gap area. `npm run skills:validate` passes (rules live in `.roo/rules/`, not `.roo/skills/`, so they are not subject to the skill frontmatter spec). `npm run verify` passes after formatting `src/taskpane/taskpane.html`.
-
-### ADR-0017 — UI root is `src/taskpane/`, not `src/ui/`
-
-- **Status**: Accepted (2026-09-20)
-- **Context**: Stage files 07/11/12 reference `src/ui/` for Settings and Profile Editor components, but the scaffold skill placement guide and the existing `src/taskpane/` tree (App, pages, theme) are canonical. ESLint `no-restricted-imports` scopes `taskpane/` and `commands/`; a second `src/ui/` root would split that boundary and need new lint scopes for zero benefit.
-- **Decision**: All task-pane UI lives under `src/taskpane/` (pages under `src/taskpane/pages/`, shared components under `src/taskpane/components/`). Stage 07 Settings is implemented as `src/taskpane/pages/Settings.tsx` + `src/taskpane/components/SettingsForm.tsx`, wired into `Dashboard.tsx` via lazy import. Stage files 07/11/12 are corrected to say `src/taskpane/`.
-- **Consequences**: Single UI root avoids import divergence and test-mirror confusion; no shim needed. Docs drift closed for the UI-location concern; other `src/ui/` references in stage files remain as-is until their stages execute.
-
-- **Status**: Accepted (2026-09-19)
-- **Context**: Stage 00–06 audit (G5.1) found `loadState()` parsed raw persisted state directly, bypassing `migrate()` and making the v0→v1 migration dead code.
-- **Decision**: `loadState()` calls `migrate(raw)` before `StateSchema.parse`. Migration preserves existing `settings` values over defaults and fills missing fields with defaults.
-
-- **Status**: Accepted (2026-09-19)
-- **Context**: Stage 00–06 audit (G5.1) found `loadState()` parsed raw persisted state directly, bypassing `migrate()` and making the v0→v1 migration dead code.
-- **Decision**: `loadState()` calls `migrate(raw)` before `StateSchema.parse`. Migration preserves existing `settings` values over defaults and fills missing fields with defaults.
-
-### ADR-0018 — Persistent profile version history (state schema v2)
-
-- **Status**: Accepted (2026-09-21)
-- **Context**: Stage 12 requires persistent profile version history and diffs. The v1 state schema had no history; `upsertProfile` replaced the current profile without recording a prior snapshot, so version bumps were invisible after restart.
-- **Decision**: Bump `StateSchema` to v2 and add `profileHistory: Record<ProfileId, StyleProfile[]>`. `CURRENT_STATE_VERSION` becomes 2. `loadState()` reads `ToneForge.State.v2` first, falling back to the legacy `ToneForge.State.v1` key in both `Office.roamingSettings` and `localStorage`. `migrate()` handles v0→v1→v2 and seeds history from existing profiles when no history is present. `upsertProfile()` appends the previous snapshot before replacing the current profile; `removeProfile()` deletes history entries. `src/style/versioning.ts` provides pure `bumpProfileVersion`, `diffProfiles`, and `formatChangelog`; `VersionDiff.tsx` consumes them.
-- **Consequences**: Existing v1 persisted state is upgraded transparently on next load; corrupt or future-version state falls back to defaults per ADR-0010. History is append-only per profile and deduplicated so unchanged saves do not create duplicate snapshots. `npm run verify` is green.
-
-### ADR-0019 — Deterministic rules module boundary and finding contract
-
-- **Status**: Accepted (2026-09-21)
-- **Context**: Stage 13 introduces the first deterministic rule engine. The stage needs a pure module location, an import boundary that forbids Office/LLM/UI dependencies, and a return contract that Stage 14 can reuse without introducing a second rule-output shape.
-- **Decision**: Place deterministic rule engines under `src/rules/` (Stage 13 creates `src/rules/typography.ts`). `rules/` may import only `core/domain` and `shared/utils`. ESLint `no-restricted-imports` forbids `ai/`, `word/`, `taskpane/`, and `commands/` imports from `src/rules/`. Rule engines return the existing `Finding` contract from `src/core/domain/Finding.ts` with `kind: "deterministic"`, `confidence: 1`, and character-offset ranges. `findTypographyIssues()` composes the individual checks and returns an empty array for empty input.
-- **Consequences**: Stage 14 reuses the same module location, lint scope, and `Finding` return type, keeping Stage 16 unified-findings work simple. Deterministic rules remain directly unit-testable without Office or LLM mocks. The `rules/` module meets the 80% coverage threshold.
-
-### ADR-0020 — Bounded terminology matching and data-table spelling variants
-
-- **Status**: Accepted (2026-09-21)
-- **Context**: Stage 14 adds preferred terminology, banned terms, capitalization, and spelling variants. Terminology must be matched case-insensitively but must not flag substrings inside larger words (e.g. `color` inside `colorful`). Spelling differences must be kept as reviewable data tables rather than hardcoded conditional branches, and the engine must remain deterministic and pure.
-- **Decision**: All term matching — preferred terminology, banned terms, title-case words, and spelling variants — uses a single `boundedTermPattern()` helper that emits a Unicode-aware word-boundary regex (`(?<![\p{L}\p{N}_])…(?![\p{L}\p{N}_])` with the `giu` flags). Overlapping preferred-terminology candidates are resolved by longest match first, then by start position, then by original order; shorter overlapping candidates are dropped. Spelling variants live in `SPELLING_VARIANT_TABLE`, a `readonly` array of `{ "en-US", "en-GB", au }` entries; the active variant is selected by indexing the table with `rules.spellingVariant`, and all non-preferred variants in the same row are flagged. The engine remains pure and imports only `core/domain` and `shared/utils`.
-- **Consequences**: Banned terms and preferred terminology no longer produce false positives inside larger words. Spelling rules are easy to extend by adding rows to the table. The engine is not a full spellchecker — unknown words are never flagged — and that limitation is documented in `docs/stages/14-house-style-rules.md`. `src/rules/houseStyle.ts` meets the 80% coverage threshold (100% lines, 85.45% statements, 100% functions, 100% branches).
-
-### ADR-0021 — Formatting engine reads Word through a DTO boundary
-
-- **Status**: Accepted (2026-09-21)
-- **Context**: Stage 15 needs a Word formatting analyzer and normalizer, but the deterministic engine must stay pure (no Office.js or LLM imports) while the live reader must access Word formatting data. Stage 01 remains PARTIAL because in-Word execution is still pending, so the live reader must degrade gracefully when Office.js is unavailable.
-- **Decision**: Place deterministic formatting logic under `src/formatting/` (analyzer, normalizer, style-name table, and Zod DTO schemas) with an ESLint `no-restricted-imports` scope that forbids `ai/`, `word/`, `taskpane/`, and `commands/` imports. Put all Office.js access in `src/word/formattingReader.ts`, which uses the shared `runInWord` wrapper, loads paragraph `text`/`style`/`format`/`font` properties, performs a second `context.sync()`, and returns a plain `FormattingSnapshot` DTO. Word style names are matched case-insensitively against a data table (`WORD_STYLE_MAPPING`), with heading levels derived from `Heading N` names. Unknown or missing styles fall back to `Normal`; missing formatting fields are `null`; the reader returns an `id: "unavailable"` snapshot when Office.js is not present or the host object model is unsupported.
-
-*
-
-### ADR-0022 — Unified findings merge policy +
-
-- **Status**: Accepted (2026-09-21)
-- **Context**: Stages 13, 14, and 15 each emit `Finding[]` arrays with their own categories and range units. Stage 16 must merge them into one list for the Stage 17 planner and the Stage 20 consistency checker, but the merge must be deterministic and must not silently drop distinct findings. Stage 19 (semantic deviation) is not yet built, so the semantic source must be accepted as a first-class input now and exercised with synthetic fixtures.
-- **Decision**: `src/analysis/unifiedFindings.ts` accepts `deterministic`, `formatting`, and `semantic` arrays via `UnifyOptions`. Raw findings are validated through `FindingSchema` (invalid findings, including inverted ranges, are silently skipped). Exact duplicates are collapsed on the composite key `range + category + message`. Overlapping findings with different categories are both preserved. Same-category overlaps are resolved per connected group: longest-match-wins, then severity (`error` > `warning` > `info`), then stable source order. Overlap grouping is unit-aware — findings in different range units never conflict. The final list is sorted by `range.start`, then `range.end`, then `severity`, then source index. `suggestedChangeId` is preserved because complete parsed `Finding` objects are retained.
-- **Consequences**: The merger is pure and directly unit-testable without Office or LLM mocks. The `src/analysis/` ESLint scope forbids `ui` and `word/revisionAdapter` imports, keeping the boundary aligned with `docs/architecture.md`. Synthetic semantic fixtures (`kind: "semantic"`, `confidence < 1`) prove the full three-source contract before Stage 19 exists. `src/analysis/` coverage is 100% lines / 100% functions / 91.89% branches, and the full `npm run verify` chain is green. Stage 16 is marked PASS. +
-
-### ADR-0023 — Analysis module boundary +
-
-- **Status**: Accepted (2026-09-21)
-- **Context**: `docs/architecture.md` declares that `analysis/` may import `core/domain`, `rules`, `formatting`, `ai/providers`, and `shared/utils`, but no ESLint scope existed to enforce it. Stage 16 created the first `src/analysis/` module, so the boundary needed teeth.
-- **Decision**: Add an `eslint.config.mjs` scope for `src/analysis/**/*.ts` with `no-restricted-imports` forbidding `**/taskpane/*`, `**/commands/*`, and `**/word/revisionAdapter*`. This mirrors the existing `core/domain`, `word/`, `rules/`, `formatting/`, and `ai/` scopes and keeps `analysis/` free of UI and mutation dependencies.
-- **Consequences**: Boundary violations fail `npm run lint`. The scope is intentionally permissive about `rules/` and `formatting/` because Stage 16 consumes their `Finding` outputs; if a future stage needs `analysis/` to call a deterministic engine directly, that is already permitted. `npm run verify` remains green.
-
-### ADR-0027 — Revision tracking management plus smoke-test scaffolding
-
-- **Status**: Accepted (2026-09-22)
-- **Context**: Live Desktop Word shows a working Track Changes toggle while the probe reported `supportsRevisions: false`. Microsoft Learn confirms the probe was checking a fiction: there is no `Document.trackedChanges` property — tracking control is `Document.changeTrackingMode` (WordApi 1.4: `"Off" | "TrackAll" | "TrackMineOnly"`) with a `Document.trackRevisions` desktop fallback (WordApiDesktop 1.4), and the read API is `Body.getTrackedChanges()` (WordApi 1.6). Separately, the Dashboard had no way to apply a style profile or a ChangePlan, which also blocked the Stage 18 live smoke test (no UI could flip the Stage 01 gate or drive `applyChangePlan`).
-- **Decision**: Probe `supportsRevisions` as tracking _manageability_ (load `changeTrackingMode`, accept known modes, else try `trackRevisions` boolean). Add `applyChangePlanWithTracking()` to the adapter: it enables tracking before the first change and restores the prior mode afterwards, returning `{ results, tracking }` with `managed`, `modeBefore`/`modeAfter`, and a best-effort `recordedCount` via `getTrackedChanges()`; when control is unavailable it applies normally and reports `managed: false` (edits are still tracked if the user has Track Changes on). The per-change `RevisionResult[]` remains the tool's record of what it changed. Add explicitly-labeled Stage 18 smoke scaffolding to be superseded by the Stage 21 orchestrator: `src/word/smokeApply.ts` (gate enablement, demo-plan build, tracked apply entry — the only taskpane-reachable mutation path, since `ui/*` must not import `word/revisionAdapter`), a pure selection-to-plan pipeline in `src/taskpane/components/smokePlan.ts` (unique-match selection locating, deterministic rules over the selection, body-relative ranges via the planner), and a `SmokePanel` on the Dashboard (profile-to-selection check/apply; demo-plan build/preview/apply with tracking feedback).
-- **Consequences**: Re-probing live Word exercises the real manageability check instead of a non-existent property. Tracked application is automatic when the API set allows it and honestly reported when it does not. The smoke panel gives the human the exact clicks needed to close the Stage 18 hard gate; it must be removed or folded into the orchestrator in Stage 21 rather than extended.
-- **Addendum 2026-09-22 (Just-Me default)**: when enabling tracking from `Off`, the adapter sets `TrackMineOnly` rather than `TrackAll` — least invasive in shared documents, and still captures every tool-applied edit because those run through the current user's session. The desktop `trackRevisions` boolean has no per-user mode and simply turns on.
-- **Addendum 2026-09-22 (re-probe)**: a later probe on the same host returned `supportsRevisions: true` (was false) while `supportsInsertBreak` and `supportsStyles` stayed false. The `supportsRevisions` flip proves the corrected manageability check works; the two remaining falses are genuine host gaps, not probe bugs — diagnostics show `Word.InsertLocation: true` but no `Word.BreakType`, so the probe correctly refuses to guess a break value, and styles loaded empty with only a secondary `getByNameOrNullObject` signal. The probe reports what the host exposes; it does not invent capability.
-
-### ADR-0028 — Stage 21 reformat orchestration boundary
-
-- **Status**: Accepted (2026-09-22)
-- **Context**: Stage 20 returns a findings-only `ConsistencyReport`, Stage 17 produces a validated `ChangePlan`, and Stage 18 applies plans through the tracked revision adapter. Stage 21 needs one taskpane-safe composition point without duplicating planning, stale, privacy, or mutation logic, while the locked scope explicitly excludes Dashboard UI wiring and Stage 22 confirmation UX.
-- **Decision**: Add `src/reformat/orchestrator.ts` as the Stage 21 boundary. It reads the document and optional formatting snapshots through `runInWord`, delegates hybrid analysis to `checkConsistency`, passes the report and snapshot hash into `planChanges`, and either returns a preview plan or calls `applyChangePlanWithTracking`. The caller may supply an apply-time `currentDocHash`; that value is passed into planning so `plan.stale` is populated before adapter validation. Preview never enters the mutation adapter. Empty text skips the formatting read and produces an empty report/plan.
-- **Consequences**: UI code can consume a single typed entry point without importing `word/revisionAdapter`; preview, no-change, stale, gate, abort, semantic opt-in, provided-snapshot, and tracking-fallback behavior are testable at the integration boundary. The legacy `src/word/smokeApply.ts` helpers are marked `@deprecated` and retained only to preserve the reproducible Stage 18 live-smoke harness; Dashboard redirection is intentionally deferred because UI wiring is outside Stage 21. Stage 22 remains responsible for any additional re-hash confirmation workflow.
-- **Implementation evidence**: `src/reformat/orchestrator.ts`, `src/reformat/index.ts`, `tests/integration/reformatOrchestrator.test.ts`, and the `src/reformat/**/*.ts` ESLint boundary.
-
-### ADR-0026 — Break enums resolve from the Word global at runtime
-
-- **Status**: Accepted (2026-09-22)
-- **Context**: Live Desktop Word diagnostics (WebView2, 2026-09-22) showed `Word.InsertLocation: true` while `Office.InsertBreakBehavior` is absent. Two defects followed: (1) the capability probe checked only `Office.InsertBreakBehavior`, reporting a false-negative `supportsInsertBreak: false` on a capable host; (2) the revision adapter read `Office.BreakType` / `Office.InsertLocation`, which typecheck via TypeScript namespace merging but are `undefined` at runtime, so `insertBreak` would crash in production.
-- **Decision**: Probe break support via `hasWordBreakSupport()`, which checks `Word.BreakType` / `Word.InsertLocation` key presence first and falls back to the legacy `Office.InsertBreakBehavior` check for test doubles and older hosts. Resolve adapter enums at runtime in `resolveBreakEnums()` preferring the `Word` global, falling back to `Office` test-double values, and throwing an explicit per-change `unavailable in this host` error when neither exists. Harden the styles probe with a `getByNameOrNullObject` fallback signal when the loaded items array is empty. `supportsRevisions: false` (`document.trackedChanges` unavailable) remains a genuine host limitation with the insert/replace fallback per ADR-0005/ADR-0008.
-- **Consequences**: Re-probing live Word is expected to flip `supportsInsertBreak` to true. Styles and revisions still need a live re-probe before they can be trusted. The taskpane diagnostics view now renders the preformatted string directly instead of double-encoding newlines.
-
-### ADR-0025 — Revision adapter range resolution via whole-body Range plus set()
-
-- **Status**: Accepted (2026-09-22)
-- **Context**: Stage 18's `getRangeByOffset()` used an unproven `body.getRange(start, length)` numeric API shape that does not exist in the documented Word JavaScript API (a COM/VBA-style assumption). The official API exposes `body.getRange(rangeLocation)` with a `RangeLocation` ("Start"/"End"/"All"/"Whole") and `range.set({ start, end })` (WordApiDesktop 1.4) for narrowing. `range.insertBreak` likewise requires both a `Word.BreakType` and a `Word.InsertLocation`, not a single numeric enum.
-- **Decision**: Resolve planner character offsets by loading the body text for bounds validation, obtaining `body.getRange("Whole")`, then calling `range.set({ start, end })`. Declare `Range.set`, `Range.style`, `Range.paragraphFormat`, `Range.listFormat`, `Word.BreakType`, and `Word.InsertLocation` in the local `src/types/office.d.ts`. Apply `insertBreak` as `range.insertBreak(breakValue, Office.InsertLocation.After)`. Require a complete verified `WordCapabilities` snapshot in `setStage01Passed(true)` and enforce per-kind capability checks before text, style, and break mutations. Validate per-change ranges and per-kind payloads in `validatePlanBeforeApply`, and apply changes in reverse offset order.
-- **Consequences**: The adapter now targets only documented API shapes, but `range.set` (WordApiDesktop 1.4) and the formatting paths remain unproven in a live host until the human-only Stage 18 smoke test records results in `docs/manual-verification.md`. Test doubles model `getRange("Whole")` plus `range.set`. Stage 18 stays PARTIAL until live evidence closes the hard gate.
-
-### ADR-0024 — Pure change planning and conflict/staleness boundary
-
-- **Status**: Accepted (2026-09-21)
-- **Context**: Stage 17 consumes Stage 16's unified `Finding[]` contract and must produce safe, validated `ChangePlan` objects for the future revision adapter without importing Word, UI, or LLM code. It must preserve planner traceability and semantic review data, report conflicts without silently discarding changes, and support stale-plan protection while keeping document access outside the deterministic module.
-- **Decision**: Place planning in pure `src/changes/` modules. `planner.ts` validates each raw finding with `FindingSchema`, maps supported deterministic and formatting categories to schema-valid `Change` payloads, preserves `suggestedChangeId`, retains raw findings on the plan, and leaves semantic findings unchanged unless an explicit quoted replacement can be safely extracted. `conflictDetector.ts` reports every overlapping pair, including same-range type and style/direct-format contradictions, without dropping changes. `staleGuard.ts` accepts the current document hash from the caller and marks a plan stale only on a supplied mismatch. `ChangeSchema` and `ChangePlanSchema` gain optional traceability/passthrough fields so existing fixtures remain compatible. ESLint forbids `analysis`, `rules`, `formatting`, `style`, `ai`, `word`, `ui`, and `Office` imports from `changes/`.
-- **Consequences**: Stage 18 can consume validated plans through the single mutation path, Stage 19 can later consume preserved semantic findings, and Stage 22 can enforce safe application without planner-side Word access. Conflicts are review signals rather than automatic resolution, and hash production remains the responsibility of the Word boundary. The pure modules are directly unit-testable; Stage 17 is covered by 53 focused tests and the full verification chain.
-
-### ADR-0029 — Orchestrator-owned refusal plus explicit semantic degradation
-
-- **Status**: Accepted (2026-09-22)
-- **Context**: Stage 21 follow-up found four stderr warnings. W1 entered the mutation adapter with a known-stale plan; W2 delegated the Stage 01 gate entirely to the adapter; W3/W4 masked provider failures as clean zero-finding reports; W5 was intentional guard evidence.
-- **Decision**: The orchestrator owns refusal pre-entry — stale plans return a preview-shaped outcome (`results: []`, `tracking: { managed: false }`, `applied: false`) and closed-gate plans synthesize per-change refusals with the existing explicit text, both without calling the adapter (adapter guards remain defense-in-depth). `ConsistencyReport` gains additive `semanticStatus: z.enum(["ok", "skipped", "degraded"]).default("ok")` and `semanticError: z.string().optional()` (set only when degraded); `buildReport()` takes an optional semantic parameter, the catch path records `degraded` plus the provider message, and opt-out/empty-text paths record `skipped`. Warn logs for degraded semantic analysis and hash-mismatch refusal stay as intentional operational observability.
-- **Consequences**: W1/W2 warnings are eliminated by corrected control flow, not silencing; W3/W4 degradation is visible to callers while remaining non-fatal; W5 behavior is unchanged and documented as guard evidence. `ReformatResult.report` flows through unchanged.
-
-### ADR-0030 — Safe application with live re-hash, conflict refusal, and UI confirmation
-
-- **Status**: Accepted (2026-09-23)
-- **Context**: Stage 22 requires stale-result protection and safe application. The Stage 21 orchestrator (`src/reformat/orchestrator.ts`) composes snapshot → analysis → planning → tracked apply but had no guard against applying a plan to a document that changed between planning and application, and no mechanism to refuse plans with overlapping changes. The UI also lacked a confirmation step before mutation.
-- **Decision**: Three layers of protection: (1) The orchestrator performs a live re-hash via `getDocumentSnapshot` immediately before apply and aborts with `stale: true` if the document changed since planning — this is the primary stale guard. (2) Plans with unresolved conflicts (`plan.conflicts.length > 0`) are refused at the orchestrator level unless the caller explicitly passes `allowConflictingApply: true`; the adapter's `validatePlanBeforeApply` enforces the same rule as defense-in-depth via its `allowConflicts` parameter. (3) The new `ReformatPanel` (`src/taskpane/components/ReformatPanel.tsx`) provides a preview/confirm/apply workflow: the user sees the plan summary, conflict warnings, and stale status before an apply button becomes enabled; an `acknowledgeConflicts` checkbox is required when conflicts exist. `Dashboard.tsx` wires the panel alongside the existing `SmokePanel`.
-- **Consequences**: Stale applications are prevented at the orchestrator level with a clear error message; conflicting plans require explicit acknowledgment at both the UI and orchestrator layers. The adapter remains the sole mutation path — `ReformatPanel` imports only from `reformat`, never from `word/revisionAdapter`. The `allowConflictingApply` option is opt-in by default, so accidental conflict application is impossible without deliberate user action. All three layers are covered by integration tests in `tests/integration/reformatOrchestrator.test.ts` (live re-hash, conflict refusal, explicit acknowledgment) and the existing stale/conflict unit tests.
-- **Implementation evidence**: `src/reformat/orchestrator.ts` (live re-hash, conflict refusal, `allowConflictingApply` option), `src/word/revisionAdapter.ts` (`applyChangePlan`/`applyChangePlanWithTracking`/`validatePlanBeforeApply` gain `allowConflicts` parameter), `src/taskpane/components/ReformatPanel.tsx` (preview/confirm/apply workflow), `src/taskpane/pages/Dashboard.tsx` (panel wiring via `resolveActiveProfile`), `tests/integration/reformatOrchestrator.test.ts` (3 new integration tests).
+- **Status**: Accepted (2026-09-24)
+- **Context**: Automated checks cannot prove real Word behavior, and the global
+  coverage threshold currently fails.
+- **Decision**: Keep Stage 27 partial and Stage 28 blocked until the host matrix
+  is complete. Keep Stage 26 blocked until global coverage passes or an explicit
+  governance decision changes the gate. Unsupported capabilities use safe
+  no-ops, disabled states, or documented limitations.
+- **Consequences**: The repository may contain a release candidate, but it is
+  not release-ready. Phase H remains reserved and separate.
+- **Evidence**: `npm run test`, `npm run test:coverage`,
+  `docs/manual-verification.md`, `scripts/release-check.mjs`, and
+  `docs/project-state.md`.

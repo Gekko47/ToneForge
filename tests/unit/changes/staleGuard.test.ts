@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createChangePlan } from "../../../src/core/domain/ChangePlan";
 import { isStale, markStale } from "../../../src/changes/staleGuard";
+import type { ChangeSource } from "../../../src/core/domain/Change";
 
 function freshPlan() {
   return createChangePlan("hash-before", "doc-1", [
@@ -11,6 +12,10 @@ function freshPlan() {
       payload: { text: "new" },
       rationale: "test",
       reversible: true,
+      source: "deterministic" as ChangeSource,
+      risk: "none" as const,
+      approvalRequired: false,
+      dependsOn: [],
     },
   ]);
 }

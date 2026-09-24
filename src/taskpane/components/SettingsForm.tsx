@@ -15,6 +15,9 @@ interface SettingsFormState {
   openAiApiKey: string;
   openAiBaseUrl: string;
   openAiModel: string;
+  llmProvider: "openai" | "mock";
+  spotReviewConsent: boolean;
+  fullDocumentReviewConsent: boolean;
   telemetryDisabled: boolean;
   semanticOptIn: boolean;
   dirty: boolean;
@@ -34,6 +37,9 @@ export default function SettingsForm(): React.ReactNode {
     openAiApiKey: persisted.settings.openAiApiKey ?? "",
     openAiBaseUrl: persisted.settings.openAiBaseUrl ?? "",
     openAiModel: persisted.settings.openAiModel ?? "",
+    llmProvider: persisted.settings.llmProvider ?? "mock",
+    spotReviewConsent: persisted.settings.spotReviewConsent ?? false,
+    fullDocumentReviewConsent: persisted.settings.fullDocumentReviewConsent ?? false,
     telemetryDisabled: persisted.settings.telemetryDisabled ?? true,
     semanticOptIn: false,
     dirty: false,
@@ -71,6 +77,9 @@ export default function SettingsForm(): React.ReactNode {
         openAiApiKey: state.openAiApiKey.trim(),
         openAiBaseUrl: state.openAiBaseUrl.trim(),
         openAiModel: state.openAiModel.trim(),
+        llmProvider: state.llmProvider,
+        spotReviewConsent: state.spotReviewConsent,
+        fullDocumentReviewConsent: state.fullDocumentReviewConsent,
         telemetryDisabled: state.telemetryDisabled,
       },
     };
@@ -97,6 +106,9 @@ export default function SettingsForm(): React.ReactNode {
       openAiApiKey: persisted.settings.openAiApiKey ?? "",
       openAiBaseUrl: persisted.settings.openAiBaseUrl ?? "",
       openAiModel: persisted.settings.openAiModel ?? "",
+      llmProvider: persisted.settings.llmProvider ?? "mock",
+      spotReviewConsent: persisted.settings.spotReviewConsent ?? false,
+      fullDocumentReviewConsent: persisted.settings.fullDocumentReviewConsent ?? false,
       telemetryDisabled: persisted.settings.telemetryDisabled ?? true,
       semanticOptIn: false,
       dirty: false,
@@ -153,6 +165,35 @@ export default function SettingsForm(): React.ReactNode {
             offText="Telemetry on"
           />
           <span className="tf-sub">No analytics endpoint is configured.</span>
+        </div>
+        <div>
+          <label htmlFor="llm-provider">Provider</label>
+          <select
+            id="llm-provider"
+            value={state.llmProvider}
+            onChange={(event) => patch({ llmProvider: event.target.value as "openai" | "mock" })}
+          >
+            <option value="mock">Mock (offline)</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+        <div>
+          <Toggle
+            label="Allow spot review of selected or paragraph text (opt-in)"
+            checked={state.spotReviewConsent}
+            onChange={(_e, v) => patch({ spotReviewConsent: v ?? false })}
+            onText="Spot review allowed"
+            offText="Spot review blocked"
+          />
+        </div>
+        <div>
+          <Toggle
+            label="Allow full-document review (separate opt-in)"
+            checked={state.fullDocumentReviewConsent}
+            onChange={(_e, v) => patch({ fullDocumentReviewConsent: v ?? false })}
+            onText="Full-document review allowed"
+            offText="Full-document review blocked"
+          />
         </div>
         <div>
           <Toggle

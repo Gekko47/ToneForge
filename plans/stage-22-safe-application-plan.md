@@ -1,5 +1,8 @@
 # Stage 22 — Safe Application: Implementation Plan
 
+> Historical execution plan. The authoritative current status and sequencing are
+> in [`ROADMAP.md`](../ROADMAP.md). This file records the original plan only.
+
 **Stage file:** [`docs/stages/22-safe-application.md`](docs/stages/22-safe-application.md)
 **ROADMAP entry:** `feat(safety): add stale-result protection and safe application` in [`ROADMAP.md`](ROADMAP.md:47)
 **Status in:** [`docs/project-state.md`](docs/project-state.md:30) — PENDING, Gate Yes

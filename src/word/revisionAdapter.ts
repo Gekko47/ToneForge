@@ -13,6 +13,8 @@ import { type ChangePlan } from "../core/domain/ChangePlan";
 import { type Change } from "../core/domain/Change";
 import { logger } from "../shared/utils/logger";
 import { type WordCapabilities } from "./capabilityProbe";
+import { isProtectedNode } from "../rules/protection";
+import type { DocumentNode } from "../core/domain/DocumentSnapshot";
 
 /** Set to true only after the Stage 01 probe passes in Word. */
 export let STAGE_01_PASSED = false;
@@ -44,6 +46,34 @@ function requireVerifiedCapability(
       `${changeLabel} is not supported by the verified Stage 01 host (change ${changeId})`,
     );
   }
+}
+
+function orderChanges(changes: readonly Change[]): Change[] {
+  const byId = new Map(changes.map((change) => [change.id, change]));
+  const remaining = [...changes];
+  const ordered: Change[] = [];
+  const applied = new Set<string>();
+  while (remaining.length > 0) {
+    const ready = remaining
+      .filter((change) =>
+        change.dependsOn.every((dependency) => applied.has(dependency) || !byId.has(dependency)),
+      )
+      .sort(
+        (left, right) => right.range.start - left.range.start || right.range.end - left.range.end,
+      );
+    const next = ready[0];
+    if (!next) return [...changes].sort((left, right) => right.range.start - left.range.start);
+    ordered.push(next);
+    applied.add(next.id);
+    remaining.splice(remaining.indexOf(next), 1);
+  }
+  return ordered;
+}
+
+function preservationLiterals(text: string): string[] {
+  const matches =
+    text.match(/(?:https?:\/\/\S+|\b\d{4}-\d{2}-\d{2}\b|\b\d+(?:\.\d+)?%?\b|\b[A-Z]{2,}\b)/g) ?? [];
+  return Array.from(new Set(matches));
 }
 
 export interface RevisionResult {
@@ -121,9 +151,7 @@ export async function applyChangePlan(
     return results;
   }
 
-  const orderedChanges = [...plan.changes].sort(
-    (left, right) => right.range.start - left.range.start || right.range.end - left.range.end,
-  );
+  const orderedChanges = orderChanges(plan.changes);
 
   for (const change of orderedChanges) {
     try {
@@ -517,7 +545,11 @@ async function getRangeByOffset(
   return whole;
 }
 
-export function validatePlanBeforeApply(plan: ChangePlan, allowConflicts = false): string[] {
+export function validatePlanBeforeApply(
+  plan: ChangePlan,
+  allowConflicts = false,
+  nodes?: DocumentNode[],
+): string[] {
   const problems: string[] = [];
   if (!plan.docHash || plan.docHash.trim().length === 0) {
     problems.push("ChangePlan.docHash is required");
@@ -533,6 +565,13 @@ export function validatePlanBeforeApply(plan: ChangePlan, allowConflicts = false
       `ChangePlan has ${plan.conflicts.length} unresolved conflict(s); review before applying`,
     );
   }
+  const changeIds = new Set(plan.changes.map((change) => change.id));
+  plan.changes.forEach((change) => {
+    change.dependsOn.forEach((dependency) => {
+      if (!changeIds.has(dependency))
+        problems.push(`Change ${change.id} depends on missing change ${dependency}`);
+    });
+  });
   for (const change of plan.changes) {
     if (
       !Number.isInteger(change.range.start) ||
@@ -550,6 +589,35 @@ export function validatePlanBeforeApply(plan: ChangePlan, allowConflicts = false
       problems.push(`Change ${change.id}: ${payloadProblem}`);
     }
   }
+
+  // Second layer: protection and preservation checks.
+  if (nodes && nodes.length > 0) {
+    const findingsById = new Map((plan.findings ?? []).map((finding) => [finding.id, finding]));
+    plan.changes.forEach((change) => {
+      const finding = change.findingId ? findingsById.get(change.findingId) : undefined;
+      const targetIds = new Set(finding?.nodeIds ?? []);
+      const protectedNode = nodes.find(
+        (node) => targetIds.has(node.nodeId) && (!node.editable || isProtectedNode(node)),
+      );
+      if (protectedNode) {
+        problems.push(
+          `Change ${change.id} targets protected range: ${protectedNode.protectionReason ?? protectedNode.type}`,
+        );
+      }
+    });
+  }
+  plan.changes.forEach((change) => {
+    const finding = (plan.findings ?? []).find((item) => item.id === change.findingId);
+    if (finding?.actual && finding.expected) {
+      const missing = preservationLiterals(finding.actual).filter(
+        (literal) => !finding.expected?.includes(literal),
+      );
+      if (missing.length > 0) {
+        problems.push(`Change ${change.id} would remove preserved content: ${missing.join(", ")}`);
+      }
+    }
+  });
+
   return problems;
 }
 

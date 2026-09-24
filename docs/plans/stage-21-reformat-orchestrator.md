@@ -1,11 +1,13 @@
 # Stage 21 — Reformat Orchestrator — Finalized Plan
 
+> Historical execution record. The authoritative current status is in
+> [`ROADMAP.md`](../../ROADMAP.md).
+
 ## 1. Authoritative alignment
 
-- [ROADMAP.md](ROADMAP.md:46) defines Stage 21 as `feat(reformat): add hybrid document reformatter` with Gate Yes.
-- [21-reformat-orchestrator.md](docs/stages/21-reformat-orchestrator.md:1) scopes work to [orchestrator.ts](src/reformat/orchestrator.ts:1) driving snapshot → analyze → plan → apply, using [documentReader.ts](src/word/documentReader.ts:1) and [revisionAdapter.ts](src/word/revisionAdapter.ts:1), with tests at [integration](tests/integration/llm-registry.test.ts:1). Status PENDING.
-- [project-state.md](docs/project-state.md:29) confirms Stages 00–20 PASS, Stage 18 PASS WITH DOCUMENTED LIMITATION with live smoke 2026-09-22, Stage 21 PENDING, Stage 22 PENDING.
-- [architecture.md](docs/architecture.md:45) constrains [analysis](src/analysis/index.ts:1), [changes](src/changes/planner.ts:1), [word](src/word/documentReader.ts:1); one canonical profile drives both Reformat and Consistency Check; one mutation path via [ChangePlan](src/core/domain/ChangePlan.ts:1) to adapter.
+- [`ROADMAP.md`](../../ROADMAP.md) is the authoritative current status and sequencing source.
+- The original Stage 21 implementation remains in [`src/reformat/orchestrator.ts`](../../src/reformat/orchestrator.ts) and its integration tests; its current status is recorded in the Stage 21 row of [`ROADMAP.md`](../../ROADMAP.md).
+- [`docs/architecture.md`](../architecture.md) defines the current module boundary and one mutation path.
 - [decision-log.md](docs/decision-log.md:1) ADRs ADR-0005, ADR-0006, ADR-0011, ADR-0013, ADR-0024, ADR-0025, ADR-0026, ADR-0027, and ADR-0028 govern this stage.
 - Locked user scope: full pipeline snapshot → analyze → plan → apply with tracked apply, superseding smoke scaffolding in [smokeApply.ts](src/word/smokeApply.ts:1).
 
@@ -178,7 +180,6 @@ flowchart TD
 
 ## 8. Implementation result
 
-- The full pipeline is implemented in [orchestrator.ts](src/reformat/orchestrator.ts:69), including preview, empty-text short-circuit, optional formatting snapshot reuse, caller-observed hash propagation into `planChanges`, tracked apply, and `applied` reporting.
-- [reformatOrchestrator.test.ts](tests/integration/reformatOrchestrator.test.ts:1) contains 11 focused integration tests covering tracked apply, preview/no-mutation, no-change, stale planning, Stage 01 refusal, abort, semantic opt-in/skip, formatting reuse, `Word.run` preference, and unmanaged tracking fallback.
-- `npm run verify` and `npm run stage:verify` pass; the full Vitest run passes 44 files / 459 tests. Stage 21 module coverage clears the 80% gate (`orchestrator.ts`: 98.46% lines/statements, 100% functions, 81.25% branches; `index.ts`: 100%).
-- [project-state.md](docs/project-state.md:29) records Stage 21 as PASS and documents the separate repository-wide `npm run test:coverage` limitation from pre-existing uncovered UI/style files; [ADR-0028](docs/decision-log.md:179) records the orchestration and legacy-smoke boundary decision.
+- The original Stage 21 pipeline remains implemented in [`src/reformat/orchestrator.ts`](../../src/reformat/orchestrator.ts), with preview, empty-text short-circuit, formatting snapshot reuse, tracked apply, and safe refusal behavior.
+- The current full test run passes 58 files / 593 tests. Global coverage remains open as recorded in [`ROADMAP.md`](../../ROADMAP.md).
+- The current status and release consequences are canonical in [`ROADMAP.md`](../../ROADMAP.md).

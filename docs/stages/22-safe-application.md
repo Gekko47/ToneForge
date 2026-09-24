@@ -1,29 +1,29 @@
-<arg_value># Stage 22 — Safe application
+# Stage 22 — Safe application
 
-**Gate**: Yes
+**Canonical status:** see the Stage 22 row in [`ROADMAP.md`](../../ROADMAP.md).
 
 ## Objective
 
-Add stale-result protection and safe application logic.
+Prevent stale or conflicting plans from being applied without explicit review
+and confirmation.
 
-## Scope
+## Implemented
 
-- `src/reformat/orchestrator.ts` — live re-hash before apply; refuse conflicting plans without explicit override.
-- `src/word/revisionAdapter.ts` — `allowConflicts` parameter on `applyChangePlan`/`applyChangePlanWithTracking`/`validatePlanBeforeApply` as defense-in-depth.
-- `src/taskpane/components/ReformatPanel.tsx` — preview/confirm/apply workflow with conflict acknowledgment.
-- `src/taskpane/pages/Dashboard.tsx` — panel wiring via `resolveActiveProfile`.
-- `tests/integration/reformatOrchestrator.test.ts` — integration tests for live re-hash, conflict refusal, and explicit acknowledgment.
+- Live re-hash before apply in the orchestrator.
+- Conflict refusal unless explicitly acknowledged.
+- Adapter defense-in-depth for conflicts, dependencies, protection, and
+  preservation.
+- Preview/confirm/apply workflow in `ReformatPanel`.
+- Integration tests for stale, conflict, and explicit acknowledgment paths.
 
 ## Verification
 
-- [x] `npm run typecheck` passes
-- [x] `npm run lint` passes (zero warnings)
-- [x] `npm run format` passes
-- [x] `npm run test` passes (462 tests, all green)
-- [x] `npm run build` succeeds
-- [x] `npm run validate` passes
-- [x] `docs/project-state.md` updated
+- [x] Typecheck, lint, format, tests, build, and manifest validation pass.
+- [x] Stage 22 integration tests pass.
+- [x] UI path uses the orchestrator boundary and does not import the adapter.
+- [ ] Complete host-specific verification of preview → confirm → apply.
 
 ## Status
 
-PASS
+**PASS** for the original safe-application scope. The canonical release
+qualifications are recorded in [`ROADMAP.md`](../../ROADMAP.md).

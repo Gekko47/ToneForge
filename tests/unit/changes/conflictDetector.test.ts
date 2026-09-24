@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Change } from "../../../src/core/domain/Change";
+import type { Change, ChangeSource } from "../../../src/core/domain/Change";
 import { detectConflicts } from "../../../src/changes/conflictDetector";
 
 const CHANGE_ID_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -21,6 +21,10 @@ function change(
     payload,
     rationale: "test",
     reversible: true,
+    source: "deterministic" as ChangeSource,
+    risk: "none" as const,
+    approvalRequired: false,
+    dependsOn: [],
   };
 }
 

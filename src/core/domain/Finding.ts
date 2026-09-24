@@ -24,6 +24,15 @@ export const RangeSchema = z
 
 export type Range = z.infer<typeof RangeSchema>;
 
+export const FindingSourceSchema = z.enum(["deterministic", "ai", "profile", "user"]);
+export type FindingSource = z.infer<typeof FindingSourceSchema>;
+
+export const FindingRiskSchema = z.enum(["none", "low", "medium", "high"]);
+export type FindingRisk = z.infer<typeof FindingRiskSchema>;
+
+export const FindingStatusSchema = z.enum(["new", "reviewed", "accepted", "ignored", "deferred"]);
+export type FindingStatus = z.infer<typeof FindingStatusSchema>;
+
 export const FindingSchema = z.object({
   id: z.string().uuid(),
   kind: FindingKindSchema,
@@ -34,6 +43,15 @@ export const FindingSchema = z.object({
   evidence: z.string().trim().default(""),
   suggestedChangeId: z.string().optional(),
   confidence: z.number().min(0).max(1).default(1),
+  // --- additive fields (Phase A) ---
+  nodeIds: z.array(z.string().trim().min(1)).default([]),
+  source: FindingSourceSchema.default("deterministic"),
+  risk: FindingRiskSchema.default("none"),
+  reversible: z.boolean().default(true),
+  status: FindingStatusSchema.default("new"),
+  actual: z.string().optional(),
+  expected: z.string().optional(),
+  explanation: z.string().optional(),
 });
 
 export type Finding = z.infer<typeof FindingSchema>;

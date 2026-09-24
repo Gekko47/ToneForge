@@ -33,7 +33,13 @@ describe("persistence without browser storage", () => {
       expect(state.profiles).toHaveLength(1);
       expect(state.profiles[0]?.name).toBe("Node fallback");
 
-      saveState({ ...state, settings: { telemetryDisabled: false } });
+      saveState({
+        ...state,
+        settings: {
+          ...state.settings,
+          telemetryDisabled: false,
+        },
+      });
       expect(loadState().settings.telemetryDisabled).toBe(false);
     } finally {
       if (originalDescriptor) {

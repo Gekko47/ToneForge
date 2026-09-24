@@ -1,5 +1,9 @@
 # ToneForge — Stages 00–06 Comprehensive Audit
 
+> Historical audit record. The authoritative current status and sequencing are
+> in [`ROADMAP.md`](../ROADMAP.md). Findings below describe the repository at
+> the time of the audit and must not be used as current status.
+
 > Scope: [`ROADMAP.md`](ROADMAP.md:1), [`plans/plan.md`](plans/plan.md:1), [`docs/project-state.md`](docs/project-state.md:1), [`docs/architecture.md`](docs/architecture.md:1), [`docs/decision-log.md`](docs/decision-log.md:1), `docs/stages/00-06`, `src/`, `tests/`, `scripts/`, configs.
 > Method: structural inventory + code reading + cross-stage consistency + error-handling + best-practice check.
 > Prior audit: [`plans/stage1-audit.md`](plans/stage1-audit.md:1) — remediation R1–R10 claimed complete in [`docs/project-state.md`](docs/project-state.md:44).

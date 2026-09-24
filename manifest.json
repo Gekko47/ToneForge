@@ -2,7 +2,7 @@
   "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.30/MicrosoftTeams.schema.json",
   "manifestVersion": "1.30",
   "id": "96df86d6-ce2f-42e9-8fba-916143aeeb5c",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "developer": {
     "name": "Gekko47",
     "websiteUrl": "https://github.com/Gekko47/ToneForge",
@@ -36,6 +36,85 @@
         "scopes": ["document"],
         "formFactors": ["desktop"]
       },
+      "ribbons": [
+        {
+          "contexts": ["word"],
+          "tabs": [
+            {
+              "id": "ToneForge",
+              "label": "ToneForge",
+              "groups": [
+                {
+                  "id": "ToneForgeGovernance",
+                  "label": "Governance",
+                  "controls": [
+                    {
+                      "id": "ToneForgeScanControl",
+                      "type": "button",
+                      "label": "Scan Now",
+                      "actionId": "ToneForgeScan"
+                    },
+                    {
+                      "id": "ToneForgeFindingsControl",
+                      "type": "button",
+                      "label": "Findings",
+                      "actionId": "ToneForgeFindings"
+                    }
+                  ]
+                },
+                {
+                  "id": "ToneForgeAIReview",
+                  "label": "AI Review",
+                  "controls": [
+                    {
+                      "id": "ToneForgeReviewSelectionControl",
+                      "type": "button",
+                      "label": "Review Selection",
+                      "actionId": "ToneForgeReviewSelection"
+                    },
+                    {
+                      "id": "ToneForgeReviewDocumentControl",
+                      "type": "button",
+                      "label": "Review Document",
+                      "actionId": "ToneForgeReviewDocument"
+                    }
+                  ]
+                },
+                {
+                  "id": "ToneForgeProfile",
+                  "label": "Profile",
+                  "controls": [
+                    {
+                      "id": "ToneForgeActiveProfileControl",
+                      "type": "button",
+                      "label": "Active Profile",
+                      "actionId": "ToneForgeActiveProfile"
+                    },
+                    {
+                      "id": "ToneForgeEditProfileControl",
+                      "type": "button",
+                      "label": "Edit Profile",
+                      "actionId": "ToneForgeEditProfile"
+                    }
+                  ]
+                },
+                {
+                  "id": "ToneForgeChanges",
+                  "label": "Changes",
+                  "controls": [
+                    {
+                      "id": "ToneForgePendingChangesControl",
+                      "type": "button",
+                      "label": "Pending Changes",
+                      "actionId": "ToneForgePendingChanges"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
       "runtimes": [
         {
           "id": "taskpane",
@@ -50,6 +129,23 @@
               "type": "openPage",
               "displayName": "ToneForge"
             }
+          ]
+        },
+        {
+          "id": "CommandsRuntime",
+          "type": "general",
+          "code": {
+            "page": "https://localhost:3000/commands.html"
+          },
+          "lifetime": "short",
+          "actions": [
+            { "id": "ToneForgeScan", "type": "executeFunction" },
+            { "id": "ToneForgeFindings", "type": "executeFunction" },
+            { "id": "ToneForgeReviewSelection", "type": "executeFunction" },
+            { "id": "ToneForgeReviewDocument", "type": "executeFunction" },
+            { "id": "ToneForgeActiveProfile", "type": "executeFunction" },
+            { "id": "ToneForgeEditProfile", "type": "executeFunction" },
+            { "id": "ToneForgePendingChanges", "type": "executeFunction" }
           ]
         }
       ]

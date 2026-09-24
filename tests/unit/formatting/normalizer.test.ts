@@ -46,6 +46,11 @@ function finding(category: string, range: Finding["range"]): Finding {
     severity: "warning",
     evidence: "evidence",
     confidence: 1,
+    status: "new",
+    nodeIds: [],
+    source: "deterministic",
+    risk: "none",
+    reversible: true,
   };
 }
 

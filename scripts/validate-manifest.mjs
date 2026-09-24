@@ -102,18 +102,16 @@ function main() {
     );
   }
 
-  // Unified manifest v1.30 uses `extensions` with `requirements` and nested
-  // `runtimes`. XML-manifest-only features like `ribbons`, `appDomains`,
-  // `authorization` at the top level, and `commands` must not appear here.
+  // Unified manifest v1.30 uses `extensions` with `requirements`, optional
+  // `ribbons`, and nested `runtimes`. The taskpane and function-command
+  // runtimes are both required for the Phase C ribbon navigation seam.
   const extensions = manifest.extensions ?? [];
   if (extensions.length === 0) {
     errors.push("manifest.extensions must contain at least one extension");
   }
   for (const ext of extensions) {
-    if (ext.ribbons !== undefined) {
-      errors.push(
-        "manifest.extensions.ribbons is an XML-manifest-only feature; use extensions[].runtimes[].actions for unified manifest v1.30",
-      );
+    if (!Array.isArray(ext.ribbons) || ext.ribbons.length === 0) {
+      errors.push("manifest.extensions[].ribbons must be a non-empty array for Word ribbon UI");
     }
     if (ext.host !== undefined) {
       errors.push(

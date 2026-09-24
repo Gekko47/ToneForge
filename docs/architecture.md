@@ -1,86 +1,135 @@
 # ToneForge — Architecture
 
+The canonical implementation status and work plan are in
+[`ROADMAP.md`](../ROADMAP.md). This document describes the verified current
+module boundaries and data flow; it does not duplicate stage status.
+
 ## Product architecture
 
 ```text
-Style Sample
+Style sample
     |
     v
-Sample Quality
+Sample quality
     |
     +-----------------------------+
     |                             |
     v                             v
-Measured Analysis           Semantic Analysis
+Measured analysis           Optional semantic analysis
     |                             |
     +-------------+---------------+
                   v
-            Style Profile
-          (user editable)
+          Editable StyleProfile
                   |
-        +---------+---------+
-        |                   |
-        v                   v
-Rule/Formatting Engine   LLM Semantic Engine
-        |                   |
-        +---------+---------+
+          GovernanceProfile envelope
+                  |
+        Structured DocumentSnapshot
+                  |
+    +-------------+----------------+
+    |                              |
+    v                              v
+Deterministic rules/formatting   Optional AI review
+    |                              |
+    +-------------+----------------+
                   v
-             Findings[]
+              Findings[]
                   |
-             ChangePlan
+              ChangePlan
                   |
-        conflict/stale checks
+    stale/conflict/protection/preservation checks
                   |
-      Word Mutation Adapter
+             Preview/confirm
+                  |
+           Word revisionAdapter
                   |
              Word revisions
 ```
 
 ## Module boundaries
 
-| Module                                 | Allowed imports                                                                                   | Forbidden imports                                                        |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `core/domain`                          | `zod`, `shared/utils`                                                                             | `word`, `ai`, `ui`, `Office`                                             |
-| `rules`, `formatting`, `style/metrics` | `core/domain`, `shared/utils`                                                                     | `ai`, `Office`, `ui`                                                     |
-| `analysis`                             | `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils`                              | `ui`, `word/revisionAdapter`                                             |
-| `changes`                              | `core/domain`, `shared/utils`                                                                     | `analysis`, `rules`, `formatting`, `style`, `ai`, `word`, `ui`, `Office` |
-| `reformat`                             | `core/domain`, `analysis`, `changes`, `formatting` DTOs, `word/*`, `ai/providers`, `shared/utils` | `taskpane`, `commands`, direct `Office.run`                              |
-| `word`                                 | `shared/office`, `core/domain`                                                                    | `ai`, `ui`                                                               |
-| `ai/providers`                         | `core/config`, `shared/utils`                                                                     | `word`, `ui`                                                             |
-| `ui/*`                                 | `core/*`, `shared/*`, `ai/providers`, `word/documentReader`                                       | `word/revisionAdapter` directly                                          |
+| Module                                 | Allowed imports                                                                         | Forbidden imports                                          |
+| -------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `core/domain`                          | `zod`, `shared/utils`                                                                   | `word`, `ai`, UI, `Office`                                 |
+| `rules`, `formatting`, `style/metrics` | `core/domain`, `shared/utils`                                                           | `ai`, `Office`, UI                                         |
+| `analysis`                             | `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils`                    | UI, `word/revisionAdapter`                                 |
+| `changes`                              | `core/domain`, `shared/utils`                                                           | analysis, rules, formatting, style, ai, word, UI, `Office` |
+| `reformat`                             | core, analysis, changes, formatting DTOs, word boundary, AI providers, shared utilities | taskpane, commands, direct `Office.run`                    |
+| `word`                                 | shared Office helpers, core domain, and permitted deterministic readers                 | AI, UI                                                     |
+| `ai/providers`                         | core config, shared utilities                                                           | Word, UI                                                   |
+| `taskpane` / `commands`                | core, shared, approved service boundaries                                               | direct `word/revisionAdapter` imports and direct mutation  |
 
-## Data flow
+## Data flow and compatibility
 
-1. **Capture**: `style/sampleCapture` → quality gate → `style/metrics` (deterministic) + `ai/providers` (semantic).
-2. **Profile**: `core/domain/StyleProfile` is the canonical, editable, versioned object.
-3. **Analyze**: `analysis/consistencyChecker` composes deterministic `rules`/`formatting` findings with optional semantic `ai` deviations and returns a findings-only report.
-4. **Orchestrate**: `reformat/orchestrator` snapshots the document, delegates analysis, plans the report, and exposes preview or tracked apply without importing UI or commands. Before apply it performs a live re-hash to detect document changes since planning and refuses plans with unresolved conflicts unless explicitly allowed.
-5. **Plan**: `changes/planner` turns `Findings[]` into `ChangePlan` with conflict/stale metadata.
-6. **Apply**: `word/revisionAdapter` is the ONLY module that calls `Office.run` to mutate Word; the legacy Stage 18 smoke helpers are deprecated and retained only for historical live-smoke reproduction. The adapter accepts an `allowConflicts` parameter as defense-in-depth against plans with unresolved conflicts.
-7. **Confirm**: `taskpane/components/ReformatPanel` provides a preview/confirm/apply workflow; the user sees the plan summary, conflict warnings, and stale status before applying. `Dashboard.tsx` wires the panel via `resolveActiveProfile`.
+1. `style/sampleCapture` and `style/sampleQuality` produce sample DTOs.
+2. `style/metrics` and the optional semantic profiler build the editable,
+   versioned `StyleProfile`.
+3. `GovernanceProfile` adds policy and provenance without replacing the style
+   contract.
+4. `word/documentReader` preserves the text snapshot and adds
+   `getStructuredSnapshot()` for node DTOs.
+5. `analysis/consistencyChecker` composes deterministic findings, formatting
+   findings, optional semantic deviations, and optional coverage.
+6. `analysis/unifiedFindings` merges findings deterministically.
+7. `changes/planner` produces validated `ChangePlan` objects; it never reads Word
+   or mutates the document.
+8. `reformat/orchestrator` composes snapshot, analysis, planning, preview, and
+   tracked apply. Full-document review is delegated to the bounded AI review
+   service and does not mutate Word.
+9. `word/revisionAdapter` is the only mutation path. It validates stale state,
+   conflicts, capabilities, ranges, payloads, dependencies, protection, and
+   preservation before applying changes.
+10. `taskpane` renders preview, confirmation, findings, coverage, stale, AI, and
+    pending-change states. UI code does not import the adapter directly.
+
+## Current implementation boundaries
+
+### Structured snapshot
+
+The current structured reader derives a body node and paragraph/heading nodes
+from the text snapshot. It is an additive compatibility seam, not proof that all
+Word structures (tables, cells, lists, captions, headers, footers, fields, and
+shapes) are extracted from the live object model. Coverage must not be described
+as complete until those limitations are either implemented or explicitly
+scoped.
+
+### Observer
+
+The observer is debounced and emits findings, coverage, and stale status. It
+currently has no verified live Word change-range event, so it can conservatively
+scan all current nodes. The helper functions for dirty-node mapping exist, but
+the original performance goal is not yet proven in Word.
+
+### AI review
+
+Review requests are validated, context is minimized, protected nodes are
+excluded, and responses become `Finding`/`ChangePlan` objects. Spot and
+full-document consent are separate. Full-document review is bounded and
+coverage-gated, but token-aware limits and live host behavior remain qualified.
+
+### Safety
+
+The adapter retains the Stage 01 mutation gate and reverse-offset application.
+The orchestrator performs live re-hash and conflict refusal before apply. The
+deprecated smoke helpers are retained only for historical Stage 18 reproduction.
 
 ## Technology stack
 
-- **Language**: TypeScript 5.6 (strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)
-- **UI**: React 18 + Fluent UI v8 + React Error Boundary
-- **Build**: Webpack 5 + ts-loader, dev-server HTTPS on 127.0.0.1:3000
-- **Manifest**: Unified JSON manifest v1.30, Word host
-- **LLM**: Provider-agnostic `LlmProvider` interface; OpenAI (fetch) + Mock adapters; `LlmRegistry` for fallback
-- **State**: `Office.roamingSettings` with localStorage fallback; Zod-validated
-- **Tests**: Vitest + jsdom + Testing Library; coverage threshold 80%
-- **Lint/format**: ESLint flat + typescript-eslint + jsx-a11y + react-hooks; Prettier
-- **Hooks**: Husky + lint-staged + commitlint (conventional commits)
-- **CI**: GitHub Actions (install → typecheck → lint → format → test → build → manifest validate)
+- TypeScript 5.6 strict mode with `exactOptionalPropertyTypes` and
+  `noUncheckedIndexedAccess`.
+- React 18 and Fluent UI v8.
+- Webpack 5 with content-hashed production bundles.
+- Zod runtime contracts and Vitest/jsdom tests.
+- ESLint, Prettier, Husky, lint-staged, and commitlint.
+- GitHub Actions CI runs typecheck, lint, format, coverage, build, and manifest
+  validation; the current local coverage command exposes the global threshold
+  failure tracked in [`ROADMAP.md`](../ROADMAP.md).
 
-## Configuration
+## Security and privacy posture
 
-- `.env.example` documents all env vars; `.env` is gitignored
-- `src/core/config/env.ts` validates env at startup with Zod and redacts secrets in logs
-- `TELEMETRY_DISABLED=1` by default — no telemetry without explicit opt-in
-
-## Security/privacy posture
-
-- API keys enter only through the Settings UI and are stored in `Office.roamingSettings`
-- Prompts never include raw document text unless the user explicitly opts in
-- `logger` redacts any field matching `/key|token|secret|password|auth/i`
-- No telemetry by default
+- API keys enter through Settings and are stored in `Office.roamingSettings` or
+  the documented localStorage fallback.
+- Prompt builders require explicit raw-text opt-in.
+- Provider errors and logger context redact secret-like fields.
+- Protected content and incomplete coverage fail closed.
+- The localStorage fallback is a documented MVP limitation; formal security
+  review and host evidence remain open.

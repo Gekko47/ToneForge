@@ -55,3 +55,6 @@ logs/
 .qodo/
 .roo/mcp.json
 .husky/_/
+
+## refactor
+ToneForge_Refactor_Implementation/

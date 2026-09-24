@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChangeSource } from "../../../src/core/domain/Change";
 
 import {
   applyChangePlan,
@@ -21,6 +22,10 @@ const FULL_CAPABILITIES: WordCapabilities = {
   supportsInsertBreak: true,
   supportsStyles: true,
   supportsRevisions: false,
+  supportsSelection: true,
+  supportsParagraphResolution: true,
+  supportsHighlight: true,
+  supportsContextMenu: true,
   hostName: "Word",
   hostVersion: "16.0",
 };
@@ -98,6 +103,10 @@ function makeChange(overrides: Partial<Change> = {}): Change {
     payload: { text: "hello" },
     rationale: "",
     reversible: true,
+    source: "deterministic" as ChangeSource,
+    risk: "none" as const,
+    approvalRequired: false,
+    dependsOn: [],
     ...overrides,
   };
 }

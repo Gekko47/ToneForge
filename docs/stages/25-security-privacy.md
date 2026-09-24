@@ -1,26 +1,32 @@
 # Stage 25 — Security/privacy
 
-**Gate**: Yes
+**Canonical status:** see the Stage 25 row in [`ROADMAP.md`](../../ROADMAP.md).
 
 ## Objective
 
-Harden AI and document data handling.
+Harden AI and document-data handling without weakening deterministic governance.
 
-## Scope
+## Implemented in the current worktree
 
-- API key redaction in logs and prompts.
-- Explicit opt-in for sending document text to LLM.
-- Telemetry disabled by default.
-- Prompt content audit.
-- See `docs/privacy-security.md` for the full posture.
+- Separate spot-review and full-document consent settings.
+- Context minimization and protected-node exclusion.
+- Zod validation of structured review responses.
+- Range, protection, dependency, and preservation validation in the safe-apply
+  path.
+- Coverage-gated CSV/audit export.
+- Expanded privacy/security documentation.
 
 ## Verification
 
-- [ ] `npm run typecheck` passes
-- [ ] `npm run test` passes
-- [ ] Security review signed off
-- [ ] `docs/project-state.md` updated
+- [x] Prompt, response-validation, review, safe-apply, and persistence tests pass
+      with `MockAdapter` where AI is involved.
+- [x] `npm run lint`, typecheck, format, test, build, and manifest validation pass.
+- [ ] Formal security review and release sign-off.
+- [ ] Decide and document the treatment of the known key-storage limitation.
+- [ ] Complete host-specific consent and data-flow verification.
 
-## Status
+## Current limitation
 
-PENDING
+The current privacy posture is implemented and tested, but the localStorage
+fallback is not encrypted by this repository. That limitation and the remaining
+formal review are tracked in the canonical roadmap.

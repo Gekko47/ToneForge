@@ -116,6 +116,11 @@ export async function detectSemanticDeviations(
       severity: SEVERITY_BY_DEVIATION[result.data.severity] ?? "warning",
       evidence: result.data.deviation,
       confidence: SEMANTIC_CONFIDENCE,
+      nodeIds: [],
+      source: "deterministic",
+      risk: "none",
+      reversible: true,
+      status: "new",
     });
   }
   return findings;

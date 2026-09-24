@@ -1,26 +1,34 @@
 # Stage 28 — Release candidate
 
-**Gate**: **Hard**
+**Canonical status:** see the Stage 28 row in [`ROADMAP.md`](../../ROADMAP.md).
 
 ## Objective
 
-Prepare the ToneForge release candidate.
+Prepare and publish a release only after the hard gates and release evidence
+are complete.
 
-## Scope
+## Current release-preparation evidence
 
-- Bump version in `package.json` and `manifest.json`.
-- Update `docs/CHANGELOG.md`.
-- Run `scripts/release-check.mjs`.
-- Tag `v*` and publish via `.github/workflows/release.yml`.
+- Version `0.2.0` is synchronized in [`package.json`](../../package.json),
+  [`package-lock.json`](../../package-lock.json), [`manifest.json`](../../manifest.json),
+  and [`manifest.xml`](../../manifest.xml).
+- [`docs/CHANGELOG.md`](../CHANGELOG.md) records the refactor candidate.
+- `npm run typecheck`, `npm run lint`, `npm run format`, `npm run test`,
+  `npm run build`, and `npm run validate` pass in the audit run.
+- The release workflow is [`release.yml`](../../.github/workflows/release.yml).
 
-## Verification
+## Release blockers
 
-- [ ] `node scripts/release-check.mjs` passes
-- [ ] `npm run build` succeeds
-- [ ] Release artifact zipped
-- [ ] GitHub Release published
-- [ ] `docs/project-state.md` updated
+- [ ] `npm run test:coverage` passes the global threshold.
+- [ ] Stage 27 manual host matrix is complete.
+- [ ] Release acceptance checklist is fully evidenced.
+- [ ] Any uncommitted refactor candidate is reviewed and either committed with
+      an appropriate conventional commit or explicitly excluded from the release.
+- [ ] `npm run release:check` passes.
+- [ ] Release artifact and GitHub Release are produced by the tagged workflow.
 
-## Status
+## Current status
 
-PENDING
+The stage is **BLOCKED**. Versioning and build preparation are not evidence that
+the release is acceptable. The authoritative gate list and open work are in
+[`ROADMAP.md`](../../ROADMAP.md).

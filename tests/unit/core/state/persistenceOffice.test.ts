@@ -72,21 +72,28 @@ describe("persistence with Office roamingSettings", () => {
     };
 
     saveState({
-      version: 2,
+      version: 3,
       profiles: [],
       profileHistory: {},
       activeProfileId: null,
-      settings: { telemetryDisabled: true },
+      governanceProfiles: {},
+      activeGovernanceProfileId: null,
+      settings: {
+        llmProvider: "mock",
+        spotReviewConsent: false,
+        fullDocumentReviewConsent: false,
+        telemetryDisabled: true,
+      },
     });
 
     // Give the async save a tick to resolve.
     await new Promise((r) => setTimeout(r, 10));
     expect(typeof persisted).toBe("string");
     const parsed = JSON.parse(persisted as string) as { version: number };
-    expect(parsed.version).toBe(2);
+    expect(parsed.version).toBe(3);
   });
 
-  it("migrates v0 state (no version field) to v2 via loadState", () => {
+  it("migrates v0 state (no version field) to v3 via loadState", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     // v0 persisted state had no `version` field. Migration upgrades the
     // version and preserves existing settings values over defaults.
@@ -97,7 +104,7 @@ describe("persistence with Office roamingSettings", () => {
         settings: { telemetryDisabled: false },
       });
     const state = loadState();
-    expect(state.version).toBe(2);
+    expect(state.version).toBe(3);
     expect(state.profileHistory).toEqual({});
     expect(state.settings.telemetryDisabled).toBe(false);
   });
@@ -111,11 +118,11 @@ describe("persistence with Office roamingSettings", () => {
         settings: {},
       });
     const state = loadState();
-    expect(state.version).toBe(2);
+    expect(state.version).toBe(3);
     expect(state.settings.telemetryDisabled).toBe(true);
   });
 
-  it("preserves v1 state by upgrading it to v2", () => {
+  it("preserves v1 state by upgrading it to v3", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     officeRuntime.roamingSettings.get = () =>
       JSON.stringify({
@@ -125,15 +132,15 @@ describe("persistence with Office roamingSettings", () => {
         settings: { telemetryDisabled: true },
       });
     const state = loadState();
-    expect(state.version).toBe(2);
+    expect(state.version).toBe(3);
     expect(state.profileHistory).toEqual({});
     expect(state.settings.telemetryDisabled).toBe(true);
   });
 
-  it("falls back to legacy v1 storage key when v2 is absent", () => {
+  it("falls back to legacy v1 storage key when v3 is absent", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     officeRuntime.roamingSettings.get = (key: string) =>
-      key === "ToneForge.State.v2"
+      key === "ToneForge.State.v3"
         ? null
         : JSON.stringify({
             version: 1,
@@ -142,7 +149,7 @@ describe("persistence with Office roamingSettings", () => {
             settings: { telemetryDisabled: true },
           });
     const state = loadState();
-    expect(state.version).toBe(2);
+    expect(state.version).toBe(3);
     expect(state.profiles).toEqual([]);
   });
 });

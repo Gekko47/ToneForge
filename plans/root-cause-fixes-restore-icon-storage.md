@@ -1,5 +1,8 @@
 # Root-Cause Fixes — Restore Auto-Bump, Caret Icon, LocalStorage Warning
 
+> Historical remediation plan. The authoritative current status and sequencing
+> are in [`ROADMAP.md`](../ROADMAP.md).
+
 ## Context
 
 Three recent patches silenced symptoms instead of fixing causes:
