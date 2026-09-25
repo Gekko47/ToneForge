@@ -14,6 +14,7 @@ import {
   type GovernanceProfile,
 } from "../../core/domain/GovernanceProfile";
 import { createDocumentObserver, type DocumentObserverStatus } from "../../word/documentObserver";
+import { createWordParagraphEventAdapter } from "../../word/wordParagraphEvents";
 import {
   applyReviewedPlan,
   prepareReformatHost,
@@ -211,7 +212,12 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     });
     observerRef.current = observer;
     observer.startObserver();
+    const paragraphEvents = createWordParagraphEventAdapter({
+      onChange: () => observer.onDocumentChanged(),
+    });
+    void paragraphEvents.start();
     return () => {
+      paragraphEvents.stop();
       observer.stopObserver();
       observerRef.current = null;
     };

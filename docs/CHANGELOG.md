@@ -17,6 +17,10 @@
 - Phase 1 adds the Learn Style service and Profile entry point: selection/document
   capture, sample-quality gating, deterministic evidence, optional consented
   semantic interpretation, and an editable persisted draft.
+- Phase 2 adds capability evidence tiers, a WordApi 1.6 paragraph
+  added/changed/deleted event adapter with deregistration and conservative
+  fallback, and the B23 workflow projection store with task-first status and
+  finding previous/next navigation.
 - Added state schema v5 with v0-v4 fallback migration, initial governance-profile
   seeding, governance-history snapshots, and current-policy revision enforcement.
 - Added single-pass Word paragraph/style acquisition, explicit structural
