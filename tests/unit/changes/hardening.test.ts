@@ -106,7 +106,7 @@ describe("Stage 1-2 hardening contracts", () => {
         lineSpacing: "unknown",
         spaceAfter: "unknown",
         spaceBefore: "unknown",
-        listLevel: "unsupported",
+        listLevel: "unknown",
         fontName: "direct",
         fontSize: "direct",
         fontColor: "direct",
@@ -132,6 +132,43 @@ describe("Stage 1-2 hardening contracts", () => {
       nodeIds: ["word-paragraph-abc"],
       precondition: { kind: "node", nodeId: "word-paragraph-abc" },
     });
+  });
+
+  it("ignores direct paragraph-property provenance for character-format findings", () => {
+    const paragraph = {
+      index: 0,
+      text: "Body",
+      styleName: "Normal",
+      alignment: "center",
+      provenance: {
+        alignment: "direct",
+        lineSpacing: "direct",
+        spaceAfter: "direct",
+        spaceBefore: "direct",
+        listLevel: "direct",
+        fontName: "style",
+        fontSize: "style",
+        fontColor: "style",
+        bold: "style",
+        italic: "style",
+        underline: "style",
+      },
+    } satisfies FormattingSnapshot["paragraphs"][number];
+    const findings = findFormattingIssues({
+      snapshot: {
+        id: "doc",
+        text: paragraph.text,
+        paragraphs: [paragraph],
+        capturedAt: "2026-01-01T00:00:00.000Z",
+        coverage: {
+          paragraphCollection: "partial",
+          directFormattingProvenance: "partial",
+          unsupported: [],
+        },
+      },
+    });
+
+    expect(findings.some((item) => item.category === "formatting.directFormatting")).toBe(false);
   });
 
   it("converts sentence and title case without parsing prose", () => {

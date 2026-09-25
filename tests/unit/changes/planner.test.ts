@@ -24,6 +24,9 @@ function finding(params: {
   message?: string;
   severity?: Severity;
   evidence?: string;
+  actual?: string;
+  expected?: string;
+  transformation?: Finding["transformation"];
   confidence?: number;
   suggestedChangeId?: string;
   id?: string;
@@ -46,6 +49,9 @@ function finding(params: {
     risk: "none",
     reversible: true,
     status: "new",
+    ...(params.actual === undefined ? {} : { actual: params.actual }),
+    ...(params.expected === undefined ? {} : { expected: params.expected }),
+    ...(params.transformation === undefined ? {} : { transformation: params.transformation }),
     ...(params.suggestedChangeId === undefined
       ? {}
       : { suggestedChangeId: params.suggestedChangeId }),
@@ -219,6 +225,27 @@ describe("planChanges", () => {
 
     expect(soleChange(sentenceCase).payload).toEqual({ text: "C" });
     expect(soleChange(titleCase).payload).toEqual({ text: "I" });
+  });
+
+  it("prefers a title-case finding's expected character over whole-word transformation metadata", () => {
+    const plan = planFor([
+      finding({
+        category: "houseStyle.capitalization.titleCase",
+        start: 10,
+        end: 11,
+        evidence: "i",
+        actual: "i",
+        expected: "I",
+        transformation: { kind: "case", style: "title", text: "introduction" },
+      }),
+    ]);
+
+    expect(soleChange(plan)).toMatchObject({
+      type: "replaceText",
+      range: { start: 10, end: 11 },
+      payload: { text: "I" },
+      precondition: { kind: "text", expectedText: "i" },
+    });
   });
 
   it("maps banned terms to non-reversible deletions", () => {

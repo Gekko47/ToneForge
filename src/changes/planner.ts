@@ -255,6 +255,7 @@ function houseStyleReplacement(finding: Finding): string | null {
         ? toSentenceCase(finding.transformation.text)
         : toSentenceCase(finding.evidence);
     case "houseStyle.capitalization.titleCase":
+      if (finding.expected !== undefined) return finding.expected;
       return finding.transformation?.kind === "case" && finding.transformation.style === "title"
         ? toTitleCase(finding.transformation.text)
         : toTitleCase(finding.evidence);
@@ -293,7 +294,10 @@ function changesForFinding(finding: Finding): Change[] {
     case "houseStyle.spellingVariant":
     case "houseStyle.capitalization.sentenceCase":
     case "houseStyle.capitalization.titleCase": {
-      const replacement = houseStyleReplacement(finding);
+      const replacement =
+        finding.category === "houseStyle.capitalization.titleCase" && finding.expected !== undefined
+          ? finding.expected
+          : houseStyleReplacement(finding);
       const change = replacement === null ? null : textChange(finding, replacement);
       return change === null ? [] : [change];
     }

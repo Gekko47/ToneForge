@@ -52,6 +52,7 @@ describe("getFormattingSnapshot", () => {
                 {
                   text: "Hello world.",
                   style: { name: "Normal" },
+                  alignment: "Centered",
                   format: { alignment: "left" },
                   font: { name: "Calibri", size: 11, color: "#000000" },
                   load: () => undefined,
@@ -78,11 +79,24 @@ describe("getFormattingSnapshot", () => {
       index: 0,
       text: "Hello world.",
       styleName: "Normal",
-      alignment: "left",
+      alignment: "center",
       fontName: "Calibri",
       fontSize: 11,
       fontColor: "#000000",
       bold: null,
+      provenance: {
+        alignment: "unknown",
+        lineSpacing: "unknown",
+        spaceAfter: "unknown",
+        spaceBefore: "unknown",
+        listLevel: "unknown",
+        fontName: "unknown",
+        fontSize: "unknown",
+        fontColor: "unknown",
+        bold: "unknown",
+        italic: "unknown",
+        underline: "unknown",
+      },
     });
     expect(snapshot.paragraphs[1]).toMatchObject({
       index: 1,

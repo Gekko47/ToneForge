@@ -3,7 +3,7 @@
  * Apply plus Reject, with actual result reporting after verification.
  */
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
 import type { Finding } from "../../core/domain/Finding";
 
@@ -31,7 +31,10 @@ export default function PendingChanges({
 }: PendingChangesProps): React.ReactNode {
   const [result, setResult] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+  const localReadinessId = useId();
   const schemaBlocked = plan?.schemaVersion !== 2;
+  const staleBlocked = plan?.stale === true;
+  const conflictBlocked = (plan?.conflicts ?? []).length > 0;
   const approvalBlocked =
     plan?.changes.some(
       (change) => change.approvalRequired && change.approvalState !== "approved",
@@ -41,15 +44,25 @@ export default function PendingChanges({
   const coverageBlocked = coverage !== null && coverage !== undefined && !coverage.complete;
   const localReadinessReason = schemaBlocked
     ? "This plan is not schema version 2; preview it again."
-    : approvalBlocked
-      ? "One or more changes require explicit approval."
-      : preconditionBlocked
-        ? "One or more changes lack an exact precondition."
-        : coverageBlocked
-          ? "Coverage is incomplete; apply is blocked."
-          : null;
+    : staleBlocked
+      ? "This plan is stale; preview it again."
+      : conflictBlocked
+        ? "Unresolved conflicts block application; preview it again."
+        : approvalBlocked
+          ? "One or more changes require explicit approval."
+          : preconditionBlocked
+            ? "One or more changes lack an exact precondition."
+            : coverageBlocked
+              ? "Coverage is incomplete; apply is blocked."
+              : null;
   const canApply =
     onApply !== undefined && applyDisabledReason === null && localReadinessReason === null;
+  const describedBy = [
+    localReadinessReason === null ? null : localReadinessId,
+    applyDisabledReason === null ? null : "pending-apply-readiness",
+  ]
+    .filter((id): id is string => id !== null)
+    .join(" ");
 
   async function handleApply(): Promise<void> {
     setApplying(true);
@@ -96,7 +109,7 @@ export default function PendingChanges({
         </div>
       )}
       {localReadinessReason !== null && (
-        <p aria-live="polite" className="tf-sub">
+        <p id={localReadinessId} aria-live="polite" className="tf-sub">
           {localReadinessReason}
         </p>
       )}
@@ -171,7 +184,7 @@ export default function PendingChanges({
           type="button"
           onClick={handleApply}
           disabled={applying || !canApply}
-          aria-describedby={canApply ? undefined : "pending-apply-readiness"}
+          aria-describedby={canApply ? undefined : describedBy || undefined}
         >
           {applying ? "Applying…" : canApply ? "Apply" : "Apply unavailable"}
         </button>

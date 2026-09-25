@@ -18,6 +18,7 @@ import type { StyleProfile } from "../core/domain/StyleProfile";
 import { hashText } from "../shared/utils/text";
 import { runInWord } from "../shared/office/officeHelpers";
 import { hashDocument } from "./documentReader";
+import { normalizeAlignment } from "./formattingReader";
 import {
   createAnalysisContext,
   type AcquisitionDiagnostics,
@@ -291,7 +292,7 @@ function buildFormatting(
         italic: styleFont.italic ?? null,
         underline: styleFont.underline ?? null,
       },
-      provenance: deriveAcquisitionProvenance(paragraph, styleFont, unsupportedProperties),
+      provenance: deriveAcquisitionProvenance(paragraph, styleFont),
       unsupportedProperties,
     };
   });
@@ -324,9 +325,7 @@ function buildFormatting(
 function deriveAcquisitionProvenance(
   paragraph: ParagraphView,
   style: FontView,
-  unsupportedProperties: readonly string[],
 ): FormattingParagraph["provenance"] {
-  const unsupported = new Set(unsupportedProperties);
   const properties = [
     "alignment",
     "lineSpacing",
@@ -375,7 +374,7 @@ function deriveAcquisitionProvenance(
           return [property, "unknown"];
         return [property, effective === inherited ? "style" : "direct"];
       }
-      return [property, unsupported.has(property) ? "unsupported" : "direct"];
+      return [property, "unknown"];
     }),
   ) as FormattingParagraph["provenance"];
 }
@@ -395,11 +394,4 @@ function paragraphStyleName(paragraph: ParagraphView): string {
 
 function fontValue(value: string | undefined): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function normalizeAlignment(value: string | undefined): FormattingParagraph["alignment"] {
-  if (value === "centered") return "center";
-  return value === "left" || value === "center" || value === "right" || value === "justified"
-    ? value
-    : null;
 }

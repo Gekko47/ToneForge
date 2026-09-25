@@ -31,6 +31,24 @@ function node(id: string, text: string, protectedNode = false): DocumentNode {
   });
 }
 
+function rangedNode(id: string, text: string, startOffset: number): DocumentNode {
+  return DocumentNodeSchema.parse({
+    nodeId: id,
+    type: "paragraph",
+    text,
+    sourcePath: `body/paragraph/${id}`,
+    sourceRange: {
+      nodeId: id,
+      startOffset,
+      endOffset: startOffset + text.length,
+      structuralPath: `body/paragraph/${id}`,
+    },
+    editable: true,
+    includedInGovernance: true,
+    includedInAIReview: true,
+  });
+}
+
 function request(
   text: string,
   operation: "spot_selection" | "spot_paragraph" | "document_editorial_review" = "spot_selection",
@@ -157,6 +175,41 @@ describe("AI review contracts and pipeline", () => {
     expect(result.plan.documentVersion).toBe("version-1");
     expect(result.findings[0]?.range).toEqual({ start: 8, end: 19, unit: "character" });
     expect(result.changes[0]?.range).toEqual({ start: 8, end: 19 });
+  });
+
+  it("converts an empty AI expectation into a delete change", async () => {
+    const adapter = new MockAdapter({
+      defaultResponse: JSON.stringify({
+        findings: [
+          {
+            category: "editorial.clarity",
+            severity: "warning",
+            risk: "low",
+            confidence: 0.8,
+            actual: "red",
+            expected: "",
+            start: 0,
+            end: 3,
+          },
+        ],
+      }),
+    });
+
+    const result = await reviewSpot({
+      ...request("red blue"),
+      includeRawText: true,
+      consent: { spotReview: true },
+      registry: adapter,
+      nodes: [node("aaaa1111", "red blue")],
+      contentHash: "complete-hash",
+    });
+
+    expect(result.changes[0]).toMatchObject({
+      type: "deleteRange",
+      range: { start: 0, end: 3 },
+      payload: {},
+      precondition: { kind: "text", expectedText: "red" },
+    });
   });
 
   it("rejects an actual that exists elsewhere but not in the reported slice", async () => {
@@ -334,6 +387,49 @@ describe("AI review contracts and pipeline", () => {
     );
     expect(batches.flatMap((batch) => batch.nodeIds)).toEqual(["dddd4444", "cccc3333"]);
     expect(batches[0]?.startOffset).toBe(10);
+  });
+
+  it("combines only contiguous nodes and honors the node limit", () => {
+    const source = [
+      rangedNode("aaaa1111", "one", 0),
+      rangedNode("bbbb2222", "two", 3),
+      rangedNode("cccc3333", "six", 8),
+    ];
+
+    const contiguous = partitionReviewBatches(source, { maxCharacters: 20 });
+    const limited = partitionReviewBatches(source, { maxCharacters: 20, maxNodes: 1 });
+
+    expect(contiguous.map((batch) => batch.nodeIds)).toEqual([
+      ["aaaa1111", "bbbb2222"],
+      ["cccc3333"],
+    ]);
+    expect(contiguous[0]?.text).toBe("onetwo");
+    expect(contiguous.map((batch) => batch.startOffset)).toEqual([0, 8]);
+    expect(limited.map((batch) => batch.nodeIds)).toEqual([
+      ["aaaa1111"],
+      ["bbbb2222"],
+      ["cccc3333"],
+    ]);
+  });
+
+  it("reviews a combined contiguous batch without losing target-node mapping", async () => {
+    const nodes = [rangedNode("aaaa1111", "one", 0), rangedNode("bbbb2222", "two", 3)];
+    const batches = partitionReviewBatches(nodes, { maxCharacters: 10 });
+    const base = request(batches[0]?.text ?? "", "document_editorial_review");
+    base.request.targetNodeIds = batches[0]?.nodeIds ?? [];
+    const result = await reviewSpot({
+      ...base,
+      profile: request("text").profile,
+      includeRawText: true,
+      consent: { spotReview: true },
+      registry: new MockAdapter({ defaultResponse: JSON.stringify({ findings: [] }) }),
+      nodes,
+      rangeOffset: batches[0]?.startOffset ?? 0,
+      contentHash: "complete-hash",
+    });
+
+    expect(batches[0]?.nodeIds).toEqual(["aaaa1111", "bbbb2222"]);
+    expect(result.plan.changes).toEqual([]);
   });
 
   it("splits oversized nodes into bounded batches with absolute offsets", () => {

@@ -95,7 +95,7 @@ export async function getFormattingSnapshot(
         const styleFormatting = styleByName.get(styleName)?.font ?? {};
         const paragraphUnsupported = new Set<string>();
         const listLevel = readListLevel(paragraph, paragraphUnsupported, unsupported);
-        const provenance = deriveProvenance(paragraph, styleFormatting, paragraphUnsupported);
+        const provenance = deriveProvenance(paragraph, styleFormatting);
         const nodeId = buildParagraphNodeId({
           ...(paragraph.uniqueLocalId ? { uniqueLocalId: paragraph.uniqueLocalId } : {}),
           index,
@@ -222,11 +222,7 @@ function readListLevel(
   return null;
 }
 
-function deriveProvenance(
-  paragraph: ParagraphView,
-  style: FontView,
-  paragraphUnsupported: Set<string>,
-): FormattingPropertyProvenance {
+function deriveProvenance(paragraph: ParagraphView, style: FontView): FormattingPropertyProvenance {
   const properties = [
     "alignment",
     "lineSpacing",
@@ -262,7 +258,7 @@ function deriveProvenance(
         }
         return [property, effective === inherited ? "style" : "direct"];
       }
-      return [property, paragraphUnsupported.has(property) ? "unsupported" : "direct"];
+      return [property, "unknown"];
     }),
   ) as unknown as FormattingPropertyProvenance;
 }
@@ -291,7 +287,7 @@ function fontValue(value: string | undefined): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function normalizeAlignment(value: unknown): FormattingParagraph["alignment"] {
+export function normalizeAlignment(value: unknown): FormattingParagraph["alignment"] {
   if (typeof value !== "string") return null;
   switch (value.toLowerCase()) {
     case "left":

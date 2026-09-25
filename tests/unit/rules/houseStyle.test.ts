@@ -280,6 +280,12 @@ describe("findHouseStyleIssues", () => {
       { start: 10, end: 11, unit: "character" },
     ]);
     expect(findings.map((finding) => finding.evidence)).toEqual(["t", "a"]);
+    expect(findings.map((finding) => finding.actual)).toEqual(["t", "a"]);
+    expect(findings.map((finding) => finding.expected)).toEqual(["T", "A"]);
+    expect(findings.map((finding) => finding.transformation)).toEqual([
+      { kind: "case", style: "title", text: "t" },
+      { kind: "case", style: "title", text: "a" },
+    ]);
     expect(findings.map((finding) => finding.message)).toEqual([
       "Capitalize title-case word “the”",
       "Capitalize title-case word “and”",

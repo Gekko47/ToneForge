@@ -17,6 +17,42 @@ newer Phase C/E host paths remain open.
 - A PASS for a text path does not close break, style, list, protection,
   navigation, ribbon, context-menu, or observer gates.
 
+## Local debugging workflow
+
+ToneForge supports two equivalent local Word debugging entry points:
+
+1. **Visual Studio Code / Edge WebView2:** select **Word Desktop (Edge
+   Chromium)** in **View** | **Run** and press F5. The tracked
+   [`launch.json`](../.vscode/launch.json) and [`tasks.json`](../.vscode/tasks.json)
+   start the existing Webpack server, sideload the add-in, open Word, and attach
+   the Microsoft Debugger for Edge extension. This requires that extension to be
+   installed in Visual Studio Code.
+2. **Terminal workflow:** the existing `office-addin-debugging` commands.
+
+```text
+npm run dev
+npm run sideload
+npm run stop
+```
+
+For F5, record whether the pre-launch task started, Word opened, the webview
+attached, breakpoints fired, and Shift+F5 completed cleanup. Microsoft documents
+that breakpoints inside `Office.initialize` and `Office.onReady` are ignored;
+record initialization failures separately through runtime diagnostics or Edge
+developer tools.
+
+The `sideload` step loads the add-in in Word; Edge/WebView2 developer tools and
+Microsoft runtime logging are used when host-level diagnostics are required.
+Closing Word or the server does not reliably unregister the add-in, so every
+session must end with `npm run stop`.
+
+Microsoft 365 Agents Toolkit is a project creation/import environment for
+Microsoft 365 apps, agents, and Office Add-ins. It is not a drop-in debugger for
+ToneForge's existing repository. A future Agents Toolkit migration would
+require a separately approved import/restructure project and is not part of
+this evidence record. See
+[`plans/dependency-remediation-plan.md`](../plans/dependency-remediation-plan.md).
+
 ## Host matrix
 
 | Host                     | Version | Browser/engine    | Sideload | Task pane | Probe   | Current evidence                                                                                                                           |
@@ -81,6 +117,15 @@ Demo plan applied 2 of 2 change(s) — tracking managed: yes.
 ```
 
 ## Required remaining procedure
+
+For each host, build and sideload with the current documented workflow, and
+record which Word version/build and browser engine were used:
+
+```text
+Build:    npm run build
+Sideload: npm run sideload
+Cleanup:  npm run stop
+```
 
 For each host:
 

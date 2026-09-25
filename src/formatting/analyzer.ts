@@ -152,7 +152,14 @@ function checkDirectFormatting(snapshot: FormattingSnapshot): Finding[] {
   return snapshot.paragraphs.flatMap((paragraph) => {
     const hasProvenance = paragraph.provenance !== undefined;
     const hasDirect = hasProvenance
-      ? Object.values(paragraph.provenance ?? {}).includes("direct")
+      ? [
+          paragraph.provenance?.fontName,
+          paragraph.provenance?.fontSize,
+          paragraph.provenance?.fontColor,
+          paragraph.provenance?.bold,
+          paragraph.provenance?.italic,
+          paragraph.provenance?.underline,
+        ].includes("direct")
       : paragraph.fontName !== null ||
         paragraph.fontSize !== null ||
         paragraph.fontColor !== null ||

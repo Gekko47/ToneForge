@@ -29,6 +29,11 @@ export default function VersionDiff({
   savedGovernanceProfile = null,
   currentGovernanceProfile = null,
 }: VersionDiffProps): React.ReactNode {
+  const governanceDiff =
+    savedGovernanceProfile && currentGovernanceProfile
+      ? diffGovernanceProfiles(savedGovernanceProfile, currentGovernanceProfile)
+      : null;
+
   if (!savedProfile) {
     return diffNotice("Save this profile to establish a baseline for change previews.");
   }
@@ -37,9 +42,8 @@ export default function VersionDiff({
     return diffNotice("Resolve validation errors to preview profile changes.");
   }
 
-  const diff = diffProfiles(savedProfile, currentProfile);
-
-  if (diff.changedCount === 0) {
+  const styleDiff = diffProfiles(savedProfile, currentProfile);
+  if (styleDiff.changedCount === 0 && (governanceDiff?.changedCount ?? 0) === 0) {
     return diffNotice("No unsaved profile changes.");
   }
 
@@ -47,65 +51,57 @@ export default function VersionDiff({
     <section aria-labelledby="version-diff-heading" aria-live="polite">
       <h2 id="version-diff-heading">Unsaved profile changes</h2>
       <p className="tf-sub">This preview compares the current draft with the last saved profile.</p>
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Field</th>
-            <th scope="col">Last saved</th>
-            <th scope="col">Current draft</th>
-          </tr>
-        </thead>
-        <tbody>
-          {diff.changes.map((change) => (
-            <tr key={change.field}>
-              <th scope="row">{change.field}</th>
-              <td>{change.from}</td>
-              <td>{change.to}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="tf-sub">{formatChangelog(diff)}</p>
-      {savedGovernanceProfile && currentGovernanceProfile && (
+      {styleDiff.changedCount > 0 && (
+        <>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Field</th>
+                <th scope="col">Last saved</th>
+                <th scope="col">Current draft</th>
+              </tr>
+            </thead>
+            <tbody>
+              {styleDiff.changes.map((change) => (
+                <tr key={change.field}>
+                  <th scope="row">{change.field}</th>
+                  <td>{change.from}</td>
+                  <td>{change.to}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="tf-sub">{formatChangelog(styleDiff)}</p>
+        </>
+      )}
+      {savedGovernanceProfile && currentGovernanceProfile && governanceDiff?.changedCount ? (
         <section aria-labelledby="governance-version-diff-heading" aria-live="polite">
           <h2 id="governance-version-diff-heading">Governance policy changes</h2>
           <p className="tf-sub">
             Policy revision {savedGovernanceProfile.version} to {currentGovernanceProfile.version}.
           </p>
-          {(() => {
-            const policyDiff = diffGovernanceProfiles(
-              savedGovernanceProfile,
-              currentGovernanceProfile,
-            );
-            return policyDiff.changedCount === 0 ? (
-              <p className="tf-sub">No unsaved governance policy changes.</p>
-            ) : (
-              <>
-                <table>
-                  <caption className="tf-sub">Governance policy diff</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Field</th>
-                      <th scope="col">Last saved</th>
-                      <th scope="col">Current draft</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {policyDiff.changes.map((change) => (
-                      <tr key={change.field}>
-                        <th scope="row">{change.field}</th>
-                        <td>{change.from}</td>
-                        <td>{change.to}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="tf-sub">{formatGovernanceChangelog(policyDiff)}</p>
-              </>
-            );
-          })()}
+          <table>
+            <caption className="tf-sub">Governance policy diff</caption>
+            <thead>
+              <tr>
+                <th scope="col">Field</th>
+                <th scope="col">Last saved</th>
+                <th scope="col">Current draft</th>
+              </tr>
+            </thead>
+            <tbody>
+              {governanceDiff.changes.map((change) => (
+                <tr key={change.field}>
+                  <th scope="row">{change.field}</th>
+                  <td>{change.from}</td>
+                  <td>{change.to}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="tf-sub">{formatGovernanceChangelog(governanceDiff)}</p>
         </section>
-      )}
+      ) : null}
     </section>
   );
 }

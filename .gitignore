@@ -23,7 +23,9 @@ Thumbs.db
 *.swp
 *.swo
 .idea/
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
 *.code-workspace
 
 ## Office add-in debug artifacts

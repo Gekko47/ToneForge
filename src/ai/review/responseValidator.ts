@@ -62,12 +62,13 @@ export function validateReviewResponse(
     findings.push(finding);
     if (actionable && entry.expected !== undefined) {
       const approval = approvalPolicyForFinding(finding);
+      const isDeletion = entry.expected.length === 0;
       changes.push(
         ChangeSchema.parse({
           id: uuidv4(),
-          type: "replaceText",
+          type: isDeletion ? "deleteRange" : "replaceText",
           range: { start: entry.start + rangeOffset, end: entry.end + rangeOffset },
-          payload: { text: entry.expected },
+          payload: isDeletion ? {} : { text: entry.expected },
           rationale: entry.explanation ?? entry.category,
           source: "ai",
           risk: entry.risk,

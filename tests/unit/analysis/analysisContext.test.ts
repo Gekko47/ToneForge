@@ -74,6 +74,27 @@ describe("analysis context acquisition", () => {
     expect(paragraphs.every((paragraph) => paragraph.load.mock.calls.length === 1)).toBe(true);
   });
 
+  it("normalizes PascalCase alignment and leaves paragraph provenance unknown", async () => {
+    const { paragraphs } = officeFor("hello world", 1);
+    Object.assign(paragraphs[0] ?? {}, { alignment: "Centered" });
+
+    const context = await acquireAnalysisContext({
+      profile: createEmptyProfile("Test"),
+      capabilities: CAPABILITIES,
+    });
+
+    expect(context.formatting.paragraphs[0]).toMatchObject({
+      alignment: "center",
+      provenance: {
+        alignment: "unknown",
+        lineSpacing: "unknown",
+        spaceAfter: "unknown",
+        spaceBefore: "unknown",
+        listLevel: "unknown",
+      },
+    });
+  });
+
   it("does not perform a duplicate full-body read for a large synthetic input", async () => {
     const text = Array.from({ length: 50_000 }, (_, index) =>
       index % 2 === 0 ? "word " : "term ",

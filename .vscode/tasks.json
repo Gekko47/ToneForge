@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Debug: Word Desktop",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "start:desktop", "--", "--app", "Word"],
+      "presentation": {
+        "clear": true,
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

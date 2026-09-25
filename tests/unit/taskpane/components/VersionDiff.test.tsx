@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, within } from "@testing-library/react";
 import { createEmptyProfile, type StyleProfile } from "../../../../src/core/domain/StyleProfile";
+import { createGovernanceProfile } from "../../../../src/core/domain/GovernanceProfile";
 import VersionDiff from "../../../../src/taskpane/components/VersionDiff";
 
 function makeProfile(overrides: Partial<StyleProfile> = {}): StyleProfile {
@@ -66,6 +67,27 @@ describe("VersionDiff", () => {
     expect(within(container).getByText("Edited profile")).toBeInTheDocument();
     expect(within(container).getByText("conversational")).toBeInTheDocument();
     expect(within(container).getByText("utilize")).toBeInTheDocument();
+  });
+
+  it("renders a governance-only change when the style profile is unchanged", () => {
+    const profile = makeProfile();
+    const savedGovernance = createGovernanceProfile(profile);
+    const currentGovernance = createGovernanceProfile(profile);
+    currentGovernance.editorial.tone = "formal";
+
+    const { container } = render(
+      <VersionDiff
+        savedProfile={profile}
+        currentProfile={profile}
+        savedGovernanceProfile={savedGovernance}
+        currentGovernanceProfile={currentGovernance}
+      />,
+    );
+
+    expect(within(container).queryByText("No unsaved profile changes.")).not.toBeInTheDocument();
+    expect(within(container).getByText("Governance policy changes")).toBeInTheDocument();
+    expect(within(container).getByText("Editorial policy")).toBeInTheDocument();
+    expect(within(container).getAllByText(/tone: formal/)).toHaveLength(2);
   });
 
   it("reports when the draft matches the saved baseline", () => {

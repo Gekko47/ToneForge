@@ -121,6 +121,18 @@ function resolveRepresentedNodes(selected: string, eligible: readonly DocumentNo
   if (selected.length === 0) return [];
   const joined = eligible.map((node) => node.text ?? "").join("\n");
   if (joined === selected) return eligible.map((node) => node.nodeId);
+  if (
+    eligible.length > 1 &&
+    eligible.map((node) => node.text ?? "").join("") === selected &&
+    eligible.every(
+      (node, index) =>
+        index === 0 ||
+        (node.sourceRange?.startOffset !== undefined &&
+          eligible[index - 1]?.sourceRange?.endOffset === node.sourceRange.startOffset),
+    )
+  ) {
+    return eligible.map((node) => node.nodeId);
+  }
   const matches = eligible.filter((node) => node.text?.includes(selected));
   return matches.length === 1 && matches[0] ? [matches[0].nodeId] : [];
 }

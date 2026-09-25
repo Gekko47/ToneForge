@@ -12,6 +12,8 @@
   },
   "scripts": {
     "dev": "webpack serve --config webpack.dev.js --host localhost --port 3000",
+    "dev-server": "npm run dev",
+    "start:desktop": "office-addin-debugging start manifest.xml desktop",
     "build": "webpack --config webpack.prod.js",
     "build:check": "npm run build && node scripts/check-build-artifacts.mjs",
     "build:dev": "webpack --config webpack.dev.js --mode development",

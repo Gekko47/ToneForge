@@ -31,15 +31,27 @@ npm run build
 npm run dev
 ```
 
-In a second terminal, sideload the XML fallback manifest:
+On Windows, Visual Studio Code also provides the Microsoft-documented Edge
+WebView2 debugger: select **Word Desktop (Edge Chromium)** in **View** | **Run**
+and press F5. The repository includes the required
+[`launch.json`](.vscode/launch.json) and [`tasks.json`](.vscode/tasks.json)
+configuration. Install Microsoft's **Microsoft Debugger for Edge** extension
+first.
+
+In a second terminal, the equivalent terminal workflow is:
 
 ```bash
 npm run sideload
 ```
 
-Open Word, load the ToneForge task pane, and use the capability probe and
-existing verification panels. See [`docs/onboarding.md`](docs/onboarding.md) for
-the full setup and troubleshooting guide.
+End each debugging session with `npm run stop`. Microsoft 365 Agents Toolkit is
+Microsoft's primary project creation/import environment for Microsoft 365 apps
+and agents; it is not a drop-in debugger for ToneForge's existing project
+structure. Migrating ToneForge into that structure would require a separately
+approved import/restructure project. See
+[`docs/onboarding.md`](docs/onboarding.md) for the current setup and
+[`plans/dependency-remediation-plan.md`](plans/dependency-remediation-plan.md)
+for the future migration option.
 
 ## Verification
 
@@ -47,13 +59,14 @@ the full setup and troubleshooting guide.
 npm run verify
 ```
 
-The ordered repository chain is typecheck → lint → format → source secret scan →
-documentation links → test → production build/artifact check → development and
-production sentinel builds with generated-artifact scans → manifest validation.
-Coverage is a separate 80% release gate. `npm run stage:verify` additionally
-builds deterministic release staging and checks the human-evidence release gate;
-it remains blocked until the Word host matrix and production credential-custody
-review are complete.
+`npm run verify` delegates to `npm run stage:verify`, which runs the ordered
+`toneforge-repository-v1` graph: typecheck, lint, format, source secret scanning,
+documentation-link validation, skills validation, tests, the 80% coverage gate,
+production build and artifact checks, built-artifact secret scanning, manifest
+validation, deterministic release staging, and the release package check. The
+separate human-evidence gate is `npm run release:check`; it remains blocked until
+the Word host matrix, accessibility and large-document evidence, and production
+credential-custody review are complete.
 
 ## Architecture and privacy
 

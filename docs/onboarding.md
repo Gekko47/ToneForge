@@ -32,16 +32,83 @@ Start the HTTPS development server:
 npm run dev
 ```
 
-In another terminal, sideload the XML fallback manifest:
+In another terminal, sideload the add-in for local Word testing:
 
 ```bash
 npm run sideload
 ```
 
-Open a Word document and use the ToneForge task pane. The current `sideload`
-script intentionally targets `manifest.xml`; the unified `manifest.json` is
-validated as the canonical Microsoft 365 manifest and kept in sync by
+Open a Word document and use the ToneForge task pane. This existing
+`office-addin-debugging` workflow is the repository's supported local testing
+and debugging path. It currently targets [`manifest.xml`](../manifest.xml);
+[`manifest.json`](../manifest.json) is the canonical Microsoft 365 manifest and
+both are kept in sync by
 [`scripts/validate-manifest.mjs`](../scripts/validate-manifest.mjs).
+
+When the session ends, always run the matching cleanup command. Closing the
+server window or Word does not reliably unregister the add-in:
+
+```bash
+npm run stop
+```
+
+### Visual Studio Code debugger (Windows/Edge WebView2)
+
+ToneForge includes Microsoft's documented Visual Studio Code configuration for
+debugging a Word add-in against the Edge WebView2 runtime.
+
+Prerequisites:
+
+1. Windows 10/11, Node `20.18.1`, and a Word installation that uses Edge
+   WebView2.
+2. Install Microsoft's **Microsoft Debugger for Edge** Visual Studio Code
+   extension.
+3. Trust the localhost certificate as described in [Setup](#setup).
+4. Close Word before starting the F5 session so the add-in can be registered
+   cleanly.
+
+Usage:
+
+1. Open **View** | **Run** in Visual Studio Code.
+2. Select **Word Desktop (Edge Chromium)**.
+3. Press F5. The [`Debug: Word Desktop`](.vscode/tasks.json) task runs
+   [`start:desktop`](../package.json), which uses `office-addin-debugging` to
+   start the [`dev-server`](../package.json) Webpack process and sideload
+   [`manifest.xml`](../manifest.xml).
+4. When Word opens, accept the **WebView Stop On Load** prompt so Visual Studio
+   Code can attach to the webview.
+5. Set breakpoints in TypeScript or JavaScript and run the corresponding task
+   pane or ribbon action.
+6. End the session with Shift+F5 or **Run** | **Stop Debugging**. If Word or the
+   sideload registration remains, close Word and run `npm run stop`.
+
+Microsoft documents that breakpoints inside `Office.initialize` and
+`Office.onReady` are ignored. Use runtime diagnostics, Edge developer tools, or
+the Troubleshooting view for initialization-time failures that cannot be
+captured with an ordinary source breakpoint.
+
+This configuration is additive: `npm run dev`, `npm run sideload`, and
+`npm run stop` remain the terminal workflow and the supported recovery path.
+
+### Microsoft 365 Agents Toolkit is not the current ToneForge workflow
+
+Microsoft 365 Agents Toolkit is Microsoft's primary environment for **creating
+or importing** Microsoft 365 apps, agents, and Office Add-ins. It is not a
+drop-in debugger for an existing repository whose project structure, build
+configuration, and manifest layout it did not create.
+
+Do not use **View** | **Run** against the current ToneForge repository as if it
+were a generated Agents Toolkit project. Microsoft documents a project
+import/restructure flow for existing add-ins, including generated
+`appPackage` and `src/<runtime>` folders and project-setting adjustments. That
+would be a separately approved migration, not routine dependency cleanup.
+
+Agents Toolkit may be evaluated later in an isolated worktree through
+Microsoft's **Upgrade an Existing Office Add-in** import flow. It must not
+replace the current workflow until the imported project, canonical unified
+manifest, build output, host matrix, and rollback have all been proven. See
+[`plans/dependency-remediation-plan.md`](../plans/dependency-remediation-plan.md)
+for that future option.
 
 ### Optional local live-provider test
 
@@ -84,6 +151,7 @@ credential-custody review remain human evidence gates; see
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Dev server will not start over HTTPS      | Development certificate is not trusted                                                         | Run `npx office-addin-dev-certs install --machine` and restart Word.                               |
 | Add-in is not in the ribbon               | Manifest was not sideloaded or Office cached the old manifest                                  | Run `npm run sideload`; if needed run `npm run stop`, close Word, and retry.                       |
+| Add-in remains after closing Word         | The debug session was not explicitly stopped                                                   | Run `npm run stop`; closing Word alone does not reliably unregister the add-in.                    |
 | Blank task pane                           | Office.js failed to load, the dev server is unavailable, or the task-pane HTML/bundle is stale | Verify `https://localhost:3000/taskpane.html`, inspect the browser/developer console, and rebuild. |
 | `Office` is undefined in a normal browser | Expected outside Word                                                                          | Use the task pane inside Word; use the runtime diagnostics button for evidence.                    |
 | Capability probe reports unsupported      | The host does not expose the inspected object model                                            | Treat the result as truthful; use the documented safe no-op/fallback.                              |

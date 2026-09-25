@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Word Desktop (Edge Chromium)",
+      "type": "msedge",
+      "request": "attach",
+      "useWebView": true,
+      "port": 9229,
+      "timeout": 600000,
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "Debug: Word Desktop"
+    }
+  ]
+}

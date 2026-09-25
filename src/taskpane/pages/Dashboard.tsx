@@ -9,7 +9,10 @@ import {
 } from "../../word/documentReader";
 import { createLlmRegistry } from "../../ai/providers/registry";
 import { reviewSpot, type SpotReviewResult } from "../../ai/review/spotReview";
-import { createGovernanceProfile } from "../../core/domain/GovernanceProfile";
+import {
+  createGovernanceProfile,
+  type GovernanceProfile,
+} from "../../core/domain/GovernanceProfile";
 import { createDocumentObserver, type DocumentObserverStatus } from "../../word/documentObserver";
 import {
   applyReviewedPlan,
@@ -35,6 +38,8 @@ import FullReviewResults from "../components/FullReviewResults";
 import { loadState } from "../../core/state/persistence";
 import { formatProfileVersion, StyleProfileSchema } from "../../core/domain/StyleProfile";
 import type { Finding } from "../../core/domain/Finding";
+import type { ChangePlan } from "../../core/domain/ChangePlan";
+import type { PersistedState } from "../../core/state/persistence";
 
 const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
@@ -51,6 +56,30 @@ function resolveActiveProfile(): ReturnType<(typeof StyleProfileSchema)["parse"]
     throw new Error("No style profile found — create one under Style profile first.");
   }
   return StyleProfileSchema.parse(profile);
+}
+
+function resolveGovernanceProfile(
+  state: PersistedState,
+  profile: ReturnType<(typeof StyleProfileSchema)["parse"]>,
+): GovernanceProfile {
+  return (
+    state.governanceProfiles[
+      state.activeGovernanceProfileId ?? state.activeProfileId ?? profile.id
+    ] ?? createGovernanceProfile(profile)
+  );
+}
+
+function spotPlanCoverage(plan: ChangePlan): {
+  complete: boolean;
+  unprocessed: string[];
+} {
+  const unprocessed = plan.changes
+    .filter((change) => {
+      const finding = plan.findings?.find((item) => item.id === change.findingId);
+      return finding === undefined || finding.nodeIds.length === 0;
+    })
+    .map((change) => change.id);
+  return { complete: unprocessed.length === 0, unprocessed };
 }
 
 function readIgnoredFindingIds(): Set<string> {
@@ -209,10 +238,7 @@ export default function Dashboard(): React.ReactNode {
           : selected;
       if (!text?.trim()) throw new Error("Select text or place the cursor in a paragraph first.");
       const profile = resolveActiveProfile();
-      const governance =
-        state.governanceProfiles[
-          state.activeGovernanceProfileId ?? state.activeProfileId ?? profile.id
-        ] ?? createGovernanceProfile(profile);
+      const governance = resolveGovernanceProfile(state, profile);
       const snapshot = await getDocumentSnapshot();
       const structured = await getStructuredSnapshot();
       const liveSelection = operation === "spot_selection" ? await getLiveSelection() : null;
@@ -307,10 +333,7 @@ export default function Dashboard(): React.ReactNode {
         throw new Error("Full-document review consent is required in Settings.");
       }
       const profile = resolveActiveProfile();
-      const governance =
-        state.governanceProfiles[
-          state.activeGovernanceProfileId ?? state.activeProfileId ?? profile.id
-        ] ?? createGovernanceProfile(profile);
+      const governance = resolveGovernanceProfile(state, profile);
       const result = await reviewEntireDocument({
         snapshot,
         profile: governance,
@@ -350,9 +373,15 @@ export default function Dashboard(): React.ReactNode {
   }
 
   async function applyPendingPlan(): Promise<boolean> {
-    const plan = reformatResult?.plan ?? fullResult?.plan ?? aiReview?.plan ?? null;
-    if (!plan) return false;
-    const coverage = reformatResult?.report.coverage ?? fullResult?.coverage ?? null;
+    const pendingPlan = reformatResult?.plan
+      ? { plan: reformatResult.plan, coverage: reformatResult.report.coverage ?? null }
+      : fullResult?.plan
+        ? { plan: fullResult.plan, coverage: fullResult.coverage }
+        : aiReview?.plan
+          ? { plan: aiReview.plan, coverage: spotPlanCoverage(aiReview.plan) }
+          : null;
+    if (!pendingPlan) return false;
+    const { plan, coverage } = pendingPlan;
     if (coverage?.complete !== true) {
       setApplyMessage("Apply refused: analysis coverage is incomplete or unavailable.");
       return false;
@@ -374,15 +403,10 @@ export default function Dashboard(): React.ReactNode {
     setApplyMessage(null);
     try {
       const currentState = loadState();
-      const currentGovernance =
-        currentState.governanceProfiles[
-          currentState.activeGovernanceProfileId ?? currentState.activeProfileId ?? activeProfile.id
-        ];
+      const currentGovernance = resolveGovernanceProfile(currentState, activeProfile);
       const result = await applyReviewedPlan({
         plan,
-        ...(currentGovernance
-          ? { currentGovernancePolicyRevision: currentGovernance.version }
-          : {}),
+        currentGovernancePolicyRevision: currentGovernance.version,
         coverage,
         allowConflictingApply: false,
       });
@@ -563,7 +587,11 @@ export default function Dashboard(): React.ReactNode {
               aiReview?.findings ??
               currentGovernanceFindings
             }
-            coverage={reformatResult?.report.coverage ?? null}
+            coverage={
+              reformatResult?.report.coverage ??
+              fullResult?.coverage ??
+              (aiReview ? spotPlanCoverage(aiReview.plan) : null)
+            }
             onApply={applyPendingPlan}
           />
           {applyMessage && <p role="status">{applyMessage}</p>}

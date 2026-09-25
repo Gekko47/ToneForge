@@ -149,10 +149,35 @@ describe("Phase C task-pane components", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Apply unavailable" })).toBeDisabled();
+    const button = screen.getByRole("button", { name: "Apply unavailable" });
+    expect(button).toBeDisabled();
+    const localReason = screen.getByText("This plan is stale; preview it again.");
+    expect(localReason).toHaveAttribute("id");
+    expect(button).toHaveAttribute("aria-describedby", `${localReason.id} pending-apply-readiness`);
     expect(screen.getByRole("status")).toHaveTextContent(
       "Preview again because the document changed.",
     );
+  });
+
+  it("blocks apply locally for stale and conflicting plans even without a host reason", () => {
+    const pending = plan();
+    const { rerender } = render(
+      <PendingChanges plan={{ ...pending, stale: true }} findings={[]} onApply={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Apply unavailable" })).toBeDisabled();
+    expect(screen.getByText("This plan is stale; preview it again.")).toBeInTheDocument();
+
+    rerender(
+      <PendingChanges
+        plan={{ ...pending, conflicts: ["Overlapping changes"] }}
+        findings={[]}
+        onApply={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Apply unavailable" })).toBeDisabled();
+    expect(
+      screen.getByText("Unresolved conflicts block application; preview it again."),
+    ).toBeInTheDocument();
   });
 
   it("announces incomplete coverage without claiming a complete review", () => {

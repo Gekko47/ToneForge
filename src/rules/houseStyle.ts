@@ -282,11 +282,12 @@ function checkTitleCaseWords(text: string, rules: HouseStyle): Finding[] {
           severity: "warning",
           evidence: text.slice(range.start, range.end),
           actual: text.slice(range.start, range.end),
-          expected:
-            evidence.slice(0, firstCased.index) +
-            firstCased.character.toUpperCase() +
-            evidence.slice(firstCased.index + firstCased.character.length),
-          transformation: { kind: "case", style: "title", text: evidence },
+          expected: firstCased.character.toUpperCase(),
+          transformation: {
+            kind: "case",
+            style: "title",
+            text: text.slice(range.start, range.end),
+          },
         }),
       );
     });

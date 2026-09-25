@@ -21,13 +21,13 @@ export function partitionReviewBatches(
   options: BatcherOptions = {},
 ): ReviewBatch[] {
   const maxCharacters = Math.max(1, options.maxCharacters ?? DEFAULT_MAX_CHARACTERS);
-  void options.maxNodes;
+  const maxNodes = Math.max(1, options.maxNodes ?? Number.POSITIVE_INFINITY);
   const batches: ReviewBatch[] = [];
   let current: DocumentNode[] = [];
 
   const flush = (): void => {
     if (current.length === 0) return;
-    const text = current.map((node) => node.text ?? "").join("\n");
+    const text = current.map((node) => node.text ?? "").join("");
     batches.push({
       index: batches.length,
       nodeIds: current.map((node) => node.nodeId),
@@ -59,12 +59,25 @@ export function partitionReviewBatches(
     if (!node.editable || node.protectionReason || !node.includedInAIReview) return;
     const text = node.text ?? "";
     if (text.length === 0) return;
-    flush();
     if (text.length > maxCharacters) {
       flush();
       appendChunks(node, text);
       return;
     }
+
+    const previous = current.at(-1);
+    const contiguous =
+      previous?.sourceRange?.endOffset !== undefined &&
+      node.sourceRange?.startOffset !== undefined &&
+      previous.sourceRange.endOffset === node.sourceRange.startOffset;
+    const projectedLength =
+      current.reduce((sum, item) => sum + (item.text?.length ?? 0), 0) + text.length;
+    if (
+      current.length >= maxNodes ||
+      (previous !== undefined && !contiguous) ||
+      projectedLength > maxCharacters
+    )
+      flush();
     current.push(node);
   });
   flush();
