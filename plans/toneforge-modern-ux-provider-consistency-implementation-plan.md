@@ -1,6 +1,6 @@
 # ToneForge Modern UX, Provider Integration, Consistency, and Release Implementation Plan
 
-> **Plan status:** Approved execution plan. Phases 0 and 1 are complete and verified; Phase 2 is the next implementation phase.
+> **Plan status:** Approved execution plan. Phases 0 through 3 are complete and verified; Phase 4 is the next implementation phase.
 >
 > **Canonical status and sequencing:** [`ROADMAP.md`](../ROADMAP.md) remains the canonical roadmap and status ledger. This file is the implementation-ready plan for the refactor/UX review dispositions. Implementation must update the roadmap and evidence documents as each phase changes status.
 >
@@ -204,9 +204,9 @@ None beyond the current repository baseline.
 
 ### Verification
 
-Phase 0 verification passed on the working tree; the current repository gate
-reports 73 test files and 693 tests with 92.90% lines / 92.90% statements /
-83.75% functions / 81.53% branches, and a passing `toneforge-repository-v1`
+Phase 3 verification passed on the working tree; the current repository gate
+reports 84 test files and 736 tests with 93.02% lines / 82.02% statements /
+80.95% functions / 93.02% branches, and a passing `toneforge-repository-v1`
 graph. The Review
 control currently records reviewed status only; B23 central plan navigation and
 selection context are deliberately deferred to Phase 2.

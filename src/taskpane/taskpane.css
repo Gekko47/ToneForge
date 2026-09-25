@@ -405,7 +405,50 @@ button:disabled {
 
 .tf-settings-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.tf-lifecycle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tf-published-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.tf-published-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--tf-border);
+}
+
+.tf-published-item > span:first-child {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tf-published-active {
+  color: var(--tf-accent);
+  font-weight: 600;
+}
+
+/* Side-by-side comparison stays readable when the pane is narrow. */
+.tf-published-list + section table {
+  table-layout: fixed;
+  width: 100%;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 420px) {
@@ -415,5 +458,29 @@ button:disabled {
 
   .tf-active-profile-label {
     display: none;
+  }
+
+  .tf-published-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .tf-published-item > span:first-child {
+    flex: 1 1 auto;
+  }
+
+  .tf-settings-section,
+  .tf-lifecycle-actions {
+    padding: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

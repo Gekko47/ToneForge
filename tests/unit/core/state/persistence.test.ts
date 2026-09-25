@@ -42,6 +42,7 @@ describe("persistence", () => {
       governanceProfiles: {},
       governanceHistory: {},
       activeGovernanceProfileId: null,
+      profileLifecycles: {},
     });
 
     expect(loadState().settings.telemetryDisabled).toBe(false);

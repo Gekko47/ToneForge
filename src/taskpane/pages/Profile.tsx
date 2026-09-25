@@ -1,10 +1,22 @@
 import React from "react";
 import ProfileEditor from "../components/ProfileEditor";
+import ProfileLifecycleSection from "../components/ProfileLifecycleSection";
 import { getDocumentSnapshot, getSelectionText } from "../../word/documentReader";
 import { createLlmRegistry } from "../../ai/providers/registry";
 import { captureSample } from "../../style/sampleCapture";
 import { learnStyleDraft } from "../../style/learnStyle";
-import { loadState, setActiveProfile, upsertProfile } from "../../core/state/persistence";
+import {
+  createDraft,
+  effectiveProfile,
+  type ProfileLifecycleState,
+} from "../../core/domain/ProfileLifecycle";
+import {
+  loadProfileLifecycle,
+  loadState,
+  saveProfileLifecycle,
+  setActiveProfile,
+  upsertProfile,
+} from "../../core/state/persistence";
 
 export interface ProfileProps {
   onBack: () => void;
@@ -14,6 +26,22 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
   const [learnStatus, setLearnStatus] = React.useState<string | null>(null);
   const [learnError, setLearnError] = React.useState<string | null>(null);
   const [learning, setLearning] = React.useState(false);
+  const [lifecycle, setLifecycle] = React.useState<ProfileLifecycleState | null>(null);
+
+  React.useEffect(() => {
+    const state = loadState();
+    if (state.activeProfileId) {
+      const profile = state.profiles.find((item) => item.id === state.activeProfileId);
+      setLifecycle(loadProfileLifecycle(state.activeProfileId, profile));
+    }
+  }, []);
+
+  /**
+   * The effective profile is the active published version, falling back to the
+   * draft. Analysis and governance must follow it so an unpublished edit never
+   * silently changes what the document is checked against.
+   */
+  const effective = lifecycle ? effectiveProfile(lifecycle) : null;
 
   async function learnFromCurrentDocument(): Promise<void> {
     setLearning(true);
@@ -45,6 +73,10 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
       });
       upsertProfile(result.draft);
       setActiveProfile(result.draft.id);
+      const seeded = loadProfileLifecycle(result.draft.id, result.draft);
+      const withDraft = createDraft(seeded, result.draft, new Date().toISOString());
+      saveProfileLifecycle(withDraft);
+      setLifecycle(withDraft);
       setLearnStatus(
         `Learned from ${result.evidence.source} sample (${result.evidence.wordCount} words). The draft is editable below.`,
       );
@@ -85,6 +117,9 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
           </p>
         )}
       </section>
+      {lifecycle && effective && (
+        <ProfileLifecycleSection lifecycle={lifecycle} onChange={setLifecycle} />
+      )}
       <ProfileEditor />
     </div>
   );

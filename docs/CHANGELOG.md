@@ -34,9 +34,21 @@
 - Automated verification uses the shared `toneforge-repository-v1` graph for
   typecheck, lint, format, source/artifact secret scans, documentation links,
   skills validation, tests, 80% exercised-core coverage, build, manifest
-  validation, staging, and coherent release-package checks. The Phase 0 run
-  passes 73 files / 693 tests with 92.90% lines, 92.90% statements, 83.75%
-  functions, and 81.53% branches.
+  validation, staging, and coherent release-package checks. The current run
+  passes 84 files / 736 tests with 93.02% lines, 82.02% statements, 80.95%
+  functions, and 93.02% branches.
+- Phase 3 adds the organizational profile lifecycle: one editable draft and
+  immutable published versions, explicit activation, restore-as-draft, and
+  discard. State schema version 6 persists the lifecycle and migrates v5 by
+  seeding each profile's stored history as published versions, so no approved
+  state is discarded.
+- Phase 3 splits Settings into independently-saved Styling, Provider and
+  privacy, and Telemetry sections over a pure settings model, so a failed save
+  in one section cannot discard unsaved edits in another.
+- Phase 3 adds side-by-side profile version comparison with progressive
+  disclosure of the technical diff, a reduced-noise announcement hook that
+  collapses bursts into one live-region message, and narrow-width and
+  reduced-motion styles.
 - Hardened planning with complete document identity, unit-aware targets, change
   preconditions, source/approval lineage, exact AI source slices, fail-closed
   Apply readiness, and credential-free ordinary state.

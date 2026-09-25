@@ -6,9 +6,13 @@
 import { z } from "zod";
 import { StyleProfileSchema, type StyleProfile } from "../domain/StyleProfile";
 import { GovernanceProfileSchema, type GovernanceProfile } from "../domain/GovernanceProfile";
+import {
+  ProfileLifecycleStateSchema,
+  type ProfileLifecycleState,
+} from "../domain/ProfileLifecycle";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 5;
+export const CURRENT_STATE_VERSION = 6;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
@@ -63,10 +67,11 @@ export function migrate(raw: unknown): PersistedState {
       return migrateV0ToCurrent(obj);
     case 1:
     case 2:
-      return migrateV3ToV4(obj);
     case 3:
     case 4:
       return migrateV3ToV4(obj);
+    case 5:
+      return migrateV5ToV6(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -83,20 +88,23 @@ function defaultState(): PersistedState {
     governanceProfiles: DEFAULT_GOVERNANCE_PROFILES,
     governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
+    profileLifecycles: {},
     settings: { ...DEFAULT_SETTINGS },
   };
 }
 
 function readCurrentState(obj: Record<string, unknown>): PersistedState {
   const profiles = normalizeProfiles(obj.profiles);
+  const profileHistory = normalizeProfileHistory(obj.profileHistory, profiles);
   return {
     version: CURRENT_STATE_VERSION,
     profiles,
-    profileHistory: normalizeProfileHistory(obj.profileHistory, profiles),
+    profileHistory,
     activeProfileId: normalizeActiveProfileId(obj.activeProfileId, profiles),
     governanceProfiles: normalizeGovernanceProfiles(obj.governanceProfiles),
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, obj.governanceProfiles),
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
+    profileLifecycles: normalizeLifecycles(obj.profileLifecycles, profiles, profileHistory),
     settings: normalizeSettings(obj.settings),
   };
 }
@@ -104,14 +112,16 @@ function readCurrentState(obj: Record<string, unknown>): PersistedState {
 /** v0 had no `version` field; normalize it to the current schema. */
 function migrateV0ToCurrent(raw: Record<string, unknown>): PersistedState {
   const profiles = normalizeProfiles(raw.profiles);
+  const profileHistory = normalizeProfileHistory(raw.profiles, profiles);
   return {
     version: CURRENT_STATE_VERSION,
     profiles,
-    profileHistory: normalizeProfileHistory(raw.profileHistory, profiles),
+    profileHistory,
     activeProfileId: normalizeActiveProfileId(raw.activeProfileId, profiles),
     governanceProfiles: DEFAULT_GOVERNANCE_PROFILES,
     governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
+    profileLifecycles: seedLifecycles(profiles, profileHistory),
     settings: normalizeSettings(raw.settings),
   };
 }
@@ -180,17 +190,78 @@ function normalizeActiveProfileId(raw: unknown, profiles: readonly StyleProfile[
   return raw;
 }
 
-/** v3/v4 to v5: remove credentials and seed governance-policy history. */
+/** v3/v4 to current: remove credentials and seed governance-policy history. */
 function migrateV3ToV4(raw: Record<string, unknown>): PersistedState {
   const state = normalizeV3State(raw);
+  const profileHistory = state.profileHistory;
   return {
     ...state,
     version: CURRENT_STATE_VERSION,
+    profileLifecycles: seedLifecycles(state.profiles, profileHistory),
     settings: {
       ...state.settings,
       openAiCredentialMode: "broker",
     },
   };
+}
+
+/**
+ * v5 to v6: seed the draft/published lifecycle. Existing profiles are treated as
+ * a single published version, because their stored history already represented
+ * approved organizational state. No existing values are discarded.
+ */
+function migrateV5ToV6(raw: Record<string, unknown>): PersistedState {
+  const state = readCurrentState({ ...raw, version: CURRENT_STATE_VERSION });
+  return {
+    ...state,
+    version: CURRENT_STATE_VERSION,
+    profileLifecycles: seedLifecycles(state.profiles, state.profileHistory),
+  };
+}
+
+/**
+ * Build a lifecycle per stored profile. Each profile's stored history becomes
+ * its published versions with the newest snapshot active and no draft, so a
+ * migrated organization never loses approved state.
+ */
+function seedLifecycles(
+  profiles: readonly StyleProfile[],
+  profileHistory: Record<string, StyleProfile[]>,
+): Record<string, ProfileLifecycleState> {
+  const lifecycles: Record<string, ProfileLifecycleState> = {};
+  profiles.forEach((profile) => {
+    const history = profileHistory[profile.id]?.filter((snapshot) => snapshot.id === profile.id);
+    const published = history && history.length > 0 ? history : [profile];
+    const active = published[published.length - 1] ?? profile;
+    lifecycles[profile.id] = ProfileLifecycleStateSchema.parse({
+      profileId: profile.id,
+      draft: null,
+      published,
+      activePublishedId: active.id,
+    });
+  });
+  return lifecycles;
+}
+
+/** Parse stored lifecycles and fill any profile that has no valid entry. */
+function normalizeLifecycles(
+  raw: unknown,
+  profiles: readonly StyleProfile[],
+  profileHistory: Record<string, StyleProfile[]>,
+): Record<string, ProfileLifecycleState> {
+  const seeded = seedLifecycles(profiles, profileHistory);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return seeded;
+  }
+  const result: Record<string, ProfileLifecycleState> = { ...seeded };
+  Object.entries(raw as Record<string, unknown>).forEach(([id, lifecycle]) => {
+    if (!z.string().uuid().safeParse(id).success) return;
+    const parsed = ProfileLifecycleStateSchema.safeParse(lifecycle);
+    if (parsed.success && parsed.data.profileId === id) {
+      result[id] = parsed.data;
+    }
+  });
+  return result;
 }
 
 function normalizeV3State(raw: Record<string, unknown>): PersistedState {
@@ -213,6 +284,8 @@ function normalizeV3State(raw: Record<string, unknown>): PersistedState {
       normalizeActiveGovernanceProfileId(raw.activeGovernanceProfileId) ??
       Object.keys(governanceProfiles)[0] ??
       null,
+    // v3 predates the lifecycle; the caller seeds it from stored history.
+    profileLifecycles: {},
     settings: normalizeSettings(raw.settings),
   };
 }

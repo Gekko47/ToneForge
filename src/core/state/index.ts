@@ -1,6 +1,8 @@
 export {
   clearPersistedCredentials,
+  loadProfileLifecycle,
   loadState,
+  saveProfileLifecycle,
   saveState,
   upsertProfile,
   removeProfile,

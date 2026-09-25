@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createEmptyProfile } from "../../../../src/core/domain/index";
 import {
   clearPersistedCredentials,
+  CURRENT_STATE_VERSION,
   loadState,
   saveState,
   upsertProfile,
@@ -79,13 +80,14 @@ describe("persistence with Office roamingSettings", () => {
     };
 
     saveState({
-      version: 5,
+      version: CURRENT_STATE_VERSION,
       profiles: [],
       profileHistory: {},
       activeProfileId: null,
       governanceProfiles: {},
       governanceHistory: {},
       activeGovernanceProfileId: null,
+      profileLifecycles: {},
       settings: {
         llmProvider: "mock",
         openAiCredentialMode: "broker" as const,
@@ -100,7 +102,7 @@ describe("persistence with Office roamingSettings", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(typeof persisted).toBe("string");
     const parsed = JSON.parse(persisted as string) as { version: number };
-    expect(parsed.version).toBe(5);
+    expect(parsed.version).toBe(CURRENT_STATE_VERSION);
   });
 
   it("migrates v0 state (no version field) to v5 via loadState", () => {
@@ -114,7 +116,7 @@ describe("persistence with Office roamingSettings", () => {
         settings: { telemetryDisabled: false },
       });
     const state = loadState();
-    expect(state.version).toBe(5);
+    expect(state.version).toBe(CURRENT_STATE_VERSION);
     expect(state.profileHistory).toEqual({});
     expect(state.settings.telemetryDisabled).toBe(false);
   });
@@ -128,7 +130,7 @@ describe("persistence with Office roamingSettings", () => {
         settings: {},
       });
     const state = loadState();
-    expect(state.version).toBe(5);
+    expect(state.version).toBe(CURRENT_STATE_VERSION);
     expect(state.settings.telemetryDisabled).toBe(true);
   });
 
@@ -142,7 +144,7 @@ describe("persistence with Office roamingSettings", () => {
         settings: { telemetryDisabled: true },
       });
     const state = loadState();
-    expect(state.version).toBe(5);
+    expect(state.version).toBe(CURRENT_STATE_VERSION);
     expect(state.profileHistory).toEqual({});
     expect(state.settings.telemetryDisabled).toBe(true);
   });
@@ -159,7 +161,7 @@ describe("persistence with Office roamingSettings", () => {
             settings: { telemetryDisabled: true },
           });
     const state = loadState();
-    expect(state.version).toBe(5);
+    expect(state.version).toBe(CURRENT_STATE_VERSION);
     expect(state.profiles).toEqual([]);
   });
 

@@ -52,7 +52,7 @@ describe("SettingsForm", () => {
 
   it("loads broker configuration without a credential field", () => {
     const { container } = render(<SettingsForm />);
-    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const llmSection = within(container).getByRole("region", { name: "Provider and privacy" });
 
     expect(within(llmSection).queryByLabelText(/API key/i)).not.toBeInTheDocument();
     expect(within(llmSection).getByText(/Credentials are never stored/i)).toBeInTheDocument();
@@ -65,10 +65,10 @@ describe("SettingsForm", () => {
   it("persists provider and consent settings without a key", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
-    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const llmSection = within(container).getByRole("region", { name: "Provider and privacy" });
     const modelInput = within(llmSection).getByDisplayValue("gpt-4o-mini");
     await user.type(modelInput, "-changed");
-    await user.click(within(llmSection).getByRole("button", { name: "Save LLM" }));
+    await user.click(within(llmSection).getByRole("button", { name: "Save provider and privacy" }));
 
     await waitFor(() => expect(mocks.saveState).toHaveBeenCalledOnce());
     const saved = JSON.stringify(mocks.saveState.mock.calls[0]?.[0]);
@@ -79,9 +79,9 @@ describe("SettingsForm", () => {
   it("logs provider metadata without credentials or prompts", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
-    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const llmSection = within(container).getByRole("region", { name: "Provider and privacy" });
     await user.type(within(llmSection).getByDisplayValue("gpt-4o-mini"), "-changed");
-    await user.click(within(llmSection).getByRole("button", { name: "Save LLM" }));
+    await user.click(within(llmSection).getByRole("button", { name: "Save provider and privacy" }));
 
     await waitFor(() => expect(mocks.loggerInfo).toHaveBeenCalled());
     const logged = JSON.stringify(mocks.loggerInfo.mock.calls[0]);
@@ -99,7 +99,7 @@ describe("SettingsForm", () => {
       });
       return mocks.loadState();
     });
-    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const llmSection = within(container).getByRole("region", { name: "Provider and privacy" });
 
     await user.click(
       within(llmSection).getByRole("button", { name: "Clear legacy stored credential" }),
@@ -109,14 +109,14 @@ describe("SettingsForm", () => {
     expect(
       within(llmSection)
         .getAllByRole("status")
-        .some((node) => node.textContent?.includes("LLM settings saved")),
+        .some((node) => node.textContent?.includes("Provider and privacy settings saved")),
     ).toBe(true);
   });
 
   it("removes optional broker configuration when cleared", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
-    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const llmSection = within(container).getByRole("region", { name: "Provider and privacy" });
     const baseUrlInput = within(llmSection).getByDisplayValue(
       "https://localhost:3000/__toneforge/llm/v1",
     );
@@ -124,7 +124,7 @@ describe("SettingsForm", () => {
 
     await user.clear(baseUrlInput);
     await user.clear(modelInput);
-    await user.click(within(llmSection).getByRole("button", { name: "Save LLM" }));
+    await user.click(within(llmSection).getByRole("button", { name: "Save provider and privacy" }));
 
     await waitFor(() => expect(mocks.saveState).toHaveBeenCalledOnce());
     const settings = mocks.saveState.mock.calls[0]?.[0].settings;
@@ -135,13 +135,13 @@ describe("SettingsForm", () => {
   it("rejects an invalid broker URL", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
-    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const llmSection = within(container).getByRole("region", { name: "Provider and privacy" });
     const baseUrlInput = within(llmSection).getByDisplayValue(
       "https://localhost:3000/__toneforge/llm/v1",
     );
     await user.clear(baseUrlInput);
     await user.type(baseUrlInput, "not-a-url");
-    await user.click(within(llmSection).getByRole("button", { name: "Save LLM" }));
+    await user.click(within(llmSection).getByRole("button", { name: "Save provider and privacy" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Broker base URL is not a valid URL.",

@@ -347,3 +347,58 @@ preserved for traceability. The key current decisions are:
 - **Evidence**: `src/core/domain/ResolvedPolicy.ts`,
   `src/analysis/consistencyChecker.ts`, `src/reformat/orchestrator.ts`, and
   `tests/unit/core/domain/ResolvedPolicy.test.ts`.
+
+## ADR-0046 — Separate editable drafts from immutable published profile versions
+
+- **Status**: Accepted
+- **Context**: Before Phase 3, a stored style profile was edited in place, so an
+  unapproved change silently altered what the document was checked against and
+  there was no way to tell an approved version from a work in progress. Phase 1
+  separated learned style from normative governance, which made the remaining
+  question explicit: which version of a profile is authoritative.
+- **Decision**: A profile owns at most one mutable draft and an ordered list of
+  immutable published versions. Publishing appends a new snapshot and never
+  mutates an existing one. Activation is always an explicit user action, and
+  editing a published version restores it as a new draft. The effective profile
+  is the active published version, falling back to the draft when nothing is
+  published. State schema version 6 persists the lifecycle and migrates v5 by
+  seeding each profile's stored history as its published versions, so an
+  existing organization keeps its approved state.
+- **Consequences**: An unpublished edit can no longer change analysis
+  behaviour, and rollback is a version activation rather than a data restore.
+  The cost is a second persisted structure alongside `profiles` and
+  `profileHistory`; `upsertProfile` remains the writer of the legacy view while
+  the lifecycle owns the authoritative version, so a later phase should retire
+  the duplicate history rather than leave two sources of truth. Live Word and
+  assistive-technology behaviour of the new controls remains external evidence.
+- **Evidence**: `src/core/domain/ProfileLifecycle.ts`,
+  `src/core/state/persistence.ts`, `src/core/state/migration.ts`,
+  `src/taskpane/components/ProfileLifecycleSection.tsx`,
+  `tests/unit/core/domain/ProfileLifecycle.test.ts`, and
+  `tests/unit/core/state/profileLifecyclePersistence.test.ts`.
+
+## ADR-0047 — Split Settings into independently-saved sections over a pure model
+
+- **Status**: Accepted
+- **Context**: `SettingsForm` held every draft, baseline, validation rule, and
+  save path for styling, provider, consent, and telemetry in one component. A
+  failed save, or a cancel, operated across unrelated settings, and the
+  validation rules were only reachable through a React render.
+- **Decision**: Settings is a composition shell over three independently-saved
+  sections — Styling, Provider and privacy, and Telemetry. Validation, draft
+  normalization, and draft/baseline comparison live in a pure `settingsModel`
+  module that imports no Office, LLM, or UI code, and is unit tested directly.
+  Live-region announcements route through a reduced-noise hook that collapses a
+  burst of updates into a single message.
+- **Consequences**: A failed save in one section can no longer discard unsaved
+  edits in another, the broker URL rule is testable without rendering, and
+  assistive technology is interrupted once per outcome rather than per
+  keystroke. Provider and privacy consent remain one section because they share
+  a single save transaction: splitting them would allow a consent change to
+  persist separately from the provider it authorizes.
+- **Evidence**: `src/taskpane/settings/settingsModel.ts`,
+  `src/taskpane/settings/useAnnouncement.ts`,
+  `src/taskpane/components/ProviderPrivacySettingsSection.tsx`,
+  `src/taskpane/components/StylingSettingsSection.tsx`,
+  `src/taskpane/components/TelemetrySettingsSection.tsx`, and
+  `tests/unit/taskpane/settings/settingsModel.test.ts`.

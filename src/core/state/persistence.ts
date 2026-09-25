@@ -15,16 +15,23 @@ import {
   GovernanceProfileSchema,
   type GovernanceProfile,
 } from "../domain/GovernanceProfile";
+import {
+  createDraft,
+  createLifecycleState,
+  ProfileLifecycleStateSchema,
+  type ProfileLifecycleState,
+} from "../domain/ProfileLifecycle";
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(5),
+  version: z.number().int().nonnegative().default(6),
   profiles: z.array(StyleProfileSchema).default([]),
   profileHistory: z.record(z.string().uuid(), z.array(StyleProfileSchema)).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
   governanceHistory: z.record(z.string().uuid(), z.array(GovernanceProfileSchema)).default({}),
   activeGovernanceProfileId: z.string().uuid().nullable().default(null),
+  profileLifecycles: z.record(z.string().uuid(), ProfileLifecycleStateSchema).default({}),
   settings: z
     .object({
       openAiBaseUrl: z.string().url().optional(),
@@ -41,8 +48,9 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v5";
+const STORAGE_KEY = "ToneForge.State.v6";
 const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v5",
   "ToneForge.State.v4",
   "ToneForge.State.v3",
   "ToneForge.State.v2",
@@ -199,8 +207,9 @@ export function loadState(): PersistedState {
     const parsed = StateSchema.parse(migrated);
     if (
       rawContainsLegacyCredential(raw) ||
-      (typeof raw.version === "number" && raw.version < 5) ||
-      !Object.prototype.hasOwnProperty.call(raw, "governanceHistory")
+      (typeof raw.version === "number" && raw.version < CURRENT_STATE_VERSION) ||
+      !Object.prototype.hasOwnProperty.call(raw, "governanceHistory") ||
+      !Object.prototype.hasOwnProperty.call(raw, "profileLifecycles")
     ) {
       saveState(parsed);
     }
@@ -348,4 +357,26 @@ export function setActiveProfile(id: string | null): void {
   const state = loadState();
   state.activeProfileId = id;
   saveState(state);
+}
+
+/**
+ * Persist a profile lifecycle. Published versions are immutable, so callers pass
+ * the state produced by the lifecycle transition and never edit snapshots in
+ * place.
+ */
+export function saveProfileLifecycle(lifecycle: ProfileLifecycleState): void {
+  const state = loadState();
+  state.profileLifecycles[lifecycle.profileId] = ProfileLifecycleStateSchema.parse(lifecycle);
+  saveState(state);
+}
+
+/** Read a persisted lifecycle, falling back to a fresh one for a known profile. */
+export function loadProfileLifecycle(
+  profileId: string,
+  seed?: StyleProfile,
+): ProfileLifecycleState {
+  const stored = loadState().profileLifecycles[profileId];
+  if (stored) return stored;
+  const state = createLifecycleState(profileId);
+  return seed ? createDraft(state, { ...seed, id: profileId }, new Date().toISOString()) : state;
 }
