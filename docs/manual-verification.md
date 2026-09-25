@@ -116,6 +116,24 @@ Applied 2 of 2 change(s) — tracking managed: yes.
 Demo plan applied 2 of 2 change(s) — tracking managed: yes.
 ```
 
+## Local debugging evidence — 2026-09-25
+
+Reported by the maintainer on Windows with Word Desktop, after the dependency
+remediation recorded in
+[`plans/dependency-remediation-plan.md`](../plans/dependency-remediation-plan.md).
+
+| Check                                | Result            | Notes                                                            |
+| ------------------------------------ | ----------------- | ---------------------------------------------------------------- |
+| F5 from Visual Studio Code           | **PASS (launch)** | The pre-launch task ran and Word Desktop opened with the add-in. |
+| Breakpoint firing in task-pane code  | **Not reported**  | Required before the debugger gate can be called complete.        |
+| `npm run sideload` from the terminal | **PASS**          | Manual sideload works with the upgraded tooling chain.           |
+| `npm run stop` cleanup               | **Not reported**  | Still required at the end of every session.                      |
+
+This closes the tooling question only: both the `office-addin-debugging@5.1.6`
+chain and the VS Code F5 path reach Word Desktop. It does **not** close the
+wider host matrix, which still needs break, style, list, tracking, ribbon,
+accessibility, provider, and performance evidence, plus the web and Mac hosts.
+
 ## Required remaining procedure
 
 For each host, build and sideload with the current documented workflow, and

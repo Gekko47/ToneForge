@@ -473,13 +473,20 @@ build-artifacts → built-secret-scan → manifest → package → package-check
 - `npm ls --depth=0` reports no invalid or extraneous root dependencies.
 - `npm ci` completes from the regenerated lockfile with zero `EBADENGINE`.
 
-**Human gates still outstanding (not claimed as passing):**
+**Human host evidence as of 2026-09-25:**
 
-1. A manual `npm run sideload` start/stop/reload smoke in Word Desktop.
-2. An F5 run using `.vscode/launch.json` proving webview attach and a firing
-   breakpoint.
+1. `npm run sideload` from the terminal works with the upgraded chain —
+   confirmed by the maintainer on Word Desktop.
+2. F5 from Visual Studio Code launches Word Desktop — confirmed. A firing
+   breakpoint and Shift+F5 cleanup were not reported, so that gate stays
+   partial rather than closed.
+3. The wider host matrix in
+   [`docs/manual-verification.md`](../docs/manual-verification.md) remains open:
+   break, style, list, tracking, ribbon, accessibility, provider, and
+   performance evidence, plus the web and Mac hosts.
 
-These are host-only actions and cannot be evidenced from the command line.
+Host-only actions cannot be evidenced from the command line, so nothing beyond
+the maintainer's own report is claimed here.
 
 ### 7.6 Phase 1 clean-install reproducibility
 
