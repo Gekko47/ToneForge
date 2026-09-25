@@ -46,7 +46,6 @@ maps the proposal to Phases A–G plus reserved Phase H in
 
 ## Historical supporting proposal
 
-The original design artifacts are retained in
-[`ToneForge_Refactor_Implementation/ROADMAP.md`](../ToneForge_Refactor_Implementation/ROADMAP.md)
-and its [`docs/`](../ToneForge_Refactor_Implementation/docs/INDEX.md) directory.
+The original design artifacts are retained in the untracked local review folder
+`ToneForge_Refactor_Implementation/` as `ROADMAP.md` and `docs/INDEX.md`.
 They are design references, not current status or sequencing authorities.
