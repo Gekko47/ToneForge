@@ -28,7 +28,13 @@ for host results.
 npm install
 npm run validate
 npm run build
-npm run dev
+```
+
+For the terminal workflow, start the add-in and its HTTPS development server in
+one command:
+
+```bash
+npm run sideload
 ```
 
 On Windows, Visual Studio Code also provides the Microsoft-documented Edge
@@ -36,13 +42,8 @@ WebView2 debugger: select **Word Desktop (Edge Chromium)** in **View** | **Run**
 and press F5. The repository includes the required
 [`launch.json`](.vscode/launch.json) and [`tasks.json`](.vscode/tasks.json)
 configuration. Install Microsoft's **Microsoft Debugger for Edge** extension
-first.
-
-In a second terminal, the equivalent terminal workflow is:
-
-```bash
-npm run sideload
-```
+first. The F5 task runs `start:desktop`, which starts its own development
+server; skip the manual `npm run dev` command when using F5.
 
 End each debugging session with `npm run stop`. Microsoft 365 Agents Toolkit is
 Microsoft's primary project creation/import environment for Microsoft 365 apps

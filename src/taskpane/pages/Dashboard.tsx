@@ -58,16 +58,29 @@ function resolveActiveProfile(): ReturnType<(typeof StyleProfileSchema)["parse"]
   return StyleProfileSchema.parse(profile);
 }
 
-function resolveGovernanceProfile(
+export function resolveGovernanceProfile(
   state: PersistedState,
   profile: ReturnType<(typeof StyleProfileSchema)["parse"]>,
 ): GovernanceProfile {
+  const storedProfileId = [state.activeGovernanceProfileId, state.activeProfileId, profile.id].find(
+    (id): id is string => id !== null && state.governanceProfiles[id] !== undefined,
+  );
+
   return (
-    state.governanceProfiles[
-      state.activeGovernanceProfileId ?? state.activeProfileId ?? profile.id
-    ] ?? createGovernanceProfile(profile)
+    (storedProfileId === undefined ? undefined : state.governanceProfiles[storedProfileId]) ??
+    createGovernanceProfile(profile)
   );
 }
+
+type PendingPlan = {
+  plan: ChangePlan;
+  coverage: {
+    complete: boolean;
+    unsupported?: readonly string[];
+    unprocessed?: readonly string[];
+  } | null;
+  source: "reformat" | "full" | "spot";
+};
 
 function spotPlanCoverage(plan: ChangePlan): {
   complete: boolean;
@@ -80,6 +93,27 @@ function spotPlanCoverage(plan: ChangePlan): {
     })
     .map((change) => change.id);
   return { complete: unprocessed.length === 0, unprocessed };
+}
+
+export function resolvePendingPlan(
+  reformatResult: ReformatResult | null,
+  fullResult: FullReviewResult | null,
+  aiReview: SpotReviewResult | null,
+): PendingPlan | null {
+  if (reformatResult?.plan) {
+    return {
+      plan: reformatResult.plan,
+      coverage: reformatResult.report.coverage ?? null,
+      source: "reformat",
+    };
+  }
+  if (fullResult?.plan) {
+    return { plan: fullResult.plan, coverage: fullResult.coverage, source: "full" };
+  }
+  if (aiReview?.plan) {
+    return { plan: aiReview.plan, coverage: spotPlanCoverage(aiReview.plan), source: "spot" };
+  }
+  return null;
 }
 
 function readIgnoredFindingIds(): Set<string> {
@@ -372,14 +406,7 @@ export default function Dashboard(): React.ReactNode {
     setFullProgress((previous) => (previous ? { ...previous, partial: true } : previous));
   }
 
-  async function applyPendingPlan(): Promise<boolean> {
-    const pendingPlan = reformatResult?.plan
-      ? { plan: reformatResult.plan, coverage: reformatResult.report.coverage ?? null }
-      : fullResult?.plan
-        ? { plan: fullResult.plan, coverage: fullResult.coverage }
-        : aiReview?.plan
-          ? { plan: aiReview.plan, coverage: spotPlanCoverage(aiReview.plan) }
-          : null;
+  async function applyPendingPlan(pendingPlan: PendingPlan | null): Promise<boolean> {
     if (!pendingPlan) return false;
     const { plan, coverage } = pendingPlan;
     if (coverage?.complete !== true) {
@@ -414,7 +441,9 @@ export default function Dashboard(): React.ReactNode {
         setApplyMessage(
           `Applied and verified ${result.results.filter((item) => item.applied).length} change(s).`,
         );
-        setReformatResult(null);
+        if (pendingPlan.source === "reformat") setReformatResult(null);
+        if (pendingPlan.source === "full") setFullResult(null);
+        if (pendingPlan.source === "spot") setAiReview(null);
         setPendingOpen(false);
         observerRef.current?.onDocumentChanged();
         return true;
@@ -479,6 +508,7 @@ export default function Dashboard(): React.ReactNode {
   const currentStatus = status;
   const scanPhase = currentStatus?.phase ?? "notStarted";
   const canReviewFindings = scanPhase === "fresh" || scanPhase === "clean";
+  const pendingPlan = resolvePendingPlan(reformatResult, fullResult, aiReview);
 
   return (
     <main className="tf-card" tabIndex={0}>
@@ -561,10 +591,7 @@ export default function Dashboard(): React.ReactNode {
           onClick={() => setPendingOpen(true)}
           aria-expanded={false}
         >
-          Pending changes{" "}
-          <span>
-            {(reformatResult?.plan ?? fullResult?.plan ?? aiReview?.plan)?.changes.length ?? 0}
-          </span>
+          Pending changes <span>{pendingPlan?.plan.changes.length ?? 0}</span>
         </button>
       ) : (
         <section className="tf-collapsible" aria-label="Pending changes section">
@@ -574,25 +601,21 @@ export default function Dashboard(): React.ReactNode {
             onClick={() => setPendingOpen(false)}
             aria-expanded
           >
-            Pending changes{" "}
-            <span>
-              {(reformatResult?.plan ?? fullResult?.plan ?? aiReview?.plan)?.changes.length ?? 0}
-            </span>
+            Pending changes <span>{pendingPlan?.plan.changes.length ?? 0}</span>
           </button>
           <PendingChanges
-            plan={reformatResult?.plan ?? fullResult?.plan ?? aiReview?.plan ?? null}
+            plan={pendingPlan?.plan ?? null}
             findings={
-              reformatResult?.report.findings ??
-              fullResult?.findings ??
-              aiReview?.findings ??
-              currentGovernanceFindings
+              pendingPlan?.source === "reformat"
+                ? (reformatResult?.report.findings ?? currentGovernanceFindings)
+                : pendingPlan?.source === "full"
+                  ? (fullResult?.findings ?? currentGovernanceFindings)
+                  : pendingPlan?.source === "spot"
+                    ? (aiReview?.findings ?? currentGovernanceFindings)
+                    : currentGovernanceFindings
             }
-            coverage={
-              reformatResult?.report.coverage ??
-              fullResult?.coverage ??
-              (aiReview ? spotPlanCoverage(aiReview.plan) : null)
-            }
-            onApply={applyPendingPlan}
+            coverage={pendingPlan?.coverage ?? null}
+            onApply={() => applyPendingPlan(pendingPlan)}
           />
           {applyMessage && <p role="status">{applyMessage}</p>}
         </section>

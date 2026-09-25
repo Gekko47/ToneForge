@@ -13,19 +13,19 @@ a future project import/restructure initiative, not a dependency change.
 
 The current checkout was inspected without changing dependencies or the lockfile.
 
-| Area                      | Current evidence                                               | Classification                                                                                                                                                 |
-| ------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Node                      | Running `v26.7.0`                                              | Outside the repository’s exact `.nvmrc` pin; not a source/build failure                                                                                        |
-| Project Node pin          | [` .nvmrc`](.nvmrc:1) = `20.18.1`                              | Authoritative local/CI runtime target                                                                                                                          |
-| npm                       | Running `12.0.2`                                               | Meets the broad `>=10` engine, but should be tested with the project’s npm baseline                                                                            |
-| Package engines           | [`package.json`](package.json:9)                               | Node `>=20.0.0`, npm `>=10.0.0`                                                                                                                                |
-| Lockfile                  | [`package-lock.json`](package-lock.json:1)                     | `lockfileVersion: 3`; preserve this version                                                                                                                    |
-| Current-tree verification | [`npm run verify`](package.json:37)                            | Passes typecheck, lint, format, tests, 80% coverage, build/artifact checks, secret scans, manifest validation, staging, and package check                      |
-| Current test result       | 68 files / 680 tests                                           | Passes                                                                                                                                                         |
-| Clean-install check       | [`clean-install-check.mjs`](scripts/clean-install-check.mjs:1) | Install itself succeeds, but the committed snapshot fails `format`, `docs`, and `skills`; this is a repository-snapshot problem, not a package-install failure |
-| Install warnings          | `npm ci --dry-run --ignore-scripts`                            | Two `EBADENGINE` warnings for transitive `@azure/msal-node@1.18.4` under Node 26                                                                               |
-| Audit                     | `npm audit --json`                                             | 44 findings: 3 critical, 22 high, 15 moderate, 4 low; no blanket `npm audit fix --force`                                                                       |
-| Git state                 | 21 pre-existing modified files from the prior remediation work | Must not be conflated with dependency cleanup changes                                                                                                          |
+| Area                      | Current evidence                                                  | Classification                                                                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Node                      | Running `v26.7.0`                                                 | Outside the repository’s exact `.nvmrc` pin; not a source/build failure                                                                                        |
+| Project Node pin          | [`.nvmrc`](../.nvmrc:1) = `20.18.1`                               | Authoritative local/CI runtime target                                                                                                                          |
+| npm                       | Running `12.0.2`                                                  | Meets the broad `>=10` engine, but should be tested with the project’s npm baseline                                                                            |
+| Package engines           | [`package.json`](../package.json:9)                               | Node `>=20.0.0`, npm `>=10.0.0`                                                                                                                                |
+| Lockfile                  | [`package-lock.json`](../package-lock.json:1)                     | `lockfileVersion: 3`; preserve this version                                                                                                                    |
+| Current-tree verification | [`npm run verify`](../package.json:39)                            | Passes typecheck, lint, format, tests, 80% coverage, build/artifact checks, secret scans, manifest validation, staging, and package check                      |
+| Current test result       | 68 files / 680 tests                                              | Passes                                                                                                                                                         |
+| Clean-install check       | [`clean-install-check.mjs`](../scripts/clean-install-check.mjs:1) | Install itself succeeds, but the committed snapshot fails `format`, `docs`, and `skills`; this is a repository-snapshot problem, not a package-install failure |
+| Install warnings          | `npm ci --dry-run --ignore-scripts`                               | Two `EBADENGINE` warnings for transitive `@azure/msal-node@1.18.4` under Node 26                                                                               |
+| Audit                     | `npm audit --json`                                                | 44 findings: 3 critical, 22 high, 15 moderate, 4 low; no blanket `npm audit fix --force`                                                                       |
+| Git state                 | 21 pre-existing modified files from the prior remediation work    | Must not be conflated with dependency cleanup changes                                                                                                          |
 
 The clean-install script intentionally archives committed `HEAD` with `git archive`; therefore it does not test the current uncommitted working tree. That behavior is correct for reproducibility and must be tested again from a commit or CI checkout containing the candidate changes.
 
@@ -35,25 +35,25 @@ The clean-install script intentionally archives committed `HEAD` with `git archi
 
 These are directly imported by the task pane or production modules and are not candidates for removal without code migration:
 
-- [`@fluentui/react`](package.json:43): Fluent UI v8 theme and controls.
-- [`react`](package.json:44): component runtime.
-- [`react-dom`](package.json:45): task-pane mount.
-- [`react-error-boundary`](package.json:46): task-pane error containment.
-- [`uuid`](package.json:47): IDs across domain, analysis, review, planning, and formatting modules. The direct version is `9.x`; transitive `8.x` and `14.x` copies belong to different tooling packages.
-- [`zod`](package.json:48): runtime boundary validation in domain and AI modules.
+- [`@fluentui/react`](../package.json:45): Fluent UI v8 theme and controls.
+- [`react`](../package.json:46): component runtime.
+- [`react-dom`](../package.json:47): task-pane mount.
+- [`react-error-boundary`](../package.json:48): task-pane error containment.
+- [`uuid`](../package.json:49): IDs across domain, analysis, review, planning, and formatting modules. The direct version is `9.x`; transitive `8.x` and `14.x` copies belong to different tooling packages.
+- [`zod`](../package.json:50): runtime boundary validation in domain and AI modules.
 
 ### Required development/tooling dependencies
 
 These are evidenced by scripts, configuration, CI, or tests and must not be removed casually:
 
 - TypeScript, Webpack, `ts-loader`, `css-loader`, `style-loader`, `html-webpack-plugin`, `terser-webpack-plugin`, `webpack-cli`, `webpack-dev-server`, and `webpack-merge`: build and development server.
-- `dotenv`: [`webpack.dev.js`](webpack.dev.js:10) reads the local `.env` file.
+- `dotenv`: [`webpack.dev.js`](../webpack.dev.js:1) reads the local `.env` file.
 - Vitest, `jsdom`, Testing Library, `user-event`, and `@vitest/coverage-v8`: test runner and component tests.
-- `eslint`, TypeScript ESLint plugins, `globals`, and `eslint-config-prettier`: [`eslint.config.mjs`](eslint.config.mjs:1).
+- `eslint`, TypeScript ESLint plugins, `globals`, and `eslint-config-prettier`: [`eslint.config.mjs`](../eslint.config.mjs:1).
 - Prettier, Husky, lint-staged, Commitlint, and the config files: formatting and commit gates.
-- `office-addin-debugging`: [`package.json`](package.json:19) invokes the required sideload/stop workflow.
-- `office-addin-dev-certs`: documented certificate installation in [`docs/onboarding.md`](docs/onboarding.md:17) and used by the HTTPS development workflow.
-- `office-addin-manifest`: [`scripts/validate-manifest.mjs`](scripts/validate-manifest.mjs:308) optionally invokes the official manifest validator.
+- `office-addin-debugging`: [`package.json`](../package.json:75) invokes the required sideload/stop workflow.
+- `office-addin-dev-certs`: documented certificate installation in [`docs/onboarding.md`](../docs/onboarding.md:13) and used by the HTTPS development workflow.
+- `office-addin-manifest`: [`scripts/validate-manifest.mjs`](../scripts/validate-manifest.mjs:1) optionally invokes the official manifest validator.
 - `esbuild`: currently a direct development declaration but the repository’s Webpack path uses `ts-loader`; first determine whether it is intentionally pinned for a script/tool or is only inherited through Vitest/Vite before removal.
 - `@playwright/test`: no current test or script import was found. Treat as a removal candidate only after checking the full repository, CI, local documentation, and maintainer workflow.
 - `@types/uuid`: no direct source import was found. Treat as a type-package candidate only after confirming the direct `uuid` version’s own declarations and TypeScript resolution.
@@ -78,7 +78,7 @@ The current evidence shows:
 - `@microsoft/teamsfx-cli`: `1.1.5`, reached through `office-addin-dev-settings`.
 - `@azure/ms-rest-azure-js`, `@azure/ms-rest-js`, `@azure/core-http`, and `msal`: reached through the same old TeamsFx/Azure tooling chain.
 - `glob`: `7.2.3`, `8.1.0`, and `10.5.0`; `tar`, `rimraf`, `inflight`, `npmlog`, `debuglog`, `prebuild-install`, `fstream`, `node-domexception`, `whatwg-encoding`, `are-we-there-yet`, and `gauge` are also transitive development dependencies.
-- These packages are not direct imports in [`src/`](src/) and are not required by the canonical verification graph itself. They matter because the required `sideload` command can execute the parent tool.
+- These packages are not direct imports in [`src/`](../src/) and are not required by the canonical verification graph itself. They matter because the required `sideload` command can execute the parent tool.
 
 This chain must be handled as one migration unit. Removing or overriding one nested package in isolation is prohibited unless a parent release explicitly requires it and the full sideload/debug workflow is proven.
 
@@ -103,8 +103,8 @@ This chain must be handled as one migration unit. Removing or overriding one nes
 
 **Actions:**
 
-1. Do not update packages, edit [`package-lock.json`](package-lock.json), add overrides, or change engine constraints while the current dependency worktree is mixed with the previous remediation changes.
-2. Use Node `20.18.1` from [`.nvmrc`](.nvmrc:1) and record the npm version used for the baseline.
+1. Do not update packages, edit [`package-lock.json`](../package-lock.json:1), add overrides, or change engine constraints while the current dependency worktree is mixed with the previous remediation changes.
+2. Use Node `20.18.1` from [`.nvmrc`](../.nvmrc:1) and record the npm version used for the baseline.
 3. Run the baseline commands separately, not only through the graph:
    - `node --version`
    - `npm --version`
@@ -124,7 +124,7 @@ This chain must be handled as one migration unit. Removing or overriding one nes
 
 ### Phase 1 — Make clean-install verification meaningful
 
-**Evidence:** [`clean-install-check.mjs`](scripts/clean-install-check.mjs:17) archives committed `HEAD`, while current working-tree verification passes. The committed snapshot fails tracked documentation/skill references and formatting in the archive.
+**Evidence:** [`clean-install-check.mjs`](../scripts/clean-install-check.mjs:17) archives committed `HEAD`, while current working-tree verification passes. The committed snapshot fails tracked documentation/skill references and formatting in the archive.
 
 **Actions:**
 
@@ -134,7 +134,7 @@ This chain must be handled as one migration unit. Removing or overriding one nes
    - Confirm whether formatting failure is caused by archived line endings or a committed file difference; do not generate a substitute `.prettierignore` that hides it.
    - If a real `.prettierignore` is required by the project, add it as a reviewed repository file and test it in both the checkout and archive. Do not manufacture one solely for the clean-install script.
 3. Add a regression test for the clean-install script’s committed-tree contract and make CI run it after the candidate commit is present.
-4. Run [`npm run verify`](package.json:37) and the clean-install check from a clean CI-like checkout.
+4. Run [`npm run verify`](../package.json:39) and the clean-install check from a clean CI-like checkout.
 
 **Expected dependency effect:** none; this phase repairs verification inputs rather than changing the graph.
 
@@ -149,20 +149,20 @@ This chain must be handled as one migration unit. Removing or overriding one nes
 **Actions:**
 
 1. Search the entire repository, including ignored-but-required local workflow files only as read-only evidence, for `@playwright/test`, `esbuild`, and `@types/uuid` usage.
-2. Confirm whether maintainers use Playwright manually or externally. If not, remove only `@playwright/test` from [`package.json`](package.json:53) and regenerate the lockfile with npm, never hand-edit it.
+2. Confirm whether maintainers use Playwright manually or externally. If not, remove only `@playwright/test` from [`package.json`](../package.json:53) and regenerate the lockfile with npm, never hand-edit it.
 3. Determine whether `esbuild` is intentionally direct tooling or only a Vite/Vitest transitive dependency. If it is redundant, remove the direct declaration; do not remove the transitive copy independently.
 4. Determine whether `@types/uuid` is still required by the selected UUID version and TypeScript resolution. Remove only if a clean `npm ci`, typecheck, and focused UUID tests prove it is unnecessary.
-5. Do not remove any package used by [`sideload`](package.json:19), [`stop`](package.json:20), [`validate-manifest.mjs`](scripts/validate-manifest.mjs:308), Webpack, Vitest, or the verification graph.
+5. Do not remove any package used by [`sideload`](../package.json:21), [`stop`](../package.json:22), [`validate-manifest.mjs`](../scripts/validate-manifest.mjs:1), Webpack, Vitest, or the verification graph.
 
 **Expected tree effect:** fewer root declarations only; transitive dependencies remain until their owning packages change.
 
 **Validation:** `npm ci`, `npm ls --depth=0`, `npm explain` for removed names, `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build:check`, and `npm run verify`.
 
-**Rollback:** restore the exact prior [`package.json`](package.json) declaration and regenerate the lockfile from that state; do not restore stale lockfile fragments by hand.
+**Rollback:** restore the exact prior [`package.json`](../package.json:1) declaration and regenerate the lockfile from that state; do not restore stale lockfile fragments by hand.
 
 ### Phase 3 — Evaluate supported Office tooling without removing sideloading
 
-**Evidence:** sideloading is explicitly required by the maintainer decision and by [`package.json`](package.json:19). The warnings originate in the `office-addin-debugging` -> TeamsFx chain.
+**Evidence:** sideloading is explicitly required by the maintainer decision and by [`package.json`](../package.json:21). The warnings originate in the `office-addin-debugging` -> TeamsFx chain.
 
 **Actions:**
 
@@ -191,7 +191,7 @@ existing Office Add-ins. This workflow does not require Microsoft 365 Agents
 Toolkit and does not change the project structure.
 
 **Evidence:** ToneForge is an existing Node/npm project using
-[`webpack.dev.js`](webpack.dev.js:1), `office-addin-debugging`, Node 20.18.1, and
+[`webpack.dev.js`](../webpack.dev.js:1), `office-addin-debugging`, Node 20.18.1, and
 Windows Edge WebView2.
 
 **Safe implementation:**
@@ -201,18 +201,18 @@ Windows Edge WebView2.
    `Debug: Word Desktop` pre-launch task.
 2. Add tracked [`.vscode/tasks.json`](../.vscode/tasks.json) that invokes
    `npm run start:desktop -- --app Word`.
-3. Add [`dev-server`](package.json:15) as the Microsoft-documented alias that
+3. Add [`dev-server`](../package.json:15) as the Microsoft-documented alias that
    starts the existing Webpack development server.
-4. Add [`start:desktop`](package.json:16) as the Microsoft-documented
+4. Add [`start:desktop`](../package.json:16) as the Microsoft-documented
    `office-addin-debugging start manifest.xml desktop` entry point.
-5. Keep [`dev`](package.json:14), [`sideload`](package.json:19), and
-   [`stop`](package.json:20) as the terminal workflow and recovery path.
+5. Keep [`dev`](../package.json:14), [`sideload`](../package.json:21), and
+   [`stop`](../package.json:22) as the terminal workflow and recovery path.
 6. Adjust [`.gitignore`](../.gitignore) so only the two reviewed VS Code
    debugging files are tracked; other local VS Code settings remain ignored.
 7. Document installation of Microsoft's **Microsoft Debugger for Edge**
    extension, F5 usage, Shift+F5 cleanup, and the documented limitation that
    breakpoints in `Office.initialize` and `Office.onReady` are ignored.
-8. Record F5 evidence in [`docs/manual-verification.md`](docs/manual-verification.md)
+8. Record F5 evidence in [`docs/manual-verification.md`](../docs/manual-verification.md)
    without claiming it as automated or host-matrix evidence.
 
 **Expected dependency effect:** none. The workflow still uses the existing
@@ -248,7 +248,7 @@ approved **full project import/restructure initiative** in an isolated worktree:
 2. Accept the generated `appPackage` and runtime-oriented `src` structure only
    after comparing it against the current architecture and Webpack
    configuration.
-3. Re-establish the canonical [`manifest.json`](manifest.json:1) and XML fallback
+3. Re-establish the canonical [`manifest.json`](../manifest.json:1) and XML fallback
    contract, or explicitly redesign the manifest and deployment strategy.
 4. Prove production build, test coverage, release packaging, Word desktop, and
    Word on the web before proposing any changeover.
@@ -269,7 +269,7 @@ decision, not routine dependency remediation.
 
 #### ESLint
 
-Keep ESLint 9 unless the maintained release line and plugin compatibility are confirmed. Validate [`eslint.config.mjs`](eslint.config.mjs:1), the TypeScript ESLint plugin, `eslint-config-prettier`, zero-warning lint, and all import-boundary checks. Do not upgrade to a new major as part of Office dependency cleanup.
+Keep ESLint 9 unless the maintained release line and plugin compatibility are confirmed. Validate [`eslint.config.mjs`](../eslint.config.mjs:1), the TypeScript ESLint plugin, `eslint-config-prettier`, zero-warning lint, and all import-boundary checks. Do not upgrade to a new major as part of Office dependency cleanup.
 
 #### Glob/tar/rimraf/npmlog/inflight and related packages
 
@@ -277,7 +277,7 @@ Do not treat `npm explain` presence as a removal instruction. These packages are
 
 ### Phase 5 — Lockfile regeneration and deterministic dependency policy
 
-**Evidence:** lockfile version is 3 and the current root snapshot matches [`package.json`](package.json:42).
+**Evidence:** lockfile version is 3 and the current root snapshot matches [`package.json`](../package.json:1).
 
 **Actions:**
 
@@ -297,11 +297,11 @@ Do not treat `npm explain` presence as a removal instruction. These packages are
 
 ### Phase 6 — CI and verification adjustments
 
-**Evidence:** CI uses Node `20.x`, `npm ci`, [`npm run verify`](package.json:37), and the clean-install check in both [`.github/workflows/ci.yml`](.github/workflows/ci.yml:27) and [`.github/workflows/release.yml`](.github/workflows/release.yml:23).
+**Evidence:** CI uses Node `20.x`, `npm ci`, [`npm run verify`](../package.json:39), and the clean-install check in both [`.github/workflows/ci.yml`](../.github/workflows/ci.yml:27) and [`.github/workflows/release.yml`](../.github/workflows/release.yml:23).
 
 **Actions:**
 
-1. Keep the existing canonical graph order in [`verification-graph.mjs`](scripts/verification-graph.mjs:10).
+1. Keep the existing canonical graph order in [`verification-graph.mjs`](../scripts/verification-graph.mjs:1).
 2. Add a dependency-policy check only if it can be deterministic and does not suppress audit findings. Candidate checks:
    - `npm ci --ignore-scripts` dry-run diagnostic;
    - `npm ls --depth=0` consistency;
@@ -350,14 +350,14 @@ Then perform:
 - No removal of `office-addin-debugging`, `office-addin-dev-certs`, or `office-addin-manifest` while sideloading is required.
 - No direct override of `@azure/msal-node`, `@microsoft/teamsfx-cli`, `@azure/ms-rest-*`, `@azure/core-http`, `msal`, `glob`, `tar`, `rimraf`, or `npmlog`.
 - No major React, Fluent UI, Zod, Webpack, Vitest, TypeScript, or UUID migration as routine cleanup.
-- No manual edits to [`package-lock.json`](package-lock.json).
+- No manual edits to [`package-lock.json`](../package-lock.json:1).
 - No `npm audit fix --force`.
 - No weakening of TypeScript strictness, ESLint boundaries, coverage thresholds, manifest validation, or the single Word mutation path.
 - No claim that a deprecation warning is a security vulnerability without advisory reachability analysis.
 
 ## 6. Unresolved risks and confirmation points
 
-1. **Open.** The project’s exact supported npm 10.x version is still not pinned in [`package.json`](package.json:9). The lockfile was regenerated with npm `12.0.2`, which satisfies the declared `>=10.0.0` engine, but CI resolves its own npm. Pin the maintainer-approved npm version if exact reproducibility across machines is required.
+1. **Open.** The project’s exact supported npm 10.x version is still not pinned in [`package.json`](../package.json:9). The lockfile was regenerated with npm `12.0.2`, which satisfies the declared `>=10.0.0` engine, but CI resolves its own npm. Pin the maintainer-approved npm version if exact reproducibility across machines is required.
 2. **Resolved.** The Office tooling parent upgrade path was checked against the live npm registry. `office-addin-debugging@5.1.6` was selected on measured evidence; see Section 7.
 3. **Partially resolved.** Audit findings dropped from 44 to 25. The remainder is classified in Section 7.4; no finding was silently ignored.
 4. **Resolved.** Phase 1 was implemented, and `npm run clean-install:check` now passes end to end against committed `HEAD`; see [Section 7.6](#76-phase-1-clean-install-reproducibility).

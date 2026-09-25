@@ -26,13 +26,8 @@ development broker; Webpack does not inject it into browser assets.
 
 ## Development loop
 
-Start the HTTPS development server:
-
-```bash
-npm run dev
-```
-
-In another terminal, sideload the add-in for local Word testing:
+For terminal-based development, start the add-in and its HTTPS development
+server in one command:
 
 ```bash
 npm run sideload
@@ -71,10 +66,11 @@ Usage:
 
 1. Open **View** | **Run** in Visual Studio Code.
 2. Select **Word Desktop (Edge Chromium)**.
-3. Press F5. The [`Debug: Word Desktop`](.vscode/tasks.json) task runs
+3. Press F5. The [`Debug: Word Desktop`](../.vscode/tasks.json) task runs
    [`start:desktop`](../package.json), which uses `office-addin-debugging` to
    start the [`dev-server`](../package.json) Webpack process and sideload
-   [`manifest.xml`](../manifest.xml).
+   [`manifest.xml`](../manifest.xml). Do not run `npm run dev` first for this
+   workflow: `start:desktop` starts its own development server.
 4. When Word opens, accept the **WebView Stop On Load** prompt so Visual Studio
    Code can attach to the webview.
 5. Set breakpoints in TypeScript or JavaScript and run the corresponding task
@@ -88,7 +84,8 @@ the Troubleshooting view for initialization-time failures that cannot be
 captured with an ordinary source breakpoint.
 
 This configuration is additive: `npm run dev`, `npm run sideload`, and
-`npm run stop` remain the terminal workflow and the supported recovery path.
+`npm run stop` remain the separate terminal workflow and the supported
+recovery path.
 
 ### Microsoft 365 Agents Toolkit is not the current ToneForge workflow
 
