@@ -1,7 +1,7 @@
 # ToneForge Dependency and Toolchain Remediation Plan
 
-**Status:** Implemented for Phases 0, 2, 3, 3A, 4, and 5. Phase 1 is
-**deferred**; Phase 3B is **deferred by maintainer instruction**. See
+**Status:** Implemented for Phases 0, 1, 2, 3, 3A, 4, and 5. Phase 3B is
+**deferred by maintainer instruction**. See
 [Section 7](#7-implementation-evidence) for the verified results.
 
 **Decision already confirmed:** sideloading remains a required debugging path. The legacy Office tooling chain was contained by a parent release, not by nested overrides.
@@ -360,7 +360,7 @@ Then perform:
 1. **Open.** The project’s exact supported npm 10.x version is still not pinned in [`package.json`](package.json:9). The lockfile was regenerated with npm `12.0.2`, which satisfies the declared `>=10.0.0` engine, but CI resolves its own npm. Pin the maintainer-approved npm version if exact reproducibility across machines is required.
 2. **Resolved.** The Office tooling parent upgrade path was checked against the live npm registry. `office-addin-debugging@5.1.6` was selected on measured evidence; see Section 7.
 3. **Partially resolved.** Audit findings dropped from 44 to 25. The remainder is classified in Section 7.4; no finding was silently ignored.
-4. **Open (deferred).** The clean-install check still tests committed `HEAD`. It must be re-run once this change is committed, because the script deliberately ignores the working tree. Phase 1 was not implemented in this pass.
+4. **Resolved.** Phase 1 was implemented, and `npm run clean-install:check` now passes end to end against committed `HEAD`; see [Section 7.6](#76-phase-1-clean-install-reproducibility).
 5. **Resolved.** The prior remediation edits were committed first (`01eee64`); the dependency work is isolated in its own commit.
 
 ## 7. Implementation evidence
@@ -480,3 +480,34 @@ build-artifacts → built-secret-scan → manifest → package → package-check
    breakpoint.
 
 These are host-only actions and cannot be evidenced from the command line.
+
+### 7.6 Phase 1 clean-install reproducibility
+
+`npm run clean-install:check` archives committed `HEAD`, runs `npm ci` in the
+extracted tree, and executes the full 13-stage graph there. It now reports
+`Clean-install reproducibility check passed`.
+
+Three repository-owned causes were found and fixed. None was masked by a
+verification bypass.
+
+| Cause                                                                                                                                                 | Fix                                                                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core.autocrlf=true` on Windows made `git archive` emit CRLF, so `prettier --check` rejected 303 archived files against the `endOfLine: "lf"` setting | Tracked [`.gitattributes`](../.gitattributes) with `* text=auto eol=lf`, CRLF only for `.bat`, `.cmd`, and `.ps1`, and binaries marked `-text`                |
+| Prettier has no parser for `.gitattributes` or `.gitignore`                                                                                           | Tracked [`.prettierignore`](../.prettierignore) listing only Git plumbing, build output, dependencies, and coverage artifacts; no source path is hidden       |
+| Tracked Markdown linked to untracked local paths                                                                                                      | Links into the untracked `ToneForge_Refactor_Implementation/` folder, the gitignored Roo MCP config, and generated husky or git internals replaced with prose |
+
+**The skills gate needed a different fix than the docs gate.** `localTarget()`
+in [`check-docs.mjs`](../scripts/check-docs.mjs) only inspects real Markdown
+links, so converting a link to a code span is sufficient. The reference
+extractor in [`validate-skills.mjs`](../scripts/validate-skills.mjs) also
+matches **backticked** path tokens, so the path in
+[`toneforge-scaffold/SKILL.md`](../.roo/skills/toneforge-scaffold/SKILL.md) had
+to be reworded out of the text rather than merely unlinked. The machine-local
+MCP configuration file itself stays untracked and was never committed.
+
+Links into `node_modules/` remain valid in the archive because `npm ci` runs
+before the verification graph, so those are not repository-owned defects.
+
+**Commits:** `1df4327` (line endings and Prettier ignore), `84ee9eb` and
+`01919cc` (link removals plus removal of the unreferenced root artifact
+`actions-inspect.txt` from tracking).
