@@ -12,15 +12,26 @@ import {
   DocumentNodeSchema,
   type DocumentNode,
   buildNodeId,
+  buildParagraphNodeId,
 } from "../core/domain/DocumentSnapshot";
 
 export interface DocumentSnapshot {
   id: string;
+  /** Compatibility alias for the explicit analysis text. */
   text: string;
+  fullText?: string;
+  analysisText?: string;
+  analysisStart?: number;
+  analysisEnd?: number;
+  analysisTruncated?: boolean;
+  documentVersion?: string;
   paragraphs: string[];
   sentences: string[];
   wordCount: number;
   capturedAt: string;
+  /** Complete-document identity, never the bounded analysis-window hash. */
+  fullDocumentHash?: string;
+  /** Compatibility alias for the complete-document hash. */
   hash?: string;
 }
 
@@ -50,33 +61,69 @@ export async function getDocumentSnapshot(opts: ChunkOptions = {}): Promise<Docu
     body.load("text");
     await context.sync();
     const fullText = body.text ?? "";
-    const text = fullText.length > maxChars ? fullText.slice(0, maxChars) : fullText;
+    const analysisText = fullText.slice(0, maxChars);
+    const analysisStart = 0;
+    const analysisEnd = analysisText.length;
+    const analysisTruncated = fullText.length > maxChars;
+    const fullDocumentHash = hashDocument(fullText);
 
     // Stable document ID: prefer Office.Context.document.id when available,
     // otherwise hash the full text.
     const anyContext = context as unknown as {
-      document?: { id?: string; url?: string };
+      document?: { id?: string; url?: string; properties?: { title?: string } };
     };
-    const docId = anyContext.document?.id ?? hashDocument(fullText);
+    const docId = anyContext.document?.id ?? fullDocumentHash;
+    const capturedAt = new Date().toISOString();
 
     return {
       id: docId,
-      text,
-      paragraphs: splitParagraphs(text),
-      sentences: splitSentences(text),
-      wordCount: countWords(text),
-      capturedAt: new Date().toISOString(),
-      hash: hashDocument(text),
+      text: analysisText,
+      fullText,
+      analysisText,
+      analysisStart,
+      analysisEnd,
+      analysisTruncated,
+      documentVersion: `${capturedAt}:${fullDocumentHash}`,
+      paragraphs: splitParagraphs(analysisText),
+      sentences: splitSentences(analysisText),
+      wordCount: countWords(analysisText),
+      capturedAt,
+      fullDocumentHash,
+      // Legacy `hash` remains analysis-window compatible; freshness consumers
+      // must use `fullDocumentHash`.
+      hash: hashDocument(analysisText),
     };
   });
 }
 
+export interface LiveSelection {
+  text: string;
+  start: number;
+  end: number;
+}
+
 export async function getSelectionText(): Promise<string> {
+  const selection = await getLiveSelection();
+  return selection?.text ?? "";
+}
+
+export async function getLiveSelection(): Promise<LiveSelection | null> {
   return runInWord(async (context) => {
-    const range = context.document.getSelection();
-    range.load("text");
+    const range = context.document.getSelection() as Office.Range & {
+      start?: number;
+      end?: number;
+    };
+    range.load("text", "start", "end");
     await context.sync();
-    return range.text ?? "";
+    if (
+      typeof range.start !== "number" ||
+      typeof range.end !== "number" ||
+      range.start < 0 ||
+      range.end < range.start
+    ) {
+      return null;
+    }
+    return { text: range.text ?? "", start: range.start, end: range.end };
   });
 }
 
@@ -122,61 +169,154 @@ export async function getParagraphRange(startIndex: number, count: number): Prom
   });
 }
 
+interface WordParagraphView {
+  text?: string;
+  style?: string | { name?: string };
+  styleBuiltIn?: string;
+  uniqueLocalId?: string;
+  isListItem?: boolean;
+  load?: (properties: string | string[]) => unknown;
+}
+
 /**
- * Build a structured node graph snapshot alongside the text-only snapshot.
- * The node graph is additive — the text path remains the live-proven path.
+ * Build a structured node graph from Word's paragraph collection. The text
+ * fallback remains available for hosts that do not expose the collection, but
+ * it is explicitly reported as unsupported structural coverage.
  */
 export async function getStructuredSnapshot(
   opts: ChunkOptions = {},
 ): Promise<DocumentSnapshotSchemaType> {
-  const textSnapshot = await getDocumentSnapshot(opts);
-  const fullText = textSnapshot.text;
-  const paragraphRanges = splitParagraphRanges(fullText);
+  const maxChars = opts.maxChars ?? 500_000;
+  return runInWord(async (context) => {
+    const body = context.document.body;
+    const paragraphs = body.paragraphs;
+    body.load("text");
+    paragraphs?.load("items");
+    await context.sync();
 
-  const nodes: DocumentNode[] = paragraphRanges.map(({ text: paraText, start, end }, index) => {
-    const isHeading = paraText.match(/^(Heading\s*\d+\s*:?\s*)/i) !== null;
-    const nodeType = isHeading ? "heading" : "paragraph";
-    const sourcePath = `body/paragraph/${index}`;
-    const nodeId = buildNodeId(nodeType, sourcePath);
-    return DocumentNodeSchema.parse({
-      nodeId,
-      type: nodeType,
-      text: paraText,
-      sourcePath,
-      sourceRange: {
-        nodeId,
-        paragraphIndex: index,
-        startOffset: start,
-        endOffset: end,
-        structuralPath: sourcePath,
-      },
+    const fullText = body.text ?? "";
+    const analysisText = fullText.slice(0, maxChars);
+    const items = Array.isArray(paragraphs?.items) ? (paragraphs.items as WordParagraphView[]) : [];
+    items.forEach((paragraph) => {
+      paragraph.load?.(["text", "style", "styleBuiltIn", "uniqueLocalId", "isListItem"]);
+    });
+    await context.sync();
+
+    const fromCollection = items.length > 0;
+    const fallbackRanges = fromCollection ? [] : splitParagraphRanges(analysisText);
+    let paragraphOffset = 0;
+    const nodes: DocumentNode[] = items.map((paragraph, index) => {
+      const node = buildParagraphNode(paragraph, index, fromCollection);
+      const text = node.text ?? "";
+      const startOffset = fullText.indexOf(text, paragraphOffset);
+      const resolvedStart = startOffset >= 0 ? startOffset : paragraphOffset;
+      const endOffset = resolvedStart + text.length;
+      paragraphOffset = endOffset;
+      return {
+        ...node,
+        sourceRange: {
+          nodeId: node.nodeId,
+          paragraphIndex: index,
+          structuralPath: node.sourcePath,
+          startOffset: resolvedStart,
+          endOffset,
+        },
+      };
+    });
+    fallbackRanges.forEach(({ text, start, end }, index) => {
+      const nodeId = buildParagraphNodeId({ index, text });
+      const nodeType = /^(?:Heading\s*|\s*Heading)([1-9])\b/i.test(text) ? "heading" : "paragraph";
+      nodes.push(
+        DocumentNodeSchema.parse({
+          nodeId,
+          type: nodeType,
+          text,
+          sourcePath: `body/paragraph/${index}`,
+          sourceRange: {
+            nodeId,
+            paragraphIndex: index,
+            startOffset: start,
+            endOffset: end,
+            structuralPath: `body/paragraph/${index}`,
+          },
+          editable: true,
+          includedInGovernance: true,
+          includedInAIReview: true,
+        }),
+      );
+    });
+
+    const bodyNode = DocumentNodeSchema.parse({
+      nodeId: buildNodeId("body", "body"),
+      type: "body",
+      sourcePath: "body",
       editable: true,
       includedInGovernance: true,
       includedInAIReview: true,
     });
-  });
+    const allNodes = [bodyNode, ...nodes];
+    const contentHash = hashDocument(fullText);
+    const structuralHash = hashText(
+      allNodes.map((node) => `${node.nodeId}:${node.type}:${node.sourcePath}`).join("|"),
+    );
+    const anyContext = context as unknown as { document?: { id?: string } };
+    const capturedAt = new Date().toISOString();
 
-  // Add a body node
-  const bodyNode = DocumentNodeSchema.parse({
-    nodeId: buildNodeId("body", "body"),
-    type: "body",
-    sourcePath: "body",
+    return DocumentSnapshotSchema.parse({
+      documentId: anyContext.document?.id ?? contentHash,
+      versionToken: `${capturedAt}:${contentHash}`,
+      contentHash,
+      structuralHash,
+      capturedAt,
+      fullText,
+      analysisText,
+      analysisStart: 0,
+      analysisEnd: analysisText.length,
+      analysisTruncated: fullText.length > maxChars,
+      acquisition: {
+        paragraphsFromWordCollection: fromCollection,
+        structuralCoverage: fromCollection ? "partial" : "unsupported",
+        unsupported: fromCollection
+          ? ["tables", "headers", "footers", "sections", "fields", "controls", "shapes"]
+          : ["wordParagraphCollection"],
+      },
+      nodes: allNodes,
+    });
+  });
+}
+
+function buildParagraphNode(paragraph: WordParagraphView, index: number, fromCollection: boolean) {
+  const text = typeof paragraph.text === "string" ? paragraph.text : "";
+  const styleName =
+    typeof paragraph.style === "string"
+      ? paragraph.style
+      : typeof paragraph.style?.name === "string"
+        ? paragraph.style.name
+        : "Normal";
+  const headingMatch = /^(?:Heading\s*([1-9])|Heading([1-9]))$/i.exec(
+    paragraph.styleBuiltIn ?? styleName,
+  );
+  const nodeType = headingMatch ? "heading" : paragraph.isListItem ? "listItem" : "paragraph";
+  const sourcePath = `body/paragraph/${index}`;
+  const nodeId = buildParagraphNodeId({
+    ...(paragraph.uniqueLocalId ? { uniqueLocalId: paragraph.uniqueLocalId } : {}),
+    index,
+    text,
+  });
+  return DocumentNodeSchema.parse({
+    nodeId,
+    type: nodeType,
+    text,
+    sourcePath,
+    sourceRange: {
+      nodeId,
+      paragraphIndex: index,
+      structuralPath: sourcePath,
+    },
     editable: true,
     includedInGovernance: true,
     includedInAIReview: true,
-  });
-
-  const allNodes = [bodyNode, ...nodes];
-  const contentHash = hashDocument(fullText);
-  const structuralHash = hashText(allNodes.map((n) => `${n.type}:${n.sourcePath}`).join("|"));
-
-  return DocumentSnapshotSchema.parse({
-    documentId: textSnapshot.id,
-    versionToken: `${textSnapshot.capturedAt}:${contentHash}`,
-    contentHash,
-    structuralHash,
-    capturedAt: textSnapshot.capturedAt,
-    nodes: allNodes,
+    ...(fromCollection ? {} : {}),
   });
 }
 

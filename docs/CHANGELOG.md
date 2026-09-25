@@ -4,22 +4,32 @@
 
 - Added additive domain contracts for structured document nodes, governance
   profiles, review requests, and enriched findings/changes/plans.
-- Added state schema v3 with v2/v1 fallback migration and governance profile
-  persistence.
-- Added coverage, protection, rule registry, source navigation, and incremental
-  observer foundations.
+- Added state schema v5 with v0-v4 fallback migration, initial governance-profile
+  seeding, governance-history snapshots, and current-policy revision enforcement.
+- Added single-pass Word paragraph/style acquisition, explicit structural
+  coverage diagnostics, protection, rule registry, source navigation, and a
+  debounced observer with conservative full-rescan fallback.
 - Added Word-native ribbon/task-pane governance surfaces, consent-gated spot
   review, bounded full-document review, UI states, and coverage-gated exports.
 - Added safe-apply preservation/dependency/protection checks, post-apply hash
   verification, command-action registration, absolute AI ranges, bounded review
   batches with freshness re-checks, release staging, and release gates.
-- Automated verification passes typecheck, lint, format, secret/docs scans,
-  tests, 80% core coverage, build, manifest validation, and staging checks.
+- Automated verification uses the shared `toneforge-repository-v1` graph for
+  typecheck, lint, format, source/artifact secret scans, documentation links,
+  skills validation, tests, 80% exercised-core coverage, build, manifest
+  validation, staging, and coherent release-package checks.
+- Hardened planning with complete document identity, unit-aware targets, change
+  preconditions, source/approval lineage, exact AI source slices, fail-closed
+  Apply readiness, and credential-free ordinary state.
+- Kept `manifest.xml` as an explicit `ShowTaskpane` navigation fallback while
+  `manifest.json` remains the execute-function manifest; parity validation checks
+  their documented command identities, labels, and destinations rather than
+  claiming equivalent action mechanisms.
 - Hardened production bundling with a separate runtime chunk, vendor/common
   splitting, dependency cleanup, and a 600 KiB asset/initial-page budget enforced
   by `npm run build:check` without suppressing Webpack diagnostics.
-- Release acceptance remains blocked only by the external Word host matrix and
-  live performance/accessibility/security evidence; see
+- Release acceptance remains blocked by the external Word host matrix and
+  live performance/accessibility/security/provider/production-custody evidence; see
   [`ROADMAP.md`](../ROADMAP.md) for canonical status.
 
 ## 0.1.0 — 2026-09-19 — Scaffold

@@ -24,6 +24,7 @@ import { FormattingSnapshotSchema } from "../formatting/formattingSnapshot";
 import { unifyFindings } from "./unifiedFindings";
 import { detectSemanticDeviations } from "./deviationEngine";
 import { buildCoverage } from "./coverage";
+import type { AnalysisContext } from "./analysisContext";
 import { logger } from "../shared/utils/logger";
 import { FindingSchema } from "../core/domain/Finding";
 import type { Finding } from "../core/domain/Finding";
@@ -84,10 +85,27 @@ export const ConsistencyReportSchema = z.object({
         .default([]),
       processedCharacterCount: z.number().int().nonnegative(),
       revisedCharacterCount: z.number().int().nonnegative(),
+      examinedNodeIds: z.array(z.string()).default([]),
       excluded: z
         .array(z.object({ reason: z.string(), locations: z.array(z.string()).max(10) }))
         .default([]),
+      unsupported: z.array(z.string()).default([]),
       unprocessed: z.array(z.string()).default([]),
+      plannedChangeCount: z.number().int().nonnegative().default(0),
+      appliedChangeCount: z.number().int().nonnegative().default(0),
+      changedNodeIds: z.array(z.string()).default([]),
+      acquisition: z
+        .object({
+          acquisitionReadCount: z.number().int().nonnegative(),
+          syncCount: z.number().int().nonnegative(),
+          analyzedCharacterCount: z.number().int().nonnegative(),
+          completeDocumentCharacterCount: z.number().int().nonnegative(),
+          fullBodyReadCount: z.number().int().nonnegative(),
+          paragraphCollectionRead: z.boolean(),
+          incremental: z.literal(false),
+          incrementalReason: z.string().trim().min(1),
+        })
+        .optional(),
       complete: z.boolean().default(true),
     })
     .optional(),
@@ -96,8 +114,8 @@ export const ConsistencyReportSchema = z.object({
 export type ConsistencyReport = z.infer<typeof ConsistencyReportSchema>;
 
 export interface CheckConsistencyOptions {
-  text: string;
-  profile: StyleProfile;
+  text?: string;
+  profile?: StyleProfile;
   snapshot?: FormattingSnapshot;
   docHash?: string;
   includeRawText?: boolean;
@@ -105,6 +123,7 @@ export interface CheckConsistencyOptions {
   /** Injected semantic provider; tests use MockAdapter only. */
   registry?: LlmSemanticProvider;
   nodes?: DocumentNode[];
+  context?: AnalysisContext;
 }
 
 function emptySummary(): ConsistencySummary {
@@ -172,15 +191,36 @@ function buildReport(
 export async function checkConsistency(
   options: CheckConsistencyOptions,
 ): Promise<ConsistencyReport> {
-  const { text, docHash, includeRawText = false, signal, registry } = options;
+  const context = options.context;
+  const text = context?.text ?? options.text;
+  const docHash = options.docHash ?? context?.identity.contentHash;
+  const includeRawText = options.includeRawText ?? false;
+  const { signal, registry } = options;
+  if (text === undefined || text === null) {
+    throw new Error("checkConsistency requires text or an AnalysisContext");
+  }
 
   // Parse inputs at the boundary so malformed profile/snapshot fail fast
   // with typed Zod errors instead of throwing deep inside engines.
-  const profile = StyleProfileSchema.parse(options.profile);
-  const snapshot = options.snapshot ? FormattingSnapshotSchema.parse(options.snapshot) : undefined;
+  const profileInput = context?.profile ?? options.profile;
+  if (profileInput === undefined) {
+    throw new Error("checkConsistency requires a StyleProfile or an AnalysisContext");
+  }
+  const profile = StyleProfileSchema.parse(profileInput);
+  const snapshotInput = context?.formatting ?? options.snapshot;
+  const snapshot = snapshotInput ? FormattingSnapshotSchema.parse(snapshotInput) : undefined;
 
+  const nodes = context?.nodes ?? options.nodes;
+  const coverage =
+    nodes && nodes.length > 0
+      ? buildCoverage({
+          nodes,
+          text,
+          ...(context ? { acquisition: context.acquisition } : {}),
+        })
+      : undefined;
   if (text.trim().length === 0) {
-    return buildReport([], profile.id, docHash ?? hashText(text), { status: "skipped" });
+    return buildReport([], profile.id, docHash ?? hashText(text), { status: "skipped" }, coverage);
   }
 
   const deterministic: Finding[] = [];
@@ -215,12 +255,6 @@ export async function checkConsistency(
   }
 
   const findings = unifyFindings({ deterministic, formatting, semantic });
-
-  // Build coverage report if nodes are provided
-  let coverage: ConsistencyReport["coverage"] | undefined;
-  if (options.nodes && options.nodes.length > 0) {
-    coverage = buildCoverage({ nodes: options.nodes, text });
-  }
 
   return buildReport(findings, profile.id, docHash ?? hashText(text), semanticStatus, coverage);
 }

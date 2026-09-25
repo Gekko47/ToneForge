@@ -6,7 +6,7 @@ import {
   setStage01Passed,
   validatePlanBeforeApply,
 } from "../../../src/word/revisionAdapter";
-import { createChangePlan } from "../../../src/core/domain/ChangePlan";
+import { createTestPlan } from "../../fixtures/changePlans";
 import type { Change } from "../../../src/core/domain/Change";
 import type { WordCapabilities } from "../../../src/word/capabilityProbe";
 import { logger } from "../../../src/shared/utils/logger";
@@ -110,6 +110,7 @@ function makeChange(overrides: Partial<Change> = {}): Change {
     source: "deterministic" as ChangeSource,
     risk: "none" as const,
     approvalRequired: false,
+    approvalState: "notRequired",
     dependsOn: [],
     ...overrides,
   };
@@ -131,7 +132,7 @@ describe("revisionAdapter", () => {
 
   describe("applyChangePlan", () => {
     it("refuses to apply when Stage 01 gate is not passed", async () => {
-      const plan = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
 
       const results = await applyChangePlan(plan, "hash1");
 
@@ -146,7 +147,7 @@ describe("revisionAdapter", () => {
 
     it("logs validation failure when plan is invalid", async () => {
       setStage01Passed(true, FULL_CAPABILITIES);
-      const plan = createChangePlan("hash1", "doc1", []);
+      const plan = createTestPlan("hash1", "doc1", []);
 
       await applyChangePlan(plan, "hash1");
 
@@ -158,7 +159,7 @@ describe("revisionAdapter", () => {
 
     it("refuses when currentDocHash is missing", async () => {
       setStage01Passed(true, FULL_CAPABILITIES);
-      const plan = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
 
       const results = await applyChangePlan(plan, "");
 
@@ -169,7 +170,7 @@ describe("revisionAdapter", () => {
 
     it("logs hash mismatch when currentDocHash differs", async () => {
       setStage01Passed(true, FULL_CAPABILITIES);
-      const plan = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
 
       await applyChangePlan(plan, "different-hash");
 
@@ -199,7 +200,7 @@ describe("revisionAdapter", () => {
         InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
       });
 
-      const plan = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
 
       await applyChangePlan(plan, "hash1");
 
@@ -227,7 +228,7 @@ describe("revisionAdapter", () => {
         InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
       });
 
-      const plan = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
 
       await applyChangePlan(plan, "hash1");
 
@@ -251,7 +252,7 @@ describe("revisionAdapter", () => {
         InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
       });
 
-      const plan = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
 
       const results = await applyChangePlan(plan, "hash1");
 
@@ -278,9 +279,12 @@ describe("revisionAdapter", () => {
         InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
       });
 
-      const plan = createChangePlan("hash1", "doc1", [
-        makeChange({ range: { start: 0, end: 100 } }),
-      ]);
+      const plan = createTestPlan(
+        "hash1",
+        "doc1",
+        [makeChange({ range: { start: 0, end: 100 } })],
+        "hi",
+      );
 
       const results = await applyChangePlan(plan, "hash1");
 
@@ -314,7 +318,7 @@ describe("revisionAdapter", () => {
         InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
       });
 
-      const plan = createChangePlan("hash1", "doc1", [
+      const plan = createTestPlan("hash1", "doc1", [
         makeChange({ type: "insertText", payload: { text: "x" } }),
       ]);
 
@@ -326,8 +330,26 @@ describe("revisionAdapter", () => {
   });
 
   describe("validatePlanBeforeApply", () => {
+    it("requires the current governance revision for a governed plan", () => {
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
+      plan.governancePolicyRevision = 2;
+
+      expect(validatePlanBeforeApply(plan)).toContain(
+        "Current governance policy revision is required to apply a governed plan",
+      );
+    });
+
+    it("rejects a governed plan when the current policy revision changed", () => {
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
+      plan.governancePolicyRevision = 2;
+
+      expect(validatePlanBeforeApply(plan, false, undefined, 3)).toContain(
+        "Governance policy revision mismatch: plan 2, current 3",
+      );
+    });
+
     it("returns empty array for valid plan", () => {
-      const plan = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
 
       const problems = validatePlanBeforeApply(plan);
 
@@ -335,7 +357,7 @@ describe("revisionAdapter", () => {
     });
 
     it("reports missing docHash", () => {
-      const plan = createChangePlan("hash1", "doc1", []);
+      const plan = createTestPlan("hash1", "doc1", []);
       (plan as { docHash: string }).docHash = "";
 
       const problems = validatePlanBeforeApply(plan);
@@ -344,7 +366,7 @@ describe("revisionAdapter", () => {
     });
 
     it("reports empty changes", () => {
-      const plan = createChangePlan("hash1", "doc1", []);
+      const plan = createTestPlan("hash1", "doc1", []);
 
       const problems = validatePlanBeforeApply(plan);
 
@@ -352,7 +374,7 @@ describe("revisionAdapter", () => {
     });
 
     it("reports stale plan", () => {
-      const plan = createChangePlan("hash1", "doc1", [makeChange()]);
+      const plan = createTestPlan("hash1", "doc1", [makeChange()]);
       plan.stale = true;
 
       const problems = validatePlanBeforeApply(plan);
@@ -364,7 +386,7 @@ describe("revisionAdapter", () => {
       // Bypass createChangePlan: the Zod schema already rejects start > end,
       // so construct the plan object directly to exercise the adapter's
       // own pre-flight range check.
-      const base = createChangePlan("hash1", "doc1", [makeChange()]);
+      const base = createTestPlan("hash1", "doc1", [makeChange()]);
       const plan = {
         ...base,
         changes: [{ ...makeChange(), range: { start: 5, end: 2 } }],
@@ -376,17 +398,19 @@ describe("revisionAdapter", () => {
     });
 
     it("accepts an empty reset-character-formatting payload", () => {
-      const base = createChangePlan("hash1", "doc1", [makeChange()]);
+      const base = createTestPlan("hash1", "doc1", [makeChange()]);
+      const change = base.changes[0];
+      if (!change) throw new Error("Expected fixture change");
       const plan = {
         ...base,
-        changes: [{ ...makeChange(), type: "resetCharacterFormatting" as const, payload: {} }],
+        changes: [{ ...change, type: "resetCharacterFormatting" as const, payload: {} }],
       };
 
       expect(validatePlanBeforeApply(plan)).toHaveLength(0);
     });
 
     it("rejects malformed setListLevel payloads independently of reset formatting", () => {
-      const base = createChangePlan("hash1", "doc1", [makeChange()]);
+      const base = createTestPlan("hash1", "doc1", [makeChange()]);
       const plan = {
         ...base,
         changes: [{ ...makeChange(), type: "setListLevel" as const, payload: { level: -1 } }],
@@ -403,7 +427,7 @@ describe("revisionAdapter", () => {
       // Bypass createChangePlan: the Zod schema already rejects an empty
       // insertText payload, so construct directly to exercise the adapter's
       // own pre-flight payload check.
-      const base = createChangePlan("hash1", "doc1", [makeChange()]);
+      const base = createTestPlan("hash1", "doc1", [makeChange()]);
       const plan = {
         ...base,
         changes: [{ ...makeChange(), type: "insertText" as const, payload: {} }],

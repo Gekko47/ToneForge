@@ -18,15 +18,22 @@ Harden AI and document-data handling without weakening deterministic governance.
 
 ## Verification
 
-- [x] Prompt, response-validation, review, safe-apply, and persistence tests pass
-      with `MockAdapter` where AI is involved.
-- [x] `npm run lint`, typecheck, format, test, build, and manifest validation pass.
+- [x] Prompt, response-validation, review, safe-apply, persistence, redaction,
+      sentinel-build, and provider-mode tests pass with `MockAdapter` where AI
+      is involved.
+- [x] Browser bundles contain only a non-secret allowlist; ordinary state is v5
+      and legacy API-key fields are removed and purged.
 - [ ] Formal security review and release sign-off.
-- [ ] Decide and document the treatment of the known key-storage limitation.
-- [ ] Complete host-specific consent and data-flow verification.
+- [ ] Approve production broker authentication/authorization and credential
+      custody.
+- [ ] Complete live browser and host-specific consent/data-flow verification.
 
 ## Current limitation
 
-The current privacy posture is implemented and tested, but the localStorage
-fallback is not encrypted by this repository. That limitation and the remaining
-formal review are tracked in the canonical roadmap.
+The local same-origin/session-nonce broker is development-only and does not
+establish a production identity or authorization model. Browser-held production
+API keys are not a supported release decision. Formal threat modeling, live
+browser credential-flow evidence, and host-specific data-flow verification
+remain release gates in [`ROADMAP.md`](../../ROADMAP.md) and
+[`docs/privacy-security.md`](../privacy-security.md). Local storage is not
+claimed to be encrypted by this repository.

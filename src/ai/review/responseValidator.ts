@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { approvalPolicyForFinding } from "../../changes/approvalPolicy";
 import { ChangeSchema, type Change } from "../../core/domain/Change";
 import { FindingSchema, type Finding } from "../../core/domain/Finding";
 import { SpotResponseSchema, type SpotResponse } from "../prompts/spotPrompts";
@@ -26,9 +27,12 @@ export function validateReviewResponse(
     if (entry.end < entry.start || entry.end > context.sourceText.length) {
       throw new Error("AI review returned a range outside the supplied context");
     }
-    if (entry.actual && !context.sourceText.includes(entry.actual)) {
-      throw new Error("AI review invented text outside the supplied context");
+    const exactSlice = context.sourceText.slice(entry.start, entry.end);
+    if (entry.actual !== undefined && entry.actual !== exactSlice) {
+      throw new Error("AI review actual does not match the exact source slice");
     }
+    const actionable =
+      entry.actual !== undefined && entry.expected !== undefined && entry.expected !== exactSlice;
     const finding = FindingSchema.parse({
       id: uuidv4(),
       kind: "semantic",
@@ -45,14 +49,19 @@ export function validateReviewResponse(
       source: "ai",
       risk: entry.risk,
       reversible: true,
-      status: "new",
+      status: actionable ? "new" : "deferred",
+      actionable,
+      ...(!actionable && entry.actual === undefined
+        ? { advisoryReason: "The model did not identify an exact source slice" }
+        : {}),
       ...(entry.actual !== undefined ? { actual: entry.actual } : {}),
       ...(entry.expected !== undefined ? { expected: entry.expected } : {}),
       ...(entry.explanation !== undefined ? { explanation: entry.explanation } : {}),
       confidence: entry.confidence,
     });
     findings.push(finding);
-    if (entry.expected && entry.expected !== entry.actual) {
+    if (actionable && entry.expected !== undefined) {
+      const approval = approvalPolicyForFinding(finding);
       changes.push(
         ChangeSchema.parse({
           id: uuidv4(),
@@ -62,10 +71,11 @@ export function validateReviewResponse(
           rationale: entry.explanation ?? entry.category,
           source: "ai",
           risk: entry.risk,
-          approvalRequired: true,
+          ...approval,
           dependsOn: [],
           findingId: finding.id,
           reversible: true,
+          precondition: { kind: "text", expectedText: exactSlice },
         }),
       );
     }

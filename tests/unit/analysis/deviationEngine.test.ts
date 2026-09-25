@@ -39,6 +39,10 @@ describe("detectSemanticDeviations", () => {
     for (const finding of findings) {
       expect(() => FindingSchema.parse(finding)).not.toThrow();
       expect(finding.kind).toBe("semantic");
+      expect(finding.source).toBe("ai");
+      expect(finding.risk).toBe("medium");
+      expect(finding.actionable).toBe(false);
+      expect(finding.status).toBe("deferred");
       expect(finding.category).toBe("semantic-deviation");
       expect(finding.confidence).toBeLessThan(1);
     }
@@ -169,6 +173,27 @@ describe("detectSemanticDeviations", () => {
 
     expect(calls).toBe(2);
     expect(findings).toHaveLength(1);
+  });
+
+  it("does not let a full-range advisory semantic finding become actionable", async () => {
+    const { planChanges } = await import("../../../src/changes/planner");
+    const { registry } = mockRegistryWith(
+      JSON.stringify([
+        { deviation: "D", severity: "high", suggestion: 'Use "fixed wording" here.' },
+      ]),
+    );
+    const semantic = await detectSemanticDeviations("Text.", PROFILE, {
+      includeRawText: true,
+      registry,
+    });
+    const plan = planChanges({
+      findings: semantic,
+      docHash: "hash",
+      baseDocId: "doc",
+    });
+
+    expect(plan.findings?.[0]?.actionable).toBe(false);
+    expect(plan.changes).toEqual([]);
   });
 
   it("feeds unifyFindings semantic input", async () => {

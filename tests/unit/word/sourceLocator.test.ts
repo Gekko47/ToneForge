@@ -79,12 +79,13 @@ describe("navigateToFinding", () => {
     vi.restoreAllMocks();
   });
 
-  it("navigates to a finding by narrowing the documented whole-body range", async () => {
+  it("narrowing a whole-body range reports the actual offset strategy", async () => {
     const finding = makeFinding();
     const result = await navigateToFinding({ finding });
     expect(result.navigated).toBe(true);
-    expect(result.method).toBe("nodeId");
+    expect(result.method).toBe("offsets");
     expect(result.message).toContain(finding.id);
+    expect(result.message).toContain("abc123");
     const office = (globalThis as unknown as { Office: { run: ReturnType<typeof vi.fn> } }).Office;
     expect(office.run).toHaveBeenCalledTimes(1);
     expect(rangeMock.set).toHaveBeenCalledWith({ start: 5, end: 15 });

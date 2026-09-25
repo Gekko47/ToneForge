@@ -48,7 +48,7 @@ export function captureSample(
   const selectionTrimmed = selection.trim();
   const useSelection = preferSelection && selectionTrimmed.length > 0;
 
-  const rawText = useSelection ? selectionTrimmed : snapshot.text;
+  const rawText = useSelection ? selectionTrimmed : (snapshot.analysisText ?? snapshot.text);
   const text = rawText.length > maxChars ? rawText.slice(0, maxChars) : rawText;
 
   return {

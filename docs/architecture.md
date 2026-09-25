@@ -65,10 +65,13 @@ Deterministic rules/formatting   Optional AI review
    versioned `StyleProfile`.
 3. `GovernanceProfile` adds policy and provenance without replacing the style
    contract.
-4. `word/documentReader` preserves the text snapshot and adds
-   `getStructuredSnapshot()` for node DTOs.
-5. `analysis/consistencyChecker` composes deterministic findings, formatting
-   findings, optional semantic deviations, and optional coverage.
+4. `word/analysisAcquisition` performs the production single-pass Word read and
+   creates complete identity, bounded analysis text, structured paragraph/style
+   nodes, formatting provenance, capability data, and explicit unsupported scope.
+   `word/documentReader` remains the compatibility text/structured reader.
+5. `analysis/analysisContext` carries the immutable acquisition DTOs;
+   `analysis/consistencyChecker` composes deterministic findings, formatting
+   findings, optional semantic deviations, and coverage from that context.
 6. `analysis/unifiedFindings` merges findings deterministically.
 7. `changes/planner` produces validated `ChangePlan` objects; it never reads Word
    or mutates the document.
@@ -127,12 +130,14 @@ profile does not overload terminology records with undocumented formatting keys.
 
 ### Structured snapshot
 
-The current structured reader derives a body node and paragraph/heading nodes
-from the text snapshot. It is an additive compatibility seam, not proof that all
-Word structures (tables, cells, lists, captions, headers, footers, fields, and
-shapes) are extracted from the live object model. Coverage must not be described
-as complete until those limitations are either implemented or explicitly
-scoped.
+The production acquisition path reads Word paragraph items and style metadata
+and builds body, paragraph, and style-derived heading nodes with stable local
+identities. It records partial or unsupported coverage explicitly. It does not
+claim complete extraction of tables, cells, captions, headers, footers, fields,
+controls, sections, or shapes; those structures remain outside the current
+release scope and must keep coverage qualified. The older text-derived
+`getStructuredSnapshot()` path remains a compatibility fallback, not the
+authoritative production acquisition path.
 
 ### Observer
 
@@ -174,17 +179,30 @@ helpers are not rendered in the production taskpane.
   budgets.
 - Zod runtime contracts and Vitest/jsdom tests.
 - ESLint, Prettier, Husky, lint-staged, and commitlint.
-- GitHub Actions CI runs typecheck, lint, format, coverage, build, and manifest
-  validation; `npm run build:check` fails on missing, unhashed, oversized, or
-  unreferenced production artifacts. Word-host evidence remains tracked in
+- GitHub Actions CI and release use the named `toneforge-repository-v1`
+  verification graph in [`scripts/verification-graph.mjs`](../scripts/verification-graph.mjs).
+  It includes typecheck, lint, format, source secret scan, documentation links,
+  skills validation, tests, coverage, build/artifact checks, built-secret scan,
+  manifest validation, release staging, and release package contents.
+  `npm run clean-install:check` proves a clean temporary install follows the
+  same documented graph without touching the checkout's `dist/` or
+  dependencies. Word-host evidence remains a separate human release gate in
   [`ROADMAP.md`](../ROADMAP.md).
 
 ## Security and privacy posture
 
-- API keys enter through Settings and are stored in `Office.roamingSettings` or
-  the documented localStorage fallback.
+- Ordinary application state contains provider/model/broker configuration and
+  consent, never API keys. State v5 migrates v0-v4 records, removes legacy
+  credential fields, and purges legacy storage keys while preserving consent.
+- Webpack compiles only an explicit non-secret environment allowlist. Local
+  development reads `.env` only in the Node process and exposes a loopback
+  same-origin or session-nonce LLM broker; browser requests do not include an
+  authorization header. The broker validates content type, request schema, and
+  bounded body size.
 - Prompt builders require explicit raw-text opt-in.
-- Provider errors and logger context redact secret-like fields.
+- Provider errors and recursive logger context redact credential fields,
+  prompt/document-content fields, and secret-shaped strings.
 - Protected content and incomplete coverage fail closed.
-- The localStorage fallback is a documented MVP limitation; formal security
-  review and host evidence remain open.
+- Production broker authentication/custody, the formal threat model, and live
+  browser/host evidence remain open. Browser-held production API keys are not a
+  supported release decision in this repository.

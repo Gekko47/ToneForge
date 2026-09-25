@@ -13,6 +13,7 @@
 import React from "react";
 import { applyReviewedPlan, reformatDocument, type ReformatResult } from "../../reformat";
 import { loadState } from "../../core/state/persistence";
+import { createGovernanceProfile } from "../../core/domain/GovernanceProfile";
 import type { StyleProfile } from "../../core/domain/StyleProfile";
 import type { LlmSemanticProvider } from "../../ai/providers/LlmProvider";
 import type { WordCapabilities } from "../../word/capabilityProbe";
@@ -53,7 +54,12 @@ export default function ReformatPanel({
   const [phase, setPhase] = React.useState<PanelPhase>("idle");
   const [result, setResult] = React.useState<ReformatResult | null>(null);
   const [messages, setMessages] = React.useState<PanelMessage[]>([]);
-  const includeRawText = loadState().settings.semanticOptIn;
+  const state = loadState();
+  const includeRawText = state.settings.semanticOptIn;
+  const governanceId = state.activeGovernanceProfileId ?? state.activeProfileId;
+  const governance =
+    (governanceId === null ? undefined : state.governanceProfiles[governanceId]) ??
+    createGovernanceProfile(profile);
 
   function pushMessages(next: PanelMessage[]): void {
     setMessages((previous) => [...previous, ...next]);
@@ -67,6 +73,7 @@ export default function ReformatPanel({
         profile,
         preview: true,
         includeRawText,
+        policy: governance,
         ...(maxChars !== undefined ? { maxChars } : {}),
         ...(registry ? { registry } : {}),
       });
@@ -84,7 +91,7 @@ export default function ReformatPanel({
         pushMessages([
           {
             kind: "info",
-            text: `Preview ready: ${preview.plan.changes.length} change(s), ${preview.plan.conflicts.length} conflict(s). Review below, then Apply.`,
+            text: `Preview ready: ${preview.plan.changes.length} change(s), ${(preview.plan.conflicts ?? []).length} conflict(s). Review below, then Apply.`,
           },
         ]);
       }
@@ -111,6 +118,8 @@ export default function ReformatPanel({
     try {
       const applied = await applyReviewedPlan({
         plan: result.plan,
+        currentGovernancePolicyRevision: governance.version,
+        ...(result.report.coverage ? { coverage: result.report.coverage } : {}),
         allowConflictingApply: false,
         ...(maxChars !== undefined ? { maxChars } : {}),
       });
@@ -179,11 +188,52 @@ export default function ReformatPanel({
     : [];
   const hostSupportsPlan =
     capabilitiesVerified && capabilities.supportsRevisions && unsupportedCapabilities.length === 0;
+  const unapprovedChanges =
+    result?.plan.changes.filter(
+      (change) => change.approvalRequired && change.approvalState !== "approved",
+    ) ?? [];
+  const preconditionFailures =
+    result?.plan.changes.filter((change) => change.precondition === undefined) ?? [];
   const canApply =
     result !== null &&
+    result.plan.schemaVersion === 2 &&
     result.plan.changes.length > 0 &&
     !result.plan.stale &&
-    result.plan.conflicts.length === 0;
+    (result.plan.conflicts ?? []).length === 0 &&
+    hostSupportsPlan &&
+    unapprovedChanges.length === 0 &&
+    preconditionFailures.length === 0;
+  const readinessReasons = result
+    ? [
+        ...(result.plan.schemaVersion !== 2
+          ? ["Preview again to create a schema version 2 plan."]
+          : []),
+        ...(result.report.coverage?.complete === false
+          ? [
+              "Analysis coverage is incomplete; apply is advisory and may be refused by reviewed apply.",
+            ]
+          : []),
+        ...(result.plan.stale ? ["Preview again because the document changed."] : []),
+        ...((result.plan.conflicts ?? []).length > 0
+          ? ["Resolve plan conflicts before applying."]
+          : []),
+        ...unsupportedCapabilities.map(
+          (capability) => `This host cannot perform ${capability.replace("supports", "")}.`,
+        ),
+        ...(!result.tracking.managed ? ["Managed Track Changes is unavailable."] : []),
+        ...(unapprovedChanges.length > 0
+          ? [`${unapprovedChanges.length} change(s) require approval before applying.`]
+          : []),
+        ...(preconditionFailures.length > 0
+          ? [`${preconditionFailures.length} change(s) have no verifiable target precondition.`]
+          : []),
+        ...(!hostSupportsPlan && result.plan.changes.length > 0
+          ? ["The current host capability check does not support this plan."]
+          : []),
+      ]
+    : [];
+  const planCoverage = result?.report.coverage ?? null;
+  const coverageIncomplete = planCoverage?.complete === false;
 
   return (
     <section aria-label="Safe reformat" style={{ marginTop: "1.5rem" }}>
@@ -225,30 +275,27 @@ export default function ReformatPanel({
           {phase === "applying" ? "Applying…" : "Apply changes"}
         </button>
       </div>
-      {!capabilitiesVerified && (
-        <p id="apply-readiness" className="tf-sub">
-          Apply performs a fresh host capability check immediately before any tracked edit.
-        </p>
-      )}
-      {capabilitiesVerified && !canApply && result !== null && (
-        <ul id="apply-readiness" className="tf-sub">
-          {result.plan.stale && <li>Preview again because the document changed.</li>}
-          {result.plan.conflicts.length > 0 && <li>Resolve plan conflicts before applying.</li>}
-          {unsupportedCapabilities.map((capability) => (
-            <li key={capability}>This host cannot perform {capability.replace("supports", "")}.</li>
+      {(!capabilitiesVerified || !canApply) && (
+        <ul id="apply-readiness" className="tf-sub" aria-live="polite">
+          {!capabilitiesVerified && (
+            <li>
+              Apply performs a fresh host capability check immediately before any tracked edit.
+            </li>
+          )}
+          {readinessReasons.map((reason) => (
+            <li key={reason}>{reason}</li>
           ))}
-          {!result.tracking.managed && <li>Managed Track Changes is unavailable.</li>}
         </ul>
       )}
 
-      {result && result.plan.conflicts.length > 0 && (
+      {result && (result.plan.conflicts ?? []).length > 0 && (
         <div style={{ marginTop: "0.75rem" }}>
           <p style={{ color: "#a4262c" }}>
-            {result.plan.conflicts.length} conflict(s) block application. Regenerate the preview
-            after reviewing the conflict list.
+            {(result.plan.conflicts ?? []).length} conflict(s) block application. Regenerate the
+            preview after reviewing the conflict list.
           </p>
           <ul aria-live="polite">
-            {result.plan.conflicts.map((conflict, index) => {
+            {(result.plan.conflicts ?? []).map((conflict, index) => {
               const message = typeof conflict === "string" ? conflict : conflict.message;
               return <li key={index}>{message}</li>;
             })}
@@ -257,16 +304,30 @@ export default function ReformatPanel({
       )}
 
       {result && result.plan.changes.length > 0 && (
-        <ul aria-live="polite" style={{ marginTop: "0.75rem" }}>
-          {result.report.findings.slice(0, 20).map((finding) => (
-            <li key={finding.id}>
-              {finding.message} [{finding.range.start}, {finding.range.end}]
-            </li>
-          ))}
-          {result.report.findings.length > 20 && (
-            <li>…and {result.report.findings.length - 20} more finding(s).</li>
-          )}
-        </ul>
+        <section aria-label="Change previews" style={{ marginTop: "0.75rem" }}>
+          <h3>Change previews</h3>
+          <p className="tf-sub" role="status">
+            Coverage: {coverageIncomplete ? "incomplete" : "complete"}; plan changes:{" "}
+            {result.plan.changes.length}; governance policy revision:{" "}
+            {result.plan.governancePolicyRevision ?? "unavailable"}.
+          </p>
+          <ul aria-live="polite">
+            {result.plan.changes.map((change) => {
+              const finding = result.report.findings.find((item) => item.id === change.findingId);
+              return (
+                <li key={change.id}>
+                  <div>
+                    {change.type} — source: {change.source ?? "unavailable"}; approval:{" "}
+                    {change.approvalState ?? "unavailable"}; precondition:{" "}
+                    {change.precondition?.kind ?? "unavailable"}.
+                  </div>
+                  <div>Before: {finding?.actual ?? "Unavailable (not supplied by this plan)"}</div>
+                  <div>After: {finding?.expected ?? "Unavailable (not supplied by this plan)"}</div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       {messages.length > 0 && (

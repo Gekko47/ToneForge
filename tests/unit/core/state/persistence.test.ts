@@ -33,12 +33,14 @@ describe("persistence", () => {
       activeProfileId: null,
       settings: {
         llmProvider: "mock",
+        openAiCredentialMode: "broker",
         spotReviewConsent: false,
         fullDocumentReviewConsent: false,
         semanticOptIn: false,
         telemetryDisabled: false,
       },
       governanceProfiles: {},
+      governanceHistory: {},
       activeGovernanceProfileId: null,
     });
 
@@ -47,16 +49,19 @@ describe("persistence", () => {
     expect(setItem).toHaveBeenCalled();
   });
 
-  it("round-trips a profile", () => {
+  it("round-trips a profile with its initial governance profile and history", () => {
     const profile = createEmptyProfile("Saved");
     upsertProfile(profile);
     const state = loadState();
     expect(state.profiles).toHaveLength(1);
     expect(state.profiles[0]?.name).toBe("Saved");
     expect(state.profileHistory[profile.id]).toHaveLength(1);
+    expect(state.governanceProfiles[profile.id]?.id).toBe(profile.id);
+    expect(state.governanceProfiles[profile.id]?.style).toEqual(profile);
+    expect(state.governanceHistory[profile.id]).toEqual([state.governanceProfiles[profile.id]]);
   });
 
-  it("upserts instead of duplicating", () => {
+  it("upserts instead of duplicating and records the initial governance snapshot", () => {
     const profile = createEmptyProfile("Dup");
     upsertProfile(profile);
     upsertProfile({ ...profile, name: "Dup Updated" });
@@ -64,6 +69,7 @@ describe("persistence", () => {
     expect(state.profiles).toHaveLength(1);
     expect(state.profiles[0]?.name).toBe("Dup Updated");
     expect(state.profileHistory[profile.id]).toHaveLength(2);
+    expect(state.governanceHistory[profile.id]).toHaveLength(2);
   });
 
   it("does not append a duplicate snapshot on unchanged save", () => {

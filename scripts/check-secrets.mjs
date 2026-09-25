@@ -3,16 +3,22 @@ import { extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const scanDist = process.argv.includes("--dist");
 const ignoredDirectories = new Set([
   ".git",
   ".husky",
   "coverage",
-  "dist",
+  ...(scanDist ? [] : ["dist"]),
   "node_modules",
   "ToneForge_Refactor_Implementation",
 ]);
-const allowedExtensions = new Set([".cjs", ".json", ".md", ".mjs", ".ts", ".tsx", ".yml", ".yaml"]);
+const allowedExtensions = new Set(
+  scanDist
+    ? [".css", ".html", ".js", ".map", ".json", ".txt"]
+    : [".cjs", ".json", ".md", ".mjs", ".ts", ".tsx", ".yml", ".yaml"],
+);
 const patterns = [
+  new RegExp(`${["TONE", "FORGE", "SENTINEL"].join("_")}_[A-Za-z0-9_-]{12,}`),
   /sk-[A-Za-z0-9]{20,}/,
   /pk-[A-Za-z0-9]{20,}/,
   /rk-[A-Za-z0-9]{20,}/,

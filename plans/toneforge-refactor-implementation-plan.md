@@ -31,14 +31,16 @@ maps the proposal to Phases A–G plus reserved Phase H in
 
 ## Current evidence and limitations
 
-- Structured snapshots currently derive body/paragraph/heading nodes from text;
-  full Word structure extraction is not yet proven.
+- Production acquisition now uses Word paragraph items and style metadata with
+  explicit partial/unsupported coverage. Tables, headers, footers, sections,
+  fields, controls, and shapes remain outside the current structural scope.
 - The observer has coordinator functions but no verified live change-range event.
 - Spot and full-document AI review are implemented in the worktree with mock
   tests, consent, bounded batches, and Zod validation; live host/provider gates
   remain open.
-- Safe-apply protection, dependency, and preservation checks exist, but
-  post-apply verification and live host evidence remain open.
+- Safe-apply protection, dependency, preservation, precondition, approval, and
+  post-apply verification checks are repository-tested. Live Word behavior,
+  accessibility, provider, performance, and release evidence remain open.
 - The consistency directory is a documentation-only seam; no C1–C10 engine is
   implemented or imported.
 

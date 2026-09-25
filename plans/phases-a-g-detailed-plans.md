@@ -7,7 +7,7 @@
 ## Scope
 
 - Phase A: structured snapshot, governance profile, coverage, protection,
-  registry, additive domain fields, and state v3.
+  registry, additive domain fields, and state v5.
 - Phase B: incremental observer and governance status.
 - Phase C: Word-native UX, ribbon, task-pane states, navigation, and commands.
 - Phase D: consent-gated spot review.

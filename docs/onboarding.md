@@ -21,7 +21,8 @@ npm run build
 ```
 
 The `.env` file is optional for deterministic development and tests. Do not
-commit it or real API keys.
+commit it or real API keys. `OPENAI_API_KEY` is read only by the local Node-side
+development broker; Webpack does not inject it into browser assets.
 
 ## Development loop
 
@@ -42,6 +43,19 @@ script intentionally targets `manifest.xml`; the unified `manifest.json` is
 validated as the canonical Microsoft 365 manifest and kept in sync by
 [`scripts/validate-manifest.mjs`](../scripts/validate-manifest.mjs).
 
+### Optional local live-provider test
+
+1. Put an API key in the gitignored `.env` as `OPENAI_API_KEY=...`.
+2. Set the Settings broker URL to
+   `https://localhost:3000/__toneforge/llm/v1`.
+3. Select OpenAI and retain the relevant explicit content-review consent.
+4. Start `npm run dev`; the same-origin broker attaches the key only in the
+   development-server Node process.
+
+Do not paste the key into Settings. The broker is development-only. The
+production broker/authentication architecture and formal threat model remain
+open; this repository does not claim a supported production browser-held key.
+
 ## Verification
 
 ```bash
@@ -55,11 +69,14 @@ npm run stage:verify
 npm run verify
 ```
 
-`npm run verify` runs the ordered chain: typecheck → lint → format → secret
-scan → documentation links → test → build/artifact-budget check → manifest
-validation. `npm run test:coverage` is a separate 80% release criterion. The
-Word host matrix remains a human evidence gate; see [`ROADMAP.md`](../ROADMAP.md)
-before making a release claim.
+`npm run verify` delegates to `npm run stage:verify`, which runs the named
+`toneforge-repository-v1` graph: typecheck → lint → format → source secret scan
+→ documentation links → skills validation → tests → coverage → build/artifact
+checks → built-secret scan → manifest validation → release staging → release
+package checks. `npm run clean-install:check` is a separate reproducibility
+check. The Word host/accessibility/provider/performance matrix and production
+credential-custody review remain human evidence gates; see
+[`ROADMAP.md`](../ROADMAP.md) before making a release claim.
 
 ## Troubleshooting
 

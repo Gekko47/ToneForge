@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { Finding, Range, Severity } from "../core/domain/Finding";
 import type { HouseStyle } from "../core/domain/StyleProfile";
 import { splitSentences } from "../shared/utils/text";
+import { toSentenceCase } from "../shared/utils/caseConversion";
 
 export interface HouseStyleCheckOptions {
   text: string;
@@ -88,6 +89,9 @@ function makeFinding(params: {
   message: string;
   severity: Severity;
   evidence: string;
+  actual: string;
+  expected: string;
+  transformation?: Finding["transformation"];
 }): Finding {
   return {
     id: uuidv4(),
@@ -98,11 +102,16 @@ function makeFinding(params: {
     severity: params.severity,
     evidence: params.evidence,
     confidence: 1,
+    ruleId: params.category,
     nodeIds: [],
     source: "deterministic",
     risk: "none",
     reversible: true,
     status: "new",
+    actual: params.actual,
+    expected: params.expected,
+    ...(params.transformation === undefined ? {} : { transformation: params.transformation }),
+    precondition: { kind: "text", expectedText: params.actual },
   };
 }
 
@@ -153,6 +162,8 @@ function checkPreferredTerminology(text: string, rules: HouseStyle): Finding[] {
           message: `Use “${candidate.preferred}” instead of “${candidate.term}”`,
           severity: "warning",
           evidence: text.slice(candidate.range.start, candidate.range.end),
+          actual: text.slice(candidate.range.start, candidate.range.end),
+          expected: candidate.preferred,
         }),
       );
     });
@@ -180,6 +191,8 @@ function checkBannedTerms(text: string, rules: HouseStyle): Finding[] {
           message: `Remove banned term “${term}”`,
           severity: "error",
           evidence: text.slice(range.start, range.end),
+          actual: text.slice(range.start, range.end),
+          expected: "",
         }),
       );
     });
@@ -223,6 +236,13 @@ function checkSentenceCase(text: string, rules: HouseStyle): Finding[] {
         message: `Start the sentence with uppercase “${firstCased.character.toUpperCase()}”`,
         severity: "warning",
         evidence: text.slice(range.start, range.end),
+        actual: text.slice(range.start, range.end),
+        expected: toSentenceCase(text.slice(range.start, range.end)),
+        transformation: {
+          kind: "case",
+          style: "sentence",
+          text: text.slice(range.start, range.end),
+        },
       }),
     );
   });
@@ -261,6 +281,12 @@ function checkTitleCaseWords(text: string, rules: HouseStyle): Finding[] {
           message: `Capitalize title-case word “${candidate.word}”`,
           severity: "warning",
           evidence: text.slice(range.start, range.end),
+          actual: text.slice(range.start, range.end),
+          expected:
+            evidence.slice(0, firstCased.index) +
+            firstCased.character.toUpperCase() +
+            evidence.slice(firstCased.index + firstCased.character.length),
+          transformation: { kind: "case", style: "title", text: evidence },
         }),
       );
     });
@@ -286,6 +312,8 @@ function checkSpellingVariant(text: string, rules: HouseStyle): Finding[] {
             message: `Use ${rules.spellingVariant} spelling “${preferred}” instead of “${alternative}”`,
             severity: "warning",
             evidence: text.slice(range.start, range.end),
+            actual: alternative,
+            expected: preferred,
           }),
         );
       });

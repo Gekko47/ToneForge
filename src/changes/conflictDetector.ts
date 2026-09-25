@@ -15,6 +15,7 @@ const DIRECT_FORMAT_TYPES: readonly ChangeType[] = [
 ];
 
 function rangesOverlap(left: Change["range"], right: Change["range"]): boolean {
+  if (left.unit !== right.unit) return false;
   const leftIsEmpty = left.start === left.end;
   const rightIsEmpty = right.start === right.end;
   if (leftIsEmpty && rightIsEmpty) return left.start === right.start;
@@ -22,7 +23,7 @@ function rangesOverlap(left: Change["range"], right: Change["range"]): boolean {
 }
 
 function sameRange(left: Change["range"], right: Change["range"]): boolean {
-  return left.start === right.start && left.end === right.end;
+  return left.unit === right.unit && left.start === right.start && left.end === right.end;
 }
 
 function isStyleChange(change: Change): boolean {

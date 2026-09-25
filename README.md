@@ -12,9 +12,12 @@ release gates are in [`ROADMAP.md`](ROADMAP.md). Read that file before making
 planning or release decisions.
 
 The repository contains an unreleased refactor candidate. Automated repository
-verification—including 80% exercised-core coverage, secret/docs scans, production
-bundle budgets, manifest, and staging checks—passes without Webpack performance
-warnings. The complete Word host matrix and release acceptance remain open. See
+verification includes 80% exercised-core coverage, source and generated-artifact
+secret scans, development/production sentinel builds, production bundle budgets,
+manifest, and staging checks. Credentials are excluded from ordinary state and
+browser bundles; local live-provider testing uses a Node-side development broker.
+The complete Word host matrix, production credential-custody threat model, and
+release acceptance remain open. See
 [`docs/project-state.md`](docs/project-state.md) for
 the evidence index and [`docs/manual-verification.md`](docs/manual-verification.md)
 for host results.
@@ -44,13 +47,21 @@ the full setup and troubleshooting guide.
 npm run verify
 ```
 
-The ordered repository chain is typecheck → lint → format → secret scan →
-documentation links → test → build/artifact-budget check → manifest validation.
-Coverage is a separate 80% release gate and passes. `npm run stage:verify`
-additionally builds deterministic release staging and checks the human-evidence
-release gate; it remains blocked until the Word host matrix is complete.
+The ordered repository chain is typecheck → lint → format → source secret scan →
+documentation links → test → production build/artifact check → development and
+production sentinel builds with generated-artifact scans → manifest validation.
+Coverage is a separate 80% release gate. `npm run stage:verify` additionally
+builds deterministic release staging and checks the human-evidence release gate;
+it remains blocked until the Word host matrix and production credential-custody
+review are complete.
 
 ## Architecture and privacy
+
+Provider credentials are not stored in ordinary settings. During local
+development, `.env` credentials remain in the Webpack Node process and the
+browser uses a same-origin broker without an `Authorization` header. No
+production browser-held credential support is claimed without an approved threat
+model and deployed credential boundary.
 
 - [`docs/architecture.md`](docs/architecture.md) documents module boundaries and
   the current data flow.

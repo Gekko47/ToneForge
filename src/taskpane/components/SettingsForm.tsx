@@ -9,12 +9,15 @@ import {
   TextField,
   Toggle,
 } from "@fluentui/react";
-import { loadState, saveState, type PersistedState } from "../../core/state/index";
-import { redact } from "../../core/config/env";
+import {
+  clearPersistedCredentials,
+  loadState,
+  saveState,
+  type PersistedState,
+} from "../../core/state/index";
 import { logger } from "../../shared/utils/logger";
 
 interface LlmDraft {
-  openAiApiKey: string;
   openAiBaseUrl: string;
   openAiModel: string;
   llmProvider: "openai" | "mock";
@@ -34,10 +37,6 @@ const INITIAL_SECTION_STATUS: SectionStatus = {
   error: null,
   savedAt: null,
 };
-
-function maskKey(value: string): string {
-  return value ? redact(value) : "";
-}
 
 function SectionCard(props: {
   title: string;
@@ -79,7 +78,6 @@ export default function SettingsForm(): React.ReactNode {
   const [styleDraft, setStyleDraft] = React.useState<ThemePreference>(committedTheme);
   const [styleStatus, setStyleStatus] = React.useState<SectionStatus>(INITIAL_SECTION_STATUS);
   const [llmBaseline, setLlmBaseline] = React.useState<LlmDraft>(() => ({
-    openAiApiKey: initial.settings.openAiApiKey ?? "",
     openAiBaseUrl: initial.settings.openAiBaseUrl ?? "",
     openAiModel: initial.settings.openAiModel ?? "",
     llmProvider: initial.settings.llmProvider,
@@ -106,12 +104,27 @@ export default function SettingsForm(): React.ReactNode {
   }
 
   function validateLlm(): string | null {
-    if (llmDraft.openAiBaseUrl.trim().length === 0) return null;
+    const value = llmDraft.openAiBaseUrl.trim();
+    if (value.length === 0) return null;
     try {
-      new URL(llmDraft.openAiBaseUrl.trim());
+      const url = new URL(value);
+      const loopback =
+        url.hostname === "localhost" ||
+        url.hostname === "127.0.0.1" ||
+        url.hostname === "[::1]" ||
+        url.hostname === "::1";
+      if (
+        !loopback ||
+        (url.protocol !== "http:" && url.protocol !== "https:") ||
+        url.username !== "" ||
+        url.password !== "" ||
+        url.hash !== ""
+      ) {
+        return "Broker base URL must be an HTTP(S) loopback URL without credentials or a fragment.";
+      }
       return null;
     } catch {
-      return "Base URL is not a valid URL.";
+      return "Broker base URL is not a valid URL.";
     }
   }
 
@@ -140,7 +153,6 @@ export default function SettingsForm(): React.ReactNode {
       ...current,
       settings: {
         ...current.settings,
-        openAiApiKey: llmDraft.openAiApiKey.trim(),
         openAiBaseUrl: llmDraft.openAiBaseUrl.trim(),
         openAiModel: llmDraft.openAiModel.trim(),
         llmProvider: llmDraft.llmProvider,
@@ -154,9 +166,9 @@ export default function SettingsForm(): React.ReactNode {
     setLlmBaseline(saved);
     setLlmDraft(saved);
     logger.info("LLM settings saved", {
-      key: maskKey(saved.openAiApiKey),
       model: saved.openAiModel,
       provider: saved.llmProvider,
+      credentialMode: "broker",
     });
     setLlmStatus({ dirty: false, error: null, savedAt: new Date().toISOString() });
   }
@@ -164,6 +176,32 @@ export default function SettingsForm(): React.ReactNode {
   function cancelLlm(): void {
     setLlmDraft(llmBaseline);
     setLlmStatus(INITIAL_SECTION_STATUS);
+  }
+
+  function clearLegacyCredential(): void {
+    clearPersistedCredentials();
+    const cleared = loadState();
+    setLlmDraft({
+      openAiBaseUrl: cleared.settings.openAiBaseUrl ?? "",
+      openAiModel: cleared.settings.openAiModel ?? "",
+      llmProvider: cleared.settings.llmProvider,
+      spotReviewConsent: cleared.settings.spotReviewConsent,
+      fullDocumentReviewConsent: cleared.settings.fullDocumentReviewConsent,
+      semanticOptIn: cleared.settings.semanticOptIn,
+    });
+    setLlmBaseline({
+      openAiBaseUrl: cleared.settings.openAiBaseUrl ?? "",
+      openAiModel: cleared.settings.openAiModel ?? "",
+      llmProvider: cleared.settings.llmProvider,
+      spotReviewConsent: cleared.settings.spotReviewConsent,
+      fullDocumentReviewConsent: cleared.settings.fullDocumentReviewConsent,
+      semanticOptIn: cleared.settings.semanticOptIn,
+    });
+    setLlmStatus({
+      dirty: false,
+      error: null,
+      savedAt: new Date().toISOString(),
+    });
   }
 
   function saveTelemetry(): void {
@@ -239,19 +277,18 @@ export default function SettingsForm(): React.ReactNode {
             }
           }}
         />
+        <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
+          Credentials are never stored in ordinary settings or browser bundles. Local development
+          uses the same-origin broker; production credential custody remains an explicit release
+          decision.
+        </MessageBar>
+        <DefaultButton text="Clear legacy stored credential" onClick={clearLegacyCredential} />
         <TextField
-          label="OpenAI API key"
-          type="password"
-          value={llmDraft.openAiApiKey}
-          onChange={(_event, value) => patchLlm({ openAiApiKey: value ?? "" })}
-          placeholder={llmDraft.openAiApiKey ? maskKey(llmDraft.openAiApiKey) : "sk-…"}
-          description="Stored in Office roamingSettings. Never committed to source."
-        />
-        <TextField
-          label="Base URL"
+          label="Broker base URL"
           value={llmDraft.openAiBaseUrl}
           onChange={(_event, value) => patchLlm({ openAiBaseUrl: value ?? "" })}
-          placeholder="https://api.openai.com/v1"
+          placeholder="https://localhost:3000/__toneforge/llm/v1"
+          description="Use the development broker URL. Do not enter an API key here."
         />
         <TextField
           label="Model"

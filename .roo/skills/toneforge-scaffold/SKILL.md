@@ -18,10 +18,10 @@ Trigger phrases: "scaffold a new module", "add a new stage", "set up ToneForge",
 
 ## Steps
 
-1. Confirm the current stage from [`docs/project-state.md`](../../../../docs/project-state.md).
+1. Confirm the current stage from [`docs/project-state.md`](../../../docs/project-state.md).
 2. Read `ROADMAP.md` for stage ordering, gates, and hard rules.
 3. Read the relevant stage file in `docs/stages/`.
-4. Inspect existing module boundaries in [`docs/architecture.md`](../../../../docs/architecture.md).
+4. Inspect existing module boundaries in [`docs/architecture.md`](../../../docs/architecture.md).
 5. Create files under the correct `src/` subfolder (see placement guide below).
 6. Add tests under `tests/` mirroring the source structure.
 7. Update `docs/project-state.md` and `docs/decision-log.md`.
@@ -47,7 +47,7 @@ Current `src/` tree (verified):
 | Office.js types | `src/types/office.d.ts`                                |
 | Tests           | `tests/unit/`, `tests/integration/`, `tests/fixtures/` |
 
-Planned modules per [`docs/architecture.md`](../../../../docs/architecture.md) (do not create early — follow `ROADMAP.md` stage scope):
+Planned modules per [`docs/architecture.md`](../../../docs/architecture.md) (do not create early — follow `ROADMAP.md` stage scope):
 
 | Concern             | Planned location                              |
 | ------------------- | --------------------------------------------- |

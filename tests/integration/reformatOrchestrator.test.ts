@@ -425,6 +425,7 @@ describe("reformatDocument integration", () => {
     installOffice("hello world");
     setStage01Passed(true, FULL_CAPABILITIES);
     const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
       id: uuidv4(),
       docHash: hashDocument("hello world"),
       baseDocId: "doc-1",
@@ -437,6 +438,11 @@ describe("reformatDocument integration", () => {
           payload: { styleName: "Heading 2" },
           rationale: "test style readback",
           reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "h" },
         },
       ],
       conflicts: [],
@@ -478,6 +484,7 @@ describe("reformatDocument integration", () => {
     installOffice("hello world");
     setStage01Passed(true, FULL_CAPABILITIES);
     const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
       id: uuidv4(),
       docHash: hashDocument("hello world"),
       baseDocId: "doc-1",
@@ -490,6 +497,11 @@ describe("reformatDocument integration", () => {
           payload: { level: 2 },
           rationale: "test list readback",
           reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "h" },
         },
       ],
       conflicts: [],
@@ -526,6 +538,48 @@ describe("reformatDocument integration", () => {
     expect(result.applied).toBe(false);
     expect(result.verified).toBe(false);
     expect(result.verificationError).toContain("expected list level 2");
+  });
+
+  it("uses the complete-document hash for text readback with a bounded analysis window", async () => {
+    const { rangeMock } = installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: uuidv4(),
+          type: "replaceText",
+          range: { start: 0, end: 5 },
+          payload: { text: "HELLO" },
+          rationale: "test complete-document readback",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "hello" },
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockImplementation(async () => {
+      rangeMock.insertText("HELLO");
+      return {
+        results: [{ changeId: plan.changes[0]?.id ?? "", applied: true }],
+        tracking: { managed: true },
+      };
+    });
+
+    const result = await applyReviewedPlan({ plan, maxChars: 5 });
+
+    expect(result.applied).toBe(true);
+    expect(result.verified).toBe(true);
   });
 
   it("applies a previously reviewed plan with a fresh structured protection check", async () => {
@@ -573,6 +627,7 @@ describe("reformatDocument integration", () => {
 function createConflictingPlan(): ChangePlan {
   const docHash = hashDocument("hello world");
   return ChangePlanSchema.parse({
+    schemaVersion: 2,
     id: uuidv4(),
     docHash,
     baseDocId: "doc-1",
@@ -585,6 +640,11 @@ function createConflictingPlan(): ChangePlan {
         payload: { text: "a" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        approvalState: "notRequired",
+        precondition: { kind: "text", expectedText: "" },
       },
       {
         id: uuidv4(),
@@ -593,6 +653,11 @@ function createConflictingPlan(): ChangePlan {
         payload: { text: "b" },
         rationale: "test",
         reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        approvalState: "notRequired",
+        precondition: { kind: "text", expectedText: "" },
       },
     ],
     conflicts: [

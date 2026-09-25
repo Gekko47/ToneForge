@@ -90,7 +90,8 @@ For each host:
    works, and the active profile/version remains in the fixed header.
 3. In Settings, change and save Styling, LLM, and Telemetry independently. Reload
    and confirm the committed Styling choice restores the matching Fluent/CSS
-   palette; API keys must remain masked and must not appear in logs.
+   palette. Confirm Settings offers no API-key entry, legacy credentials can be
+   cleared, and no credential or document text appears in logs.
 4. In Troubleshooting, turn **Enable tracked editing** off and confirm Apply is
    refused while Preview still works. Turn it on, confirm the fresh host probe,
    then perform the host capability probe and record the full JSON.
@@ -115,6 +116,7 @@ For each host:
 
 - Desktop Word: break/style limitations and unavailable host version.
 - Web and Mac: no evidence yet.
-- Full-document AI review, observer change-range behavior, keyboard/screen-reader
-  behavior, and long-document measurements: no live evidence yet.
+- Full-document AI review, live provider/broker behavior, observer change-range
+  behavior, keyboard/screen-reader behavior, and long-document measurements: no
+  live evidence yet. The development broker is not production evidence.
 - The consistency seam is reserved and no C1–C10 engine is present.

@@ -22,13 +22,21 @@ describe("OpenAiAdapter", () => {
     vi.useRealTimers();
   });
 
-  it("is not configured without an API key", () => {
+  it("is configured for a broker without a browser credential", () => {
+    const adapter = new OpenAiAdapter({
+      credentialMode: "broker",
+      baseUrl: "/__toneforge/llm/v1",
+    });
+    expect(adapter.configured).toBe(true);
+  });
+
+  it("is not configured without a broker URL or explicit user credential", () => {
     const adapter = new OpenAiAdapter({});
     expect(adapter.configured).toBe(false);
   });
 
   it("throws non-retryable error when unconfigured", async () => {
-    const adapter = new OpenAiAdapter({});
+    const adapter = new OpenAiAdapter({ credentialMode: "broker", baseUrl: "" });
     await expect(adapter.complete({ prompt: "hi" })).rejects.toThrow(LlmError);
     await expect(adapter.complete({ prompt: "hi" })).rejects.toMatchObject({
       retryable: false,
@@ -75,7 +83,9 @@ describe("OpenAiAdapter", () => {
       timeoutMs: 1000,
       maxRetries: 3,
     });
-    const res = await adapter.complete({ prompt: "hi" });
+    const completion = adapter.complete({ prompt: "hi" });
+    await vi.runAllTimersAsync();
+    const res = await completion;
     expect(res.text).toBe("ok");
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
@@ -92,7 +102,10 @@ describe("OpenAiAdapter", () => {
   it("retries on 500 and eventually fails", async () => {
     globalThis.fetch = mockFetch(500, { error: { message: "boom" } }) as unknown as typeof fetch;
     const adapter = new OpenAiAdapter({ apiKey: "sk-test", maxRetries: 2 });
-    await expect(adapter.complete({ prompt: "hi" })).rejects.toThrow(LlmError);
+    const completion = adapter.complete({ prompt: "hi" });
+    const assertion = expect(completion).rejects.toThrow(LlmError);
+    await vi.runAllTimersAsync();
+    await assertion;
     // maxRetries=2 means 3 attempts total.
     expect(globalThis.fetch).toHaveBeenCalledTimes(3);
   });
@@ -132,15 +145,41 @@ describe("OpenAiAdapter", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("redacts emails and API keys from logged errors", async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockRejectedValue(
-        new Error("Request failed for user alice@example.com with key sk-ABC123XYZ"),
-      ) as unknown as typeof fetch;
+  it("supports user-supplied credentials for explicit adapter callers", async () => {
+    const fetchMock = mockFetch(200, {
+      choices: [{ message: { content: "ok" } }],
+      model: "gpt-4o-mini",
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const adapter = new OpenAiAdapter({
+      credentialMode: "apiKey",
+      apiKey: "sk-user-supplied",
+      baseUrl: "https://provider.example/v1",
+      maxRetries: 0,
+    });
 
-    const adapter = new OpenAiAdapter({ apiKey: "sk-test", maxRetries: 0 });
-    await expect(adapter.complete({ prompt: "hi" })).rejects.toThrow();
+    await adapter.complete({ prompt: "private document text" });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer sk-user-supplied");
+  });
+
+  it("uses a broker without forwarding an Authorization header", async () => {
+    const fetchMock = mockFetch(200, {
+      choices: [{ message: { content: "ok" } }],
+      model: "gpt-4o-mini",
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const adapter = new OpenAiAdapter({
+      credentialMode: "broker",
+      baseUrl: "/__toneforge/llm/v1",
+      maxRetries: 0,
+    });
+
+    await adapter.complete({ prompt: "private document text" });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.headers).not.toHaveProperty("Authorization");
   });
 
   it("redact() strips sensitive patterns", () => {

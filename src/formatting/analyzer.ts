@@ -1,13 +1,4 @@
-/**
- * Deterministic formatting analyzer.
- *
- * Scans a `FormattingSnapshot` against the active `StyleProfile` and reports
- * formatting deviations as `Finding` objects with paragraph ranges. Pure:
- * no Office, no LLM, no UI imports — fully unit-testable without Word.
- *
- * Boundary rule: this module may only import from `core/domain` and
- * `shared/utils` (see docs/architecture.md and ADR-0006).
- */
+/** Pure, support-aware Word formatting analyzer. */
 
 import { v4 as uuidv4 } from "uuid";
 import type { Finding, Range, Severity } from "../core/domain/Finding";
@@ -18,18 +9,16 @@ export interface FormattingCheckOptions {
   snapshot: FormattingSnapshot;
 }
 
-/** Scan a formatting snapshot for structural formatting deviations. */
 export function findFormattingIssues(options: FormattingCheckOptions): Finding[] {
   const { snapshot } = options;
   if (snapshot.paragraphs.length === 0) return [];
-
-  const findings: Finding[] = [];
-  findings.push(...checkHeadingHierarchy(snapshot));
-  findings.push(...checkUnknownStyles(snapshot));
-  findings.push(...checkDirectFormatting(snapshot));
-  findings.push(...checkListLevel(snapshot));
-  findings.push(...checkEmptyHeadings(snapshot));
-  return findings;
+  return [
+    ...checkHeadingHierarchy(snapshot),
+    ...checkUnknownStyles(snapshot),
+    ...checkDirectFormatting(snapshot),
+    ...checkListLevel(snapshot),
+    ...checkEmptyHeadings(snapshot),
+  ];
 }
 
 function makeFinding(params: {
@@ -38,8 +27,11 @@ function makeFinding(params: {
   message: string;
   severity: Severity;
   evidence: string;
-  suggestedChangeId?: string;
+  paragraph?: FormattingParagraph;
+  actual?: string | undefined;
+  expected?: string | undefined;
 }): Finding {
+  const precondition = params.paragraph ? paragraphPrecondition(params.paragraph) : undefined;
   return {
     id: uuidv4(),
     kind: "formatting",
@@ -49,167 +41,186 @@ function makeFinding(params: {
     severity: params.severity,
     evidence: params.evidence,
     confidence: 1,
-    nodeIds: [],
+    ruleId: params.category,
+    nodeIds: params.paragraph?.nodeId ? [params.paragraph.nodeId] : [],
     source: "deterministic",
     risk: "none",
     reversible: true,
     status: "new",
-    ...(params.suggestedChangeId ? { suggestedChangeId: params.suggestedChangeId } : {}),
+    ...(params.actual === undefined ? {} : { actual: params.actual }),
+    ...(params.expected === undefined ? {} : { expected: params.expected }),
+    ...(precondition === undefined ? {} : { precondition }),
   };
 }
 
-function paragraphRange(para: FormattingParagraph): Range {
-  return { start: para.index, end: para.index + 1, unit: "paragraph" };
+function paragraphPrecondition(
+  paragraph: FormattingParagraph,
+): NonNullable<Finding["precondition"]> {
+  const nodeId = paragraph.nodeId ?? `formatting-paragraph-${paragraph.index}`;
+  return {
+    kind: "node",
+    nodeId,
+    expectedText: paragraph.text,
+    expectedStyleName: paragraph.styleName,
+    expectedFormatting: {
+      styleName: paragraph.styleName,
+      alignment: paragraph.alignment,
+      listLevel: paragraph.listLevel,
+      fontName: paragraph.fontName,
+      fontSize: paragraph.fontSize,
+      fontColor: paragraph.fontColor,
+      bold: paragraph.bold,
+      italic: paragraph.italic,
+      underline: paragraph.underline,
+    },
+  };
 }
 
-const HEADING_RE = /^heading\s+(\d+)$/i;
-
-function isHeading(name: string): boolean {
-  return HEADING_RE.test(name.trim());
+function paragraphRange(paragraph: FormattingParagraph): Range {
+  return { start: paragraph.index, end: paragraph.index + 1, unit: "paragraph" };
 }
 
-function headingLevel(name: string): number {
-  const match = HEADING_RE.exec(name.trim());
-  const level = match?.[1];
-  return level !== undefined ? Number.parseInt(level, 10) : 0;
-}
+const HEADING_RE = /^heading\s*([1-9])$/i;
+const isHeading = (name: string): boolean => HEADING_RE.test(name.trim());
+const headingLevel = (name: string): number =>
+  Number.parseInt(HEADING_RE.exec(name.trim())?.[1] ?? "0", 10);
 
-/** Heading levels must not skip (e.g. Heading 1 → Heading 3). */
 function checkHeadingHierarchy(snapshot: FormattingSnapshot): Finding[] {
   const findings: Finding[] = [];
   let previousLevel = 0;
-
-  snapshot.paragraphs.forEach((para) => {
-    if (!isHeading(para.styleName)) return;
-    const level = headingLevel(para.styleName);
+  snapshot.paragraphs.forEach((paragraph) => {
+    const styleName = paragraph.styleName ?? "Normal";
+    if (!isHeading(styleName)) return;
+    const level = headingLevel(styleName);
     if (previousLevel > 0 && level > previousLevel + 1) {
       findings.push(
         makeFinding({
           category: "formatting.headingHierarchy",
-          range: paragraphRange(para),
-          message: `Heading level skipped: "${para.styleName}" follows "Heading ${previousLevel}" without an intermediate level`,
+          range: paragraphRange(paragraph),
+          message: `Heading level skipped: "${styleName}" follows "Heading ${previousLevel}" without an intermediate level`,
           severity: "warning",
-          evidence: para.text.slice(0, 40),
+          evidence: paragraph.text.slice(0, 40),
+          paragraph,
+          actual: paragraph.styleName,
+          expected: `Heading ${previousLevel + 1}`,
         }),
       );
     }
     previousLevel = level;
   });
-
   return findings;
 }
 
-/** Unknown Word style names are reported as informational findings. */
 function checkUnknownStyles(snapshot: FormattingSnapshot): Finding[] {
   const findings: Finding[] = [];
   const seen = new Set<string>();
-
-  snapshot.paragraphs.forEach((para) => {
-    const styleName = para.styleName.trim();
+  snapshot.paragraphs.forEach((paragraph) => {
+    const styleName = (paragraph.styleName ?? "").trim();
     if (styleName.length === 0) {
       findings.push(
         makeFinding({
           category: "formatting.emptyStyle",
-          range: paragraphRange(para),
+          range: paragraphRange(paragraph),
           message: "Paragraph has no applied Word style; default to Normal",
           severity: "info",
-          evidence: para.text.slice(0, 40),
+          evidence: paragraph.text.slice(0, 40),
+          paragraph,
+          expected: "Normal",
         }),
       );
       return;
     }
-    if (lookupWordStyle(styleName) !== undefined) return;
-    if (seen.has(styleName.toLowerCase())) return;
+    if (lookupWordStyle(styleName) !== undefined || seen.has(styleName.toLowerCase())) return;
     seen.add(styleName.toLowerCase());
     findings.push(
       makeFinding({
         category: "formatting.unknownStyle",
-        range: paragraphRange(para),
+        range: paragraphRange(paragraph),
         message: `Unknown Word style "${styleName}" is not in the recognized style table`,
         severity: "info",
         evidence: styleName,
+        paragraph,
+        expected: "Normal",
       }),
     );
   });
-
   return findings;
 }
 
-/** Manual character formatting that should be cleared in favor of the Word style. */
 function checkDirectFormatting(snapshot: FormattingSnapshot): Finding[] {
-  const findings: Finding[] = [];
-
-  snapshot.paragraphs.forEach((para) => {
-    if (
-      para.fontName === null &&
-      para.fontSize === null &&
-      para.fontColor === null &&
-      para.bold !== true &&
-      para.italic !== true &&
-      para.underline !== true
-    ) {
-      return;
-    }
-
-    findings.push(
+  if (snapshot.coverage?.directFormattingProvenance === "unsupported") return [];
+  return snapshot.paragraphs.flatMap((paragraph) => {
+    const hasProvenance = paragraph.provenance !== undefined;
+    const hasDirect = hasProvenance
+      ? Object.values(paragraph.provenance ?? {}).includes("direct")
+      : paragraph.fontName !== null ||
+        paragraph.fontSize !== null ||
+        paragraph.fontColor !== null ||
+        paragraph.bold === true ||
+        paragraph.italic === true ||
+        paragraph.underline === true;
+    if (!hasDirect) return [];
+    return [
       makeFinding({
         category: "formatting.directFormatting",
-        range: paragraphRange(para),
+        range: paragraphRange(paragraph),
         message:
           "Paragraph has direct character formatting; clear it so the applied Word style controls appearance",
         severity: "warning",
-        evidence: para.text.slice(0, 40),
+        evidence: paragraph.text.slice(0, 40),
+        paragraph,
       }),
-    );
+    ];
   });
-
-  return findings;
 }
 
-/** A list level without an applied list style is suspicious. */
 function checkListLevel(snapshot: FormattingSnapshot): Finding[] {
-  const findings: Finding[] = [];
-  const listStyleNames = new Set(["list paragraph", "list bullet", "list number"]);
-
-  snapshot.paragraphs.forEach((para) => {
-    if (para.listLevel === null || para.listLevel === 0) return;
-    if (listStyleNames.has(para.styleName.trim().toLowerCase())) return;
-    findings.push(
+  const listStyles = new Set(["list paragraph", "list bullet", "list number"]);
+  return snapshot.paragraphs.flatMap((paragraph) => {
+    if (
+      paragraph.listLevel === null ||
+      paragraph.listLevel === 0 ||
+      listStyles.has((paragraph.styleName ?? "").trim().toLowerCase())
+    ) {
+      return [];
+    }
+    return [
       makeFinding({
         category: "formatting.listLevel",
-        range: paragraphRange(para),
-        message: `Paragraph has list level ${para.listLevel} but style "${para.styleName}" is not a list style`,
+        range: paragraphRange(paragraph),
+        message: `Paragraph has list level ${paragraph.listLevel} but style "${paragraph.styleName}" is not a list style`,
         severity: "warning",
-        evidence: para.text.slice(0, 40),
+        evidence: paragraph.text.slice(0, 40),
+        paragraph,
+        expected: "List level 0",
       }),
-    );
+    ];
   });
-
-  return findings;
 }
 
-/** Empty heading or title paragraphs are usually accidental. */
 function checkEmptyHeadings(snapshot: FormattingSnapshot): Finding[] {
-  const findings: Finding[] = [];
   const headingOrTitle = new Set([
     "title",
     "subtitle",
     ...HEADING_STYLE_NAMES.map((name) => name.toLowerCase()),
   ]);
-
-  snapshot.paragraphs.forEach((para) => {
-    if (!headingOrTitle.has(para.styleName.trim().toLowerCase())) return;
-    if (para.text.trim().length > 0) return;
-    findings.push(
+  return snapshot.paragraphs.flatMap((paragraph) => {
+    if (
+      !headingOrTitle.has((paragraph.styleName ?? "").trim().toLowerCase()) ||
+      paragraph.text.trim().length > 0
+    ) {
+      return [];
+    }
+    return [
       makeFinding({
         category: "formatting.emptyHeading",
-        range: paragraphRange(para),
-        message: `Empty "${para.styleName}" paragraph — remove or add content`,
+        range: paragraphRange(paragraph),
+        message: `Empty "${paragraph.styleName}" paragraph — remove or add content`,
         severity: "info",
-        evidence: para.styleName,
+        evidence: paragraph.styleName ?? "",
+        paragraph,
+        expected: "Normal",
       }),
-    );
+    ];
   });
-
-  return findings;
 }

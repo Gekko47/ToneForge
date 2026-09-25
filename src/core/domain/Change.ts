@@ -1,11 +1,8 @@
 /**
- * A single atomic change request within a ChangePlan.
- *
- * Each `ChangeType` has a strictly typed `payload`. Payloads are modelled as
- * a discriminated union keyed on `type` so that consumers can exhaustively
- * handle each variant without runtime surprises. The discriminated union is
- * enforced through `z.discriminatedUnion` plus a `superRefine` fallback that
- * rejects unknown or malformed payloads.
+ * Atomic change contract. The payload is validated against a runtime
+ * discriminated union; the public shape remains compatible with legacy plans
+ * while new plans carry typed range units, targets, preconditions, and
+ * approval/provenance metadata.
  */
 
 import { z } from "zod";
@@ -21,100 +18,123 @@ export const ChangeTypeSchema = z.enum([
   "insertBreak",
   "setListLevel",
 ]);
-
 export type ChangeType = z.infer<typeof ChangeTypeSchema>;
 
-/**
- * Range for a change. `start` and `end` are character offsets into the
- * document body. `start` must be less than or equal to `end`.
- */
+export const ChangeRangeUnitSchema = z.enum(["character", "paragraph", "section"]);
+export type ChangeRangeUnit = z.infer<typeof ChangeRangeUnitSchema>;
+
+export const ChangeTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("document") }),
+  z.object({
+    kind: z.literal("paragraph"),
+    index: z.number().int().nonnegative(),
+    nodeId: z.string().trim().min(1).optional(),
+    structuralPath: z.string().trim().min(1).optional(),
+  }),
+  z.object({ kind: z.literal("section"), index: z.number().int().nonnegative() }),
+]);
+export type ChangeTarget = z.infer<typeof ChangeTargetSchema>;
+
 export const ChangeRangeSchema = z
   .object({
     start: z.number().int().nonnegative(),
     end: z.number().int().nonnegative(),
+    unit: ChangeRangeUnitSchema.optional(),
+    target: ChangeTargetSchema.optional(),
   })
-  .refine((r) => r.start <= r.end, {
+  .refine((range) => range.start <= range.end, {
     message: "Change.range.start must be <= Change.range.end",
     path: ["start"],
   });
-
 export type ChangeRange = z.infer<typeof ChangeRangeSchema>;
 
-const InsertTextPayloadSchema = z.object({
-  text: z.string().min(1, "insertText requires a non-empty text payload"),
+export const TextPreconditionSchema = z.object({
+  kind: z.literal("text"),
+  expectedText: z.string(),
 });
-
-const ReplaceTextPayloadSchema = z.object({
-  text: z.string().min(1, "replaceText requires a non-empty text payload"),
+export const FormattingStateSchema = z.object({
+  styleName: z.string().trim().optional(),
+  alignment: z.enum(["left", "center", "right", "justified"]).nullable().optional(),
+  lineSpacing: z.number().nullable().optional(),
+  spaceAfter: z.number().nullable().optional(),
+  spaceBefore: z.number().nullable().optional(),
+  listLevel: z.number().int().min(0).max(8).nullable().optional(),
+  fontName: z.string().nullable().optional(),
+  fontSize: z.number().nullable().optional(),
+  fontColor: z.string().nullable().optional(),
+  bold: z.boolean().nullable().optional(),
+  italic: z.boolean().nullable().optional(),
+  underline: z.boolean().nullable().optional(),
 });
-
-const DeleteRangePayloadSchema = z.object({}).partial();
-
-const SetParagraphFormatPayloadSchema = z
-  .object({
-    alignment: z.enum(["left", "center", "right", "justified"]).optional(),
-    lineSpacing: z.number().min(1).max(3).optional(),
-    spaceAfter: z.number().min(0).max(100).optional(),
-    spaceBefore: z.number().min(0).max(100).optional(),
-    listLevel: z.number().int().min(0).max(8).optional(),
-  })
-  .partial();
-
-const SetCharacterFormatPayloadSchema = z
-  .object({
-    // Font properties that map directly to Word.Range.font.
-    // `name` is the font name, `size` is the font size in points, and
-    // `color` is the font color as a hex string. These align with the
-    // revisionAdapter's setCharacterFormat handler.
-    name: z.string().optional(),
-    size: z.number().optional(),
-    color: z.string().optional(),
-    // Boolean formatting flags are also accepted for completeness; the
-    // adapter applies them when present.
-    bold: z.boolean().optional(),
-    italic: z.boolean().optional(),
-    underline: z.boolean().optional(),
-  })
-  .partial();
-
-const ResetCharacterFormattingPayloadSchema = z.object({}).partial();
-
-const ApplyStylePayloadSchema = z.object({
-  styleName: z.string().trim().min(1, "applyStyle requires a non-empty styleName"),
+export const FormattingPreconditionSchema = z.object({
+  kind: z.literal("formatting"),
+  expected: FormattingStateSchema,
 });
-
-const InsertBreakPayloadSchema = z.object({
-  breakType: z.enum(["line", "page", "nextParagraph"]).optional(),
+export const NodePreconditionSchema = z.object({
+  kind: z.literal("node"),
+  nodeId: z.string().trim().min(1),
+  expectedText: z.string().optional(),
+  expectedStyleName: z.string().trim().optional(),
+  expectedFormatting: FormattingStateSchema.optional(),
 });
+export const ChangePreconditionSchema = z.discriminatedUnion("kind", [
+  TextPreconditionSchema,
+  FormattingPreconditionSchema,
+  NodePreconditionSchema,
+]);
+export type ChangePrecondition = z.infer<typeof ChangePreconditionSchema>;
 
-const SetListLevelPayloadSchema = z.object({
-  level: z.number().int().nonnegative("setListLevel requires a non-negative integer level"),
-});
+const payloadFor = (type: ChangeType): z.ZodTypeAny => {
+  switch (type) {
+    case "insertText":
+    case "replaceText":
+      return z.object({ text: z.string().min(1) });
+    case "setParagraphFormat":
+      return z.object({
+        alignment: z.enum(["left", "center", "right", "justified"]).optional(),
+        lineSpacing: z.number().positive().optional(),
+        spaceAfter: z.number().min(0).max(100).optional(),
+        spaceBefore: z.number().min(0).max(100).optional(),
+        listLevel: z.number().int().min(0).max(8).optional(),
+      });
+    case "setCharacterFormat":
+      return z.object({
+        name: z.string().optional(),
+        size: z.number().optional(),
+        color: z.string().optional(),
+        bold: z.boolean().optional(),
+        italic: z.boolean().optional(),
+        underline: z.boolean().optional(),
+      });
+    case "resetCharacterFormatting":
+    case "deleteRange":
+      return z.object({}).partial();
+    case "applyStyle":
+      return z.object({ styleName: z.string().trim().min(1) });
+    case "insertBreak":
+      return z.object({ breakType: z.enum(["line", "page", "nextParagraph"]).optional() });
+    case "setListLevel":
+      return z.object({ level: z.number().int().nonnegative() });
+  }
+};
 
-/**
- * Discriminated union of change payloads keyed on `type`. Using a
- * discriminated union instead of `z.record(z.string(), z.unknown())` means
- * the schema validates the exact shape expected for each change type and
- * gives precise error paths.
- */
 export const ChangePayloadSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("insertText"), payload: InsertTextPayloadSchema }),
-  z.object({ type: z.literal("replaceText"), payload: ReplaceTextPayloadSchema }),
-  z.object({ type: z.literal("deleteRange"), payload: DeleteRangePayloadSchema }),
-  z.object({ type: z.literal("setParagraphFormat"), payload: SetParagraphFormatPayloadSchema }),
-  z.object({ type: z.literal("setCharacterFormat"), payload: SetCharacterFormatPayloadSchema }),
+  z.object({ type: z.literal("insertText"), payload: payloadFor("insertText") }),
+  z.object({ type: z.literal("replaceText"), payload: payloadFor("replaceText") }),
+  z.object({ type: z.literal("deleteRange"), payload: payloadFor("deleteRange") }),
+  z.object({ type: z.literal("setParagraphFormat"), payload: payloadFor("setParagraphFormat") }),
+  z.object({ type: z.literal("setCharacterFormat"), payload: payloadFor("setCharacterFormat") }),
   z.object({
     type: z.literal("resetCharacterFormatting"),
-    payload: ResetCharacterFormattingPayloadSchema,
+    payload: payloadFor("resetCharacterFormatting"),
   }),
-  z.object({ type: z.literal("applyStyle"), payload: ApplyStylePayloadSchema }),
-  z.object({ type: z.literal("insertBreak"), payload: InsertBreakPayloadSchema }),
-  z.object({ type: z.literal("setListLevel"), payload: SetListLevelPayloadSchema }),
+  z.object({ type: z.literal("applyStyle"), payload: payloadFor("applyStyle") }),
+  z.object({ type: z.literal("insertBreak"), payload: payloadFor("insertBreak") }),
+  z.object({ type: z.literal("setListLevel"), payload: payloadFor("setListLevel") }),
 ]);
-
 export type ChangePayload = z.infer<typeof ChangePayloadSchema>;
 
-export const ChangeSourceSchema = z.enum(["deterministic", "ai", "user"]);
+export const ChangeSourceSchema = z.enum(["deterministic", "ai", "profile", "user"]);
 export type ChangeSource = z.infer<typeof ChangeSourceSchema>;
 
 export const ChangeSchema = z
@@ -123,34 +143,29 @@ export const ChangeSchema = z
     type: ChangeTypeSchema,
     range: ChangeRangeSchema,
     payload: z.record(z.string(), z.unknown()),
-    rationale: z.string().trim().default(""),
-    reversible: z.boolean().default(true),
+    rationale: z.string().trim().optional(),
+    reversible: z.boolean().optional(),
     suggestedChangeId: z.string().optional(),
-    // --- additive fields (Phase A) ---
     findingId: z.string().uuid().optional(),
-    source: ChangeSourceSchema.default("deterministic"),
-    risk: z.enum(["none", "low", "medium", "high"]).default("none"),
-    approvalRequired: z.boolean().default(false),
-    dependsOn: z.array(z.string().uuid()).default([]),
+    ruleId: z.string().trim().min(1).optional(),
+    source: ChangeSourceSchema.optional(),
+    risk: z.enum(["none", "low", "medium", "high"]).optional(),
+    approvalRequired: z.boolean().optional(),
+    approvalState: z.enum(["notRequired", "pending", "approved", "rejected"]).optional(),
+    dependsOn: z.array(z.string().uuid()).optional(),
+    precondition: ChangePreconditionSchema.optional(),
   })
-  .superRefine((data, ctx) => {
-    // Validate the payload against the discriminated union for the chosen
-    // type. This keeps the public `payload` shape as a plain record while
-    // still enforcing strict per-type contracts.
-    const result = ChangePayloadSchema.safeParse({
-      type: data.type,
-      payload: data.payload,
-    });
+  .superRefine((change, ctx) => {
+    const result = ChangePayloadSchema.safeParse({ type: change.type, payload: change.payload });
     if (!result.success) {
       for (const issue of result.error.issues) {
-        const path = issue.path.length > 0 ? ["payload", ...issue.path] : ["payload"];
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: issue.message,
-          path,
+          path: ["payload", ...issue.path],
         });
       }
     }
   });
-
 export type Change = z.infer<typeof ChangeSchema>;
+export type ChangeInput = z.input<typeof ChangeSchema>;

@@ -8,6 +8,7 @@
  */
 
 import type { DocumentNode } from "../core/domain/DocumentSnapshot";
+import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
 
 export interface ProtectionFinding {
   nodeId: string;
@@ -65,9 +66,14 @@ export function detectCommentRanges(nodes: DocumentNode[]): ProtectionFinding[] 
 }
 
 /** Check if a node is protected based on its type and protection policy. */
-export function isProtectedNode(node: DocumentNode, protectedReasons: string[] = []): boolean {
+export function isProtectedNode(
+  node: DocumentNode,
+  protectedReasons: string[] = [],
+  policy?: GovernanceProfile,
+): boolean {
   if (!node.editable) return true;
   if (protectedReasons.includes(node.protectionReason ?? "")) return true;
+  if (policy?.protection.userLockedRanges.includes(node.nodeId)) return true;
   const protectedTypes = [
     "caption",
     "comment",

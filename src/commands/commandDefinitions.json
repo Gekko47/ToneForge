@@ -1,0 +1,58 @@
+[
+  {
+    "id": "ToneForgeScan",
+    "label": "Scan Now",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "governance",
+    "xmlNavigationTarget": "default"
+  },
+  {
+    "id": "ToneForgeFindings",
+    "label": "Findings",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "findings",
+    "xmlNavigationTarget": "default"
+  },
+  {
+    "id": "ToneForgeReviewSelection",
+    "label": "Review Selection",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "ai-review-selection",
+    "xmlNavigationTarget": "default"
+  },
+  {
+    "id": "ToneForgeReviewDocument",
+    "label": "Review Document",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "ai-review-document",
+    "xmlNavigationTarget": "default"
+  },
+  {
+    "id": "ToneForgeActiveProfile",
+    "label": "Active Profile",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "profile",
+    "xmlNavigationTarget": "default"
+  },
+  {
+    "id": "ToneForgeEditProfile",
+    "label": "Edit Profile",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "profile",
+    "xmlNavigationTarget": "default"
+  },
+  {
+    "id": "ToneForgePendingChanges",
+    "label": "Pending Changes",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "pending-changes",
+    "xmlNavigationTarget": "default"
+  }
+]

@@ -67,6 +67,7 @@ function makeFinding(params: {
   message: string;
   severity: Severity;
   evidence: string;
+  expected?: string;
 }): Finding {
   return {
     id: uuidv4(),
@@ -77,11 +78,15 @@ function makeFinding(params: {
     severity: params.severity,
     evidence: params.evidence,
     confidence: 1,
+    ruleId: params.category,
     nodeIds: [],
     source: "deterministic",
     risk: "none",
     reversible: true,
     status: "new",
+    actual: params.evidence,
+    ...(params.expected === undefined ? {} : { expected: params.expected }),
+    precondition: { kind: "text", expectedText: params.evidence },
   };
 }
 

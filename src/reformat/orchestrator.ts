@@ -12,19 +12,18 @@
  */
 
 import { checkConsistency, type ConsistencyReport } from "../analysis/consistencyChecker";
+import { buildCoverage } from "../analysis/coverage";
+import { acquireAnalysisContext } from "../word/analysisAcquisition";
+import type { AnalysisContext } from "../analysis/analysisContext";
 import { planChanges } from "../changes/planner";
 import { isStale } from "../changes/staleGuard";
 import { applyChangePlanWithTracking, type ApplyWithTrackingResult } from "../word/revisionAdapter";
 import { probeWordCapabilities, type WordCapabilities } from "../word/capabilityProbe";
-import {
-  getDocumentSnapshot,
-  getStructuredSnapshot,
-  hashDocument,
-  type DocumentSnapshot,
-} from "../word/documentReader";
+import type { AnalysisCapabilities } from "../analysis/analysisContext";
+import { getDocumentSnapshot, getStructuredSnapshot, hashDocument } from "../word/documentReader";
 import { getFormattingSnapshot } from "../word/formattingReader";
 import { type FormattingSnapshot } from "../formatting/formattingSnapshot";
-import type { StyleProfile } from "../core/domain/StyleProfile";
+import { formatProfileVersion, type StyleProfile } from "../core/domain/StyleProfile";
 import type { Change } from "../core/domain/Change";
 import type { ChangePlan } from "../core/domain/ChangePlan";
 import type { LlmProvider, LlmSemanticProvider } from "../ai/providers/LlmProvider";
@@ -38,6 +37,8 @@ import { prepareTrackedEditing } from "./trackedEditing";
 
 export interface ReformatOptions {
   profile: StyleProfile;
+  policy?: GovernanceProfile;
+  capabilities?: AnalysisCapabilities;
   includeRawText?: boolean;
   signal?: AbortSignal;
   /** Injected semantic provider; tests use MockAdapter only. */
@@ -62,11 +63,12 @@ export interface ReformatOptions {
 }
 
 export interface ReformatResult {
+  context: AnalysisContext;
   report: ConsistencyReport;
   plan: ChangePlan;
   results: ApplyWithTrackingResult["results"];
   tracking: ApplyWithTrackingResult["tracking"];
-  snapshot: DocumentSnapshot;
+  snapshot: StructuredDocumentSnapshot;
   stale: boolean;
   /** True only when every planned change was applied and verified. */
   applied: boolean;
@@ -90,6 +92,25 @@ export async function prepareReformatHost(): Promise<WordCapabilities> {
 
 const DEFAULT_MAX_CHARS = 500_000;
 
+const FALLBACK_CAPABILITIES = {
+  supportsInsertText: false,
+  supportsReplaceText: false,
+  supportsInsertParagraph: false,
+  supportsInsertBreak: false,
+  supportsStyles: false,
+  supportsParagraphFormat: false,
+  supportsCharacterFormat: false,
+  supportsResetCharacterFormatting: false,
+  supportsListLevel: false,
+  supportsRevisions: false,
+  supportsSelection: false,
+  supportsParagraphResolution: false,
+  supportsHighlight: false,
+  supportsContextMenu: false,
+  hostName: "unknown" as const,
+  hostVersion: null,
+};
+
 /**
  * Run the full reformat pipeline against the live Word document.
  *
@@ -110,57 +131,62 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     includeRawText = false,
     signal,
     registry,
-    formattingSnapshot: providedSnapshot,
     maxChars,
     preview = false,
     currentDocHash,
   } = options;
   const readLimit = maxChars ?? DEFAULT_MAX_CHARS;
 
-  // Step 1: Snapshot
-  const snapshot = await getDocumentSnapshot({ maxChars: readLimit });
-  const text = snapshot.text;
-  const docHash = snapshot.hash ?? hashDocument(text);
+  // Step 1: Acquire one immutable scope for analysis. The legacy formatting
+  // override remains supported for callers that already own a verified DTO.
+  const context = await acquireAnalysisContext({
+    profile,
+    capabilities: options.capabilities ?? FALLBACK_CAPABILITIES,
+    ...(options.policy ? { policy: options.policy } : {}),
+    maxChars: readLimit,
+  });
+  const snapshot = context.snapshot;
+  const formatting = options.formattingSnapshot ?? context.formatting;
+  const docHash = context.identity.contentHash;
 
-  // Step 2: Analyze. Empty documents cannot contain formatting findings, so
-  // avoid an unnecessary second Word read before delegating to Stage 20.
-  const report =
-    text.trim().length === 0
-      ? await checkConsistency({
-          text,
-          profile,
-          docHash,
-          includeRawText,
-          ...(signal ? { signal } : {}),
-          ...(registry ? { registry } : {}),
-        })
-      : await checkConsistency({
-          text,
-          profile,
-          snapshot: providedSnapshot ?? (await getFormattingSnapshot({ maxChars: readLimit })),
-          docHash,
-          includeRawText,
-          ...(signal ? { signal } : {}),
-          ...(registry ? { registry } : {}),
-        });
+  // Step 2: Analyze. Every engine consumes the same identity, text, nodes, and
+  // formatting DTO; the acquisition service is the only analysis read.
+  let report = await checkConsistency({
+    context: { ...context, formatting },
+    includeRawText,
+    ...(signal ? { signal } : {}),
+    ...(registry ? { registry } : {}),
+  });
 
   // Step 3: Plan
   const plan = planChanges({
     findings: report.findings,
     docHash,
-    baseDocId: snapshot.id,
+    baseDocId: context.identity.documentId,
+    ...(options.policy ? { governancePolicyRevision: options.policy.version } : {}),
     currentDocHash: currentDocHash ?? docHash,
+    documentId: context.identity.documentId,
+    documentVersion: context.identity.documentVersion,
+    structuralHash: context.identity.structuralHash,
+    analysisText: context.identity.analysisText,
+    analysisStart: context.identity.analysisStart,
+    analysisEnd: context.identity.analysisEnd,
+    analysisTruncated: context.identity.analysisTruncated,
+    profileId: profile.id,
+    profileVersion: formatProfileVersion(profile.version),
   });
+  report = withCoverageCounts(report, { ...context, formatting }, plan.changes.length, 0);
 
   // Step 4: Preview or apply. Preview never enters the mutation adapter.
   if (preview || plan.changes.length === 0) {
     return {
+      context,
       report,
       plan,
       results: [],
       tracking: { managed: false },
       snapshot,
-      stale: plan.stale,
+      stale: plan.stale ?? false,
       applied: false,
       verified: false,
     };
@@ -171,6 +197,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   // doomed, so it refuses here with a preview-shaped outcome.
   if (plan.stale) {
     return {
+      context,
       report,
       plan,
       results: [],
@@ -185,18 +212,19 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   // Production application is fail-closed for unresolved conflicts. A preview
   // remains available so the user can inspect the conflict list, but the
   // mutation path never accepts a risk acknowledgement.
-  if (plan.conflicts.length > 0) {
+  if ((plan.conflicts ?? []).length > 0) {
     return {
+      context,
       report,
       plan,
       results: plan.changes.map((change) => ({
         changeId: change.id,
         applied: false,
-        error: `ChangePlan has ${plan.conflicts.length} unresolved conflict(s); review before applying`,
+        error: `ChangePlan has ${(plan.conflicts ?? []).length} unresolved conflict(s); review before applying`,
       })),
       tracking: { managed: false },
       snapshot,
-      stale: plan.stale,
+      stale: plan.stale ?? false,
       applied: false,
       verified: false,
     };
@@ -207,9 +235,11 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   // document so a user edit between preview and apply cannot silently
   // corrupt the plan. Abort is propagated through the re-read.
   const liveSnapshot = await getDocumentSnapshot({ maxChars: readLimit });
-  const liveHash = liveSnapshot.hash ?? hashDocument(liveSnapshot.text);
+  const liveHash =
+    liveSnapshot.fullDocumentHash ?? hashDocument(liveSnapshot.fullText ?? liveSnapshot.text);
   if (isStale(plan, liveHash)) {
     return {
+      context,
       report,
       plan,
       results: [],
@@ -224,6 +254,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   const editingPreparation = await prepareTrackedEditing(plan.changes);
   if (editingPreparation.error) {
     return {
+      context,
       report,
       plan,
       results: plan.changes.map((change) => ({
@@ -233,7 +264,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
       })),
       tracking: { managed: false },
       snapshot,
-      stale: plan.stale,
+      stale: plan.stale ?? false,
       applied: false,
       verified: false,
       verificationError: editingPreparation.error ?? undefined,
@@ -246,13 +277,23 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     liveHash,
     false,
     liveStructured.nodes,
+    options.policy?.version,
   );
   const verificationSnapshot = await getDocumentSnapshot({ maxChars: readLimit });
-  const verificationHash = verificationSnapshot.hash ?? hashDocument(verificationSnapshot.text);
+  const verificationHash =
+    verificationSnapshot.fullDocumentHash ??
+    hashDocument(verificationSnapshot.fullText ?? verificationSnapshot.text);
   const allApplied =
     applyResult.results.length > 0 && applyResult.results.every((result) => result.applied);
+  report = withCoverageCounts(
+    report,
+    { ...context, formatting },
+    plan.changes.length,
+    allApplied ? applyResult.results.length : 0,
+  );
   if (!applyResult.tracking.managed) {
     return {
+      context,
       report,
       plan,
       results: applyResult.results.map((result) => ({
@@ -276,6 +317,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     )
   ) {
     return {
+      context,
       report,
       plan,
       results: applyResult.results.map((result) => ({
@@ -293,19 +335,45 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   }
 
   return {
+    context,
     report,
     plan,
     results: applyResult.results,
     tracking: applyResult.tracking,
     snapshot,
-    stale: plan.stale,
+    stale: plan.stale ?? false,
     applied: allApplied,
     verified: allApplied,
   };
 }
 
+function withCoverageCounts(
+  report: ConsistencyReport,
+  context: AnalysisContext,
+  plannedChangeCount: number,
+  appliedChangeCount: number,
+): ConsistencyReport {
+  return {
+    ...report,
+    coverage: buildCoverage({
+      nodes: context.nodes,
+      text: context.text,
+      acquisition: context.acquisition,
+      plannedChangeCount,
+      appliedChangeCount,
+    }),
+  };
+}
+
 export interface ApplyReviewedPlanOptions {
   plan: ChangePlan;
+  /** Current persisted governance revision, required for governed plans. */
+  currentGovernancePolicyRevision?: number;
+  coverage?: {
+    complete: boolean;
+    unsupported?: readonly string[];
+    unprocessed?: readonly string[];
+  } | null;
   /** Retained for compatibility; conflicts are always refused in production. */
   allowConflictingApply?: boolean;
   maxChars?: number;
@@ -320,7 +388,13 @@ function paragraphAt(
   after: FormattingSnapshot,
   change: Change,
 ): FormattingSnapshot["paragraphs"][number] | undefined {
-  return after.paragraphs.find((paragraph) => paragraph.index === change.range.start);
+  const expectedNodeId =
+    change.precondition?.kind === "node" ? change.precondition.nodeId : undefined;
+  return after.paragraphs.find((paragraph) =>
+    expectedNodeId === undefined
+      ? paragraph.index === change.range.start
+      : paragraph.nodeId === expectedNodeId,
+  );
 }
 
 function verifyFormattingChange(
@@ -405,7 +479,7 @@ async function verifyPlanReadback(plan: ChangePlan, maxChars?: number): Promise<
   );
   if (hasTextChange) {
     const after = await getDocumentSnapshot(maxChars === undefined ? {} : { maxChars });
-    return (after.hash ?? hashDocument(after.text)) !== plan.docHash
+    return (after.fullDocumentHash ?? hashDocument(after.fullText ?? after.text)) !== plan.docHash
       ? { verified: true }
       : { verified: false, error: "Readback did not show the planned text change." };
   }
@@ -433,6 +507,38 @@ async function verifyPlanReadback(plan: ChangePlan, maxChars?: number): Promise<
 export async function applyReviewedPlan(
   options: ApplyReviewedPlanOptions,
 ): Promise<ApplyReviewedPlanResult> {
+  if (options.plan.schemaVersion !== 2) {
+    return {
+      results: options.plan.changes.map((change) => ({
+        changeId: change.id,
+        applied: false,
+        error: "Reviewed plan is not schema version 2; preview again before applying.",
+      })),
+      tracking: { managed: false },
+      stale: false,
+      applied: false,
+      verified: false,
+      verificationError: "Incompatible ChangePlan schema is refused.",
+    };
+  }
+  if (
+    options.coverage !== undefined &&
+    options.coverage !== null &&
+    options.coverage.complete !== true
+  ) {
+    return {
+      results: options.plan.changes.map((change) => ({
+        changeId: change.id,
+        applied: false,
+        error: "Reviewed plan coverage is incomplete; no changes were applied.",
+      })),
+      tracking: { managed: false },
+      stale: false,
+      applied: false,
+      verified: false,
+      verificationError: "Incomplete coverage blocks reviewed apply.",
+    };
+  }
   const editingPreparation = await prepareTrackedEditing(options.plan.changes);
   if (editingPreparation.error) {
     return {
@@ -467,7 +573,7 @@ export async function applyReviewedPlan(
       verificationError: "The document changed after preview.",
     };
   }
-  if (options.plan.conflicts.length > 0) {
+  if ((options.plan.conflicts ?? []).length > 0) {
     return {
       results: options.plan.changes.map((change) => ({
         changeId: change.id,
@@ -486,6 +592,9 @@ export async function applyReviewedPlan(
     live.contentHash,
     false,
     live.nodes,
+    ...(options.currentGovernancePolicyRevision === undefined
+      ? []
+      : [options.currentGovernancePolicyRevision]),
   );
   const allApplied = result.results.length > 0 && result.results.every((item) => item.applied);
   if (!result.tracking.managed) {
@@ -525,6 +634,7 @@ export async function applyReviewedPlan(
 export interface FullDocumentReviewOptions {
   profile: GovernanceProfile;
   includeRawText: true;
+  consent: { fullDocumentReview: true };
   registry: LlmProvider;
   snapshot?: StructuredDocumentSnapshot;
   currentDocumentVersion?: string;
@@ -542,13 +652,18 @@ export async function reviewEntireDocument(
     snapshot,
     profile: options.profile,
     includeRawText: options.includeRawText,
+    consent: options.consent,
     registry: options.registry,
     ...(options.currentDocumentVersion !== undefined
       ? { currentDocumentVersion: options.currentDocumentVersion }
       : {}),
     getCurrentDocumentHash:
       options.getCurrentDocumentHash ??
-      (async () => hashDocument((await getDocumentSnapshot()).text)),
+      (async () => {
+        const current = await getDocumentSnapshot();
+        const fullText = current.fullText ?? current.text;
+        return current.fullDocumentHash ?? hashDocument(fullText);
+      }),
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });

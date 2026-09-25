@@ -4,21 +4,10 @@
  */
 
 import { env } from "../../core/config/env";
+import { redactDiagnosticContext, redactSensitiveText } from "./redaction";
 
 interface LogContext {
   [key: string]: unknown;
-}
-
-function redactContext(context: LogContext): LogContext {
-  const redacted: LogContext = {};
-  for (const [k, v] of Object.entries(context)) {
-    if (/key|token|secret|password|auth/i.test(k) && typeof v === "string") {
-      redacted[k] = "***";
-    } else {
-      redacted[k] = v;
-    }
-  }
-  return redacted;
 }
 
 function base(level: "info" | "warn" | "error", message: string, context: LogContext = {}): void {
@@ -26,8 +15,8 @@ function base(level: "info" | "warn" | "error", message: string, context: LogCon
   const entry = {
     ts: new Date().toISOString(),
     level,
-    message,
-    ...redactContext(context),
+    message: redactSensitiveText(message),
+    ...redactDiagnosticContext(context),
   };
   // eslint-disable-next-line no-console
   console[level](JSON.stringify(entry));

@@ -8,10 +8,11 @@ import { StyleProfileSchema, type StyleProfile } from "../domain/StyleProfile";
 import { GovernanceProfileSchema, type GovernanceProfile } from "../domain/GovernanceProfile";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 3;
+export const CURRENT_STATE_VERSION = 5;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
+  openAiCredentialMode: "broker",
   spotReviewConsent: false,
   fullDocumentReviewConsent: false,
   telemetryDisabled: true,
@@ -19,6 +20,7 @@ const DEFAULT_SETTINGS: PersistedState["settings"] = {
 };
 
 const DEFAULT_GOVERNANCE_PROFILES: Record<string, GovernanceProfile> = {};
+const DEFAULT_GOVERNANCE_HISTORY: Record<string, GovernanceProfile[]> = {};
 
 /** Create a minimal governance profile from a StyleProfile for migration seeding. */
 function seedGovernanceProfile(style: StyleProfile): GovernanceProfile {
@@ -60,9 +62,11 @@ export function migrate(raw: unknown): PersistedState {
     case 0:
       return migrateV0ToCurrent(obj);
     case 1:
-      return migrateV1ToV2(obj);
     case 2:
-      return migrateV2ToV3(obj);
+      return migrateV3ToV4(obj);
+    case 3:
+    case 4:
+      return migrateV3ToV4(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -77,6 +81,7 @@ function defaultState(): PersistedState {
     profileHistory: {},
     activeProfileId: null,
     governanceProfiles: DEFAULT_GOVERNANCE_PROFILES,
+    governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
     settings: { ...DEFAULT_SETTINGS },
   };
@@ -90,6 +95,7 @@ function readCurrentState(obj: Record<string, unknown>): PersistedState {
     profileHistory: normalizeProfileHistory(obj.profileHistory, profiles),
     activeProfileId: normalizeActiveProfileId(obj.activeProfileId, profiles),
     governanceProfiles: normalizeGovernanceProfiles(obj.governanceProfiles),
+    governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, obj.governanceProfiles),
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
     settings: normalizeSettings(obj.settings),
   };
@@ -104,47 +110,38 @@ function migrateV0ToCurrent(raw: Record<string, unknown>): PersistedState {
     profileHistory: normalizeProfileHistory(raw.profileHistory, profiles),
     activeProfileId: normalizeActiveProfileId(raw.activeProfileId, profiles),
     governanceProfiles: DEFAULT_GOVERNANCE_PROFILES,
+    governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
     settings: normalizeSettings(raw.settings),
   };
 }
 
-function migrateV1ToV2(raw: Record<string, unknown>): PersistedState {
-  const profiles = normalizeProfiles(raw.profiles);
-  return {
-    version: CURRENT_STATE_VERSION,
-    profiles,
-    profileHistory: normalizeProfileHistory(raw.profileHistory, profiles),
-    activeProfileId: normalizeActiveProfileId(raw.activeProfileId, profiles),
-    governanceProfiles: DEFAULT_GOVERNANCE_PROFILES,
-    activeGovernanceProfileId: null,
-    settings: normalizeSettings(raw.settings),
-  };
-}
-
-/** v2 to v3: add governanceProfiles and activeGovernanceProfileId, seed from active StyleProfile. */
-function migrateV2ToV3(raw: Record<string, unknown>): PersistedState {
-  const profiles = normalizeProfiles(raw.profiles);
-  const activeProfileId = normalizeActiveProfileId(raw.activeProfileId, profiles);
-  const governanceProfiles: Record<string, GovernanceProfile> = {};
-
-  // Seed governance profiles from active StyleProfile
-  if (activeProfileId) {
-    const activeProfile = profiles.find((p) => p.id === activeProfileId);
-    if (activeProfile) {
-      governanceProfiles[activeProfileId] = seedGovernanceProfile(activeProfile);
-    }
+function normalizeGovernanceHistory(
+  raw: unknown,
+  profiles: unknown,
+): Record<string, GovernanceProfile[]> {
+  const normalizedProfiles = normalizeGovernanceProfiles(profiles);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return Object.fromEntries(
+      Object.entries(normalizedProfiles).map(([id, profile]) => [id, [profile]]),
+    );
   }
-
-  return {
-    version: CURRENT_STATE_VERSION,
-    profiles,
-    profileHistory: normalizeProfileHistory(raw.profileHistory, profiles),
-    activeProfileId,
-    governanceProfiles,
-    activeGovernanceProfileId: Object.keys(governanceProfiles)[0] ?? null,
-    settings: normalizeSettings(raw.settings),
-  };
+  const result: Record<string, GovernanceProfile[]> = {};
+  for (const [id, snapshots] of Object.entries(raw as Record<string, unknown>)) {
+    if (!z.string().uuid().safeParse(id).success || !Array.isArray(snapshots)) continue;
+    const valid = snapshots
+      .map((snapshot) => GovernanceProfileSchema.safeParse(snapshot))
+      .filter(
+        (entry): entry is { success: true; data: GovernanceProfile } =>
+          entry.success && entry.data.id === id,
+      )
+      .map((entry) => entry.data);
+    if (valid.length > 0) result[id] = valid;
+  }
+  for (const [id, profile] of Object.entries(normalizedProfiles)) {
+    if (!result[id]) result[id] = [profile];
+  }
+  return result;
 }
 
 function normalizeGovernanceProfiles(raw: unknown): Record<string, GovernanceProfile> {
@@ -183,14 +180,60 @@ function normalizeActiveProfileId(raw: unknown, profiles: readonly StyleProfile[
   return raw;
 }
 
+/** v3/v4 to v5: remove credentials and seed governance-policy history. */
+function migrateV3ToV4(raw: Record<string, unknown>): PersistedState {
+  const state = normalizeV3State(raw);
+  return {
+    ...state,
+    version: CURRENT_STATE_VERSION,
+    settings: {
+      ...state.settings,
+      openAiCredentialMode: "broker",
+    },
+  };
+}
+
+function normalizeV3State(raw: Record<string, unknown>): PersistedState {
+  const profiles = normalizeProfiles(raw.profiles);
+  const activeProfileId = normalizeActiveProfileId(raw.activeProfileId, profiles);
+  const governanceProfiles =
+    Object.keys(raw.governanceProfiles ?? {}).length > 0
+      ? normalizeGovernanceProfiles(raw.governanceProfiles)
+      : Object.keys(DEFAULT_GOVERNANCE_PROFILES).length > 0
+        ? DEFAULT_GOVERNANCE_PROFILES
+        : seedGovernanceProfiles(activeProfileId, profiles);
+  return {
+    version: 3,
+    profiles,
+    profileHistory: normalizeProfileHistory(raw.profileHistory, profiles),
+    activeProfileId,
+    governanceProfiles,
+    governanceHistory: normalizeGovernanceHistory(raw.governanceHistory, governanceProfiles),
+    activeGovernanceProfileId:
+      normalizeActiveGovernanceProfileId(raw.activeGovernanceProfileId) ??
+      Object.keys(governanceProfiles)[0] ??
+      null,
+    settings: normalizeSettings(raw.settings),
+  };
+}
+
+function seedGovernanceProfiles(
+  activeProfileId: string | null,
+  profiles: readonly StyleProfile[],
+): Record<string, GovernanceProfile> {
+  if (!activeProfileId) return {};
+  const profile = profiles.find((candidate) => candidate.id === activeProfileId);
+  return profile ? { [profile.id]: seedGovernanceProfile(profile) } : {};
+}
+
 function normalizeSettings(raw: unknown): PersistedState["settings"] {
   const parsed = z.record(z.string(), z.unknown()).safeParse(raw);
-  if (!parsed.success) {
-    return { ...DEFAULT_SETTINGS };
-  }
+  if (!parsed.success) return { ...DEFAULT_SETTINGS };
+  const { openAiApiKey: _removedCredential, ...safeSettings } = parsed.data;
   return {
     ...DEFAULT_SETTINGS,
-    ...parsed.data,
+    ...safeSettings,
+    openAiCredentialMode: "broker",
   } as PersistedState["settings"];
 }
 

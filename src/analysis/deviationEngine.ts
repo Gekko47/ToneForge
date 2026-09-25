@@ -50,10 +50,11 @@ export interface DeviationOptions {
  * request is made. Empty target text short-circuits to an empty array
  * without calling the provider.
  *
- * Each validated deviation maps to a `Finding` with `kind: "semantic"`,
- * `category: "semantic-deviation"`, and a full-text character range — vague
- * model deviations are never mapped to invented precise offsets. Entries
- * that fail schema validation are skipped (logged) rather than fatal.
+ * Each validated deviation maps to an advisory, non-actionable `Finding` with
+ * `kind: "semantic"`, `category: "semantic-deviation"`, AI provenance, and a
+ * full-text range. Vague model deviations are never mapped to invented precise
+ * offsets. Entries that fail schema validation are skipped (logged) rather than
+ * fatal.
  */
 export async function detectSemanticDeviations(
   targetText: string,
@@ -116,11 +117,13 @@ export async function detectSemanticDeviations(
       severity: SEVERITY_BY_DEVIATION[result.data.severity] ?? "warning",
       evidence: result.data.deviation,
       confidence: SEMANTIC_CONFIDENCE,
+      actionable: false,
+      advisoryReason: "Full-document semantic deviation has no locally verified target span",
       nodeIds: [],
-      source: "deterministic",
-      risk: "none",
+      source: "ai",
+      risk: "medium",
       reversible: true,
-      status: "new",
+      status: "deferred",
     });
   }
   return findings;

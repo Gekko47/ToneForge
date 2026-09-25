@@ -11,9 +11,9 @@ import { debounce } from "../shared/utils/debounce";
 import { logger } from "../shared/utils/logger";
 import { mergeFindings, createRunId } from "../analysis/incrementalCoordinator";
 import { checkConsistency } from "../analysis/consistencyChecker";
-import { getDocumentSnapshot, getStructuredSnapshot } from "./documentReader";
-import { getFormattingSnapshot } from "./formattingReader";
-import { buildCoverage } from "../analysis/coverage";
+import { acquireAnalysisContext } from "./analysisAcquisition";
+import type { AnalysisCapabilities } from "../analysis/analysisContext";
+import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
 import { type CoverageReport } from "../core/domain/DocumentSnapshot";
 import { type StyleProfile } from "../core/domain/StyleProfile";
 import { type Finding } from "../core/domain/Finding";
@@ -41,6 +41,8 @@ export interface DocumentObserverOptions {
   debounceMs?: number;
   onStatus?: DocumentObserverCallback;
   profile: StyleProfile;
+  policy?: GovernanceProfile;
+  capabilities?: AnalysisCapabilities;
 }
 
 interface ObserverState {
@@ -64,14 +66,31 @@ interface ObserverState {
 
 const DEFAULT_DEBOUNCE_MS = 300;
 
-/** Create a document observer that watches for changes and runs
- *  incremental deterministic checks. */
+/** Create a document observer that watches for changes and runs one conservative full rescan per debounced event. */
 export function createDocumentObserver(options: DocumentObserverOptions): {
   startObserver: () => void;
   stopObserver: () => void;
   onDocumentChanged: () => void;
 } {
   const { debounceMs = DEFAULT_DEBOUNCE_MS, onStatus, profile } = options;
+  const capabilities = options.capabilities ?? {
+    supportsInsertText: false,
+    supportsReplaceText: false,
+    supportsInsertParagraph: false,
+    supportsInsertBreak: false,
+    supportsStyles: false,
+    supportsParagraphFormat: false,
+    supportsCharacterFormat: false,
+    supportsResetCharacterFormatting: false,
+    supportsListLevel: false,
+    supportsRevisions: false,
+    supportsSelection: false,
+    supportsParagraphResolution: false,
+    supportsHighlight: false,
+    supportsContextMenu: false,
+    hostName: "unknown" as const,
+    hostVersion: null,
+  };
   const state: ObserverState = {
     running: false,
     documentVersion: "",
@@ -122,33 +141,26 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     };
 
     try {
-      // Get the document snapshot
-      const snapshot = await getDocumentSnapshot();
-      if (isObsolete()) return;
-      const structuredSnapshot = await getStructuredSnapshot();
-      if (isObsolete()) return;
-      const formattingSnapshot = await getFormattingSnapshot();
+      // Acquire one immutable scope. Word currently exposes no verified
+      // changed-range event, so every triggered scan conservatively examines all
+      // acquired nodes; this is not true incremental analysis.
+      const context = await acquireAnalysisContext({
+        profile,
+        capabilities,
+        ...(options.policy ? { policy: options.policy } : {}),
+      });
       if (isObsolete()) return;
 
-      // The host currently supplies a full document snapshot rather than a
-      // reliable changed-range event. Run one canonical consistency analysis
-      // over the same text, nodes, and formatting snapshot that safe reformat
-      // previews use. This prevents governance and findings from diverging.
-      const nodes = structuredSnapshot.nodes;
-      const fullText = snapshot.text;
+      const nodes = [...context.nodes];
       const dirtyNodeIds = nodes.map((node) => node.nodeId);
       const report = await checkConsistency({
-        text: fullText,
-        profile,
-        snapshot: formattingSnapshot,
-        nodes,
-        ...(snapshot.hash ? { docHash: snapshot.hash } : {}),
+        context,
         includeRawText: false,
       });
       if (isObsolete()) return;
 
       const mergedFindings = mergeFindings([], dirtyNodeIds, () => report.findings);
-      const coverage = report.coverage ?? buildCoverage({ nodes, text: fullText });
+      const coverage = report.coverage ?? null;
       state.findings = mergedFindings;
       state.coverage = coverage;
       state.lastScan = new Date().toISOString();
@@ -156,7 +168,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       state.dirtyCount = dirtyNodeIds.length;
       state.stale = false;
       state.error = null;
-      const coverageComplete = coverage?.complete !== false;
+      const coverageComplete = coverage?.complete === true;
       state.phase = !coverageComplete
         ? "incomplete"
         : mergedFindings.length === 0

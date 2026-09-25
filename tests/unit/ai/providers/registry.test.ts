@@ -7,8 +7,10 @@ describe("LlmRegistry", () => {
     expect(registry.activeName).toBe("mock");
   });
 
-  it("defaults to openai adapter when API key is configured", () => {
-    const registry = new LlmRegistry({ openai: { apiKey: "sk-test" } });
+  it("defaults to openai adapter for a configured broker", () => {
+    const registry = new LlmRegistry({
+      openai: { credentialMode: "broker", baseUrl: "/__toneforge/llm/v1" },
+    });
     expect(registry.activeName).toBe("openai");
   });
 
@@ -25,10 +27,18 @@ describe("LlmRegistry", () => {
     expect(result.text).toContain("Mocked response");
   });
 
-  it("exposes typed adapters", () => {
-    const registry = new LlmRegistry({ provider: "mock" });
-    expect(registry.activeProvider).toBeInstanceOf(MockAdapter);
-    const openai = new OpenAiAdapter({ apiKey: "sk-test" });
-    expect(openai.configured).toBe(true);
+  it("exposes typed adapters for mock, broker, and explicit user configuration", () => {
+    const mockRegistry = new LlmRegistry({ provider: "mock" });
+    expect(mockRegistry.activeProvider).toBeInstanceOf(MockAdapter);
+    const broker = new OpenAiAdapter({
+      credentialMode: "broker",
+      baseUrl: "/__toneforge/llm/v1",
+    });
+    expect(broker.configured).toBe(true);
+    const userSupplied = new OpenAiAdapter({
+      credentialMode: "apiKey",
+      apiKey: "sk-test",
+    });
+    expect(userSupplied.configured).toBe(true);
   });
 });

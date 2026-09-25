@@ -34,6 +34,48 @@ describe("TaskPaneHeader", () => {
     await vi.waitFor(() => expect(trigger).toHaveAttribute("aria-expanded", "false"));
   });
 
+  it("closes on Escape and returns focus to the menu trigger", async () => {
+    const user = userEvent.setup();
+    render(
+      <TaskPaneHeader
+        activePage="home"
+        profileName="Corporate editorial"
+        profileVersion="1.0.0"
+        onNavigate={vi.fn()}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+    await user.click(trigger);
+    expect(screen.getByRole("dialog", { name: "ToneForge navigation" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "ToneForge navigation" })).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("traps keyboard focus in the open navigation dialog", async () => {
+    const user = userEvent.setup();
+    render(
+      <TaskPaneHeader
+        activePage="home"
+        profileName="Corporate editorial"
+        profileVersion="1.0.0"
+        onNavigate={vi.fn()}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "ToneForge navigation" });
+    const closeButton = screen.getByRole("button", { name: "Close navigation" });
+    expect(closeButton).toHaveFocus();
+
+    await user.tab();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    await user.tab({ shift: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
   it("returns focus to the menu trigger when navigation closes", async () => {
     const user = userEvent.setup();
     render(

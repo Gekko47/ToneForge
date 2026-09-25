@@ -17,67 +17,39 @@ import { env } from "../../core/config/env";
 import { LlmError, type LlmProvider, type LlmRequest, type LlmResponse } from "./LlmProvider";
 import { withRetry, type RetryOptions } from "./retry";
 import { logger } from "../../shared/utils/logger";
+import { redactSensitiveText } from "../../shared/utils/redaction";
 
-/** Patterns that indicate sensitive content worth redacting.
- *
- * The generic long-token pattern (`[A-Za-z0-9+/]{32,}`) is intentionally
- * LAST in the list and only matches tokens that are not already caught by
- * the more specific patterns above (emails, card numbers, `sk-`/`pk-`/`rk-`/
- * `whsec-` keys, and bearer tokens). It is also anchored to require word
- * boundaries so ordinary long words are not over-redacted.
- */
-const REDACT_PATTERNS: Array<{ regex: RegExp; replacement: string }> = [
-  {
-    regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
-    replacement: "[REDACTED_EMAIL]",
-  },
-  { regex: /\b(?:\d[ -]*?){13,16}\b/g, replacement: "[REDACTED_CARD]" },
-  // OpenAI keys are typically `sk-` followed by 20+ alphanumerics, but we also
-  // catch shorter test-style keys to avoid leaking fixture data.
-  { regex: /\b(sk-[A-Za-z0-9]{6,})\b/g, replacement: "[REDACTED_API_KEY]" },
-  // Project keys and other bearer tokens.
-  { regex: /\b((?:pk|rk|whsec)-[A-Za-z0-9]{10,})\b/g, replacement: "[REDACTED_API_KEY]" },
-  { regex: /\b(?:Bearer\s+)[A-Za-z0-9._\-]{10,}\b/g, replacement: "Bearer [REDACTED_TOKEN]" },
-  // Generic long hex/base64-ish secrets. Kept after the specific patterns so
-  // emails/keys/bearer tokens are redacted with their own labels, and anchored
-  // with word boundaries to avoid redacting ordinary long words.
-  { regex: /\b([A-Za-z0-9+/]{32,}={0,2})\b/g, replacement: "[REDACTED_SECRET]" },
-];
+export type OpenAiCredentialMode = "broker" | "apiKey";
 
-function redactText(text: string): string {
-  let out = text;
-  for (const { regex, replacement } of REDACT_PATTERNS) {
-    out = out.replace(regex, replacement);
-  }
-  return out;
+export interface OpenAiAdapterOptions {
+  credentialMode?: OpenAiCredentialMode;
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+  timeoutMs?: number;
+  maxRetries?: number;
 }
 
 export class OpenAiAdapter implements LlmProvider {
   readonly name = "openai";
+  private readonly credentialMode: OpenAiCredentialMode;
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly model: string;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
 
-  constructor(
-    opts: Partial<{
-      apiKey: string;
-      baseUrl: string;
-      model: string;
-      timeoutMs: number;
-      maxRetries: number;
-    }> = {},
-  ) {
-    this.apiKey = opts.apiKey ?? env.OPENAI_API_KEY ?? "";
-    this.baseUrl = opts.baseUrl ?? env.OPENAI_BASE_URL;
+  constructor(opts: OpenAiAdapterOptions = {}) {
+    this.credentialMode = opts.credentialMode ?? (opts.apiKey ? "apiKey" : "broker");
+    this.apiKey = opts.apiKey ?? "";
+    this.baseUrl = opts.baseUrl ?? env.LLM_BROKER_URL ?? "";
     this.model = opts.model ?? env.OPENAI_MODEL;
     this.timeoutMs = opts.timeoutMs ?? env.OPENAI_TIMEOUT_MS;
     this.maxRetries = opts.maxRetries ?? env.OPENAI_MAX_RETRIES;
   }
 
   get configured(): boolean {
-    return this.apiKey.length > 0;
+    return this.credentialMode === "apiKey" ? this.apiKey.length > 0 : this.baseUrl.length > 0;
   }
 
   async complete(request: LlmRequest): Promise<LlmResponse> {
@@ -141,7 +113,7 @@ export class OpenAiAdapter implements LlmProvider {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
+          ...(this.credentialMode === "apiKey" ? { Authorization: `Bearer ${this.apiKey}` } : {}),
         },
         body: JSON.stringify({
           model: this.model,
@@ -205,11 +177,13 @@ export class OpenAiAdapter implements LlmProvider {
       return new LlmError(`OpenAI network error: ${err.message}`, this.name, true);
     }
     const message = err instanceof Error ? err.message : String(err);
-    logger.error("OpenAI request failed", { message: redactText(message) });
+    logger.error("OpenAI request failed", {
+      errorType: err instanceof Error ? err.name : "Unknown",
+    });
     return new LlmError(message, this.name, false);
   }
 
   redact(text: string): string {
-    return redactText(text);
+    return redactSensitiveText(text);
   }
 }

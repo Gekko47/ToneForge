@@ -24,6 +24,10 @@ Add resilient provider adapters behind a provider-agnostic interface.
 
 ## Status
 
-PASS — mock adapter `failOn` precedence fixed (failure wins over scripted
-responses) and `request.signal` honored; `rewritePrompts.test.ts` added;
-OpenAI redaction pattern list de-duplicated.
+PASS for the original offline provider contract. The current provider layer
+preserves mock failure precedence, abort/retry behavior, redaction, and explicit
+raw-text consent. Browser bundles receive no API key or full environment object;
+optional local live-provider testing uses the development-only same-origin broker.
+No live provider or network behavior is claimed by this stage. Production
+broker authentication and credential custody remain release gates under ADR-0039
+and [`docs/privacy-security.md`](../privacy-security.md).

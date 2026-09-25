@@ -2,31 +2,35 @@
  * Application state persistence.
  *
  * Primary store: Office roamingSettings (survives across sessions).
- * Fallback: localStorage (used when Office runtime is unavailable,
- * e.g. in unit tests or when running outside Word).
- *
- * NOTE: API keys are stored in plaintext in roamingSettings. This is an
- * accepted MVP limitation; Stage 25 should add DPPII/key-vault encryption.
+ * Fallback: localStorage (used when Office runtime is unavailable).
+ * Credentials are not part of ordinary state. Legacy credential fields are
+ * removed during migration and their legacy storage records are purged.
  */
 
 import { z } from "zod";
+import { logger } from "../../shared/utils/logger";
 import { StyleProfileSchema, type StyleProfile } from "../domain/StyleProfile";
-import { GovernanceProfileSchema } from "../domain/GovernanceProfile";
+import {
+  createGovernanceProfile,
+  GovernanceProfileSchema,
+  type GovernanceProfile,
+} from "../domain/GovernanceProfile";
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(3),
+  version: z.number().int().nonnegative().default(5),
   profiles: z.array(StyleProfileSchema).default([]),
   profileHistory: z.record(z.string().uuid(), z.array(StyleProfileSchema)).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
+  governanceHistory: z.record(z.string().uuid(), z.array(GovernanceProfileSchema)).default({}),
   activeGovernanceProfileId: z.string().uuid().nullable().default(null),
   settings: z
     .object({
-      openAiApiKey: z.string().optional(),
       openAiBaseUrl: z.string().url().optional(),
       openAiModel: z.string().optional(),
       llmProvider: z.enum(["openai", "mock"]).default("mock"),
+      openAiCredentialMode: z.literal("broker").default("broker"),
       spotReviewConsent: z.boolean().default(false),
       fullDocumentReviewConsent: z.boolean().default(false),
       telemetryDisabled: z.boolean().default(true),
@@ -37,9 +41,13 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v3";
-const LEGACY_STORAGE_KEY_V2 = "ToneForge.State.v2";
-const LEGACY_STORAGE_KEY_V1 = "ToneForge.State.v1";
+const STORAGE_KEY = "ToneForge.State.v5";
+const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v4",
+  "ToneForge.State.v3",
+  "ToneForge.State.v2",
+  "ToneForge.State.v1",
+] as const;
 
 function isOfficeRuntime(): boolean {
   return typeof (globalThis as unknown as { Office?: unknown }).Office !== "undefined";
@@ -72,8 +80,10 @@ function getRoamingSettings(): Record<string, unknown> | null {
 
     return (
       parsePersistedValue(settings.get(STORAGE_KEY)) ??
-      parsePersistedValue(settings.get(LEGACY_STORAGE_KEY_V2)) ??
-      parsePersistedValue(settings.get(LEGACY_STORAGE_KEY_V1))
+      LEGACY_STORAGE_KEYS.map((key) => parsePersistedValue(settings.get(key))).find(
+        (value) => value !== null,
+      ) ??
+      null
     );
   } catch {
     return null;
@@ -86,6 +96,7 @@ async function setRoamingSettingsAsync(value: Record<string, unknown>): Promise<
       Office?: {
         roamingSettings?: {
           set: (k: string, v: unknown) => void;
+          remove?: (k: string) => void;
           saveAsync: (cb?: (result: unknown) => void) => void;
         };
       };
@@ -94,6 +105,7 @@ async function setRoamingSettingsAsync(value: Record<string, unknown>): Promise<
   const settings = office?.roamingSettings;
   if (!settings) return;
   settings.set(STORAGE_KEY, JSON.stringify(value));
+  LEGACY_STORAGE_KEYS.forEach((key) => settings.remove?.(key));
   await new Promise<void>((resolve) => {
     try {
       settings.saveAsync(() => resolve());
@@ -144,8 +156,10 @@ function getLocalStorage(): Record<string, unknown> | null {
   try {
     return (
       parsePersistedValue(storage.getItem(STORAGE_KEY)) ??
-      parsePersistedValue(storage.getItem(LEGACY_STORAGE_KEY_V2)) ??
-      parsePersistedValue(storage.getItem(LEGACY_STORAGE_KEY_V1))
+      LEGACY_STORAGE_KEYS.map((key) => parsePersistedValue(storage.getItem(key))).find(
+        (value) => value !== null,
+      ) ??
+      null
     );
   } catch {
     return null;
@@ -154,7 +168,9 @@ function getLocalStorage(): Record<string, unknown> | null {
 
 function setLocalStorage(value: Record<string, unknown>): void {
   try {
-    getSafeStorage().setItem(STORAGE_KEY, JSON.stringify(value));
+    const storage = getSafeStorage();
+    storage.setItem(STORAGE_KEY, JSON.stringify(value));
+    LEGACY_STORAGE_KEYS.forEach((key) => storage.removeItem(key));
   } catch {
     // Storage may be unavailable or full; ignore silently.
   }
@@ -180,14 +196,21 @@ export function loadState(): PersistedState {
   const migrated = migrate(raw);
 
   try {
-    return StateSchema.parse(migrated);
+    const parsed = StateSchema.parse(migrated);
+    if (
+      rawContainsLegacyCredential(raw) ||
+      (typeof raw.version === "number" && raw.version < 5) ||
+      !Object.prototype.hasOwnProperty.call(raw, "governanceHistory")
+    ) {
+      saveState(parsed);
+    }
+    return parsed;
   } catch (err) {
     // Corrupted or incompatible persisted state: fall back to defaults
     // rather than crashing the add-in. The previous value is unrecoverable.
-    console.warn(
-      "Failed to parse persisted state; falling back to defaults:",
-      err instanceof Error ? err.message : String(err),
-    );
+    logger.warn("Failed to parse persisted state; falling back to defaults", {
+      errorType: err instanceof Error ? err.name : "Unknown",
+    });
     return migrate(null);
   }
 }
@@ -207,16 +230,51 @@ export function saveState(state: PersistedState): void {
   // Persist to Office roamingSettings asynchronously (best-effort).
   if (isOfficeRuntime()) {
     setRoamingSettingsAsync(payload).catch((err: unknown) => {
-      console.error(
-        "Failed to persist to Office roamingSettings:",
-        err instanceof Error ? err.message : String(err),
-      );
+      logger.error("Failed to persist to Office roamingSettings", {
+        errorType: err instanceof Error ? err.name : "Unknown",
+      });
     });
   }
 }
 
+/** Remove any legacy persisted credential and select the broker/mock-safe default. */
+export function clearPersistedCredentials(): PersistedState {
+  const state = loadState();
+  const cleared: PersistedState = {
+    ...state,
+    settings: {
+      ...state.settings,
+      llmProvider: "mock",
+      openAiCredentialMode: "broker",
+    },
+  };
+  saveState(cleared);
+  return cleared;
+}
+
+function rawContainsLegacyCredential(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const settings = (raw as Record<string, unknown>).settings;
+  return (
+    !!settings &&
+    typeof settings === "object" &&
+    !Array.isArray(settings) &&
+    Object.prototype.hasOwnProperty.call(settings, "openAiApiKey")
+  );
+}
+
 function sameSnapshot(left: StyleProfile, right: StyleProfile): boolean {
   return JSON.stringify({ ...left, updatedAt: "" }) === JSON.stringify({ ...right, updatedAt: "" });
+}
+
+function appendGovernanceSnapshot(
+  history: readonly GovernanceProfile[],
+  profile: GovernanceProfile,
+): GovernanceProfile[] {
+  const latest = history[history.length - 1];
+  return latest && JSON.stringify(latest) === JSON.stringify(profile)
+    ? [...history]
+    : [...history, profile];
 }
 
 function appendSnapshot(history: readonly StyleProfile[], profile: StyleProfile): StyleProfile[] {
@@ -228,6 +286,8 @@ export function upsertProfile(profile: StyleProfile): void {
   const state = loadState();
   const existingIndex = state.profiles.findIndex((item: StyleProfile) => item.id === profile.id);
   const history = state.profileHistory[profile.id] ?? [];
+  const governance = state.governanceProfiles[profile.id];
+  const governanceHistory = state.governanceHistory[profile.id] ?? (governance ? [governance] : []);
 
   if (existingIndex >= 0) {
     const current = state.profiles[existingIndex];
@@ -245,9 +305,23 @@ export function upsertProfile(profile: StyleProfile): void {
     };
     state.profiles[existingIndex] = updated;
     state.profileHistory[profile.id] = appendSnapshot(historyWithCurrent, updated);
+    if (governance) {
+      const nextGovernance = GovernanceProfileSchema.parse({ ...governance, style: updated });
+      state.governanceProfiles[profile.id] = nextGovernance;
+      state.governanceHistory[profile.id] = appendGovernanceSnapshot(
+        governanceHistory,
+        nextGovernance,
+      );
+    }
   } else {
     state.profiles.push(profile);
     state.profileHistory[profile.id] = appendSnapshot(history, profile);
+    const initialGovernance = GovernanceProfileSchema.parse({
+      ...createGovernanceProfile(profile),
+      id: profile.id,
+    });
+    state.governanceProfiles[profile.id] = initialGovernance;
+    state.governanceHistory[profile.id] = [initialGovernance];
   }
 
   saveState(state);
@@ -259,7 +333,14 @@ export function removeProfile(id: string): void {
   const nextHistory = { ...state.profileHistory };
   delete nextHistory[id];
   state.profileHistory = nextHistory;
+  const nextGovernanceHistory = { ...state.governanceHistory };
+  delete nextGovernanceHistory[id];
+  state.governanceHistory = nextGovernanceHistory;
+  const nextGovernanceProfiles = { ...state.governanceProfiles };
+  delete nextGovernanceProfiles[id];
+  state.governanceProfiles = nextGovernanceProfiles;
   if (state.activeProfileId === id) state.activeProfileId = null;
+  if (state.activeGovernanceProfileId === id) state.activeGovernanceProfileId = null;
   saveState(state);
 }
 

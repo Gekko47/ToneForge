@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   associateCommandActions,
+  COMMAND_REGISTRY,
   openFindings,
   openPendingChanges,
   reviewDocument,
@@ -19,16 +20,84 @@ describe("command entry points", () => {
     vi.restoreAllMocks();
   });
 
-  it("associates every manifest executeFunction action and completes events", async () => {
+  it("does nothing when the Office action registry is unavailable", () => {
+    setOffice({});
+    expect(() => associateCommandActions()).not.toThrow();
+  });
+
+  it("associates every typed registry command and completes events", async () => {
     const associate = vi.fn();
     setOffice({ actions: { associate } });
     associateCommandActions();
-    expect(associate).toHaveBeenCalledTimes(7);
+    expect(associate).toHaveBeenCalledTimes(COMMAND_REGISTRY.length);
+    expect(associate.mock.calls.map(([id]) => id)).toEqual(COMMAND_REGISTRY.map(({ id }) => id));
     const scan = associate.mock.calls.find(([id]) => id === "ToneForgeScan");
     const handler = scan?.[1] as (event: { completed: () => void }) => Promise<void>;
     const completed = vi.fn();
     await handler({ completed });
     expect(completed).toHaveBeenCalledOnce();
+  });
+
+  it("keeps registry destinations and manifest action kinds explicit", () => {
+    expect(
+      COMMAND_REGISTRY.map(({ id, label, jsonAction, xmlAction, navigationTarget }) => ({
+        id,
+        label,
+        jsonAction,
+        xmlAction,
+        navigationTarget,
+      })),
+    ).toEqual([
+      {
+        id: "ToneForgeScan",
+        label: "Scan Now",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "governance",
+      },
+      {
+        id: "ToneForgeFindings",
+        label: "Findings",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "findings",
+      },
+      {
+        id: "ToneForgeReviewSelection",
+        label: "Review Selection",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "ai-review-selection",
+      },
+      {
+        id: "ToneForgeReviewDocument",
+        label: "Review Document",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "ai-review-document",
+      },
+      {
+        id: "ToneForgeActiveProfile",
+        label: "Active Profile",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "profile",
+      },
+      {
+        id: "ToneForgeEditProfile",
+        label: "Edit Profile",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "profile",
+      },
+      {
+        id: "ToneForgePendingChanges",
+        label: "Pending Changes",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "pending-changes",
+      },
+    ]);
   });
 
   it("opens the requested task-pane destinations", async () => {
@@ -49,5 +118,13 @@ describe("command entry points", () => {
     setOffice(undefined);
     await reviewSelection();
     expect(consumeTaskpaneTarget()).toBe("governance");
+  });
+
+  it("registers the command actions when Office becomes ready", async () => {
+    const onReady = vi.fn();
+    setOffice({ onReady });
+    vi.resetModules();
+    await import("../../../src/commands/commands");
+    expect(onReady).toHaveBeenCalledOnce();
   });
 });

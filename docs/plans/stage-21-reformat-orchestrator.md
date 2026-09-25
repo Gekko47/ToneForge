@@ -181,5 +181,5 @@ flowchart TD
 ## 8. Implementation result
 
 - The original Stage 21 pipeline remains implemented in [`src/reformat/orchestrator.ts`](../../src/reformat/orchestrator.ts), with preview, empty-text short-circuit, formatting snapshot reuse, tracked apply, and safe refusal behavior.
-- The current full test run passes 58 files / 593 tests. Global coverage remains open as recorded in [`ROADMAP.md`](../../ROADMAP.md).
+- The current full test run passes 68 files / 672 tests. Coverage passes the exercised-core 80% gate as recorded in [`ROADMAP.md`](../../ROADMAP.md).
 - The current status and release consequences are canonical in [`ROADMAP.md`](../../ROADMAP.md).

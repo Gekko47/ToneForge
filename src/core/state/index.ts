@@ -1,4 +1,5 @@
 export {
+  clearPersistedCredentials,
   loadState,
   saveState,
   upsertProfile,

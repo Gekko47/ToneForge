@@ -1,18 +1,12 @@
-/**
- * Pure finding-to-plan planner.
- *
- * The planner validates findings, creates schema-valid changes, retains the
- * source findings for review and semantic passthrough, detects conflicts, and
- * applies the optional hash guard. It never imports or calls the Word mutation
- * adapter.
- */
+/** Pure finding-to-plan planner with immutable provenance and target contracts. */
 
 import { v4 as uuidv4 } from "uuid";
 import {
   ChangeSchema,
   type Change,
+  type ChangeInput,
+  type ChangePrecondition,
   type ChangeRange,
-  type ChangeType,
 } from "../core/domain/Change";
 import { ChangePlanSchema, createChangePlan, type ChangePlan } from "../core/domain/ChangePlan";
 import { FindingSchema, type Finding, type Range } from "../core/domain/Finding";
@@ -23,6 +17,8 @@ import {
   RIGHT_DOUBLE_QUOTE,
   RIGHT_SINGLE_QUOTE,
 } from "../shared/utils/text";
+import { toSentenceCase, toTitleCase } from "../shared/utils/caseConversion";
+import { approvalPolicyForFinding } from "./approvalPolicy";
 import { detectConflicts } from "./conflictDetector";
 import { markStale } from "./staleGuard";
 
@@ -31,22 +27,50 @@ export interface PlanOptions {
   docHash: string;
   baseDocId: string;
   currentDocHash?: string;
+  documentId?: string;
+  documentVersion?: string;
+  structuralHash?: string;
+  analysisText?: string;
+  analysisStart?: number;
+  analysisEnd?: number;
+  analysisTruncated?: boolean;
+  profileId?: string;
+  profileVersion?: string;
+  governancePolicyRevision?: number;
 }
 
 interface CreateChangeParams {
-  type: ChangeType;
+  type: ChangeInput["type"];
   range: ChangeRange;
-  payload: Record<string, unknown>;
+  payload: ChangeInput["payload"];
   rationale: string;
   finding: Finding;
   reversible?: boolean;
+  precondition: ChangePrecondition;
 }
 
 function toChangeRange(range: Range): ChangeRange {
+  if (range.unit === "paragraph") {
+    return {
+      start: range.start,
+      end: range.end,
+      unit: "paragraph",
+      target: { kind: "paragraph", index: range.start },
+    };
+  }
+  if (range.unit === "section") {
+    return {
+      start: range.start,
+      end: range.end,
+      unit: "section",
+      target: { kind: "section", index: range.start },
+    };
+  }
   return { start: range.start, end: range.end };
 }
 
 function makeChange(params: CreateChangeParams): Change {
+  const approval = approvalPolicyForFinding(params.finding);
   return ChangeSchema.parse({
     id: uuidv4(),
     type: params.type,
@@ -54,9 +78,13 @@ function makeChange(params: CreateChangeParams): Change {
     payload: params.payload,
     rationale: params.rationale,
     reversible: params.reversible ?? true,
-    source: "deterministic",
-    risk: "none",
-    approvalRequired: false,
+    source: params.finding.source,
+    risk: params.finding.risk,
+    approvalRequired: approval.approvalRequired,
+    approvalState: approval.approvalState,
+    findingId: params.finding.id,
+    ...(params.finding.ruleId ? { ruleId: params.finding.ruleId } : {}),
+    precondition: params.precondition,
     dependsOn: [],
     ...(params.finding.suggestedChangeId === undefined
       ? {}
@@ -64,7 +92,12 @@ function makeChange(params: CreateChangeParams): Change {
   });
 }
 
+function textPrecondition(_finding: Finding, expected: string): ChangePrecondition {
+  return { kind: "text", expectedText: expected };
+}
+
 function textChange(finding: Finding, text: string): Change | null {
+  const expected = finding.actual ?? finding.evidence;
   if (text.length === 0) {
     if (finding.range.start === finding.range.end) return null;
     return makeChange({
@@ -74,15 +107,17 @@ function textChange(finding: Finding, text: string): Change | null {
       rationale: finding.message,
       finding,
       reversible: true,
+      precondition: textPrecondition(finding, expected),
     });
   }
-  const type: ChangeType = finding.range.start === finding.range.end ? "insertText" : "replaceText";
+  const type = finding.range.start === finding.range.end ? "insertText" : "replaceText";
   return makeChange({
     type,
     range: toChangeRange(finding.range),
     payload: { text },
     rationale: finding.message,
     finding,
+    precondition: textPrecondition(finding, expected),
   });
 }
 
@@ -95,39 +130,66 @@ function deleteChange(finding: Finding, reversible = false): Change | null {
     rationale: finding.message,
     finding,
     reversible,
+    precondition: textPrecondition(finding, finding.actual ?? finding.evidence),
   });
+}
+
+function formattingPrecondition(finding: Finding): ChangePrecondition | null {
+  if (finding.precondition !== undefined) return finding.precondition;
+  if (finding.nodeIds[0] !== undefined) {
+    return {
+      kind: "node",
+      nodeId: finding.nodeIds[0],
+      ...(finding.actual === undefined ? {} : { expectedText: finding.actual }),
+    };
+  }
+  if (finding.kind === "formatting" || finding.category.startsWith("formatting.")) {
+    return {
+      kind: "node",
+      nodeId: `formatting-paragraph-${finding.range.start}`,
+      ...(finding.actual === undefined ? {} : { expectedText: finding.actual }),
+    };
+  }
+  return null;
 }
 
 function styleChange(finding: Finding, styleName: string): Change | null {
   const trimmed = styleName.trim();
-  if (trimmed.length === 0) return null;
+  const precondition = formattingPrecondition(finding);
+  if (trimmed.length === 0 || precondition === null) return null;
   return makeChange({
     type: "applyStyle",
     range: toChangeRange(finding.range),
     payload: { styleName: trimmed },
     rationale: finding.message,
     finding,
+    precondition,
   });
 }
 
 function listLevelChange(finding: Finding, level: number): Change | null {
-  if (!Number.isInteger(level) || level < 0) return null;
+  const precondition = formattingPrecondition(finding);
+  if (!Number.isInteger(level) || level < 0 || precondition === null) return null;
   return makeChange({
     type: "setListLevel",
     range: toChangeRange(finding.range),
     payload: { level },
     rationale: finding.message,
     finding,
+    precondition,
   });
 }
 
-function directFormatChange(finding: Finding): Change {
+function directFormatChange(finding: Finding): Change | null {
+  const precondition = formattingPrecondition(finding);
+  if (precondition === null) return null;
   return makeChange({
     type: "resetCharacterFormatting",
     range: toChangeRange(finding.range),
     payload: {},
     rationale: finding.message,
     finding,
+    precondition,
   });
 }
 
@@ -141,28 +203,6 @@ function quotedReplacement(message: string): string | null {
     .map((pattern) => pattern.exec(message))
     .find((result): result is RegExpExecArray => result !== null);
   return match?.[1]?.trim() || null;
-}
-
-function preferredTerm(message: string): string | null {
-  return quotedReplacement(message);
-}
-
-function spellingPreferredTerm(message: string): string | null {
-  const match = /\bspelling\s+[“"']([^”"']+)[”"']\s+instead\s+of/i.exec(message);
-  return match?.[1]?.trim() || null;
-}
-
-function headingStyle(message: string): string {
-  const previous = /follows\s+[”"']?Heading\s+(\d+)/i.exec(message);
-  if (previous?.[1] !== undefined) {
-    const previousLevel = Number.parseInt(previous[1], 10);
-    if (Number.isInteger(previousLevel) && previousLevel >= 1 && previousLevel < 9) {
-      return `Heading ${previousLevel + 1}`;
-    }
-  }
-
-  const match = /Heading\s+(\d+)/i.exec(message);
-  return match?.[1] !== undefined ? `Heading ${match[1]}` : "Heading 1";
 }
 
 function typographyReplacement(finding: Finding): string | null {
@@ -189,16 +229,14 @@ function typographyReplacement(finding: Finding): string | null {
       return /dot \(\.\)/i.test(message) ? "." : ",";
     case "typography.thousandsSeparator":
       if (/remove/i.test(message)) return "";
-      if (/comma/i.test(message)) return ",";
-      return " ";
+      return /comma/i.test(message) ? "," : " ";
     case "typography.ellipsis":
-      if (/^use ellipsis character/i.test(message)) return ELLIPSIS;
+      if (/use three dots/i.test(message)) return "...";
       if (/spaced dots/i.test(message)) return ". . .";
-      if (/three dots/i.test(message)) return "...";
+      if (/ellipsis character/i.test(message)) return ELLIPSIS;
       return ELLIPSIS;
     case "typography.whitespace":
-      if (/trailing space/i.test(message)) return "";
-      return " ";
+      return /trailing space/i.test(message) ? "" : " ";
     default:
       return null;
   }
@@ -207,18 +245,19 @@ function typographyReplacement(finding: Finding): string | null {
 function houseStyleReplacement(finding: Finding): string | null {
   switch (finding.category) {
     case "houseStyle.terminology":
-      return preferredTerm(finding.message);
-    case "houseStyle.spellingVariant":
-      return spellingPreferredTerm(finding.message);
-    case "houseStyle.capitalization.sentenceCase": {
-      const match = /uppercase\s+[“"']([^”"']+)[”"']/i.exec(finding.message);
-      return (match?.[1] ?? finding.evidence).toUpperCase();
+      return quotedReplacement(finding.message);
+    case "houseStyle.spellingVariant": {
+      const match = /\bspelling\s+[“"']([^”"']+)[”"']\s+instead\s+of/i.exec(finding.message);
+      return match?.[1]?.trim() ?? quotedReplacement(finding.message);
     }
-    case "houseStyle.capitalization.titleCase": {
-      const firstCased = /\p{L}/u.exec(finding.evidence);
-      if (firstCased === null || firstCased[0] === undefined) return null;
-      return firstCased[0].toUpperCase();
-    }
+    case "houseStyle.capitalization.sentenceCase":
+      return finding.transformation?.kind === "case" && finding.transformation.style === "sentence"
+        ? toSentenceCase(finding.transformation.text)
+        : toSentenceCase(finding.evidence);
+    case "houseStyle.capitalization.titleCase":
+      return finding.transformation?.kind === "case" && finding.transformation.style === "title"
+        ? toTitleCase(finding.transformation.text)
+        : toTitleCase(finding.evidence);
     default:
       return null;
   }
@@ -228,10 +267,13 @@ function semanticChanges(finding: Finding): Change[] {
   const replacement = quotedReplacement(finding.message);
   if (replacement === null) return [];
   if (finding.evidence.length === 0 && finding.range.start !== finding.range.end) return [];
-  return [textChange(finding, replacement)].filter((change): change is Change => change !== null);
+  const change = textChange(finding, replacement);
+  return change === null ? [] : [change];
 }
 
 function changesForFinding(finding: Finding): Change[] {
+  if (finding.actionable === false) return [];
+  if (finding.status === "ignored" || finding.status === "deferred") return [];
   switch (finding.category) {
     case "typography.emDash":
     case "typography.emDashSpacing":
@@ -244,18 +286,16 @@ function changesForFinding(finding: Finding): Change[] {
     case "typography.ellipsis":
     case "typography.whitespace": {
       const replacement = typographyReplacement(finding);
-      return replacement === null
-        ? []
-        : [textChange(finding, replacement)].filter((change): change is Change => change !== null);
+      const change = replacement === null ? null : textChange(finding, replacement);
+      return change === null ? [] : [change];
     }
     case "houseStyle.terminology":
     case "houseStyle.spellingVariant":
     case "houseStyle.capitalization.sentenceCase":
     case "houseStyle.capitalization.titleCase": {
       const replacement = houseStyleReplacement(finding);
-      return replacement === null
-        ? []
-        : [textChange(finding, replacement)].filter((change): change is Change => change !== null);
+      const change = replacement === null ? null : textChange(finding, replacement);
+      return change === null ? [] : [change];
     }
     case "houseStyle.bannedTerm": {
       const change = deleteChange(finding);
@@ -263,14 +303,19 @@ function changesForFinding(finding: Finding): Change[] {
     }
     case "formatting.unknownStyle":
     case "formatting.emptyStyle":
-    case "formatting.emptyHeading":
-      return [styleChange(finding, "Normal")].filter((change): change is Change => change !== null);
-    case "formatting.headingHierarchy":
-      return [styleChange(finding, headingStyle(finding.message))].filter(
-        (change): change is Change => change !== null,
-      );
-    case "formatting.directFormatting":
-      return [directFormatChange(finding)];
+    case "formatting.emptyHeading": {
+      const change = styleChange(finding, "Normal");
+      return change === null ? [] : [change];
+    }
+    case "formatting.headingHierarchy": {
+      const targetStyle = finding.expected ?? headingStyle(finding.message);
+      const change = styleChange(finding, targetStyle);
+      return change === null ? [] : [change];
+    }
+    case "formatting.directFormatting": {
+      const change = directFormatChange(finding);
+      return change === null ? [] : [change];
+    }
     case "formatting.listLevel": {
       const change = listLevelChange(finding, 0);
       return change === null ? [] : [change];
@@ -280,20 +325,52 @@ function changesForFinding(finding: Finding): Change[] {
   }
 }
 
-/** Convert validated findings into a conflict-aware, optionally stale plan. */
+function headingStyle(message: string): string {
+  const previous = /follows\s+[”"']?Heading\s+(\d+)/i.exec(message);
+  if (previous?.[1] !== undefined) {
+    const previousLevel = Number.parseInt(previous[1], 10);
+    if (Number.isInteger(previousLevel) && previousLevel >= 1 && previousLevel < 9) {
+      return `Heading ${previousLevel + 1}`;
+    }
+  }
+  const match = /Heading\s*(\d+)/i.exec(message);
+  return match?.[1] !== undefined ? `Heading ${match[1]}` : "Heading 1";
+}
+
 export function planChanges(options: PlanOptions): ChangePlan {
-  const findings = options.findings.flatMap((rawFinding) => {
-    const result = FindingSchema.safeParse(rawFinding);
+  const findings = options.findings.flatMap((raw) => {
+    const result = FindingSchema.safeParse(raw);
     return result.success ? [result.data] : [];
   });
   const changes = findings.flatMap(changesForFinding);
-  const basePlan = createChangePlan(options.docHash, options.baseDocId, changes, findings);
-  const planWithConflicts = {
-    ...basePlan,
-    conflicts: detectConflicts(changes),
-  };
-  return ChangePlanSchema.parse(markStale(planWithConflicts, options.currentDocHash));
+  const basePlan = createChangePlan(options.docHash, options.baseDocId, changes, findings, {
+    schemaVersion: 2,
+    ...(options.governancePolicyRevision === undefined
+      ? {}
+      : { governancePolicyRevision: options.governancePolicyRevision }),
+    documentId: options.documentId ?? options.baseDocId,
+    contentHash: options.docHash,
+    validation: {
+      protectionChecked: true,
+      identityChecked: true,
+      rangeChecked: true,
+      preconditionsChecked: true,
+      approvalsChecked: true,
+    },
+    ...(options.documentVersion === undefined ? {} : { documentVersion: options.documentVersion }),
+    ...(options.structuralHash === undefined ? {} : { structuralHash: options.structuralHash }),
+    ...(options.analysisText === undefined ? {} : { analysisText: options.analysisText }),
+    ...(options.analysisStart === undefined ? {} : { analysisStart: options.analysisStart }),
+    ...(options.analysisEnd === undefined ? {} : { analysisEnd: options.analysisEnd }),
+    ...(options.analysisTruncated === undefined
+      ? {}
+      : { analysisTruncated: options.analysisTruncated }),
+    ...(options.profileId === undefined ? {} : { profileId: options.profileId }),
+    ...(options.profileVersion === undefined ? {} : { profileVersion: options.profileVersion }),
+  });
+  return ChangePlanSchema.parse(
+    markStale({ ...basePlan, conflicts: detectConflicts(changes) }, options.currentDocHash),
+  );
 }
 
-/** Descriptive alias for callers that prefer a factory-style name. */
 export const createChangePlanFromFindings = planChanges;

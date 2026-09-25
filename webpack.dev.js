@@ -1,5 +1,6 @@
 import { merge } from "webpack-merge";
 import common from "./webpack.common.js";
+import { createLocalLlmBroker } from "./scripts/dev-broker.mjs";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -14,9 +15,22 @@ fs.appendFileSync(requestLogPath, `\n--- dev server started ${new Date().toISOSt
 
 const certDir = path.resolve(os.homedir(), ".office-addin-dev-certs");
 
-// Load .env so process.env.* is available inside the browser bundle.
+// .env is loaded only into the development-server Node process. It is never
+// serialized into browser assets; the broker below may use a server-only key.
 const envFile = path.resolve(__dirname, ".env");
-const envConfig = dotenv.config({ path: envFile }).parsed ?? {};
+dotenv.config({ path: envFile });
+
+const publicDevEnv = {
+  NODE_ENV: "development",
+  PORT: process.env.PORT ?? "3000",
+  HTTPS_PORT: process.env.HTTPS_PORT ?? "3001",
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+  OPENAI_MODEL: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+  OPENAI_TIMEOUT_MS: process.env.OPENAI_TIMEOUT_MS ?? "30000",
+  OPENAI_MAX_RETRIES: process.env.OPENAI_MAX_RETRIES ?? "2",
+  TELEMETRY_DISABLED: process.env.TELEMETRY_DISABLED ?? "1",
+  ANALYTICS_ENDPOINT: process.env.ANALYTICS_ENDPOINT ?? "",
+};
 
 const dev = {
   mode: "development",
@@ -55,18 +69,20 @@ const dev = {
     // the request is same-origin (host bridge) or cross-origin.
     setupMiddlewares: (middlewares, devServer) => {
       const requestLogger = (req, res, next) => {
+        const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
         const entry = [
           `[${new Date().toISOString()}]`,
           req.method,
-          req.url,
+          pathname,
           `origin=${req.headers.origin ?? "(none)"}`,
           `ua=${req.headers["user-agent"] ?? "(none)"}`,
-          `referer=${req.headers.referer ?? "(none)"}`,
+          `referer=${req.headers.referer ? new URL(req.headers.referer, "http://localhost").pathname : "(none)"}`,
         ].join(" ");
         fs.appendFileSync(requestLogPath, entry + "\n");
         next();
       };
-      devServer?.app?.use(requestLogger);
+      const broker = createLocalLlmBroker();
+      devServer?.app?.use(requestLogger, broker);
       return middlewares;
     },
   },
@@ -83,10 +99,9 @@ const dev = {
       chunks: ["runtime", "commands"],
       inject: "body",
     }),
-    // Expose process.env to the browser bundle so core/config/env.ts can
-    // read NODE_ENV, PORT, OPENAI_* and TELEMETRY_DISABLED at runtime.
+    // Only explicitly allowlisted, non-secret client settings are compiled in.
     new webpack.DefinePlugin({
-      "process.env": JSON.stringify(envConfig),
+      "process.env": JSON.stringify(publicDevEnv),
     }),
   ],
   optimization: {

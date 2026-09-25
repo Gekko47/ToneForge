@@ -14,7 +14,6 @@ export interface BatcherOptions {
 }
 
 const DEFAULT_MAX_CHARACTERS = 8000;
-const DEFAULT_MAX_NODES = 20;
 
 /** Partition editable nodes in document order into bounded review batches. */
 export function partitionReviewBatches(
@@ -22,7 +21,7 @@ export function partitionReviewBatches(
   options: BatcherOptions = {},
 ): ReviewBatch[] {
   const maxCharacters = Math.max(1, options.maxCharacters ?? DEFAULT_MAX_CHARACTERS);
-  const maxNodes = Math.max(1, options.maxNodes ?? DEFAULT_MAX_NODES);
+  void options.maxNodes;
   const batches: ReviewBatch[] = [];
   let current: DocumentNode[] = [];
 
@@ -59,14 +58,13 @@ export function partitionReviewBatches(
   nodes.forEach((node) => {
     if (!node.editable || node.protectionReason || !node.includedInAIReview) return;
     const text = node.text ?? "";
+    if (text.length === 0) return;
+    flush();
     if (text.length > maxCharacters) {
       flush();
       appendChunks(node, text);
       return;
     }
-    const projected =
-      current.reduce((sum, item) => sum + (item.text?.length ?? 0) + 1, 0) + text.length;
-    if (current.length >= maxNodes || projected > maxCharacters) flush();
     current.push(node);
   });
   flush();

@@ -4,35 +4,36 @@ import { migrate, CURRENT_STATE_VERSION } from "../../../../src/core/state/migra
 
 describe("migration", () => {
   it("has a current version", () => {
-    expect(CURRENT_STATE_VERSION).toBe(3);
+    expect(CURRENT_STATE_VERSION).toBe(5);
   });
 
   it("returns default state for null input", () => {
     const result = migrate(null);
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(5);
     expect(result.profiles).toEqual([]);
     expect(result.profileHistory).toEqual({});
+    expect(result.governanceHistory).toEqual({});
     expect(result.activeProfileId).toBeNull();
     expect(result.settings.telemetryDisabled).toBe(true);
   });
 
   it("returns default state for undefined input", () => {
     const result = migrate(undefined);
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(5);
     expect(result.profiles).toEqual([]);
     expect(result.profileHistory).toEqual({});
   });
 
   it("returns default state for non-object input", () => {
     const result = migrate("not an object");
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(5);
     expect(result.profiles).toEqual([]);
     expect(result.profileHistory).toEqual({});
   });
 
   it("returns default state for array input", () => {
     const result = migrate([]);
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(5);
     expect(result.profiles).toEqual([]);
     expect(result.profileHistory).toEqual({});
   });
@@ -45,7 +46,7 @@ describe("migration", () => {
       settings: { telemetryDisabled: false },
     };
     const result = migrate(v1);
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(5);
     expect(result.profileHistory).toEqual({});
     expect(result.settings.telemetryDisabled).toBe(false);
   });
@@ -57,7 +58,7 @@ describe("migration", () => {
       settings: {},
     };
     const result = migrate(v0);
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(5);
     expect(result.profileHistory).toEqual({});
     expect(result.settings.telemetryDisabled).toBe(true);
   });
@@ -69,7 +70,7 @@ describe("migration", () => {
       settings: { openAiModel: "gpt-4o" },
     };
     const result = migrate(v0);
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(5);
     expect(result.settings.openAiModel).toBe("gpt-4o");
     expect(result.settings.telemetryDisabled).toBe(true);
   });
@@ -83,7 +84,7 @@ describe("migration", () => {
       settings: {},
     };
     const result = migrate(v1);
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(5);
     expect(result.profiles).toHaveLength(1);
     expect(result.profileHistory[profile.id]).toEqual([profile]);
     expect(result.activeProfileId).toBe(profile.id);
@@ -105,9 +106,33 @@ describe("migration", () => {
     expect(result.profileHistory[profile.id]).toEqual([valid]);
   });
 
+  it("removes v3 plaintext credentials while preserving user consent", () => {
+    const result = migrate({
+      version: 3,
+      profiles: [],
+      activeProfileId: null,
+      governanceProfiles: {},
+      activeGovernanceProfileId: null,
+      settings: {
+        openAiApiKey: "sk-legacy-secret-value",
+        llmProvider: "openai",
+        spotReviewConsent: true,
+        fullDocumentReviewConsent: true,
+        semanticOptIn: true,
+      },
+    });
+
+    expect(result.version).toBe(5);
+    expect(result.settings).not.toHaveProperty("openAiApiKey");
+    expect(result.settings.openAiCredentialMode).toBe("broker");
+    expect(result.settings.spotReviewConsent).toBe(true);
+    expect(result.settings.fullDocumentReviewConsent).toBe(true);
+    expect(result.settings.semanticOptIn).toBe(true);
+  });
+
   it("falls back to default state for unknown future versions", () => {
     const result = migrate({ version: 99, profiles: [], settings: {} });
-    expect(result.version).toBe(3);
+    expect(result.version).toBe(5);
     expect(result.profiles).toEqual([]);
     expect(result.profileHistory).toEqual({});
   });

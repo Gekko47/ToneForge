@@ -4,6 +4,7 @@ import {
   getDocumentSnapshot,
   getSelectedParagraphText,
   getSelectionText,
+  getLiveSelection,
   getStructuredSnapshot,
 } from "../../word/documentReader";
 import { createLlmRegistry } from "../../ai/providers/registry";
@@ -32,7 +33,7 @@ import FullReviewPreflight from "../components/FullReviewPreflight";
 import FullReviewProgress from "../components/FullReviewProgress";
 import FullReviewResults from "../components/FullReviewResults";
 import { loadState } from "../../core/state/persistence";
-import { StyleProfileSchema } from "../../core/domain/StyleProfile";
+import { formatProfileVersion, StyleProfileSchema } from "../../core/domain/StyleProfile";
 import type { Finding } from "../../core/domain/Finding";
 
 const Settings = lazy(() => import("./Settings"));
@@ -106,6 +107,24 @@ export default function Dashboard(): React.ReactNode {
       debounceMs: 300,
       onStatus: setStatus,
       profile: activeProfile,
+      capabilities: caps ?? {
+        supportsInsertText: false,
+        supportsReplaceText: false,
+        supportsInsertParagraph: false,
+        supportsInsertBreak: false,
+        supportsStyles: false,
+        supportsParagraphFormat: false,
+        supportsCharacterFormat: false,
+        supportsResetCharacterFormatting: false,
+        supportsListLevel: false,
+        supportsRevisions: false,
+        supportsSelection: false,
+        supportsParagraphResolution: false,
+        supportsHighlight: false,
+        supportsContextMenu: false,
+        hostName: "unknown",
+        hostVersion: null,
+      },
     });
     observerRef.current = observer;
     observer.startObserver();
@@ -113,7 +132,7 @@ export default function Dashboard(): React.ReactNode {
       observer.stopObserver();
       observerRef.current = null;
     };
-  }, [activeProfileKey]);
+  }, [activeProfileKey, caps]);
 
   useEffect(() => {
     const target = consumeTaskpaneTarget();
@@ -196,18 +215,32 @@ export default function Dashboard(): React.ReactNode {
         ] ?? createGovernanceProfile(profile);
       const snapshot = await getDocumentSnapshot();
       const structured = await getStructuredSnapshot();
-      const targetNodeIds = structured.nodes
-        .filter((node) => node.text?.includes(text))
-        .map((node) => node.nodeId);
-      const startOffset = snapshot.text.indexOf(text);
-      if (startOffset < 0)
+      const liveSelection = operation === "spot_selection" ? await getLiveSelection() : null;
+      if (operation === "spot_selection" && liveSelection === null) {
+        throw new Error("Live selection start/end identity is unavailable; review was refused.");
+      }
+      const startOffset =
+        liveSelection?.start ?? (snapshot.fullText ?? snapshot.text).indexOf(text);
+      if (startOffset < 0 || (liveSelection !== null && liveSelection.text !== text)) {
         throw new Error("The selected text is no longer present in the document.");
+      }
+      const targetNodes = structured.nodes.filter(
+        (node) =>
+          node.text?.includes(text) &&
+          (node.sourceRange?.startOffset ?? startOffset) <= startOffset &&
+          startOffset + text.length <=
+            (node.sourceRange?.endOffset ??
+              (node.sourceRange?.startOffset ?? startOffset) + text.length),
+      );
+      if (targetNodes.length !== 1)
+        throw new Error("The selected text must resolve to one in-scope review target.");
+      const targetNodeIds = targetNodes.map((node) => node.nodeId);
       const registry = createLlmRegistry({
         provider: state.settings.llmProvider,
         ...(state.settings.llmProvider === "openai"
           ? {
               openai: {
-                ...(state.settings.openAiApiKey ? { apiKey: state.settings.openAiApiKey } : {}),
+                credentialMode: "broker" as const,
                 ...(state.settings.openAiBaseUrl ? { baseUrl: state.settings.openAiBaseUrl } : {}),
                 ...(state.settings.openAiModel ? { model: state.settings.openAiModel } : {}),
               },
@@ -219,18 +252,20 @@ export default function Dashboard(): React.ReactNode {
           id: crypto.randomUUID(),
           operation,
           documentId: snapshot.id,
-          documentVersion: snapshot.hash ?? snapshot.id,
+          documentVersion: snapshot.documentVersion ?? snapshot.fullDocumentHash ?? snapshot.id,
           targetNodeIds,
           text,
           profileId: profile.id,
-          profileVersion: `${profile.version.major}.${profile.version.minor}.${profile.version.patch}`,
+          profileVersion: formatProfileVersion(profile.version),
           privacyPolicyId: "spot-minimal-v1",
         },
         profile: governance,
         nodes: structured.nodes,
         includeRawText: true,
+        consent: { spotReview: true },
         registry,
         rangeOffset: startOffset,
+        contentHash: snapshot.fullDocumentHash ?? snapshot.hash ?? snapshot.id,
       });
       setAiReview(result);
       setAiReviewMessage(null);
@@ -268,6 +303,9 @@ export default function Dashboard(): React.ReactNode {
     try {
       const snapshot = await getStructuredSnapshot();
       const state = loadState();
+      if (!state.settings.fullDocumentReviewConsent) {
+        throw new Error("Full-document review consent is required in Settings.");
+      }
       const profile = resolveActiveProfile();
       const governance =
         state.governanceProfiles[
@@ -277,12 +315,13 @@ export default function Dashboard(): React.ReactNode {
         snapshot,
         profile: governance,
         includeRawText: true,
+        consent: { fullDocumentReview: true },
         registry: createLlmRegistry({
           provider: state.settings.llmProvider,
           ...(state.settings.llmProvider === "openai"
             ? {
                 openai: {
-                  ...(state.settings.openAiApiKey ? { apiKey: state.settings.openAiApiKey } : {}),
+                  credentialMode: "broker" as const,
                   ...(state.settings.openAiBaseUrl
                     ? { baseUrl: state.settings.openAiBaseUrl }
                     : {}),
@@ -313,10 +352,38 @@ export default function Dashboard(): React.ReactNode {
   async function applyPendingPlan(): Promise<boolean> {
     const plan = reformatResult?.plan ?? fullResult?.plan ?? aiReview?.plan ?? null;
     if (!plan) return false;
+    const coverage = reformatResult?.report.coverage ?? fullResult?.coverage ?? null;
+    if (coverage?.complete !== true) {
+      setApplyMessage("Apply refused: analysis coverage is incomplete or unavailable.");
+      return false;
+    }
+    if (plan.schemaVersion !== 2) {
+      setApplyMessage("Apply refused: preview a schema version 2 plan first.");
+      return false;
+    }
+    if (plan.changes.some((change) => change.precondition === undefined)) {
+      setApplyMessage("Apply refused: one or more changes lack exact preconditions.");
+      return false;
+    }
+    if (
+      plan.changes.some((change) => change.approvalRequired && change.approvalState !== "approved")
+    ) {
+      setApplyMessage("Apply refused: one or more changes are still pending approval.");
+      return false;
+    }
     setApplyMessage(null);
     try {
+      const currentState = loadState();
+      const currentGovernance =
+        currentState.governanceProfiles[
+          currentState.activeGovernanceProfileId ?? currentState.activeProfileId ?? activeProfile.id
+        ];
       const result = await applyReviewedPlan({
         plan,
+        ...(currentGovernance
+          ? { currentGovernancePolicyRevision: currentGovernance.version }
+          : {}),
+        coverage,
         allowConflictingApply: false,
       });
       if (result.applied && result.verified) {
@@ -496,6 +563,7 @@ export default function Dashboard(): React.ReactNode {
               aiReview?.findings ??
               currentGovernanceFindings
             }
+            coverage={reformatResult?.report.coverage ?? null}
             onApply={applyPendingPlan}
           />
           {applyMessage && <p role="status">{applyMessage}</p>}
@@ -525,7 +593,7 @@ export default function Dashboard(): React.ReactNode {
           supportsParagraphResolution={caps?.supportsParagraphResolution ?? false}
           hasSelection={hasSelection}
           providerConfigured={
-            Boolean(loadState().settings.openAiApiKey) ||
+            Boolean(loadState().settings.openAiBaseUrl) ||
             loadState().settings.llmProvider === "mock"
           }
           hasConsent={loadState().settings.spotReviewConsent}

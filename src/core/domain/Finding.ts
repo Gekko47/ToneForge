@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { ChangePreconditionSchema } from "./Change";
 
 export const FindingKindSchema = z.enum(["deterministic", "semantic", "formatting"]);
 export type FindingKind = z.infer<typeof FindingKindSchema>;
@@ -33,6 +34,18 @@ export type FindingRisk = z.infer<typeof FindingRiskSchema>;
 export const FindingStatusSchema = z.enum(["new", "reviewed", "accepted", "ignored", "deferred"]);
 export type FindingStatus = z.infer<typeof FindingStatusSchema>;
 
+export const FindingTransformationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("case"),
+    style: z.enum(["sentence", "title"]),
+    text: z.string(),
+  }),
+  z.object({
+    kind: z.literal("replace"),
+    text: z.string(),
+  }),
+]);
+
 export const FindingSchema = z.object({
   id: z.string().uuid(),
   kind: FindingKindSchema,
@@ -42,7 +55,11 @@ export const FindingSchema = z.object({
   severity: SeveritySchema,
   evidence: z.string().trim().default(""),
   suggestedChangeId: z.string().optional(),
+  ruleId: z.string().trim().min(1).optional(),
   confidence: z.number().min(0).max(1).default(1),
+  /** False when a finding is informational only and cannot produce a change. */
+  actionable: z.boolean().optional(),
+  advisoryReason: z.string().trim().min(1).optional(),
   // --- additive fields (Phase A) ---
   nodeIds: z.array(z.string().trim().min(1)).default([]),
   source: FindingSourceSchema.default("deterministic"),
@@ -52,6 +69,8 @@ export const FindingSchema = z.object({
   actual: z.string().optional(),
   expected: z.string().optional(),
   explanation: z.string().optional(),
+  transformation: FindingTransformationSchema.optional(),
+  precondition: ChangePreconditionSchema.optional(),
 });
 
 export type Finding = z.infer<typeof FindingSchema>;

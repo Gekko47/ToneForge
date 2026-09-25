@@ -1,1 +1,1 @@
-export { env, redact } from "./env";
+export { env, redactSensitiveText } from "./env";

@@ -10,6 +10,14 @@ const allowedExternalScripts = new Set([
   "https://officeapis.public.onecdn.static.microsoft/1/office.js",
   "https://appsforoffice.microsoft.com/lib/1/hosted/office.js",
 ]);
+const secretPatterns = [
+  /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{12,}\b/,
+  /\bwhsec[_-][A-Za-z0-9_-]{12,}\b/,
+  /\bAIza[0-9A-Za-z_-]{30,}\b/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\bBearer\s+[A-Za-z0-9._~+/-]{12,}=*/gi,
+  new RegExp(`${["TONE", "FORGE", "SENTINEL"].join("_")}_[A-Za-z0-9_-]{12,}`),
+];
 
 if (!existsSync(dist)) {
   throw new Error("dist/ is missing; run npm run build first");
@@ -17,6 +25,16 @@ if (!existsSync(dist)) {
 
 const files = readdirSync(dist).map((name) => ({ name, path: join(dist, name) }));
 const javascript = files.filter(({ name }) => name.endsWith(".js"));
+const secretLeaks = files.filter(({ path }) =>
+  secretPatterns.some((pattern) => pattern.test(readFileSync(path, "utf8"))),
+);
+if (secretLeaks.length > 0) {
+  throw new Error(
+    `Secret-shaped value found in generated artifact(s): ${secretLeaks
+      .map(({ name }) => name)
+      .join(", ")}`,
+  );
+}
 const oversized = javascript.filter(({ path }) => statSync(path).size > maxJavaScriptBytes);
 if (oversized.length > 0) {
   throw new Error(

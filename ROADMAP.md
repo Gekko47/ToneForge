@@ -95,7 +95,7 @@ Style sample
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Core domain         | [`StyleProfile`](src/core/domain/StyleProfile.ts), [`Finding`](src/core/domain/Finding.ts), [`Change`](src/core/domain/Change.ts), [`ChangePlan`](src/core/domain/ChangePlan.ts)                                             | Zod-validated, strict TypeScript, additive refactor fields                                                                                               |
 | Refactor domain     | [`DocumentSnapshot`](src/core/domain/DocumentSnapshot.ts), [`GovernanceProfile`](src/core/domain/GovernanceProfile.ts), [`ReviewRequest`](src/core/domain/ReviewRequest.ts)                                                  | Present in working tree; review/phase gates remain qualified                                                                                             |
-| Persistence         | [`persistence.ts`](src/core/state/persistence.ts), [`migration.ts`](src/core/state/migration.ts)                                                                                                                             | Schema v3 with v0→v1→v2→v3 migration, Office roaming settings plus localStorage fallback                                                                 |
+| Persistence         | [`persistence.ts`](src/core/state/persistence.ts), [`migration.ts`](src/core/state/migration.ts)                                                                                                                             | Schema v5 with v0→v4 compatibility migration, governance-policy history, Office roaming settings plus localStorage fallback                              |
 | Deterministic rules | [`typography`](src/rules/typography.ts), [`houseStyle`](src/rules/houseStyle.ts), [`protection`](src/rules/protection.ts), [`registry`](src/rules/registry.ts)                                                               | Pure; no Office, LLM, or UI imports                                                                                                                      |
 | Formatting          | [`formatting`](src/formatting/index.ts) and [`formattingReader`](src/word/formattingReader.ts)                                                                                                                               | Pure DTO engines; Word reads through `runInWord`                                                                                                         |
 | Analysis            | [`unifiedFindings`](src/analysis/unifiedFindings.ts), [`consistencyChecker`](src/analysis/consistencyChecker.ts), [`coverage`](src/analysis/coverage.ts), [`incrementalCoordinator`](src/analysis/incrementalCoordinator.ts) | Pure/semantic boundaries; coverage and incremental behavior are qualified                                                                                |
@@ -138,7 +138,7 @@ The original 00–28 stage map remains preserved. Status meanings:
 | 02    | Scaffold                   | PASS                            | Build, manifest JSON/XML fallback, assets, tests, CI, and hooks exist.                                                                                                                                                                                             |
 | 03    | Cline governance           | PASS                            | `.cline` rules, `.roo` skills, and scoped rules exist.                                                                                                                                                                                                             |
 | 04    | Domain model               | PASS                            | Core Zod contracts and tests exist.                                                                                                                                                                                                                                |
-| 05    | Storage/state              | PASS                            | Persistence, v3 migration, and corruption fallback exist.                                                                                                                                                                                                          |
+| 05    | Storage/state              | PASS                            | Persistence, v5 migration, governance-policy history, and corruption fallback exist.                                                                                                                                                                               |
 | 06    | LLM provider layer         | PASS                            | OpenAI and mock adapters, registry, retry, redaction, and tests exist.                                                                                                                                                                                             |
 | 07    | Settings UI                | PASS                            | Provider, consent, and telemetry settings persist.                                                                                                                                                                                                                 |
 | 08    | Style sample               | PASS                            | Selection-preferred capture, clipboard fallback, and quality gate exist.                                                                                                                                                                                           |
@@ -148,11 +148,11 @@ The original 00–28 stage map remains preserved. Status meanings:
 | 12    | Profile versioning         | PASS                            | v2 history, diff, changelog, and migration exist.                                                                                                                                                                                                                  |
 | 13    | Typography rules           | PASS                            | Pure rule engine and tests exist.                                                                                                                                                                                                                                  |
 | 14    | House-style rules          | PASS                            | Pure terminology/spelling/capitalization engine and tests exist; full spellcheck remains out of scope.                                                                                                                                                             |
-| 15    | Formatting engine          | PASS                            | Pure analyzer/normalizer plus Word DTO reader and tests exist.                                                                                                                                                                                                     |
+| 15    | Formatting engine          | PASS WITH DOCUMENTED LIMITATION | Pure analyzer/normalizer plus the Word DTO reader and tests exist. Formatting provenance and optional property support are repository-tested; live host behavior remains external.                                                                                 |
 | 16    | Unified findings           | PASS                            | Deterministic/formatting/semantic merge and tests exist.                                                                                                                                                                                                           |
 | 17    | Change planning            | PASS                            | Planner, conflict detector, stale guard, and tests exist.                                                                                                                                                                                                          |
 | 18    | Revision adapter           | PASS WITH DOCUMENTED LIMITATION | Desktop text insert/replace smoke and mock coverage exist; break/style/list/format paths remain mock-only; the mutation gate remains explicit.                                                                                                                     |
-| 19    | Semantic deviation         | PASS                            | Mock-only deviation engine, Zod response validation, retry, and abort behavior exist.                                                                                                                                                                              |
+| 19    | Semantic deviation         | PASS                            | The mock-only deviation engine emits advisory AI findings, while the bounded review path uses Zod response validation, retry, and abort behavior. No live provider behavior is claimed.                                                                            |
 | 20    | Consistency checker        | PASS                            | Findings-only checker and mock-only tests exist.                                                                                                                                                                                                                   |
 | 21    | Reformat orchestrator      | PASS                            | Snapshot→analysis→plan→preview/apply path and integration tests exist.                                                                                                                                                                                             |
 | 22    | Safe application           | PASS                            | Live re-hash, conflict refusal, adapter defense, and confirmation UI exist.                                                                                                                                                                                        |
@@ -161,7 +161,7 @@ The original 00–28 stage map remains preserved. Status meanings:
 | 25    | Security/privacy           | PASS WITH DOCUMENTED LIMITATION | Separate consent, minimization, response validation, protection checks, and privacy documentation exist; key encryption and formal security review remain limitations.                                                                                             |
 | 26    | Test/review                | PASS                            | `npm run test` and `npm run test:coverage` pass. The V8 gate is 80% across exercised production modules with `all: false`, avoiding Windows path-case duplicates; the taskpane and entrypoint TSX files are exercised by component tests and the production build. |
 | 27    | Manual Word verification   | PARTIAL                         | Desktop evidence exists; web Chrome, web Edge, Mac, and new Phase C/E paths are incomplete.                                                                                                                                                                        |
-| 28    | Release candidate          | BLOCKED                         | Version/manifests/build are prepared, but Stage 27 and coverage/release gates are not complete.                                                                                                                                                                    |
+| 28    | Release candidate          | BLOCKED                         | Version/manifests/build, coverage, staging, and package checks are prepared, but Stage 27 and release acceptance gates are not complete.                                                                                                                           |
 
 ## Refactor status and sequencing
 
@@ -169,16 +169,16 @@ The incoming `ToneForge_Refactor_Implementation` proposal used incompatible
 stage numbers. Its implementation is intentionally mapped here to additive
 phases rather than renumbered as a replacement roadmap.
 
-| Refactor work                                                                    | Canonical phase          | Status                          | Verified implementation                                                                                                                                              | Remaining work / gate                                                                                                                                                             |
-| -------------------------------------------------------------------------------- | ------------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Document snapshot, governance envelope, coverage, protection, registry, state v3 | A — Foundation           | PASS WITH DOCUMENTED LIMITATION | Domain schemas, migration, coverage, protection, registry, adapter validation, and tests are committed.                                                              | Snapshot exposes body/paragraph/heading-derived nodes rather than every Word container; this remains a documented structural limitation.                                          |
-| Incremental observer                                                             | B — Observer             | PARTIAL                         | Coordinator, observer, debounce, stale state, status UI, and tests exist; commit `d9a7dbf` records the initial implementation.                                       | Observer currently has no verified Word change-range source and conservatively scans all structured nodes; the original Phase B “small edit avoids full scan” goal is not proven. |
-| Ribbon, task pane, navigation, pending changes, UX states                        | C — Word-native UX       | PASS WITH DOCUMENTED LIMITATION | Office action registration, task-pane components, source locator, navigation bridge, and UX matrix are committed and tested.                                         | Real Word ribbon/navigation/accessibility behavior remains part of the external Stage 27 matrix.                                                                                  |
-| Spot selection/paragraph AI review                                               | D — AI spot review       | PASS WITH DOCUMENTED LIMITATION | Prompt gate, minimizer, validator, selection/paragraph paths, absolute offset translation, provider configuration, and MockAdapter tests are committed.              | Live provider/host behavior remains external evidence.                                                                                                                            |
-| Full-document editorial review                                                   | E — AI full document     | PASS WITH DOCUMENTED LIMITATION | Coverage gate, oversized-node splitting, absolute batch offsets, per-batch freshness re-checks, preflight/progress/results, consolidation, and export are committed. | Live Word provider/host behavior remains external evidence.                                                                                                                       |
-| Safe apply, performance, security, regression                                    | F — Hardening            | PASS WITH DOCUMENTED LIMITATION | Dependency ordering, preservation/protection checks, post-apply hash verification, bounded AI paths, privacy checks, and 80% core coverage exist.                    | Live performance, long-document measurements, and formal security review remain qualified.                                                                                        |
-| Host matrix, release acceptance, consistency seam                                | G — Verification/release | BLOCKED                         | Release check, secret/docs scans, deterministic staging, CI gates, and reserved consistency boundary exist.                                                          | The external Word host matrix and release acceptance evidence remain incomplete; Phase H consistency expansion is not started.                                                    |
-| Content Consistency Review C1–C10                                                | H — Reserved future      | NOT STARTED                     | Only the reserved seam exists; no engine is implemented or imported.                                                                                                 | Must follow core release acceptance and a separately approved privacy/consent design.                                                                                             |
+| Refactor work                                                                    | Canonical phase          | Status                          | Verified implementation                                                                                                                                                                                   | Remaining work / gate                                                                                                                                                             |
+| -------------------------------------------------------------------------------- | ------------------------ | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Document snapshot, governance envelope, coverage, protection, registry, state v5 | A — Foundation           | PASS WITH DOCUMENTED LIMITATION | Domain schemas, state-v5 migration, governance history, single-pass Word paragraph/style acquisition, coverage, protection, registry, adapter validation, and tests are present.                          | Tables, headers, footers, sections, fields, controls, shapes, and other unsupported Word containers remain outside the acquired structure and keep coverage qualified.            |
+| Incremental observer                                                             | B — Observer             | PARTIAL                         | Coordinator, observer, debounce, stale state, status UI, and tests exist; commit `d9a7dbf` records the initial implementation.                                                                            | Observer currently has no verified Word change-range source and conservatively scans all structured nodes; the original Phase B “small edit avoids full scan” goal is not proven. |
+| Ribbon, task pane, navigation, pending changes, UX states                        | C — Word-native UX       | PASS WITH DOCUMENTED LIMITATION | Office action registration, task-pane components, source locator, navigation bridge, fail-closed Apply readiness, per-change preview availability, and accessibility-focused component tests are present. | Real Word ribbon/navigation/accessibility behavior remains part of the external Stage 27 matrix.                                                                                  |
+| Spot selection/paragraph AI review                                               | D — AI spot review       | PASS WITH DOCUMENTED LIMITATION | Prompt gate, minimizer, validator, selection/paragraph paths, absolute offset translation, provider configuration, and MockAdapter tests are committed.                                                   | Live provider/host behavior remains external evidence.                                                                                                                            |
+| Full-document editorial review                                                   | E — AI full document     | PASS WITH DOCUMENTED LIMITATION | Coverage gate, oversized-node splitting, absolute batch offsets, per-batch freshness re-checks, preflight/progress/results, consolidation, and export are committed.                                      | Live Word provider/host behavior remains external evidence.                                                                                                                       |
+| Safe apply, performance, security, regression                                    | F — Hardening            | PASS WITH DOCUMENTED LIMITATION | Dependency ordering, preservation/protection checks, post-apply hash verification, bounded AI paths, privacy checks, and 80% core coverage exist.                                                         | Live performance, long-document measurements, and formal security review remain qualified.                                                                                        |
+| Host matrix, release acceptance, consistency seam                                | G — Verification/release | BLOCKED                         | Release check, secret/docs scans, deterministic staging, CI gates, and reserved consistency boundary exist.                                                                                               | The external Word host matrix and release acceptance evidence remain incomplete; Phase H consistency expansion is not started.                                                    |
+| Content Consistency Review C1–C10                                                | H — Reserved future      | NOT STARTED                     | Only the reserved seam exists; no engine is implemented or imported.                                                                                                                                      | Must follow core release acceptance and a separately approved privacy/consent design.                                                                                             |
 
 ### Phase dependency graph
 
@@ -208,17 +208,21 @@ states, and no structured node/coverage/protection/AI-review contracts.
 
 ### After as currently implemented
 
-The refactor adds structured node DTOs, a governance profile envelope, additive
-finding/change/plan metadata, state schema v3, coverage, protection, rule IDs,
-an observer, source navigation, ribbon/commands, consent-gated AI review,
-bounded full-document review, export adapters, and a reserved consistency seam.
+The refactor adds structured node DTOs, a governance profile envelope with policy
+history and diff, additive finding/change/plan metadata, state schema v5,
+single-pass Word paragraph/style acquisition with explicit unsupported scope,
+coverage, protection, rule IDs, an observer, source navigation,
+ribbon/commands, consent-gated AI review, bounded full-document review, export
+adapters, and a reserved consistency seam.
 The original `StyleProfile`, text snapshot, checker, orchestrator, and adapter
 paths remain available for compatibility.
 
 ### Transitional and compatibility code
 
-- [`DocumentSnapshot`](src/word/documentReader.ts) text interface and
-  `getStructuredSnapshot()` coexist.
+- The compatibility text reader and structured DTO remain available, while the
+  production reformat/observer path uses
+  [`analysisAcquisition.ts`](src/word/analysisAcquisition.ts) for one shared Word
+  paragraph/style acquisition transaction.
 - `resolveSourceRange()` is additive; current navigation still uses character
   offsets because real Word node-path navigation is not proven.
 - `ChangePlan.conflicts` accepts legacy strings and structured conflict entries.
@@ -231,25 +235,18 @@ paths remain available for compatibility.
 
 ## Verification and release gates
 
-The required ordered chain is:
+The required named graph is `toneforge-repository-v1`, defined in
+[`scripts/verification-graph.mjs`](scripts/verification-graph.mjs). Its ordered
+stages are:
 
 ```text
-typecheck -> lint -> format -> secret scan -> documentation links -> test -> build -> manifest validation
+typecheck -> lint -> format -> secret scan -> documentation links -> skills validation -> test -> coverage -> build/artifact -> built-secret scan -> manifest validation -> release staging -> release package check
 ```
 
-Commands:
-
-- `npm run typecheck`
-- `npm run lint`
-- `npm run format`
-- `npm run secrets:scan`
-- `npm run docs:validate`
-- `npm run test`
-- `npm run build`
-- `npm run validate`
-- `npm run stage:verify` — repeats the ordered automated checks and creates release staging.
-- `npm run test:coverage` — required for the 80% exercised-core coverage gate.
-- `npm run release:check` — must not pass while Stage 27 is incomplete.
+`npm run verify` delegates to `npm run stage:verify`, which executes this exact
+graph. CI and release workflows invoke the same graph. Clean-install
+reproducibility is a separate explicit check, and the human Word-host matrix
+remains an explicit release gate.
 
 ### Current verification result
 
@@ -258,7 +255,7 @@ Commands:
 | Typecheck           | PASS       | `npm run typecheck`                                                    |
 | Lint                | PASS       | `npm run lint`                                                         |
 | Format              | PASS       | `npm run format`                                                       |
-| Tests               | PASS       | `npm run test`: 59 files, 603 tests                                    |
+| Tests               | PASS       | `npm run test`: 68 files, 672 tests                                    |
 | Coverage            | PASS       | `npm run test:coverage` passes the 80% exercised-core gate             |
 | Build               | PASS       | `npm run build:check`; Webpack emits no performance warnings           |
 | Artifact budgets    | PASS       | `npm run build:check` enforces 600 KiB JavaScript/initial-page budgets |
@@ -270,6 +267,11 @@ Commands:
 ## Prioritized implementation plan
 
 ### P0 — correctness and safety (automated) — COMPLETE
+
+Stage 7/8 repository disposition: fail-closed Apply readiness, per-change preview
+availability, state v5 policy-history migration, plan policy revisions, and
+structured refusal diagnostics are implemented. Live host/accessibility/browser
+evidence is not implied by this automated status.
 
 1. Command-runtime registration, completion events, and manifest parity pass.
 2. Whole-body `Range.set()` navigation passes with fail-closed host handling.
@@ -304,10 +306,17 @@ hosts and cannot be completed by repository automation alone.
 
 ## Human decisions still required
 
+Repository-side P1 remediation now includes state v5 governance initialization
+and policy-revision refusal, loopback/session-nonce broker boundaries, scanner-
+detectable sentinel coverage, truthful XML navigation-only/default-destination
+contracts, coherent staged-package validation, and all-Markdown/.roo-skill link
+validation. Production credential custody, live Word hosts, accessibility,
+provider, performance, and release evidence remain unresolved.
+
 - Which Word hosts are release-support commitments: web Chrome, web Edge, and
   Windows desktop are named; Mac is “if available” in the refactor materials.
-- Whether the current global 80% coverage threshold remains mandatory for the
-  release or whether a documented module-scoped policy is approved.
+- Whether to retain the currently mandatory 80% exercised-core threshold or,
+  in a future policy decision, approve a documented module-scoped alternative.
 - Whether Phase G's proposed consistency `types.ts` stub and CI grep guard are
   required before release, or whether the current documentation-only seam is
   sufficient.

@@ -23,14 +23,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Release check (Stage 28 gate)
-        run: node scripts/release-check.mjs
+      - name: Run canonical verification graph
+        run: npm run verify
 
-      - name: Build and artifact budget check
-        run: npm run build:check
+      - name: Clean-install reproducibility check
+        run: npm run clean-install:check
 
-      - name: Package release staging
-        run: npm run release:package
+      - name: Release check (human host evidence gate)
+        run: npm run release:check
+
+      - name: Release package check
+        run: npm run release:package:check
 
       - name: Create release zip
         run: |

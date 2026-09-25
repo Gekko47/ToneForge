@@ -67,6 +67,11 @@ export async function buildDemoChangePlan(): Promise<DemoPlan> {
       payload: { text: text.length === 0 ? "ToneForge smoke test." : `\n${marker}` },
       rationale: "Stage 18 smoke test marker insertion",
       reversible: true,
+      source: "user",
+      risk: "none",
+      approvalRequired: false,
+      approvalState: "notRequired",
+      precondition: { kind: "text", expectedText: "" },
     }),
   );
   summary.push(`insert ${JSON.stringify(marker)} at end of document`);
@@ -84,6 +89,11 @@ export async function buildDemoChangePlan(): Promise<DemoPlan> {
         payload: { text: replacement },
         rationale: "Stage 18 smoke test replacement of opening characters",
         reversible: true,
+        source: "user",
+        risk: "none",
+        approvalRequired: false,
+        approvalState: "notRequired",
+        precondition: { kind: "text", expectedText: original },
       }),
     );
     summary.push(
@@ -91,7 +101,7 @@ export async function buildDemoChangePlan(): Promise<DemoPlan> {
     );
   }
 
-  const plan = createChangePlan(docHash, snapshot.id, changes);
+  const plan = createChangePlan(docHash, snapshot.id, changes, [], { schemaVersion: 2 });
   return { plan, summary };
 }
 

@@ -26,8 +26,7 @@ export class LlmRegistry {
     this.providers.set("openai", openai);
     this.providers.set("mock", new MockAdapter(opts.mock ?? {}));
 
-    // Default to mock when no API key is configured, so the add-in is
-    // functional offline and never throws on missing configuration.
+    // Default to mock when neither a broker nor explicit user-supplied key is configured.
     if (opts.provider) {
       this.active = this.providers.get(opts.provider) ?? this.providers.get("openai")!;
     } else if (openai.configured) {

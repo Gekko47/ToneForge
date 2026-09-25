@@ -120,7 +120,7 @@ function headingFromPrevious(snapshot: FormattingSnapshot, index: number): numbe
   const previous = snapshot.paragraphs
     .slice(0, index)
     .reverse()
-    .map((para) => para.styleName.trim())
+    .map((para) => (para.styleName ?? "Normal").trim())
     .find((style) => HEADING_RE.test(style));
   if (previous) {
     const match = previous.match(HEADING_RE);

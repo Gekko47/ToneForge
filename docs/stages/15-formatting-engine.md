@@ -22,4 +22,10 @@ Add Word formatting analyzer and normalizer.
 
 ## Status
 
-PASS
+PASS WITH DOCUMENTED LIMITATION for the original deterministic formatting
+scope. The current Word reader loads documented paragraph properties directly,
+records style-effective provenance and unsupported fields, and treats optional
+list/line-spacing reads honestly. Repository tests do not certify Word behavior
+or requirement sets on each live host; break/style/list/format application and
+readback remain external evidence in
+[`docs/manual-verification.md`](../manual-verification.md).

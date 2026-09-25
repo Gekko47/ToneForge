@@ -8,12 +8,13 @@ Turn Stage 16 unified `Finding[]` input into validated `ChangePlan` objects whil
 
 ## Scope
 
-- `src/changes/planner.ts` — validate raw findings through `FindingSchema`, map supported typography, house-style, and formatting findings to typed changes, preserve `suggestedChangeId`, retain raw findings for review, and produce a schema-valid `ChangePlan`.
+- `src/changes/planner.ts` — validate raw findings through `FindingSchema`, map supported typography, house-style, formatting, and locally resolved AI findings to typed changes, preserve finding/rule lineage, and produce a schema-valid `ChangePlan`.
   - Typography findings become text insertions, replacements, or reversible deletions.
-  - Preferred terminology and spelling variants use message-derived replacements.
+  - Preferred terminology and spelling variants use structured case-conversion metadata and pure converters.
   - Banned terms become non-reversible `deleteRange` changes.
-  - Formatting findings become style, character-format, or list-level changes.
-  - Semantic findings remain available for Stage 19 review and become changes only when an explicit quoted replacement can be safely extracted.
+  - Formatting findings become style, character-format, or list-level changes with unit-aware targets and node/text preconditions.
+  - Actionable AI findings require an exact source slice; unresolved full-document semantic deviations remain advisory.
+  - Every actionable schema-v2 change carries source, risk, approval state, finding linkage, and a precondition.
   - Invalid findings are skipped without rejecting the remaining plan.
 - `src/changes/conflictDetector.ts` — report overlapping ranges, same-range different-type changes, and style/direct-format contradictions without dropping either change.
 - `src/changes/staleGuard.ts` — compare a plan hash with a caller-supplied current document hash and mark mismatches stale without reading Word.
@@ -35,4 +36,8 @@ Turn Stage 16 unified `Finding[]` input into validated `ChangePlan` objects whil
 
 ## Status
 
-PASS
+PASS for the original deterministic planning scope and the current repository-side
+hardening. Unit-aware ranges, provenance, approval enforcement, target
+preconditions, capitalization, formatting node identity, and protection paths are
+repository-tested. Live moved/deleted-node behavior and host approval UX remain
+external evidence under the canonical status in [`ROADMAP.md`](../../ROADMAP.md).

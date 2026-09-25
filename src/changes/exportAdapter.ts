@@ -22,7 +22,12 @@ export function toRevisionsCsv(
   changes.forEach((change) => {
     const finding = change.findingId ? findingById.get(change.findingId) : undefined;
     const before = finding?.actual ?? "";
-    const after = finding?.expected ?? (change.payload.text as string | undefined) ?? "";
+    const payloadText: string =
+      (change.type === "insertText" || change.type === "replaceText") &&
+      typeof change.payload.text === "string"
+        ? change.payload.text
+        : "";
+    const after: string = finding?.expected ?? payloadText;
     const beforeParts = splitForCsv(before);
     const afterParts = splitForCsv(after);
     rows.push(`${csvCell(beforeParts[0] ?? "")},${csvCell(afterParts[0] ?? "")}`);

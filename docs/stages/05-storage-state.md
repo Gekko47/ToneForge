@@ -21,6 +21,9 @@ Add persistence and application state management.
 
 ## Status
 
-PASS — `loadState()` now calls `migrate(raw)` before `StateSchema.parse`, so
-v0 persisted state is upgraded to v1 instead of being discarded. Migration
-behavior is covered by Office-path tests.
+PASS — the current persisted schema is v5. `loadState()` calls `migrate(raw)`
+before `StateSchema.parse`; v0-v4 style/settings and consent data are preserved,
+legacy API-key fields are removed, governance history is initialized or migrated,
+and corrupt data falls back to defaults. Migration is covered through both
+Office roaming-settings and localStorage fallback tests. The canonical release
+status remains in [`ROADMAP.md`](../../ROADMAP.md).

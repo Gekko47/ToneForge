@@ -32,10 +32,10 @@ interface NavigableRange extends Office.Range {
 /**
  * Navigate the Word view to the location of a finding.
  *
- * Finding ranges are authoritative character offsets. A node identifier is
- * used to select the navigation strategy label only; it does not replace the
- * source range with a different document location. If the host cannot select
- * the requested range, the operation is a safe, logged no-op.
+ * Finding ranges are authoritative character offsets. Node identifiers are
+ * carried as review metadata but do not change the navigation strategy until
+ * the Word adapter can resolve a node directly. If the host cannot select the
+ * requested range, the operation is a safe, logged no-op.
  */
 export async function navigateToFinding(options: NavigateOptions): Promise<NavigateResult> {
   const { finding, highlight = true } = options;
@@ -79,18 +79,15 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
       }
       await context.sync();
 
-      const resolved = resolveSourceRange(
-        finding.nodeIds[0],
-        unit === "paragraph" ? `body/paragraph/${start}` : undefined,
-        start,
-        end,
-      );
-      const method = resolved.nodeId ? ("nodeId" as const) : ("offsets" as const);
+      const structuralPath = unit === "paragraph" ? `body/paragraph/${start}` : undefined;
+      const resolved = resolveSourceRange(finding.nodeIds[0], structuralPath, start, end);
 
       return {
         navigated: true,
-        method,
-        message: `Selected finding ${finding.id} at characters ${start}–${end}.`,
+        method: "offsets" as const,
+        message: resolved.nodeId
+          ? `Selected finding ${finding.id} at characters ${start}–${end} for node ${resolved.nodeId}.`
+          : `Selected finding ${finding.id} at characters ${start}–${end}.`,
       };
     });
 

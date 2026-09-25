@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { v4 as uuidv4 } from "uuid";
 import { createEmptyProfile } from "../../../../src/core/domain/StyleProfile";
 import { createGovernanceProfile } from "../../../../src/core/domain/GovernanceProfile";
@@ -42,7 +42,7 @@ function request(
       operation,
       documentId: "doc",
       documentVersion: "version-1",
-      targetNodeIds: [],
+      targetNodeIds: ["aaaa1111"],
       text,
       profileId: profile.id,
       profileVersion: "1.0.0",
@@ -71,16 +71,51 @@ describe("AI review contracts and pipeline", () => {
     expect(buildSpotPrompt("spot_selection", "text", { includeRawText: true })).toContain("text");
   });
 
-  it("excludes protected nodes and enforces the context budget", () => {
+  it("requires scope-specific consent before spot provider access", async () => {
+    const base = request("text");
+    const adapter = new MockAdapter();
+    const complete = vi.spyOn(adapter, "complete");
+
+    await expect(
+      reviewSpot({
+        ...base,
+        includeRawText: true,
+        // @ts-expect-error verifying the runtime gate as well as the contract
+        consent: { spotReview: false },
+        registry: adapter,
+        nodes: [node("aaaa1111", "text")],
+        contentHash: "complete-hash",
+      }),
+    ).rejects.toThrow(/explicit raw-text consent/);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("keeps target accounting truthful at a truncation boundary", () => {
     const result = buildMinimalContext({
-      selectedText: "selected",
-      nodes: [node("aaaa1111", "editable"), node("bbbb2222", "quoted", true)],
-      targetNodeIds: ["aaaa1111", "bbbb2222"],
-      charBudget: 10,
+      selectedText: "editable",
+      nodes: [node("aaaa1111", "editable")],
+      targetNodeIds: ["aaaa1111"],
+      charBudget: 7,
     });
-    expect(result.excludedNodeIds).toEqual(["bbbb2222"]);
-    expect(result.text.length).toBeLessThanOrEqual(10);
+    expect(result.requestedNodeIds).toEqual(["aaaa1111"]);
+    expect(result.excludedNodeIds).toEqual([]);
+    expect(result.includedNodeIds).toEqual([]);
+    expect(result.truncatedNodeIds).toEqual(["aaaa1111"]);
+    expect(result.text).toBe("editabl");
     expect(result.truncated).toBe(true);
+  });
+
+  it("includes a node only when all selected text is within the budget", () => {
+    const result = buildMinimalContext({
+      selectedText: "editable",
+      nodes: [node("aaaa1111", "editable")],
+      targetNodeIds: ["aaaa1111"],
+      charBudget: 8,
+    });
+    expect(result.includedNodeIds).toEqual(["aaaa1111"]);
+    expect(result.truncatedNodeIds).toEqual([]);
+    expect(result.text).toBe("editable");
+    expect(result.truncated).toBe(false);
   });
 
   it("validates AI output into findings and a normal ChangePlan", async () => {
@@ -107,16 +142,87 @@ describe("AI review contracts and pipeline", () => {
     const result = await reviewSpot({
       ...base,
       includeRawText: true,
+      consent: { spotReview: true },
       registry: adapter,
       nodes: [node("aaaa1111", "The quick brown fox")],
       rangeOffset: 4,
+      contentHash: "complete-hash",
     });
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0]?.source).toBe("ai");
+    expect(result.findings[0]?.actionable).toBe(true);
     expect(result.changes[0]?.source).toBe("ai");
     expect(result.plan.changes).toHaveLength(1);
+    expect(result.plan.docHash).toBe("complete-hash");
+    expect(result.plan.documentVersion).toBe("version-1");
     expect(result.findings[0]?.range).toEqual({ start: 8, end: 19, unit: "character" });
     expect(result.changes[0]?.range).toEqual({ start: 8, end: 19 });
+  });
+
+  it("rejects an actual that exists elsewhere but not in the reported slice", async () => {
+    const base = request("red blue");
+    const adapter = new MockAdapter({
+      defaultResponse: JSON.stringify({
+        findings: [
+          {
+            category: "editorial.clarity",
+            severity: "warning",
+            risk: "low",
+            confidence: 0.8,
+            actual: "blue",
+            expected: "azure",
+            start: 0,
+            end: 3,
+          },
+        ],
+      }),
+    });
+
+    await expect(
+      reviewSpot({
+        ...base,
+        includeRawText: true,
+        consent: { spotReview: true },
+        registry: adapter,
+        nodes: [node("aaaa1111", "red blue")],
+        contentHash: "complete-hash",
+      }),
+    ).rejects.toThrow(/exact source slice/);
+  });
+
+  it("returns unresolved semantic suggestions as advisory and non-actionable", async () => {
+    const base = request("red blue");
+    const adapter = new MockAdapter({
+      defaultResponse: JSON.stringify({
+        findings: [
+          {
+            category: "editorial.clarity",
+            severity: "warning",
+            risk: "low",
+            confidence: 0.8,
+            expected: "azure",
+            start: 0,
+            end: 8,
+          },
+        ],
+      }),
+    });
+    const result = await reviewSpot({
+      ...base,
+      includeRawText: true,
+      consent: { spotReview: true },
+      registry: adapter,
+      nodes: [node("aaaa1111", "red blue")],
+      contentHash: "complete-hash",
+    });
+
+    expect(result.findings[0]).toMatchObject({
+      actionable: false,
+      status: "deferred",
+      source: "ai",
+    });
+    expect(result.changes).toEqual([]);
+    expect(result.plan.changes).toEqual([]);
   });
 
   it("fails malformed provider output instead of guessing", async () => {
@@ -125,9 +231,68 @@ describe("AI review contracts and pipeline", () => {
       reviewSpot({
         ...base,
         includeRawText: true,
+        consent: { spotReview: true },
         registry: new MockAdapter({ defaultResponse: "not-json" }),
+        nodes: [node("aaaa1111", "text")],
+        contentHash: "complete-hash",
       }),
     ).rejects.toThrow(/not valid JSON/);
+  });
+
+  it("refuses protected selected text before calling the provider", async () => {
+    const base = request("quoted");
+    base.request.targetNodeIds = ["bbbb2222"];
+    const adapter = new MockAdapter();
+    const complete = vi.spyOn(adapter, "complete");
+
+    await expect(
+      reviewSpot({
+        ...base,
+        includeRawText: true,
+        consent: { spotReview: true },
+        registry: adapter,
+        nodes: [node("bbbb2222", "quoted", true)],
+        contentHash: "complete-hash",
+      }),
+    ).rejects.toThrow(/Protected or non-editable/);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("refuses selected text outside the requested target", async () => {
+    const base = request("outside");
+    const adapter = new MockAdapter();
+    const complete = vi.spyOn(adapter, "complete");
+
+    await expect(
+      reviewSpot({
+        ...base,
+        includeRawText: true,
+        consent: { spotReview: true },
+        registry: adapter,
+        nodes: [node("aaaa1111", "different")],
+        contentHash: "complete-hash",
+      }),
+    ).rejects.toThrow(/unambiguous in-scope/);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("refuses ambiguous repeated selected text across multiple targets", async () => {
+    const base = request("repeat");
+    base.request.targetNodeIds = ["aaaa1111", "cccc3333"];
+    const adapter = new MockAdapter();
+    const complete = vi.spyOn(adapter, "complete");
+
+    await expect(
+      reviewSpot({
+        ...base,
+        includeRawText: true,
+        consent: { spotReview: true },
+        registry: adapter,
+        nodes: [node("aaaa1111", "repeat"), node("cccc3333", "repeat")],
+        contentHash: "complete-hash",
+      }),
+    ).rejects.toThrow(/unambiguous in-scope/);
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it("propagates caller abort", async () => {
@@ -138,7 +303,10 @@ describe("AI review contracts and pipeline", () => {
       reviewSpot({
         ...base,
         includeRawText: true,
+        consent: { spotReview: true },
         registry: new MockAdapter(),
+        nodes: [node("aaaa1111", "text")],
+        contentHash: "complete-hash",
         signal: controller.signal,
       }),
     ).rejects.toThrow(/abort/i);
@@ -212,6 +380,7 @@ describe("AI review contracts and pipeline", () => {
       snapshot,
       profile: request("text").profile,
       includeRawText: true,
+      consent: { fullDocumentReview: true },
       registry: new MockAdapter({
         defaultResponse: JSON.stringify({
           findings: [
@@ -220,10 +389,10 @@ describe("AI review contracts and pipeline", () => {
               severity: "info",
               risk: "low",
               confidence: 0.8,
-              actual: "hello",
-              expected: "hi",
+              actual: "hello world",
+              expected: "Hi",
               start: 0,
-              end: 5,
+              end: 11,
             },
           ],
         }),
@@ -231,6 +400,13 @@ describe("AI review contracts and pipeline", () => {
     });
     expect(result.status).toBe("complete");
     expect(result.plan.changes).toHaveLength(1);
+    expect(result.plan).toMatchObject({
+      docHash: "hash",
+      documentVersion: "v1",
+      contentHash: "hash",
+      structuralHash: "structure",
+      profileVersion: "1.0.0",
+    });
     expect(result.coverage.complete).toBe(true);
   });
 
@@ -258,6 +434,7 @@ describe("AI review contracts and pipeline", () => {
       snapshot,
       profile: request("text").profile,
       includeRawText: true,
+      consent: { fullDocumentReview: true },
       registry: adapter,
       getCurrentDocumentHash: async () => "changed",
     });
@@ -279,6 +456,7 @@ describe("AI review contracts and pipeline", () => {
       snapshot,
       profile: request("text").profile,
       includeRawText: true,
+      consent: { fullDocumentReview: true },
       registry: new MockAdapter(),
     });
     expect(result.status).toBe("failed_coverage");

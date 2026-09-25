@@ -39,6 +39,7 @@ function finding(overrides: Partial<Finding> = {}): Finding {
 function plan(): ChangePlan {
   const findingId = uuidv4();
   return ChangePlanSchema.parse({
+    schemaVersion: 2,
     id: uuidv4(),
     docHash: "hash",
     baseDocId: "base",
@@ -54,6 +55,8 @@ function plan(): ChangePlan {
         risk: "low",
         reversible: true,
         approvalRequired: false,
+        approvalState: "notRequired",
+        precondition: { kind: "text", expectedText: "--" },
         dependsOn: [],
         findingId,
       },
@@ -113,7 +116,7 @@ describe("Phase C task-pane components", () => {
     expect(screen.getByText("No findings detected.")).toBeInTheDocument();
   });
 
-  it("renders before and after values in pending changes", () => {
+  it("renders before and after values and disabled reasons in pending changes", () => {
     const linkedFinding = finding({ actual: "--", expected: "—" });
     const pending = plan();
     const linkedPlan = {
@@ -135,6 +138,42 @@ describe("Phase C task-pane components", () => {
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
   });
 
+  it("disables apply with a truthful reason when a plan is blocked", () => {
+    const pending = plan();
+    render(
+      <PendingChanges
+        plan={{ ...pending, stale: true }}
+        findings={[]}
+        applyDisabledReason="Preview again because the document changed."
+        onApply={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Apply unavailable" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Preview again because the document changed.",
+    );
+  });
+
+  it("announces incomplete coverage without claiming a complete review", () => {
+    const pending = plan();
+    render(
+      <PendingChanges
+        plan={pending}
+        findings={[]}
+        coverage={{
+          complete: false,
+          unsupported: ["tables"],
+          unprocessed: ["Analysis window is partial"],
+        }}
+        onApply={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("Coverage is incomplete");
+    expect(screen.getByRole("status")).toHaveTextContent("tables");
+  });
+
   it("renders coverage, stale, and unavailable states with text status", () => {
     const { rerender } = render(
       <CoverageBanner
@@ -143,8 +182,13 @@ describe("Phase C task-pane components", () => {
           counts: [],
           processedCharacterCount: 0,
           revisedCharacterCount: 0,
+          examinedNodeIds: [],
           excluded: [],
+          unsupported: [],
           unprocessed: ["Required node inaccessible"],
+          plannedChangeCount: 0,
+          appliedChangeCount: 0,
+          changedNodeIds: [],
           complete: false,
         }}
       />,

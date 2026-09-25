@@ -10,10 +10,11 @@ refactor candidate.
 ## Implemented in the refactor candidate
 
 - Unit and integration coverage for the observer, structured snapshots, coverage,
-  protection, registry, state v3, review pipeline, batcher, consolidator, export,
-  safe-apply validation, navigation, and Phase C/F UI states.
+  protection, registry, state v5, review pipeline, batcher, consolidator, export,
+  safe-apply validation, navigation, broker boundaries, release package coherence,
+  and Phase C/F UI states.
 - AI tests use `MockAdapter`; no live network is required.
-- The full test run passes 59 files and 603 tests.
+- The current full-suite run passes 68 files and 672 tests.
 
 ## Verification
 

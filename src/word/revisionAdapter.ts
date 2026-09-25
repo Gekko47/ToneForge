@@ -9,8 +9,9 @@
  */
 
 import { runInWord } from "../shared/office/officeHelpers";
-import { type ChangePlan } from "../core/domain/ChangePlan";
-import { type Change } from "../core/domain/Change";
+import { ChangePlanSchema, type ChangePlan } from "../core/domain/ChangePlan";
+import { type Change, type ChangeRange } from "../core/domain/Change";
+import { matchesChangePrecondition, validateChangePreconditions } from "../changes/preconditions";
 import { logger } from "../shared/utils/logger";
 import { type WordCapabilities } from "./capabilityProbe";
 import { isProtectedNode } from "../rules/protection";
@@ -63,7 +64,9 @@ function orderChanges(changes: readonly Change[]): Change[] {
   while (remaining.length > 0) {
     const ready = remaining
       .filter((change) =>
-        change.dependsOn.every((dependency) => applied.has(dependency) || !byId.has(dependency)),
+        (change.dependsOn ?? []).every(
+          (dependency) => applied.has(dependency) || !byId.has(dependency),
+        ),
       )
       .sort(
         (left, right) => right.range.start - left.range.start || right.range.end - left.range.end,
@@ -109,16 +112,42 @@ export async function applyChangePlan(
   currentDocHash: string,
   allowConflicts = false,
   nodes?: readonly DocumentNode[],
+  currentGovernancePolicyRevision?: number,
 ): Promise<RevisionResult[]> {
   const results: RevisionResult[] = [];
-  const problems = validatePlanBeforeApply(plan, allowConflicts, nodes);
+  const parsedPlan = ChangePlanSchema.safeParse(plan);
+  if (!parsedPlan.success) {
+    const message = `ChangePlan schema is incompatible: ${parsedPlan.error.issues.map((issue) => issue.message).join("; ")}`;
+    return plan.changes.map((change) => ({ changeId: change.id, applied: false, error: message }));
+  }
+  const problems = validatePlanBeforeApply(
+    parsedPlan.data,
+    allowConflicts,
+    nodes,
+    currentGovernancePolicyRevision,
+  );
 
   if (!currentDocHash || currentDocHash.trim().length === 0) {
     problems.push("currentDocHash is required");
   }
 
   if (problems.length > 0) {
-    logger.warn("ChangePlan validation failed", { planId: plan.id, problems });
+    const category: RefusalCategory = plan.stale
+      ? "stale_complete_identity"
+      : (plan.conflicts ?? []).length > 0
+        ? "conflict"
+        : plan.changes.some(
+              (change) => change.approvalRequired && change.approvalState !== "approved",
+            )
+          ? "approval_required"
+          : "local_precondition_failed";
+    logger.warn("ChangePlan validation failed", {
+      planId: plan.id,
+      problems,
+      refusalCategory: category,
+      governancePolicyRevision: plan.governancePolicyRevision,
+      verificationResult: "refused",
+    });
     for (const change of plan.changes) {
       results.push({
         changeId: change.id,
@@ -148,6 +177,9 @@ export async function applyChangePlan(
       planId: plan.id,
       expected: plan.docHash,
       actual: currentDocHash,
+      refusalCategory: "stale_complete_identity",
+      governancePolicyRevision: plan.governancePolicyRevision,
+      verificationResult: "refused",
     });
     for (const change of plan.changes) {
       results.push({
@@ -160,6 +192,39 @@ export async function applyChangePlan(
   }
 
   const orderedChanges = orderChanges(plan.changes);
+  const preconditionResults: Array<{
+    change: Change;
+    matches: boolean;
+    reason?: string;
+  }> = [];
+  for (const change of orderedChanges) {
+    try {
+      preconditionResults.push({ change, ...(await verifyLivePrecondition(change)) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      preconditionResults.push({ change, matches: false, reason: message });
+    }
+  }
+  const failedPreconditions = preconditionResults.filter((result) => !result.matches);
+  if (failedPreconditions.length > 0) {
+    logger.warn("Atomic precondition preflight failed; refusing the entire plan", {
+      planId: plan.id,
+      changeIds: failedPreconditions.map((result) => result.change.id),
+      refusalCategory: "local_precondition_failed",
+      governancePolicyRevision: plan.governancePolicyRevision,
+      verificationResult: "refused",
+    });
+    return plan.changes.map((change) => {
+      const failure = failedPreconditions.find((result) => result.change.id === change.id);
+      return {
+        changeId: change.id,
+        applied: false,
+        error: failure
+          ? `Atomic precondition preflight failed: ${failure.reason ?? "unknown mismatch"}`
+          : "Atomic precondition preflight failed because another change target is stale.",
+      };
+    });
+  }
 
   for (const change of orderedChanges) {
     try {
@@ -203,7 +268,22 @@ export async function applyChangePlanWithTracking(
   currentDocHash: string,
   allowConflicts = false,
   nodes?: readonly DocumentNode[],
+  currentGovernancePolicyRevision?: number,
 ): Promise<ApplyWithTrackingResult> {
+  const parsed = ChangePlanSchema.safeParse(plan);
+  const refusalProblems = parsed.success
+    ? validatePlanBeforeApply(plan, allowConflicts, nodes, currentGovernancePolicyRevision)
+    : ["ChangePlan schema is incompatible"];
+  if (refusalProblems.length > 0) {
+    return {
+      results: plan.changes.map((change) => ({
+        changeId: change.id,
+        applied: false,
+        error: `Plan validation failed: ${refusalProblems.join("; ")}`,
+      })),
+      tracking: { managed: false },
+    };
+  }
   const enablement = await enableRevisionTracking();
   if (!enablement.managed) {
     return {
@@ -215,7 +295,13 @@ export async function applyChangePlanWithTracking(
       tracking: { managed: false },
     };
   }
-  const results = await applyChangePlan(plan, currentDocHash, allowConflicts, nodes);
+  const results = await applyChangePlan(
+    plan,
+    currentDocHash,
+    allowConflicts,
+    nodes,
+    currentGovernancePolicyRevision,
+  );
   const modeAfter = await restoreRevisionTracking(enablement);
   const recordedCount = enablement.managed ? await countRecordedRevisions() : undefined;
   const tracking: TrackingReport = { managed: enablement.managed };
@@ -360,24 +446,24 @@ async function applySingleChange(change: Change): Promise<void> {
       // revision tracking is enabled by the host, these mutations are tracked.
       case "insertText": {
         requireVerifiedCapability(change.id, "supportsInsertText", "insertText");
-        const range = await getRangeByOffset(context, change.range);
-        range.insertText(String(change.payload.text ?? ""), "Replace");
+        const range = await getRangeByChange(context, change.range);
+        range.insertText(String(change.payload.text), "Replace");
         break;
       }
       case "replaceText": {
         requireVerifiedCapability(change.id, "supportsReplaceText", "replaceText");
-        const range = await getRangeByOffset(context, change.range);
-        range.insertText(String(change.payload.text ?? ""), "Replace");
+        const range = await getRangeByChange(context, change.range);
+        range.insertText(String(change.payload.text), "Replace");
         break;
       }
       case "deleteRange": {
         requireVerifiedCapability(change.id, "supportsReplaceText", "deleteRange");
-        const range = await getRangeByOffset(context, change.range);
+        const range = await getRangeByChange(context, change.range);
         range.insertText("", "Replace");
         break;
       }
       case "setParagraphFormat": {
-        const range = await getRangeByOffset(context, change.range);
+        const range = await getRangeByChange(context, change.range);
         requireVerifiedCapability(change.id, "supportsParagraphFormat", "setParagraphFormat");
         const paragraphFormat = range.paragraphFormat;
         if (!paragraphFormat) {
@@ -412,37 +498,34 @@ async function applySingleChange(change: Change): Promise<void> {
         }
 
         if (change.payload.lineSpacing !== undefined) {
-          const paragraphs = range.paragraphs as unknown as {
-            space1?: () => void;
-            space1Pt5?: () => void;
-            space2?: () => void;
+          const paragraphFormatWithSpacing = paragraphFormat as unknown as {
+            set?: (properties: Record<string, unknown>) => unknown;
           };
-          if (change.payload.lineSpacing === 1 && paragraphs.space1) {
-            paragraphs.space1();
-          } else if (change.payload.lineSpacing === 1.5 && paragraphs.space1Pt5) {
-            paragraphs.space1Pt5();
-          } else if (change.payload.lineSpacing === 2 && paragraphs.space2) {
-            paragraphs.space2();
-          } else {
-            throw new Error(
-              "setParagraphFormat supports lineSpacing values 1, 1.5, or 2 in this host",
-            );
+          if (typeof paragraphFormatWithSpacing.set !== "function") {
+            throw new Error("setParagraphFormat line spacing is not supported in this host");
           }
+          paragraphFormatWithSpacing.set({ lineSpacing: change.payload.lineSpacing });
         }
 
         if (change.payload.listLevel !== undefined) {
-          range.listFormat.set({ listLevelNumber: change.payload.listLevel });
+          const listFormat = range.listFormat as unknown as {
+            set?: (properties: Record<string, unknown>) => unknown;
+          };
+          if (typeof listFormat.set !== "function") {
+            throw new Error("setParagraphFormat list level is not supported in this host");
+          }
+          listFormat.set({ listLevelNumber: change.payload.listLevel });
         }
         break;
       }
       case "setCharacterFormat": {
-        const range = await getRangeByOffset(context, change.range);
+        const range = await getRangeByChange(context, change.range);
         requireVerifiedCapability(change.id, "supportsCharacterFormat", "setCharacterFormat");
         range.font.set(change.payload);
         break;
       }
       case "resetCharacterFormatting": {
-        const range = await getRangeByOffset(context, change.range);
+        const range = await getRangeByChange(context, change.range);
         requireVerifiedCapability(
           change.id,
           "supportsResetCharacterFormatting",
@@ -458,7 +541,7 @@ async function applySingleChange(change: Change): Promise<void> {
         // Desktop Stage 01 did not verify style application, so callers must
         // provide a positive capability result before this path is reachable.
         requireVerifiedCapability(change.id, "supportsStyles", "applyStyle");
-        const range = await getRangeByOffset(context, change.range);
+        const range = await getRangeByChange(context, change.range);
         const styleName = change.payload.styleName;
         if (typeof styleName !== "string" || !styleName.trim()) {
           throw new Error("applyStyle requires payload.styleName");
@@ -468,7 +551,7 @@ async function applySingleChange(change: Change): Promise<void> {
       }
       case "insertBreak": {
         requireVerifiedCapability(change.id, "supportsInsertBreak", "insertBreak");
-        const range = await getRangeByOffset(context, change.range);
+        const range = await getRangeByChange(context, change.range);
         const breakType = (change.payload as { breakType?: "line" | "page" | "nextParagraph" })
           .breakType;
         const enums = resolveBreakEnums(change.id);
@@ -483,7 +566,7 @@ async function applySingleChange(change: Change): Promise<void> {
         break;
       }
       case "setListLevel": {
-        const range = await getRangeByOffset(context, change.range);
+        const range = await getRangeByChange(context, change.range);
         requireVerifiedCapability(change.id, "supportsListLevel", "setListLevel");
         const listFormat = range.listFormat;
         if (!listFormat) {
@@ -554,11 +637,12 @@ function resolveBreakEnums(changeId: string): {
  * out-of-range plans fail with a clear per-change error instead of a host
  * exception.
  */
-async function getRangeByOffset(
+async function getRangeByChange(
   context: Office.Context,
-  range: { start: number; end: number },
+  range: ChangeRange,
 ): Promise<Office.Range> {
   const body = context.document.body;
+  const target = range.target ?? { kind: "document" as const };
   body.load("text");
   await context.sync();
   const text = body.text ?? "";
@@ -567,17 +651,172 @@ async function getRangeByOffset(
       `Range [${range.start}, ${range.end}] is out of bounds for document of length ${text.length}`,
     );
   }
+  if (range.unit === "paragraph") {
+    if (range.end !== range.start + 1) {
+      throw new Error(
+        `Multi-paragraph range [${range.start}, ${range.end}] is not supported; planning must create one change per paragraph`,
+      );
+    }
+    const paragraphs = body.paragraphs;
+    if (!paragraphs) throw new Error("Paragraph-unit target requires Word paragraph collection");
+    paragraphs.load("items");
+    await context.sync();
+    const item = paragraphs.items[target.kind === "paragraph" ? target.index : -1];
+    if (!item) throw new Error(`Paragraph target ${range.start} is unavailable`);
+    const getRange = (item as unknown as { getRange?: (location: "Whole") => Office.Range })
+      .getRange;
+    if (typeof getRange !== "function") {
+      throw new Error("Word host does not expose Paragraph.getRange('Whole')");
+    }
+    return getRange.call(item, "Whole");
+  }
+  if (range.unit === "section") {
+    throw new Error("Section-unit changes are not yet resolvable by the Word adapter");
+  }
   const whole = body.getRange("Whole");
   whole.set({ start: range.start, end: range.end });
   return whole;
+}
+
+async function verifyLivePrecondition(
+  change: Change,
+): Promise<{ matches: boolean; reason?: string }> {
+  const precondition = change.precondition;
+  if (precondition === undefined) return { matches: true };
+  return runInWord(async (context) => {
+    const body = context.document.body;
+    body.load("text");
+    const paragraphs = body.paragraphs;
+    if (precondition.kind === "text") {
+      await context.sync();
+      return matchesChangePrecondition(change, {
+        text: (body.text ?? "").slice(change.range.start, change.range.end),
+      });
+    }
+    if (!paragraphs) {
+      return matchesChangePrecondition(change, {});
+    }
+    paragraphs.load("items");
+    await context.sync();
+    const target = change.range.target ?? { kind: "document" as const };
+    const index = target.kind === "paragraph" ? target.index : -1;
+    const paragraph = paragraphs.items[index] as unknown as
+      | {
+          text?: string;
+          uniqueLocalId?: string;
+          style?: string | { name?: string };
+          alignment?: string;
+          lineSpacing?: number;
+          spaceAfter?: number;
+          spaceBefore?: number;
+          font?: {
+            name?: string;
+            size?: number;
+            color?: string;
+            bold?: boolean;
+            italic?: boolean;
+            underline?: boolean;
+          };
+          listItem?: { level?: number };
+          load?: (properties: string | string[]) => unknown;
+        }
+      | undefined;
+    if (!paragraph) return matchesChangePrecondition(change, {});
+    paragraph.load?.([
+      "text",
+      "uniqueLocalId",
+      "style",
+      "alignment",
+      "lineSpacing",
+      "spaceAfter",
+      "spaceBefore",
+      "font",
+    ]);
+    await context.sync();
+    const styleName =
+      typeof paragraph.style === "string"
+        ? paragraph.style
+        : typeof paragraph.style?.name === "string"
+          ? paragraph.style.name
+          : undefined;
+    const liveNodeId =
+      typeof paragraph.uniqueLocalId === "string" && paragraph.uniqueLocalId.trim().length > 0
+        ? `word-paragraph-${paragraph.uniqueLocalId.trim()}`
+        : undefined;
+    return matchesChangePrecondition(change, {
+      ...(typeof paragraph.text === "string" ? { text: paragraph.text } : {}),
+      ...(liveNodeId === undefined ? {} : { nodeId: liveNodeId }),
+      ...(styleName === undefined ? {} : { styleName }),
+      formatting: {
+        ...(styleName === undefined ? {} : { styleName }),
+        alignment: normalizeLiveAlignment(paragraph.alignment),
+        lineSpacing: paragraph.lineSpacing ?? null,
+        spaceAfter: paragraph.spaceAfter ?? null,
+        spaceBefore: paragraph.spaceBefore ?? null,
+        listLevel: null,
+        fontName: paragraph.font?.name ?? null,
+        fontSize: paragraph.font?.size ?? null,
+        fontColor: paragraph.font?.color ?? null,
+        bold: paragraph.font?.bold ?? null,
+        italic: paragraph.font?.italic ?? null,
+        underline: paragraph.font?.underline ?? null,
+      },
+    });
+  });
+}
+
+function normalizeLiveAlignment(value: unknown): "left" | "center" | "right" | "justified" | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.toLowerCase();
+  return normalized === "centered"
+    ? "center"
+    : normalized === "left" || normalized === "right" || normalized === "justified"
+      ? normalized
+      : null;
+}
+
+export type RefusalCategory =
+  | "stale_complete_identity"
+  | "local_precondition_failed"
+  | "protected_node"
+  | "unsupported_capability"
+  | "unresolved_semantic_span"
+  | "partial_coverage"
+  | "approval_required"
+  | "conflict";
+
+export interface RefusalDiagnostic {
+  category: RefusalCategory;
+  planId: string;
+  changeId?: string;
+  governancePolicyRevision?: number;
+  verificationResult: "refused" | "applied_verified" | "verification_failed";
 }
 
 export function validatePlanBeforeApply(
   plan: ChangePlan,
   allowConflicts = false,
   nodes?: readonly DocumentNode[],
+  currentGovernancePolicyRevision?: number,
 ): string[] {
   const problems: string[] = [];
+  if (
+    plan.governancePolicyRevision !== undefined &&
+    currentGovernancePolicyRevision === undefined
+  ) {
+    problems.push("Current governance policy revision is required to apply a governed plan");
+  } else if (
+    plan.governancePolicyRevision !== undefined &&
+    currentGovernancePolicyRevision !== undefined &&
+    plan.governancePolicyRevision !== currentGovernancePolicyRevision
+  ) {
+    problems.push(
+      `Governance policy revision mismatch: plan ${plan.governancePolicyRevision}, current ${currentGovernancePolicyRevision}`,
+    );
+  }
+  if (plan.schemaVersion !== 2) {
+    problems.push("ChangePlan schemaVersion must be 2; legacy or unknown plans are refused");
+  }
   if (!plan.docHash || plan.docHash.trim().length === 0) {
     problems.push("ChangePlan.docHash is required");
   }
@@ -587,14 +826,22 @@ export function validatePlanBeforeApply(
   if (plan.stale) {
     problems.push("ChangePlan is stale; re-plan before applying");
   }
-  if (plan.conflicts.length > 0 && !allowConflicts) {
+  if ((plan.conflicts ?? []).length > 0 && !allowConflicts) {
     problems.push(
-      `ChangePlan has ${plan.conflicts.length} unresolved conflict(s); review before applying`,
+      `ChangePlan has ${(plan.conflicts ?? []).length} unresolved conflict(s); review before applying`,
     );
+  }
+  if (plan.schemaVersion === 2) {
+    problems.push(...validateChangePreconditions(plan.changes));
+    plan.changes.forEach((change) => {
+      if (change.approvalRequired && change.approvalState !== "approved") {
+        problems.push(`Change ${change.id} requires explicit approval`);
+      }
+    });
   }
   const changeIds = new Set(plan.changes.map((change) => change.id));
   plan.changes.forEach((change) => {
-    change.dependsOn.forEach((dependency) => {
+    (change.dependsOn ?? []).forEach((dependency) => {
       if (!changeIds.has(dependency))
         problems.push(`Change ${change.id} depends on missing change ${dependency}`);
     });

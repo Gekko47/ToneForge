@@ -37,6 +37,22 @@ export default function CoverageBanner({ coverage }: CoverageBannerProps): React
         Processed: {totalProcessed.toLocaleString()} characters
         {totalRevised > 0 && ` — Revised: ${totalRevised.toLocaleString()}`}
       </p>
+      <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
+        Examined nodes: {coverage.examinedNodeIds.length} · Planned changes:{" "}
+        {coverage.plannedChangeCount} · Applied changes: {coverage.appliedChangeCount}
+      </p>
+      {coverage.acquisition && (
+        <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
+          Acquisition reads: {coverage.acquisition.acquisitionReadCount} · Syncs:{" "}
+          {coverage.acquisition.syncCount} · Full-body reads:{" "}
+          {coverage.acquisition.fullBodyReadCount}
+        </p>
+      )}
+      {coverage.unsupported.length > 0 && (
+        <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
+          Unsupported scope: {coverage.unsupported.join(", ")}
+        </p>
+      )}
       {coverage.unprocessed.length > 0 && (
         <ul style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem" }}>
           {coverage.unprocessed.map((reason, index) => (

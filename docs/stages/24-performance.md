@@ -17,7 +17,7 @@ Harden analysis and UI behavior for large documents.
 ## Verification
 
 - [x] Review pipeline, batcher, UI, and observer tests pass.
-- [x] Full test suite passes: 58 files / 593 tests.
+- [x] Full test suite passes: 68 files / 672 tests.
 - [ ] Measured 50k-word scan and memory baseline in Word.
 - [ ] Measured edit-to-finding latency and observer change-range behavior.
 - [x] Global exercised-core coverage threshold passes.

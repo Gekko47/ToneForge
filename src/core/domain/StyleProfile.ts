@@ -19,6 +19,11 @@ export const ProfileVersionSchema = z.object({
 
 export type ProfileVersion = z.infer<typeof ProfileVersionSchema>;
 
+/** Canonical semantic version used in plans, review requests, logs, and UI. */
+export function formatProfileVersion(version: ProfileVersion): string {
+  return `${version.major}.${version.minor}.${version.patch}`;
+}
+
 export const TypographyRulesSchema = z.object({
   // How an em dash is represented. "em" is the Unicode U+2014 character,
   // "hyphen" is a double hyphen "--", and "space" is a plain space. The

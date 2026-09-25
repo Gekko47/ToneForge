@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { createChangePlan } from "../../../src/core/domain/ChangePlan";
+import { createTestPlan } from "../../fixtures/changePlans";
 import { logger } from "../../../src/shared/utils/logger";
 import {
   applyChangePlan,
@@ -41,7 +41,7 @@ describe("applyChangePlan gate", () => {
   });
 
   it("blocks all changes when Stage 01 has not passed", async () => {
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174000",
         type: "insertText",
@@ -67,7 +67,7 @@ describe("applyChangePlan gate", () => {
 
   it("flags empty plan via validatePlanBeforeApply", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
-    const plan = createChangePlan("hash-123", "doc-1", []);
+    const plan = createTestPlan("hash-123", "doc-1", []);
     const problems = validatePlanBeforeApply(plan);
     expect(problems).toContain("ChangePlan has no changes");
     // applyChangePlan on an empty plan produces no results (vacuous), so the
@@ -96,7 +96,7 @@ describe("applyChangePlan gate", () => {
 
   it("blocks when plan is stale", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
-    const plan = createChangePlan("hash", "doc", []);
+    const plan = createTestPlan("hash", "doc", []);
     (plan as { stale: boolean }).stale = true;
     const problems = validatePlanBeforeApply(plan);
     expect(problems).toContain("ChangePlan is stale; re-plan before applying");
@@ -109,7 +109,7 @@ describe("applyChangePlan gate", () => {
 
   it("passes validation for a well-formed plan", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174000",
         type: "insertText",
@@ -203,7 +203,7 @@ describe("applyChangePlan apply path", () => {
   it("applies insertText via body.getRange(Whole) plus range.set", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
     const { rangeMock, getRange } = installApplyMock();
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174000",
         type: "insertText",
@@ -256,32 +256,37 @@ describe("applyChangePlan apply path", () => {
       InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
     };
 
-    const plan = createChangePlan("hash-123", "doc-1", [
-      {
-        id: "123e4567-e89b-12d3-a456-426614174000",
-        type: "insertText",
-        range: { start: 0, end: 5 },
-        payload: { text: "A" },
-        rationale: "test",
-        reversible: true,
-        source: "deterministic",
-        risk: "none",
-        approvalRequired: false,
-        dependsOn: [],
-      },
-      {
-        id: "123e4567-e89b-12d3-a456-426614174001",
-        type: "insertText",
-        range: { start: 13, end: 18 },
-        payload: { text: "B" },
-        rationale: "test",
-        reversible: true,
-        source: "deterministic",
-        risk: "none",
-        approvalRequired: false,
-        dependsOn: [],
-      },
-    ]);
+    const plan = createTestPlan(
+      "hash-123",
+      "doc-1",
+      [
+        {
+          id: "123e4567-e89b-12d3-a456-426614174000",
+          type: "insertText",
+          range: { start: 0, end: 5 },
+          payload: { text: "A" },
+          rationale: "test",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          dependsOn: [],
+        },
+        {
+          id: "123e4567-e89b-12d3-a456-426614174001",
+          type: "insertText",
+          range: { start: 13, end: 18 },
+          payload: { text: "B" },
+          rationale: "test",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          dependsOn: [],
+        },
+      ],
+      "hello world, hello world",
+    );
 
     const results = await applyChangePlan(plan, "hash-123");
     expect(results).toHaveLength(2);
@@ -295,7 +300,7 @@ describe("applyChangePlan apply path", () => {
   it("applies all eight change kinds", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
     const { rangeMock } = installApplyMock();
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174000",
         type: "insertText",
@@ -422,7 +427,7 @@ describe("applyChangePlan apply path", () => {
       InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
     };
     try {
-      const plan = createChangePlan("hash-123", "doc-1", [
+      const plan = createTestPlan("hash-123", "doc-1", [
         {
           id: "123e4567-e89b-12d3-a456-426614174006",
           type: "insertBreak",
@@ -459,7 +464,7 @@ describe("applyChangePlan apply path", () => {
     (globalThis as { Office?: unknown }).Office = officeWithoutEnums;
     (globalThis as { Word?: unknown }).Word = undefined;
     try {
-      const plan = createChangePlan("hash-123", "doc-1", [
+      const plan = createTestPlan("hash-123", "doc-1", [
         {
           id: "123e4567-e89b-12d3-a456-426614174006",
           type: "insertBreak",
@@ -521,7 +526,7 @@ describe("applyChangePlan apply path", () => {
       BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
       InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
     };
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174000",
         type: "insertText",
@@ -582,7 +587,7 @@ describe("applyChangePlan apply path", () => {
       BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
       InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
     };
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174000",
         type: "insertText",
@@ -609,7 +614,7 @@ describe("applyChangePlan apply path", () => {
   it("refuses without managed tracking when the tracking control is missing", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
     installApplyMock();
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174000",
         type: "insertText",
@@ -636,7 +641,7 @@ describe("applyChangePlan apply path", () => {
   it("reports applied:false and error for unsupported applyStyle", async () => {
     setStage01Passed(true, { ...FULL_CAPABILITIES, supportsStyles: false });
     installApplyMock();
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174001",
         type: "applyStyle",
@@ -685,10 +690,108 @@ describe("applyChangePlan apply path", () => {
       InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
     };
 
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan(
+      "hash-123",
+      "doc-1",
+      [
+        {
+          id: "123e4567-e89b-12d3-a456-426614174000",
+          type: "insertText",
+          range: { start: 0, end: 5 },
+          payload: { text: "A" },
+          rationale: "test",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          dependsOn: [],
+        },
+        {
+          id: "123e4567-e89b-12d3-a456-426614174001",
+          type: "insertText",
+          range: { start: 13, end: 18 },
+          payload: { text: "B" },
+          rationale: "test",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          dependsOn: [],
+        },
+      ],
+      "hello world, hello world",
+    );
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results).toHaveLength(2);
+    // Reverse order: the later offset is attempted first and fails.
+    expect(results[0]?.applied).toBe(false);
+    expect(results[1]?.applied).toBe(true);
+  });
+
+  it("refuses a schema-v1 plan before preflight or mutation", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const { rangeMock } = installApplyMock();
+    const v2 = createTestPlan("hash-123", "doc-1", [
       {
-        id: "123e4567-e89b-12d3-a456-426614174000",
+        id: "123e4567-e89b-12d3-a456-426614174003",
         type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+      },
+    ]);
+    const legacy = { ...v2, schemaVersion: 1 as const };
+
+    const results = await applyChangePlan(legacy, "hash-123");
+
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.error).toContain("schemaVersion must be 2");
+    expect(rangeMock.insertText).not.toHaveBeenCalled();
+  });
+
+  it("refuses pending approval before live preflight or mutation", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const { rangeMock } = installApplyMock();
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174004",
+        type: "replaceText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+        source: "ai",
+        risk: "medium",
+        approvalRequired: true,
+        approvalState: "pending",
+        dependsOn: [],
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.error).toContain("requires explicit approval");
+    expect(logger.warn).toHaveBeenCalledWith(
+      "ChangePlan validation failed",
+      expect.objectContaining({ refusalCategory: "approval_required" }),
+    );
+    expect(rangeMock.insertText).not.toHaveBeenCalled();
+  });
+
+  it("fails atomically when one exact precondition is stale", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const { rangeMock } = installApplyMock();
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174005",
+        type: "replaceText",
         range: { start: 0, end: 5 },
         payload: { text: "A" },
         rationale: "test",
@@ -699,9 +802,9 @@ describe("applyChangePlan apply path", () => {
         dependsOn: [],
       },
       {
-        id: "123e4567-e89b-12d3-a456-426614174001",
-        type: "insertText",
-        range: { start: 13, end: 18 },
+        id: "123e4567-e89b-12d3-a456-426614174006",
+        type: "replaceText",
+        range: { start: 6, end: 11 },
         payload: { text: "B" },
         rationale: "test",
         reversible: true,
@@ -709,20 +812,78 @@ describe("applyChangePlan apply path", () => {
         risk: "none",
         approvalRequired: false,
         dependsOn: [],
+        precondition: { kind: "text", expectedText: "stale" },
       },
     ]);
 
     const results = await applyChangePlan(plan, "hash-123");
-    expect(results).toHaveLength(2);
-    // Reverse order: the later offset is attempted first and fails.
+
+    expect(results.every((result) => !result.applied)).toBe(true);
+    expect(results[0]?.error).toContain("Atomic precondition preflight failed");
+    expect(rangeMock.insertText).not.toHaveBeenCalled();
+  });
+
+  it("rejects a multi-paragraph range after its node precondition passes", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const paragraphRange = makeRangeMock();
+    const context = {
+      document: {
+        body: {
+          text: "First\nSecond",
+          load: vi.fn(),
+          paragraphs: {
+            load: vi.fn(),
+            items: [
+              {
+                text: "First",
+                uniqueLocalId: "paragraph-0",
+                load: vi.fn(),
+                style: "Normal",
+              },
+            ],
+          },
+          getRange: vi.fn(() => paragraphRange),
+        },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+    };
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174007",
+        type: "setParagraphFormat",
+        range: {
+          start: 0,
+          end: 2,
+          unit: "paragraph",
+          target: { kind: "paragraph", index: 0 },
+        },
+        payload: { alignment: "center" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+        precondition: { kind: "node", nodeId: "word-paragraph-paragraph-0" },
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+
     expect(results[0]?.applied).toBe(false);
-    expect(results[1]?.applied).toBe(true);
+    expect(results[0]?.error).toContain("Multi-paragraph range");
+    expect(paragraphRange.paragraphFormat.set).not.toHaveBeenCalled();
   });
 
   it("refuses to apply when currentDocHash mismatches", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
     installApplyMock();
-    const plan = createChangePlan("hash-123", "doc-1", [
+    const plan = createTestPlan("hash-123", "doc-1", [
       {
         id: "123e4567-e89b-12d3-a456-426614174002",
         type: "insertText",

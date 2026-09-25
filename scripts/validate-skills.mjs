@@ -9,7 +9,7 @@
  * - no legacy flat .roo/skills/*.md files remain
  */
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -47,15 +47,12 @@ function parseFrontmatter(text, file) {
 
 function extractRefs(markdown) {
   const refs = new Set();
-  // Match `path/to/file.ext` in backticks with a file extension.
-  const re = /`([A-Za-z0-9_.\-$/]+\.[A-Za-z0-9]+)`/g;
+  const re = /(?:`|\]\()([A-Za-z0-9_.\-$/]+\.[A-Za-z0-9]+)(?::\d+)?(?:`|\))/g;
   let m;
   while ((m = re.exec(markdown)) !== null) {
     const p = m[1];
-    // Skip bare filenames, URLs, and placeholders with < >.
     if (p.includes("://") || p.includes("<") || p.includes(">")) continue;
     if (!p.includes("/")) continue;
-    // Skip planned-but-not-yet-scaffolded prefixes documented as planned.
     refs.add(p);
   }
   return [...refs];
@@ -141,6 +138,7 @@ for (const dir of dirs) {
 
   // Referenced file existence (best-effort; planned paths are allowed if documented as planned).
   const refs = extractRefs(content);
+  const contentDirectory = dirname(skillFile);
   const plannedPrefixes = [
     "src/rules/",
     "src/formatting/",
@@ -151,8 +149,10 @@ for (const dir of dirs) {
   ];
   for (const ref of refs) {
     const isPlanned = plannedPrefixes.some((p) => ref.startsWith(p));
-    const abs = join(root, ref);
+    const abs = resolve(contentDirectory, ref);
     if (existsSync(abs)) continue;
+    const repositoryRelative = resolve(root, ref);
+    if (existsSync(repositoryRelative)) continue;
     if (isPlanned && /planned/i.test(content)) continue; // documented as planned
     // Allow directory prefixes without exact file (e.g. src/ai/prompts/).
     if (ref.endsWith("/")) {

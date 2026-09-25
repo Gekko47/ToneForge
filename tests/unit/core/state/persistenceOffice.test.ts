@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createEmptyProfile } from "../../../../src/core/domain/index";
-import { loadState, saveState, upsertProfile } from "../../../../src/core/state/index";
+import {
+  clearPersistedCredentials,
+  loadState,
+  saveState,
+  upsertProfile,
+} from "../../../../src/core/state/index";
 
 describe("persistence with Office roamingSettings", () => {
   let officeRuntime:
@@ -8,6 +13,7 @@ describe("persistence with Office roamingSettings", () => {
         roamingSettings?: {
           get: (k: string) => unknown;
           set: (k: string, v: unknown) => void;
+          remove: (k: string) => void;
           saveAsync: (cb?: (result: unknown) => void) => void;
         };
       }
@@ -19,6 +25,7 @@ describe("persistence with Office roamingSettings", () => {
       roamingSettings: {
         get: () => null,
         set: () => {},
+        remove: () => {},
         saveAsync: (cb?: (result: unknown) => void) => {
           if (cb) cb(true);
         },
@@ -72,14 +79,16 @@ describe("persistence with Office roamingSettings", () => {
     };
 
     saveState({
-      version: 3,
+      version: 5,
       profiles: [],
       profileHistory: {},
       activeProfileId: null,
       governanceProfiles: {},
+      governanceHistory: {},
       activeGovernanceProfileId: null,
       settings: {
         llmProvider: "mock",
+        openAiCredentialMode: "broker" as const,
         spotReviewConsent: false,
         fullDocumentReviewConsent: false,
         semanticOptIn: false,
@@ -91,10 +100,10 @@ describe("persistence with Office roamingSettings", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(typeof persisted).toBe("string");
     const parsed = JSON.parse(persisted as string) as { version: number };
-    expect(parsed.version).toBe(3);
+    expect(parsed.version).toBe(5);
   });
 
-  it("migrates v0 state (no version field) to v3 via loadState", () => {
+  it("migrates v0 state (no version field) to v5 via loadState", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     // v0 persisted state had no `version` field. Migration upgrades the
     // version and preserves existing settings values over defaults.
@@ -105,7 +114,7 @@ describe("persistence with Office roamingSettings", () => {
         settings: { telemetryDisabled: false },
       });
     const state = loadState();
-    expect(state.version).toBe(3);
+    expect(state.version).toBe(5);
     expect(state.profileHistory).toEqual({});
     expect(state.settings.telemetryDisabled).toBe(false);
   });
@@ -119,11 +128,11 @@ describe("persistence with Office roamingSettings", () => {
         settings: {},
       });
     const state = loadState();
-    expect(state.version).toBe(3);
+    expect(state.version).toBe(5);
     expect(state.settings.telemetryDisabled).toBe(true);
   });
 
-  it("preserves v1 state by upgrading it to v3", () => {
+  it("preserves v1 state by upgrading it to v5", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     officeRuntime.roamingSettings.get = () =>
       JSON.stringify({
@@ -133,15 +142,15 @@ describe("persistence with Office roamingSettings", () => {
         settings: { telemetryDisabled: true },
       });
     const state = loadState();
-    expect(state.version).toBe(3);
+    expect(state.version).toBe(5);
     expect(state.profileHistory).toEqual({});
     expect(state.settings.telemetryDisabled).toBe(true);
   });
 
-  it("falls back to legacy v1 storage key when v3 is absent", () => {
+  it("falls back to legacy v1 storage key when v5 is absent", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     officeRuntime.roamingSettings.get = (key: string) =>
-      key === "ToneForge.State.v3"
+      key === "ToneForge.State.v5"
         ? null
         : JSON.stringify({
             version: 1,
@@ -150,7 +159,66 @@ describe("persistence with Office roamingSettings", () => {
             settings: { telemetryDisabled: true },
           });
     const state = loadState();
-    expect(state.version).toBe(3);
+    expect(state.version).toBe(5);
     expect(state.profiles).toEqual([]);
+  });
+
+  it("purges a legacy plaintext key from both storage paths", async () => {
+    if (!officeRuntime?.roamingSettings) throw new Error("setup");
+    const values = new Map<string, unknown>();
+    officeRuntime.roamingSettings.get = (key) => values.get(key) ?? null;
+    officeRuntime.roamingSettings.set = (key, value) => values.set(key, value);
+    officeRuntime.roamingSettings.remove = (key) => values.delete(key);
+    values.set(
+      "ToneForge.State.v3",
+      JSON.stringify({
+        version: 3,
+        profiles: [],
+        settings: {
+          openAiApiKey: "sk-legacy-secret-value",
+          llmProvider: "openai",
+          spotReviewConsent: true,
+        },
+      }),
+    );
+    window.localStorage.setItem(
+      "ToneForge.State.v3",
+      JSON.stringify({
+        version: 3,
+        profiles: [],
+        settings: { openAiApiKey: "sk-legacy-secret-value" },
+      }),
+    );
+
+    const state = loadState();
+    expect(state.settings).not.toHaveProperty("openAiApiKey");
+    expect(state.settings.spotReviewConsent).toBe(true);
+    expect(values.has("ToneForge.State.v3")).toBe(false);
+    expect(window.localStorage.getItem("ToneForge.State.v3")).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(String(values.get("ToneForge.State.v5"))).not.toContain("openAiApiKey");
+  });
+
+  it("clear-secret selects mock without changing consent", () => {
+    window.localStorage.setItem(
+      "ToneForge.State.v3",
+      JSON.stringify({
+        version: 3,
+        profiles: [],
+        settings: {
+          openAiApiKey: "sk-legacy-secret-value",
+          llmProvider: "openai",
+          spotReviewConsent: true,
+          fullDocumentReviewConsent: true,
+        },
+      }),
+    );
+
+    const state = clearPersistedCredentials();
+    expect(state.settings.llmProvider).toBe("mock");
+    expect(state.settings.openAiCredentialMode).toBe("broker");
+    expect(state.settings.spotReviewConsent).toBe(true);
+    expect(state.settings.fullDocumentReviewConsent).toBe(true);
+    expect(JSON.stringify(state)).not.toContain("openAiApiKey");
   });
 });

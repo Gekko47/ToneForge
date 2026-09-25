@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import HtmlWebpackPlugin from "html-webpack-plugin";
 import TerserPlugin from "terser-webpack-plugin";
+import webpack from "webpack";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +23,20 @@ const prod = {
     publicPath: "./",
   },
   plugins: [
+    new webpack.DefinePlugin({
+      "process.env": JSON.stringify({
+        NODE_ENV: "production",
+        PORT: "3000",
+        HTTPS_PORT: "3001",
+        OPENAI_BASE_URL: "https://api.openai.com/v1",
+        OPENAI_MODEL: "gpt-4o-mini",
+        LLM_BROKER_URL: "",
+        OPENAI_TIMEOUT_MS: "30000",
+        OPENAI_MAX_RETRIES: "2",
+        TELEMETRY_DISABLED: "1",
+        ANALYTICS_ENDPOINT: "",
+      }),
+    }),
     new HtmlWebpackPlugin({
       template: "./src/taskpane/taskpane.html",
       filename: "taskpane.html",

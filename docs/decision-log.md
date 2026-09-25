@@ -177,3 +177,61 @@ preserved for traceability. The key current decisions are:
   `src/taskpane/components/SettingsForm.tsx`,
   `src/taskpane/components/PendingChanges.tsx`, and the related unit/integration
   tests under `tests/unit` and `tests/integration`.
+
+## ADR-0039 — Brokered credentials and credential-free ordinary state
+
+- **Status**: Accepted for repository development; production custody unresolved (2026-09-24)
+- **Context**: Development Webpack injected the complete `.env` object, while
+  Settings and v3 state persisted a browser-readable API key. Those paths made a
+  reusable credential available to static assets or ordinary application state.
+  The repository also lacked generated-artifact sentinel coverage and recursive
+  prompt/content redaction.
+- **Decision**: Exclude API keys from browser environment contracts and ordinary
+  state. Migrate persisted state to v5, remove and purge legacy credential fields,
+  and preserve consent. For optional local live-provider testing, read `.env`
+  only in the Webpack Node process and proxy consented requests through the
+  same-origin development endpoint without a browser authorization header.
+  Preserve provider abstraction, explicit user-supplied adapter support, retry,
+  abort, and redaction. Fail development and production sentinel builds when
+  generated artifacts contain secret-shaped values.
+- **Consequences**: Settings no longer accepts a key and offers a legacy-clear
+  action. Mock remains the offline default. The local broker is not a production
+  service and does not establish production authentication. A production broker,
+  identity/authorization model, formal threat model, and live browser evidence
+  remain release blockers; browser-held production keys are not claimed as
+  supported.
+- **Evidence**: `webpack.dev.js`, `webpack.prod.js`, `src/core/config/env.ts`,
+  `src/core/state/migration.ts`, `src/core/state/persistence.ts`,
+  `src/ai/providers/openaiAdapter.ts`, `src/shared/utils/redaction.ts`,
+  `scripts/check-build-artifacts.mjs`, `scripts/verify-bundle-secrets.mjs`, and
+  focused state/provider/settings/redaction tests.
+
+## ADR-0040 — Persist governance policy history with style profile history
+
+- **Status**: Accepted (2026-09-24)
+- **Context**: Style profile restores must not silently restore an older protection or scope policy. Existing state v4 preserved style snapshots but not governance snapshots or policy revisions on plans.
+- **Decision**: State v5 adds `governanceHistory`, seeds it from persisted governance profiles, updates the active governance snapshot when a style profile is saved, preserves both storage backends, and keeps legacy state versions migratable. Reformat plans capture the active governance policy revision. Governance policy diffs are independent from `StyleProfile` diffs.
+- **Consequences**: Profile and policy history can be restored/audited separately, and plan readiness can expose policy revision. Existing v0-v4 records are upgraded rather than discarded. Live policy editing and host evidence remain open product work.
+- **Evidence**: `src/core/state/migration.ts`, `src/core/state/persistence.ts`, `src/core/domain/GovernanceProfile.ts`, `src/style/versioning.ts`, and `src/taskpane/components/VersionDiff.tsx`.
+
+## ADR-0041 — Single command registry and named verification graph
+
+- **Status**: Accepted (2026-09-24)
+- **Context**: Stage 6 found duplicated command metadata, a validator that only
+  checked JSON action IDs, and local/CI/release verification graphs with
+  different stage membership. The dual-format manifest remains intentional:
+  JSON uses executeFunction actions while XML fallback uses ShowTaskpane.
+- **Decision**: Define command metadata in `src/commands/commandDefinitions.json`
+  and validate it at runtime into the typed `COMMAND_REGISTRY` used by
+  `commands.ts`. Validate equivalent command IDs, labels, and XML task-pane
+  destinations without claiming XML execute-function parity. Define the ordered
+  `toneforge-repository-v1` graph in `scripts/verification-graph.mjs`; make
+  `verify`, `stage:verify`, CI, and release invoke it. Keep clean-install and
+  human host evidence as explicit separate gates.
+- **Consequences**: A manifest or command-label drift fails before packaging.
+  JSON and XML remain deployable through their documented action mechanisms.
+  Release remains blocked until the human Word-host matrix is complete.
+- **Evidence**: `src/commands/commandRegistry.ts`,
+  `src/commands/commands.ts`, `scripts/validate-manifest.mjs`,
+  `scripts/verification-graph.mjs`, `scripts/clean-install-check.mjs`,
+  `scripts/check-release-package.mjs`, and the command contract tests.

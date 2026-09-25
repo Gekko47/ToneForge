@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   hashDocument,
   getDocumentSnapshot,
-  getSelectionText,
+  getLiveSelection,
   getParagraphRange,
 } from "../../../src/word/documentReader";
 
@@ -136,10 +136,59 @@ describe("getDocumentSnapshot", () => {
   });
 });
 
-describe("getSelectionText", () => {
-  it("returns the selection text", async () => {
-    const text = await getSelectionText();
-    expect(typeof text).toBe("string");
+describe("live selection", () => {
+  afterEach(() => {
+    setOffice({
+      run: <T>(func: (context: unknown) => Promise<T>) =>
+        func({
+          document: {
+            getSelection: () => ({ text: "", start: 0, end: 0, load: vi.fn() }),
+          },
+          sync: vi.fn(),
+        }),
+    });
+  });
+
+  it("returns current start and end identity on every read", async () => {
+    const selections = [
+      { text: "first", start: 3, end: 8 },
+      { text: "second", start: 11, end: 17 },
+    ];
+    const getSelection = vi.fn(() => {
+      const selection = selections.shift();
+      if (!selection) throw new Error("Selection read was not expected");
+      return { ...selection, load: vi.fn() };
+    });
+    setOffice({
+      run: <T>(func: (context: unknown) => Promise<T>) =>
+        func({ document: { getSelection }, sync: vi.fn() }),
+    });
+
+    await expect(getLiveSelection()).resolves.toEqual({
+      text: "first",
+      start: 3,
+      end: 8,
+    });
+    await expect(getLiveSelection()).resolves.toEqual({
+      text: "second",
+      start: 11,
+      end: 17,
+    });
+    expect(getSelection).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails closed when live selection identity is unavailable", async () => {
+    setOffice({
+      run: <T>(func: (context: unknown) => Promise<T>) =>
+        func({
+          document: {
+            getSelection: () => ({ text: "selected", load: vi.fn() }),
+          },
+          sync: vi.fn(),
+        }),
+    });
+
+    await expect(getLiveSelection()).resolves.toBeNull();
   });
 });
 

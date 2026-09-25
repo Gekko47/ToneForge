@@ -10,6 +10,7 @@
  */
 
 import { type ProfileVersion, type StyleProfile } from "../core/domain/StyleProfile";
+import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
 
 /** Bump types supported by `bumpProfileVersion`. */
 export type BumpType = "major" | "minor" | "patch";
@@ -25,6 +26,13 @@ export interface ProfileChange {
 export interface ProfileDiff {
   readonly fromVersion: ProfileVersion;
   readonly toVersion: ProfileVersion;
+  readonly changes: readonly ProfileChange[];
+  readonly changedCount: number;
+}
+
+export interface GovernanceProfileDiff {
+  readonly fromRevision: number;
+  readonly toRevision: number;
   readonly changes: readonly ProfileChange[];
   readonly changedCount: number;
 }
@@ -141,6 +149,46 @@ export function diffProfiles(from: StyleProfile, to: StyleProfile): ProfileDiff 
     changes,
     changedCount: changes.length,
   };
+}
+
+/** Diff governance policy fields independently from the wrapped style profile. */
+export function diffGovernanceProfiles(
+  from: GovernanceProfile,
+  to: GovernanceProfile,
+): GovernanceProfileDiff {
+  const changes: ProfileChange[] = [];
+  const fields: readonly { label: string; path: readonly string[] }[] = [
+    { label: "Policy revision", path: ["version"] },
+    { label: "Rules", path: ["rules"] },
+    { label: "Terminology", path: ["terminology"] },
+    { label: "Scope", path: ["scope"] },
+    { label: "Protection", path: ["protection"] },
+    { label: "Editorial policy", path: ["editorial"] },
+  ];
+  fields.forEach((field) => {
+    const oldValue = readPath(from, field.path);
+    const newValue = readPath(to, field.path);
+    if (!sameValue(oldValue, newValue)) {
+      changes.push({ field: field.label, from: formatValue(oldValue), to: formatValue(newValue) });
+    }
+  });
+  return {
+    fromRevision: from.version,
+    toRevision: to.version,
+    changes,
+    changedCount: changes.length,
+  };
+}
+
+/** Format a governance policy diff as a plain-text changelog. */
+export function formatGovernanceChangelog(diff: GovernanceProfileDiff): string {
+  if (diff.changedCount === 0) {
+    return `No governance policy changes between revisions ${diff.fromRevision} and ${diff.toRevision}.`;
+  }
+  return [
+    `Governance policy changes from revision ${diff.fromRevision} to ${diff.toRevision}:`,
+    ...diff.changes.map((change) => `- ${change.field}: ${change.from} -> ${change.to}`),
+  ].join("\n");
 }
 
 /** Format a profile diff as a plain-text changelog. */

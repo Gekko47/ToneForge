@@ -24,8 +24,14 @@ export default function DebuggingPanel({ onBack }: DebuggingPanelProps): React.R
 
   async function probeCapabilities(): Promise<void> {
     setBusy(true);
+    setDiagnostics(null);
     try {
       setCapabilities(await prepareReformatHost());
+    } catch {
+      setCapabilities(null);
+      setDiagnostics(
+        "Capability probe did not complete. Confirm the add-in is running inside a supported Word host.",
+      );
     } finally {
       setBusy(false);
     }
@@ -56,10 +62,12 @@ export default function DebuggingPanel({ onBack }: DebuggingPanelProps): React.R
           "Tracked editing is enabled and the Word host passed its capability probe.",
         );
       }
-    } catch (error: unknown) {
+    } catch {
       setTrackedEditingEnabled(false);
       setEditingEnabled(false);
-      setEditingMessage(error instanceof Error ? error.message : String(error));
+      setEditingMessage(
+        "Tracked editing could not be prepared. Review host diagnostics and retry.",
+      );
     } finally {
       setBusy(false);
     }

@@ -2,12 +2,14 @@ export { probeWordCapabilities, type WordCapabilities } from "./capabilityProbe"
 export {
   getDocumentSnapshot,
   getSelectionText,
+  getLiveSelection,
   getSelectedParagraphText,
   getStructuredSnapshot,
   resolveSourceRange,
   hashDocument,
   type DocumentSnapshot,
   type ParagraphRange,
+  type LiveSelection,
   splitParagraphRanges,
 } from "./documentReader";
 export { getFormattingSnapshot, type FormattingReadOptions } from "./formattingReader";
