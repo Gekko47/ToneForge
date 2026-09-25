@@ -1,22 +1,18 @@
 import React from "react";
 import ProfileEditor from "../components/ProfileEditor";
-import ProfileLifecycleSection from "../components/ProfileLifecycleSection";
+import ProfileRecordSection from "../components/ProfileRecordSection";
 import { getDocumentSnapshot, getSelectionText } from "../../word/documentReader";
 import { createLlmRegistry } from "../../ai/providers/registry";
 import { captureSample } from "../../style/sampleCapture";
 import { learnStyleDraft } from "../../style/learnStyle";
 import {
-  createDraft,
-  effectiveProfile,
-  type ProfileLifecycleState,
-} from "../../core/domain/ProfileLifecycle";
-import {
-  loadProfileLifecycle,
+  createProfileRecord,
+  loadProfileRecord,
   loadState,
-  saveProfileLifecycle,
+  saveProfileRecord,
   setActiveProfile,
-  upsertProfile,
 } from "../../core/state/persistence";
+import type { ProfileRecord } from "../../core/domain/ProfileRecord";
 
 export interface ProfileProps {
   onBack: () => void;
@@ -26,22 +22,12 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
   const [learnStatus, setLearnStatus] = React.useState<string | null>(null);
   const [learnError, setLearnError] = React.useState<string | null>(null);
   const [learning, setLearning] = React.useState(false);
-  const [lifecycle, setLifecycle] = React.useState<ProfileLifecycleState | null>(null);
+  const [record, setRecord] = React.useState<ProfileRecord | null>(null);
 
   React.useEffect(() => {
     const state = loadState();
-    if (state.activeProfileId) {
-      const profile = state.profiles.find((item) => item.id === state.activeProfileId);
-      setLifecycle(loadProfileLifecycle(state.activeProfileId, profile));
-    }
+    setRecord(state.activeProfileId ? loadProfileRecord(state.activeProfileId) : null);
   }, []);
-
-  /**
-   * The effective profile is the active published version, falling back to the
-   * draft. Analysis and governance must follow it so an unpublished edit never
-   * silently changes what the document is checked against.
-   */
-  const effective = lifecycle ? effectiveProfile(lifecycle) : null;
 
   async function learnFromCurrentDocument(): Promise<void> {
     setLearning(true);
@@ -71,12 +57,16 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
             }
           : {}),
       });
-      upsertProfile(result.draft);
-      setActiveProfile(result.draft.id);
-      const seeded = loadProfileLifecycle(result.draft.id, result.draft);
-      const withDraft = createDraft(seeded, result.draft, new Date().toISOString());
-      saveProfileLifecycle(withDraft);
-      setLifecycle(withDraft);
+
+      // Learn Style always creates a new record: a learned draft is a distinct
+      // profile, not an edit of whichever profile happens to be active.
+      const created = createProfileRecord(
+        result.draft.name,
+        new Date().toISOString(),
+        result.draft,
+      );
+      setActiveProfile(created.id);
+      setRecord(created);
       setLearnStatus(
         `Learned from ${result.evidence.source} sample (${result.evidence.wordCount} words). The draft is editable below.`,
       );
@@ -87,6 +77,11 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
     }
   }
 
+  function applyRecord(next: ProfileRecord): void {
+    saveProfileRecord(next);
+    setRecord(next);
+  }
+
   return (
     <div className="tf-card" data-page="profile">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
@@ -95,13 +90,13 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
         </button>
       </nav>
       <h1 className="tf-title">Style profile</h1>
-      <p className="tf-sub">Manage the active profile, its version, and applied document scope.</p>
+      <p className="tf-sub">Manage the active profile, its revision, and applied document scope.</p>
       <section aria-labelledby="learn-style-heading" className="tf-collapsible">
         <h2 id="learn-style-heading">Learn Style</h2>
         <p className="tf-sub">
           Capture the current selection when present, otherwise the eligible document text, check
-          sample quality, and create an editable draft. AI interpretation is used only when consent
-          and a configured provider are available.
+          sample quality, and create a new editable profile. AI interpretation is used only when
+          consent and a configured provider are available.
         </p>
         <button type="button" onClick={() => void learnFromCurrentDocument()} disabled={learning}>
           {learning ? "Learning style…" : "Learn from current document"}
@@ -117,9 +112,7 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
           </p>
         )}
       </section>
-      {lifecycle && effective && (
-        <ProfileLifecycleSection lifecycle={lifecycle} onChange={setLifecycle} />
-      )}
+      {record && <ProfileRecordSection record={record} onChange={applyRecord} />}
       <ProfileEditor />
     </div>
   );

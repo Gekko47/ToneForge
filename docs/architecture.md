@@ -61,8 +61,10 @@ Deterministic rules/formatting   Optional AI review
 ## Data flow and compatibility
 
 1. `style/sampleCapture` and `style/sampleQuality` produce sample DTOs.
-2. `style/metrics` and the optional semantic profiler build the editable,
-   versioned `StyleProfile`.
+2. `style/metrics` and the optional semantic profiler build the editable
+   `StyleProfile`. A `ProfileRecord` owns the persisted draft, the immutable
+   published versions, and the integer revision audit trail, so a
+   `ChangePlan` can cite the exact revision it was built from.
 3. `GovernanceProfile` adds policy and provenance without replacing the style
    contract.
 4. `word/analysisAcquisition` performs the production single-pass Word read and
@@ -126,7 +128,11 @@ in
 
 ## StyleProfile field enforcement
 
-The editable profile is the single source for analysis and planning. Measured
+A `ProfileRecord` in `core/state` is the single persisted source of truth for a
+profile; `core/state/profileSelectors` derives every read view from it as a
+pure function, so no second structure can disagree. The effective profile —
+the active published version, else the draft — is what analysis and planning
+consume. Measured
 fields are observational evidence from the captured sample; they are deliberately
 not converted into unsupported Word formatting commands.
 

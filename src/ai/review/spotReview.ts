@@ -6,7 +6,6 @@ import { buildSpotPrompt } from "../prompts/spotPrompts";
 import { validateChangePreconditions } from "../../changes/preconditions";
 import { createChangePlan } from "../../core/domain/ChangePlan";
 import { ReviewRequestSchema, type ReviewRequest } from "../../core/domain/ReviewRequest";
-import { formatProfileVersion } from "../../core/domain/StyleProfile";
 import type { GovernanceProfile } from "../../core/domain/GovernanceProfile";
 import type { DocumentNode } from "../../core/domain/DocumentSnapshot";
 import { buildMinimalContext } from "./contextMinimizer";
@@ -115,7 +114,7 @@ export async function reviewSpot(options: SpotReviewOptions): Promise<SpotReview
       documentVersion: request.documentVersion,
       contentHash: options.contentHash,
       profileId: request.profileId,
-      profileVersion: request.profileVersion ?? formatProfileVersion(options.profile.style.version),
+      profileRevision: request.profileRevision ?? options.profile.style.revision,
       governancePolicyRevision: options.profile.version,
       ...(options.structuralHash === undefined ? {} : { structuralHash: options.structuralHash }),
       validation: {
@@ -148,7 +147,7 @@ function emptyResult(
       documentVersion: request.documentVersion,
       contentHash: options.contentHash,
       profileId: request.profileId,
-      profileVersion: request.profileVersion,
+      profileRevision: request.profileRevision,
       governancePolicyRevision: options.profile.version,
       ...(options.structuralHash === undefined ? {} : { structuralHash: options.structuralHash }),
     }),

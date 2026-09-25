@@ -45,7 +45,8 @@ export const ChangePlanSchema = z
     documentVersion: z.string().optional(),
     contentHash: z.string().optional(),
     profileId: z.string().uuid().optional(),
-    profileVersion: z.string().optional(),
+    /** Revision of the profile this plan was built from; see ProfileRecord. */
+    profileRevision: z.number().int().positive().optional(),
     structuralHash: z.string().trim().optional(),
     analysisText: z.string().optional(),
     analysisStart: z.number().int().nonnegative().optional(),
@@ -86,7 +87,7 @@ export function createChangePlan(
     documentVersion?: string;
     contentHash?: string;
     profileId?: string;
-    profileVersion?: string;
+    profileRevision?: number;
     structuralHash?: string;
     analysisText?: string;
     analysisStart?: number;

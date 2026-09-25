@@ -63,7 +63,7 @@ function request(
       targetNodeIds: ["aaaa1111"],
       text,
       profileId: profile.id,
-      profileVersion: "1.0.0",
+      profileRevision: 1,
       privacyPolicyId: "test-policy",
     }),
     profile: createGovernanceProfile(profile),
@@ -501,7 +501,7 @@ describe("AI review contracts and pipeline", () => {
       documentVersion: "v1",
       contentHash: "hash",
       structuralHash: "structure",
-      profileVersion: "1.0.0",
+      profileRevision: 1,
     });
     expect(result.coverage.complete).toBe(true);
   });

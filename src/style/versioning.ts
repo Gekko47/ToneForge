@@ -1,19 +1,17 @@
 /**
- * Profile versioning engine.
+ * Profile revision diffing engine.
  *
- * Deterministic helpers for bumping `ProfileVersion` and diffing two
- * `StyleProfile` instances into a human-readable changelog. Pure functions:
- * no Office.js, no LLM, no UI imports.
+ * Deterministic helpers for diffing two `StyleProfile` snapshots into a
+ * human-readable changelog. Pure functions: no Office.js, no LLM, no UI
+ * imports. Revision numbers are assigned by ProfileRecord, so nothing here
+ * creates or bumps one.
  *
  * Boundary rule: this module may only import from `core/domain` and
  * `shared/utils`. It must not import `ai`, `word`, or `ui`.
  */
 
-import { type ProfileVersion, type StyleProfile } from "../core/domain/StyleProfile";
+import { type Revision, type StyleProfile } from "../core/domain/StyleProfile";
 import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
-
-/** Bump types supported by `bumpProfileVersion`. */
-export type BumpType = "major" | "minor" | "patch";
 
 /** A single recorded change between two profile snapshots. */
 export interface ProfileChange {
@@ -22,10 +20,10 @@ export interface ProfileChange {
   readonly to: string;
 }
 
-/** Result of comparing two profiles. */
+/** Result of comparing two profile snapshots. */
 export interface ProfileDiff {
-  readonly fromVersion: ProfileVersion;
-  readonly toVersion: ProfileVersion;
+  readonly fromRevision: Revision;
+  readonly toRevision: Revision;
   readonly changes: readonly ProfileChange[];
   readonly changedCount: number;
 }
@@ -35,18 +33,6 @@ export interface GovernanceProfileDiff {
   readonly toRevision: number;
   readonly changes: readonly ProfileChange[];
   readonly changedCount: number;
-}
-
-/** Bump a version according to semantic-versioning rules. */
-export function bumpProfileVersion(version: ProfileVersion, type: BumpType): ProfileVersion {
-  switch (type) {
-    case "major":
-      return { major: version.major + 1, minor: 0, patch: 0 };
-    case "minor":
-      return { major: version.major, minor: version.minor + 1, patch: 0 };
-    case "patch":
-      return { major: version.major, minor: version.minor, patch: version.patch + 1 };
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -99,7 +85,6 @@ function sameValue(left: unknown, right: unknown): boolean {
 
 /** Fields compared when diffing two profiles. */
 const diffFields: readonly { label: string; path: readonly string[] }[] = [
-  { label: "Version", path: ["version"] },
   { label: "Profile name", path: ["name"] },
   { label: "Tone", path: ["semantic", "tone"] },
   { label: "Voice", path: ["semantic", "voice"] },
@@ -144,8 +129,8 @@ export function diffProfiles(from: StyleProfile, to: StyleProfile): ProfileDiff 
     }
   });
   return {
-    fromVersion: from.version,
-    toVersion: to.version,
+    fromRevision: from.revision,
+    toRevision: to.revision,
     changes,
     changedCount: changes.length,
   };
@@ -194,17 +179,13 @@ export function formatGovernanceChangelog(diff: GovernanceProfileDiff): string {
 /** Format a profile diff as a plain-text changelog. */
 export function formatChangelog(diff: ProfileDiff): string {
   if (diff.changedCount === 0) {
-    return `No changes between v${formatVersion(diff.fromVersion)} and v${formatVersion(diff.toVersion)}.`;
+    return `No changes between revision ${diff.fromRevision} and revision ${diff.toRevision}.`;
   }
   const lines = [
-    `Profile changes from v${formatVersion(diff.fromVersion)} to v${formatVersion(diff.toVersion)}:`,
+    `Profile changes from revision ${diff.fromRevision} to revision ${diff.toRevision}:`,
   ];
   diff.changes.forEach((change) => {
     lines.push(`- ${change.field}: ${change.from} -> ${change.to}`);
   });
   return lines.join("\n");
-}
-
-function formatVersion(version: ProfileVersion): string {
-  return `${version.major}.${version.minor}.${version.patch}`;
 }

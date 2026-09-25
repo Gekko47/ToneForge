@@ -8,7 +8,7 @@ export const SAMPLE_TEXT = SAMPLE_PARAGRAPHS.join("\n\n");
 export const SAMPLE_PROFILE = {
   id: "11111111-1111-1111-1111-111111111111",
   name: "Sample",
-  version: { major: 1, minor: 0, patch: 0 },
+  revision: 1,
   measured: {
     avgSentenceLength: 12,
     sentenceLengthStdDev: 2,

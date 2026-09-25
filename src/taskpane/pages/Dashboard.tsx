@@ -46,11 +46,8 @@ import {
   workflowReducer,
 } from "../workflow/workflowState";
 import { loadState } from "../../core/state/persistence";
-import {
-  formatProfileVersion,
-  StyleProfileSchema,
-  type StyleProfile,
-} from "../../core/domain/StyleProfile";
+import { selectActiveProfile } from "../../core/state/profileSelectors";
+import { StyleProfileSchema, type StyleProfile } from "../../core/domain/StyleProfile";
 import type { Finding } from "../../core/domain/Finding";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
 import type { PersistedState } from "../../core/state/persistence";
@@ -63,9 +60,7 @@ const IGNORED_FINDINGS_KEY = "ToneForge.IgnoredFindingFingerprints.v1";
 type DashboardPage = "home" | "ai-review" | "profile" | "settings" | "troubleshooting";
 
 function resolveActiveProfile(): StyleProfile | null {
-  const state = loadState();
-  const profile =
-    state.profiles.find((item) => item.id === state.activeProfileId) ?? state.profiles[0];
+  const profile = selectActiveProfile(loadState());
   return profile ? StyleProfileSchema.parse(profile) : null;
 }
 
@@ -197,7 +192,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     createWorkflowState,
   );
   const currentTask = selectCurrentTask(workflow);
-  const activeProfileKey = `${activeProfile.id}:${activeProfile.version.major}:${activeProfile.version.minor}:${activeProfile.version.patch}`;
+  const activeProfileKey = `${activeProfile.id}:${activeProfile.revision}`;
 
   useEffect(() => {
     const phase = status?.phase ?? "notStarted";
@@ -370,7 +365,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           targetNodeIds,
           text,
           profileId: profile.id,
-          profileVersion: formatProfileVersion(profile.version),
+          profileRevision: profile.revision,
           privacyPolicyId: "spot-minimal-v1",
         },
         profile: governance,
@@ -536,7 +531,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         <TaskPaneHeader
           activePage={page}
           profileName={activeProfile.name}
-          profileVersion={`${activeProfile.version.major}.${activeProfile.version.minor}.${activeProfile.version.patch}`}
+          profileRevision={activeProfile.revision}
           onNavigate={navigate}
         />
         <Suspense fallback={<div role="status">Loading…</div>}>
@@ -569,7 +564,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       <TaskPaneHeader
         activePage="home"
         profileName={activeProfile.name}
-        profileVersion={`${activeProfile.version.major}.${activeProfile.version.minor}.${activeProfile.version.patch}`}
+        profileRevision={activeProfile.revision}
         onNavigate={navigate}
       />
 

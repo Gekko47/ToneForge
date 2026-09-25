@@ -350,7 +350,8 @@ preserved for traceability. The key current decisions are:
 
 ## ADR-0046 — Separate editable drafts from immutable published profile versions
 
-- **Status**: Accepted
+- **Status**: Superseded in part by ADR-0048, which retires the duplicate
+  structure this decision introduced
 - **Context**: Before Phase 3, a stored style profile was edited in place, so an
   unapproved change silently altered what the document was checked against and
   there was no way to tell an approved version from a work in progress. Phase 1
@@ -366,16 +367,19 @@ preserved for traceability. The key current decisions are:
   existing organization keeps its approved state.
 - **Consequences**: An unpublished edit can no longer change analysis
   behaviour, and rollback is a version activation rather than a data restore.
-  The cost is a second persisted structure alongside `profiles` and
-  `profileHistory`; `upsertProfile` remains the writer of the legacy view while
-  the lifecycle owns the authoritative version, so a later phase should retire
-  the duplicate history rather than leave two sources of truth. Live Word and
-  assistive-technology behaviour of the new controls remains external evidence.
-- **Evidence**: `src/core/domain/ProfileLifecycle.ts`,
-  `src/core/state/persistence.ts`, `src/core/state/migration.ts`,
-  `src/taskpane/components/ProfileLifecycleSection.tsx`,
-  `tests/unit/core/domain/ProfileLifecycle.test.ts`, and
-  `tests/unit/core/state/profileLifecyclePersistence.test.ts`.
+  The cost was a second persisted structure alongside `profiles` and
+  `profileHistory`, with `upsertProfile` writing the legacy view while the
+  lifecycle owned the authoritative version — two sources of truth that could
+  only agree by convention. ADR-0048 retires that duplication by folding all
+  three into one `ProfileRecord` and replaces semver with plain integer
+  revisions. Live Word and assistive-technology behaviour of the new controls
+  remains external evidence.
+- **Evidence**: `src/core/domain/ProfileRecord.ts` (successor to
+  `ProfileLifecycle.ts`), `src/core/state/persistence.ts`,
+  `src/core/state/migration.ts`,
+  `src/taskpane/components/ProfileRecordSection.tsx`,
+  `tests/unit/core/domain/ProfileRecord.test.ts`, and
+  `tests/unit/core/state/profileRecordPersistence.test.ts`.
 
 ## ADR-0047 — Split Settings into independently-saved sections over a pure model
 
@@ -402,3 +406,109 @@ preserved for traceability. The key current decisions are:
   `src/taskpane/components/StylingSettingsSection.tsx`,
   `src/taskpane/components/TelemetrySettingsSection.tsx`, and
   `tests/unit/taskpane/settings/settingsModel.test.ts`.
+
+## ADR-0048 — One profile record is the single source of truth
+
+- Status: Accepted
+- Date: 2026-09-25
+- Supersedes: the duplication consequence of ADR-0046
+
+### Context
+
+ADR-0046 separated an editable draft from immutable published versions, but it
+did so by _adding_ a `profileLifecycles` map alongside the existing `profiles`
+array and `profileHistory` map. That left three persisted views of the same
+data, written on every change by two independent code paths (`upsertProfile()`
+and `saveProfileLifecycle()`).
+
+Two consequences followed:
+
+1. **Duplication rather than derivation.** `profiles[]` held the same
+   `StyleProfile` values that `profileHistory[id][n]` already held. They could
+   not drift today only because every write updated all three; nothing enforced
+   that invariant, so a partial write would have been silent.
+2. **Ambiguous revision numbers.** `ProfileEditor` bumped `version.patch` on
+   every save while `ProfileLifecycle` wrote to the same field for a different
+   purpose, so "1.0.7" did not identify a single event.
+
+Separately, semver (`major.minor.patch`) is the wrong model here. There is one
+author of a revision — the record — and no compatibility promise between
+revisions, so ordering is all that is needed.
+
+### Decision
+
+One persisted `ProfileRecord` is the only store of profile data. State version
+7 replaces `profiles`, `profileHistory`, and `profileLifecycles` with a single
+`profileRecords` map keyed by profile id.
+
+A record owns:
+
+- `draft` — the one editable working copy (`null` when none exists).
+- `published[]` — immutable approved versions, each carrying its own revision.
+- `revisions[]` — the append-only audit trail, one entry per recorded event.
+- `activePublishedRevision` and `nextRevision`.
+
+**Revisions are plain integers.** `StyleProfile.version: ProfileVersion`
+(semver) becomes `StyleProfile.revision: number`. `ProfileVersionSchema`,
+`formatProfileVersion()`, `bumpProfileVersion()`, and `BumpType` are deleted.
+`ChangePlan`, `ReviewRequest`, and `ResolvedPolicy` cite `profileRevision:
+number` instead of `profileVersion: string`, so a plan identifies exactly the
+revision it was built from.
+
+**Every audit event consumes its own number.** `updateDraft`, `publishDraft`,
+`activatePublished`, `restoreAsDraft`, and `discardDraft` each allocate
+`record.nextRevision`. Publishing no longer reuses the draft's number, so a
+number in `revisions[]` identifies exactly one event and `published[].revision`
+can never collide with an edit.
+
+**Retention keeps the newest 20 revisions and never drops a published one.**
+`REVISION_RETENTION_CAP` is 20; `append()` filters the trail to the newest 20
+plus any entry whose revision appears in `published[]`, so an approved version
+stays auditable however long the edit trail grows.
+
+**Reads are pure projections.** `upsertProfile()`, `saveProfileLifecycle()`,
+`loadProfileLifecycle()`, `appendSnapshot()`, and `sameSnapshot()` are deleted.
+`saveProfileRecord()` / `loadProfileRecord()` / `createProfileRecord()` are the
+only writer. Everything that previously read `profiles[]` or `profileHistory`
+now uses the pure selectors in `src/core/state/profileSelectors.ts`
+(`selectAllProfiles`, `selectActiveProfile`, `selectRecordList`,
+`selectRecordSummary`, `selectRevisions`), which cannot mutate state.
+
+**The v6 → v7 migration preserves both trails.** The approval trail becomes
+`published` and owns revisions `1..N`; the edit trail continues from `N+1`, so
+no number is reused. A corrupt record is dropped without discarding the others,
+and every surviving record is seeded with a normative governance policy.
+
+### Consequences
+
+Positive:
+
+- Exactly one write path and one persisted structure, so no two views can
+  disagree and no invariant has to be maintained by convention.
+- A revision number is a stable, human-quotable identifier for a plan, an
+  audit entry, and a stored snapshot.
+- Restoring an old snapshot cannot forge a revision: the editor loads its
+  _content_ as an unsaved draft and the record assigns the next number on save.
+- The audit trail is bounded and its growth is measured. Three profiles at the
+  cap plus ten extra saves each serialize well under a third of the
+  `Office.roamingSettings` budget
+  (`tests/unit/core/state/profileStateBudget.test.ts`).
+
+Negative:
+
+- Persisted state grows, because a record stores its own full snapshots rather
+  than a bare profile list. The cap plus the budget test bounds this.
+- A record is a larger unit of write than a single profile field, so a save
+  rewrites the whole record. The payload is small enough that this is not a
+  concern at the current cap.
+- `version` → `revision` is a breaking contract change for any external
+  consumer of `ChangePlan` or `ReviewRequest`. None exists today.
+
+### Evidence
+
+- `src/core/domain/ProfileRecord.ts` — the record, its transitions, and the cap.
+- `src/core/state/profileSelectors.ts` — pure read projections.
+- `src/core/state/migration.ts` — `buildRecordsFromLegacy()` folds both trails.
+- `tests/unit/core/domain/ProfileRecord.test.ts`,
+  `tests/unit/core/state/profileMigration.test.ts`,
+  `tests/unit/core/state/profileStateBudget.test.ts`.

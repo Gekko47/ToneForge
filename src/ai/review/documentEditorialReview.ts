@@ -6,7 +6,6 @@ import { buildCoverage } from "../../analysis/coverage";
 import type { CoverageReport, DocumentSnapshot } from "../../core/domain/DocumentSnapshot";
 import type { GovernanceProfile } from "../../core/domain/GovernanceProfile";
 import { createChangePlan, type ChangePlan } from "../../core/domain/ChangePlan";
-import { formatProfileVersion } from "../../core/domain/StyleProfile";
 import { validateChangePreconditions } from "../../changes/preconditions";
 import { reviewSpot } from "./spotReview";
 import { partitionReviewBatches, type ReviewBatch } from "./batcher";
@@ -90,7 +89,7 @@ export async function reviewEntireDocument(options: FullReviewOptions): Promise<
         targetNodeIds: batch.nodeIds,
         text: batch.text,
         profileId: options.profile.id,
-        profileVersion: formatProfileVersion(options.profile.style.version),
+        profileRevision: options.profile.style.revision,
         privacyPolicyId: "full-document-bounded-v1",
       },
       profile: options.profile,
@@ -133,7 +132,7 @@ export async function reviewEntireDocument(options: FullReviewOptions): Promise<
       contentHash: options.snapshot.contentHash,
       structuralHash: options.snapshot.structuralHash,
       profileId: options.profile.id,
-      profileVersion: formatProfileVersion(options.profile.style.version),
+      profileRevision: options.profile.style.revision,
       governancePolicyRevision: options.profile.version,
       validation: {
         protectionChecked: true,

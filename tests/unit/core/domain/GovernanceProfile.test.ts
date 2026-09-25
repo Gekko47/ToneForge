@@ -92,7 +92,7 @@ describe("GovernanceProfileSchema", () => {
     const style = StyleProfileSchema.parse({
       id: uuidv4(),
       name: "Test Profile",
-      version: { major: 1, minor: 0, patch: 0 },
+      revision: 1,
       measured: {},
       semantic: {},
       typography: {
@@ -139,7 +139,7 @@ describe("GovernanceProfileSchema", () => {
     const style = StyleProfileSchema.parse({
       id: uuidv4(),
       name: "Test",
-      version: { major: 1, minor: 0, patch: 0 },
+      revision: 1,
       measured: {},
       semantic: {},
       typography: {
@@ -203,7 +203,7 @@ describe("createGovernanceProfile", () => {
     const style = StyleProfileSchema.parse({
       id: uuidv4(),
       name: "Test",
-      version: { major: 1, minor: 0, patch: 0 },
+      revision: 1,
       measured: {},
       semantic: {},
       typography: {
@@ -237,7 +237,7 @@ describe("createGovernanceProfile", () => {
     const style = StyleProfileSchema.parse({
       id: uuidv4(),
       name: "Test",
-      version: { major: 1, minor: 0, patch: 0 },
+      revision: 1,
       measured: {},
       semantic: {},
       typography: {

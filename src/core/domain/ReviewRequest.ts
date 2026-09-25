@@ -17,7 +17,7 @@ export const ReviewRequestSchema = z
     text: z.string(),
     surroundingContext: z.string().optional(),
     profileId: z.string().uuid(),
-    profileVersion: z.string().trim().min(1),
+    profileRevision: z.number().int().positive(),
     privacyPolicyId: z.string().trim().min(1),
   })
   .superRefine((request, ctx) => {

@@ -23,7 +23,7 @@ import type { AnalysisCapabilities } from "../analysis/analysisContext";
 import { getDocumentSnapshot, getStructuredSnapshot, hashDocument } from "../word/documentReader";
 import { getFormattingSnapshot } from "../word/formattingReader";
 import { type FormattingSnapshot } from "../formatting/formattingSnapshot";
-import { formatProfileVersion, type StyleProfile } from "../core/domain/StyleProfile";
+import { type StyleProfile } from "../core/domain/StyleProfile";
 import { createGovernanceProfile, type GovernanceProfile } from "../core/domain/GovernanceProfile";
 import { resolveResolvedPolicy } from "../core/domain/ResolvedPolicy";
 import type { Change } from "../core/domain/Change";
@@ -177,7 +177,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     analysisEnd: context.identity.analysisEnd,
     analysisTruncated: context.identity.analysisTruncated,
     profileId: profile.id,
-    profileVersion: formatProfileVersion(profile.version),
+    profileRevision: profile.revision,
   });
   report = withCoverageCounts(report, { ...context, formatting }, plan.changes.length, 0);
 

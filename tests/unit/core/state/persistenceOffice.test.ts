@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createEmptyProfile } from "../../../../src/core/domain/index";
+import { createRecord, newProfileId } from "../../../../src/core/domain/ProfileRecord";
 import {
   clearPersistedCredentials,
   CURRENT_STATE_VERSION,
   loadState,
+  saveProfileRecord,
   saveState,
-  upsertProfile,
 } from "../../../../src/core/state/index";
+
+const NOW = "2026-01-01T00:00:00.000Z";
 
 describe("persistence with Office roamingSettings", () => {
   let officeRuntime:
@@ -41,20 +44,23 @@ describe("persistence with Office roamingSettings", () => {
   });
 
   it("reads from roamingSettings when available", () => {
-    const profile = createEmptyProfile("From Office");
-    upsertProfile(profile);
+    const rec = createRecord(
+      newProfileId(),
+      "From Office",
+      NOW,
+      createEmptyProfile("From Office", 1),
+    );
+    saveProfileRecord(rec);
     const state = loadState();
-    expect(state.profiles).toHaveLength(1);
-    expect(state.profiles[0]?.name).toBe("From Office");
-    expect(state.profileHistory[profile.id]).toHaveLength(1);
+    expect(state.profileRecords[rec.id]?.name).toBe("From Office");
+    expect(state.profileRecords[rec.id]?.revisions).toHaveLength(1);
   });
 
   it("falls back to defaults on corrupted JSON", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     officeRuntime.roamingSettings.get = () => "{ not valid json";
     const state = loadState();
-    expect(state.profiles).toEqual([]);
-    expect(state.profileHistory).toEqual({});
+    expect(state.profileRecords).toEqual({});
     expect(state.activeProfileId).toBeNull();
     expect(state.settings.telemetryDisabled).toBe(true);
   });
@@ -62,10 +68,9 @@ describe("persistence with Office roamingSettings", () => {
   it("falls back to defaults on schema-incompatible payload", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     officeRuntime.roamingSettings.get = () =>
-      JSON.stringify({ version: 1, profiles: "not-an-array" });
+      JSON.stringify({ version: 7, profileRecords: "not-a-record-map" });
     const state = loadState();
-    expect(state.profiles).toEqual([]);
-    expect(state.profileHistory).toEqual({});
+    expect(state.profileRecords).toEqual({});
   });
 
   it("saveState persists through saveAsync", async () => {
@@ -81,13 +86,11 @@ describe("persistence with Office roamingSettings", () => {
 
     saveState({
       version: CURRENT_STATE_VERSION,
-      profiles: [],
-      profileHistory: {},
+      profileRecords: {},
       activeProfileId: null,
       governanceProfiles: {},
       governanceHistory: {},
       activeGovernanceProfileId: null,
-      profileLifecycles: {},
       settings: {
         llmProvider: "mock",
         openAiCredentialMode: "broker" as const,
@@ -105,7 +108,7 @@ describe("persistence with Office roamingSettings", () => {
     expect(parsed.version).toBe(CURRENT_STATE_VERSION);
   });
 
-  it("migrates v0 state (no version field) to v5 via loadState", () => {
+  it("migrates v0 state (no version field) up to the current version", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     // v0 persisted state had no `version` field. Migration upgrades the
     // version and preserves existing settings values over defaults.
@@ -117,7 +120,7 @@ describe("persistence with Office roamingSettings", () => {
       });
     const state = loadState();
     expect(state.version).toBe(CURRENT_STATE_VERSION);
-    expect(state.profileHistory).toEqual({});
+    expect(state.profileRecords).toEqual({});
     expect(state.settings.telemetryDisabled).toBe(false);
   });
 
@@ -134,7 +137,7 @@ describe("persistence with Office roamingSettings", () => {
     expect(state.settings.telemetryDisabled).toBe(true);
   });
 
-  it("preserves v1 state by upgrading it to v5", () => {
+  it("preserves v1 state by upgrading it to the current version", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     officeRuntime.roamingSettings.get = () =>
       JSON.stringify({
@@ -145,14 +148,14 @@ describe("persistence with Office roamingSettings", () => {
       });
     const state = loadState();
     expect(state.version).toBe(CURRENT_STATE_VERSION);
-    expect(state.profileHistory).toEqual({});
+    expect(state.profileRecords).toEqual({});
     expect(state.settings.telemetryDisabled).toBe(true);
   });
 
-  it("falls back to legacy v1 storage key when v5 is absent", () => {
+  it("falls back to a legacy storage key when the current key is absent", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     officeRuntime.roamingSettings.get = (key: string) =>
-      key === "ToneForge.State.v5"
+      key === "ToneForge.State.v7"
         ? null
         : JSON.stringify({
             version: 1,
@@ -162,7 +165,7 @@ describe("persistence with Office roamingSettings", () => {
           });
     const state = loadState();
     expect(state.version).toBe(CURRENT_STATE_VERSION);
-    expect(state.profiles).toEqual([]);
+    expect(state.profileRecords).toEqual({});
   });
 
   it("purges a legacy plaintext key from both storage paths", async () => {
@@ -198,7 +201,7 @@ describe("persistence with Office roamingSettings", () => {
     expect(values.has("ToneForge.State.v3")).toBe(false);
     expect(window.localStorage.getItem("ToneForge.State.v3")).toBeNull();
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(String(values.get("ToneForge.State.v5"))).not.toContain("openAiApiKey");
+    expect(String(values.get("ToneForge.State.v7"))).not.toContain("openAiApiKey");
   });
 
   it("clear-secret selects mock without changing consent", () => {

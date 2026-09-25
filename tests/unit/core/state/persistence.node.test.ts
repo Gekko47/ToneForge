@@ -2,7 +2,10 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createEmptyProfile } from "../../../../src/core/domain/index";
-import { loadState, saveState, upsertProfile } from "../../../../src/core/state/index";
+import { createRecord, newProfileId } from "../../../../src/core/domain/ProfileRecord";
+import { loadState, saveProfileRecord, saveState } from "../../../../src/core/state/index";
+
+const NOW = "2026-01-01T00:00:00.000Z";
 
 describe("persistence without browser storage", () => {
   let originalOffice: unknown;
@@ -26,12 +29,17 @@ describe("persistence without browser storage", () => {
     });
 
     try {
-      const profile = createEmptyProfile("Node fallback");
-      upsertProfile(profile);
+      const rec = createRecord(
+        newProfileId(),
+        "Node fallback",
+        NOW,
+        createEmptyProfile("Node fallback", 1),
+      );
+      saveProfileRecord(rec);
 
       const state = loadState();
-      expect(state.profiles).toHaveLength(1);
-      expect(state.profiles[0]?.name).toBe("Node fallback");
+      expect(Object.keys(state.profileRecords)).toHaveLength(1);
+      expect(state.profileRecords[rec.id]?.name).toBe("Node fallback");
 
       saveState({
         ...state,

@@ -19,8 +19,7 @@ function makeState(
 ): PersistedState {
   return {
     ...loadState(),
-    profiles: [],
-    profileHistory: {},
+    profileRecords: {},
     activeProfileId,
     governanceProfiles,
     governanceHistory: {},

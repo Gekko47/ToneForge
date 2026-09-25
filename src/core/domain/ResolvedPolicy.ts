@@ -39,7 +39,7 @@ export const ResolvedPolicySchema = z.object({
   rules: z.array(GovernanceRuleSchema),
   provenance: z.object({
     profileId: z.string().uuid(),
-    profileVersion: z.string().trim().min(1),
+    profileRevision: z.number().int().nonnegative(),
     profileUpdatedAt: z.string().datetime(),
     governanceId: z.string().uuid(),
     governanceVersion: z.number().int().nonnegative(),
@@ -117,7 +117,7 @@ export function resolveResolvedPolicy(
 ): ResolvedPolicy {
   const profile = StyleProfileSchema.parse(profileInput);
   const governance = GovernanceProfileSchema.parse(governanceInput);
-  const version = `${profile.version.major}.${profile.version.minor}.${profile.version.patch}`;
+  const revision = profile.revision;
 
   return ResolvedPolicySchema.parse({
     schemaVersion: 1,
@@ -132,7 +132,7 @@ export function resolveResolvedPolicy(
     rules: governance.rules,
     provenance: {
       profileId: profile.id,
-      profileVersion: version,
+      profileRevision: revision,
       profileUpdatedAt: profile.updatedAt,
       governanceId: governance.id,
       governanceVersion: governance.version,

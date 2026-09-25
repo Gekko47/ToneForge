@@ -2,8 +2,9 @@
  * Canonical StyleProfile domain model.
  *
  * This single object drives BOTH the Reformat and Consistency Check engines
- * (Roadmap "One canonical profile" rule). It is user-editable, versioned, and
- * split into measured (deterministic) and semantic (AI) sections.
+ * (Roadmap "One canonical profile" rule). It is user-editable, revisioned, and
+ * split into measured (deterministic) and semantic (AI) sections. Revision
+ * bookkeeping and the audit trail are owned by ProfileRecord.
  *
  * Boundary rule: core/domain must not import from `word`, `ai`, or `ui`.
  */
@@ -11,17 +12,21 @@
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 
-export const ProfileVersionSchema = z.object({
-  major: z.number().int().nonnegative(),
-  minor: z.number().int().nonnegative(),
-  patch: z.number().int().nonnegative(),
-});
+/**
+ * A profile revision is a plain monotonically increasing integer.
+ *
+ * It is assigned by the owning ProfileRecord when a revision is written, so a
+ * stored snapshot is self-identifying and a ChangePlan can cite the exact
+ * revision it was built from. There is deliberately no semantic version here:
+ * two unrelated counters previously wrote to the same `patch` field, which made
+ * a "version" ambiguous.
+ */
+export const RevisionSchema = z.number().int().nonnegative();
+export type Revision = z.infer<typeof RevisionSchema>;
 
-export type ProfileVersion = z.infer<typeof ProfileVersionSchema>;
-
-/** Canonical semantic version used in plans, review requests, logs, and UI. */
-export function formatProfileVersion(version: ProfileVersion): string {
-  return `${version.major}.${version.minor}.${version.patch}`;
+/** Human-facing label for a revision, used in the task pane. */
+export function formatRevision(revision: Revision): string {
+  return `r${revision}`;
 }
 
 export const TypographyRulesSchema = z.object({
@@ -85,7 +90,8 @@ export type MeasuredProfile = z.infer<typeof MeasuredProfileSchema>;
 export const StyleProfileSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1),
-  version: ProfileVersionSchema,
+  /** Assigned by the owning ProfileRecord; not a semantic version. */
+  revision: RevisionSchema,
   measured: MeasuredProfileSchema,
   semantic: SemanticProfileSchema,
   typography: TypographyRulesSchema,
@@ -97,16 +103,23 @@ export const StyleProfileSchema = z.object({
 
 export type StyleProfile = z.infer<typeof StyleProfileSchema>;
 
-/** Create a new empty profile with the given version. */
-export function createEmptyProfile(
-  name: string,
-  version: ProfileVersion = { major: 1, minor: 0, patch: 0 },
-): StyleProfile {
+/**
+ * Create a new empty profile. The revision defaults to 0 and is reassigned by
+ * `createRecord`/`updateDraft` when the profile is first written.
+ */
+/**
+ * A blank profile scaffold.
+ *
+ * `revision` defaults to 1 because that is the number the record assigns on
+ * first save. A revision of 0 would mean "not yet persisted", which no
+ * ChangePlan may cite.
+ */
+export function createEmptyProfile(name: string, revision: Revision = 1): StyleProfile {
   const now = new Date().toISOString();
   return StyleProfileSchema.parse({
     id: uuidv4(),
     name,
-    version,
+    revision,
     measured: {},
     semantic: {},
     typography: {},

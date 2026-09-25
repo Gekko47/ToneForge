@@ -13,14 +13,23 @@ import {
 } from "@fluentui/react";
 import {
   createEmptyProfile,
+  formatRevision,
   StyleProfileSchema,
   type HouseStyle,
-  type ProfileVersion,
+  type Revision,
   type StyleProfile,
   type TypographyRules,
 } from "../../core/domain/StyleProfile";
-import { loadState, setActiveProfile, upsertProfile } from "../../core/state/index";
-import { bumpProfileVersion, diffProfiles, type BumpType } from "../../style/versioning";
+import {
+  createProfileRecord,
+  loadProfileRecord,
+  loadState,
+  saveProfileRecord,
+  setActiveProfile,
+} from "../../core/state/index";
+import { effectiveProfile, updateDraft } from "../../core/domain/ProfileRecord";
+import { selectAllProfiles } from "../../core/state/profileSelectors";
+import { diffProfiles } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
 
 interface ProfileFormValues {
@@ -53,6 +62,8 @@ interface ProfileEditorState {
   baseProfile: StyleProfile;
   draftBaseProfile: StyleProfile;
   savedProfile: StyleProfile | null;
+  /** Editable draft this editor is bound to, when the profile has a record. */
+  recordId: string | null;
   profiles: StyleProfile[];
   history: StyleProfile[];
   values: ProfileFormValues;
@@ -294,21 +305,20 @@ function validateValues(values: ProfileFormValues, baseProfile: StyleProfile): P
 
 function initialContext(): ProfileEditorState {
   const state = loadState();
+  const recordId = state.activeProfileId;
+  const record = recordId ? loadProfileRecord(recordId) : null;
+  const persisted = record ? effectiveProfile(record) : null;
   const profile =
-    state.profiles.find((item: StyleProfile) => item.id === state.activeProfileId) ??
-    state.profiles[0] ??
-    createEmptyProfile("Untitled style profile");
-  const persisted =
-    state.profiles.find((item: StyleProfile) => item.id === state.activeProfileId) ??
-    state.profiles[0] ??
-    null;
+    persisted ?? selectAllProfiles(state)[0] ?? createEmptyProfile("Untitled style profile");
 
   return {
     baseProfile: profile,
     draftBaseProfile: profile,
     savedProfile: persisted,
-    profiles: state.profiles,
-    history: persisted ? (state.profileHistory[persisted.id] ?? [persisted]) : [],
+    recordId: record?.id ?? null,
+    profiles: selectAllProfiles(state),
+    // The audit trail is owned by the record; the editor only reads snapshots.
+    history: record?.revisions.map((entry) => entry.profile) ?? [],
     values: profileToValues(profile),
     dirty: false,
     savedAt: null,
@@ -324,39 +334,12 @@ function formatMetric(value: number | null): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
-function sameSnapshot(left: StyleProfile, right: StyleProfile): boolean {
-  return JSON.stringify({ ...left, updatedAt: "" }) === JSON.stringify({ ...right, updatedAt: "" });
-}
-
 function sameEditableSnapshot(left: StyleProfile, right: StyleProfile): boolean {
   return diffProfiles(left, right).changedCount === 0;
 }
 
-function sameVersion(left: ProfileVersion, right: ProfileVersion): boolean {
-  return left.major === right.major && left.minor === right.minor && left.patch === right.patch;
-}
-
-function appendSnapshot(history: readonly StyleProfile[], profile: StyleProfile): StyleProfile[] {
-  const latest = history[history.length - 1];
-  return latest && sameSnapshot(latest, profile) ? [...history] : [...history, profile];
-}
-
-function appendHistory(
-  history: readonly StyleProfile[],
-  previous: StyleProfile,
-  next: StyleProfile,
-): StyleProfile[] {
-  const withPrevious = appendSnapshot(history, previous);
-  const latest = withPrevious[withPrevious.length - 1];
-  return latest && sameSnapshot(latest, next) ? withPrevious : [...withPrevious, next];
-}
-
 function option(key: string, text: string): IDropdownOption {
   return { key, text };
-}
-
-function formatVersionLabel(version: ProfileVersion): string {
-  return `v${version.major}.${version.minor}.${version.patch}`;
 }
 
 export default function ProfileEditor(): React.ReactNode {
@@ -403,6 +386,9 @@ export default function ProfileEditor(): React.ReactNode {
       baseProfile: profile,
       draftBaseProfile: profile,
       savedProfile: null,
+      // Detach from the previously selected record: the first save of this new
+      // profile must create a record, never update the one that was open.
+      recordId: null,
       profiles: [...prev.profiles, profile],
       history: [],
       values: profileToValues(profile),
@@ -413,34 +399,20 @@ export default function ProfileEditor(): React.ReactNode {
     }));
   }
 
-  function bumpVersion(type: BumpType): void {
-    setContext((prev) => ({
-      ...prev,
-      baseProfile: {
-        ...prev.baseProfile,
-        version: bumpProfileVersion(prev.baseProfile.version, type),
-      },
-      dirty: true,
-      savedAt: null,
-      fieldErrors: {},
-      error: null,
-    }));
-  }
-
   function selectProfile(profileId: string): void {
-    const selected = profiles.find((item) => item.id === profileId);
+    const record = loadProfileRecord(profileId);
+    const selected = record ? effectiveProfile(record) : null;
     if (!selected) {
       return;
     }
     setActiveProfile(selected.id);
-    const state = loadState();
-    const nextHistory = state.profileHistory[selected.id] ?? [selected];
     setContext((prev) => ({
       ...prev,
       baseProfile: selected,
       draftBaseProfile: selected,
       savedProfile: selected,
-      history: nextHistory,
+      recordId: record?.id ?? null,
+      history: record?.revisions.map((entry) => entry.profile) ?? [],
       values: profileToValues(selected),
       dirty: false,
       savedAt: null,
@@ -451,15 +423,14 @@ export default function ProfileEditor(): React.ReactNode {
 
   function restoreHistorySnapshot(snapshot: StyleProfile): void {
     setContext((prev) => {
-      // Preserve the latest baseline so Save bumps the latest patch and Reset
-      // reverts to latest revision data. Snapshot content is loaded as an
-      // unsaved draft but keeps the latest version so VersionDiff shows content
-      // changes only, never a version downgrade.
+      // Restore content only. The revision number is assigned by the record when
+      // the draft is saved, so loading an old snapshot as an unsaved draft can
+      // never forge a revision, and VersionDiff shows content changes alone.
       const latest = prev.savedProfile ?? prev.draftBaseProfile;
       const restored: StyleProfile = {
         ...snapshot,
         id: latest.id,
-        version: latest.version,
+        revision: latest.revision,
         createdAt: latest.createdAt,
         measured: latest.measured,
         sourceSampleIds: latest.sourceSampleIds,
@@ -485,41 +456,35 @@ export default function ProfileEditor(): React.ReactNode {
       return;
     }
 
-    const contentChanged = !sameEditableSnapshot(validation.profile, context.draftBaseProfile);
-    const versionChanged = !sameVersion(
-      validation.profile.version,
-      context.draftBaseProfile.version,
-    );
-
-    if (!contentChanged && !versionChanged) {
+    if (!context.dirty && !derivedDirty) {
       return;
     }
 
     const updatedAt = new Date().toISOString();
-    const shouldAutoPatch = contentChanged && !versionChanged && savedProfile !== null;
-    const profile: StyleProfile = shouldAutoPatch
-      ? {
-          ...validation.profile,
-          version: bumpProfileVersion(validation.profile.version, "patch"),
-          updatedAt,
-        }
-      : { ...validation.profile, updatedAt };
+    const recordId = context.recordId;
+    let record = recordId ? loadProfileRecord(recordId) : null;
 
-    upsertProfile(profile);
-    setActiveProfile(profile.id);
+    if (!record) {
+      // No record yet: the first save creates one, so the profile always has a
+      // revision audit trail from the moment it exists.
+      record = createProfileRecord(validation.profile.name, updatedAt, validation.profile);
+    } else {
+      record = updateDraft(record, validation.profile, updatedAt).record;
+    }
+    saveProfileRecord(record);
+    setActiveProfile(record.id);
 
-    const nextHistory = savedProfile
-      ? appendHistory(history, savedProfile, profile)
-      : appendSnapshot(history, profile);
+    const profile = record.draft ?? effectiveProfile(record);
+    if (!profile) return;
+
     setContext((prev) => ({
       ...prev,
       baseProfile: profile,
       draftBaseProfile: profile,
       savedProfile: profile,
-      profiles: prev.savedProfile
-        ? prev.profiles.map((item) => (item.id === profile.id ? profile : item))
-        : [...prev.profiles, profile],
-      history: nextHistory,
+      recordId: record?.id ?? null,
+      profiles: selectAllProfiles(loadState()),
+      history: record?.revisions.map((entry) => entry.profile) ?? [],
       values: profileToValues(profile),
       dirty: false,
       savedAt: updatedAt,
@@ -546,8 +511,7 @@ export default function ProfileEditor(): React.ReactNode {
     return null;
   }
 
-  const version = baseProfile.version;
-  const versionLabel = formatVersionLabel(version);
+  const revision: Revision = baseProfile.revision;
   const hasHistory = history.length > 0;
   const historyCount = history.length;
 
@@ -567,7 +531,7 @@ export default function ProfileEditor(): React.ReactNode {
           selectedKey={baseProfile.id}
           options={profiles.map((item) => ({
             key: item.id,
-            text: `${item.name} ${formatVersionLabel(item.version)}`,
+            text: `${item.name} ${formatRevision(item.revision)}`,
           }))}
           onChange={(_event, optionValue) => {
             const nextValue = dropdownValue(optionValue);
@@ -583,31 +547,30 @@ export default function ProfileEditor(): React.ReactNode {
           errorMessage={fieldErrors.name ?? ""}
           onChange={(_event, value) => patch({ name: value ?? "" })}
         />
-        <TextField label="Version" disabled readOnly value={versionLabel} />
+        <TextField
+          label="Revision"
+          disabled
+          readOnly
+          value={formatRevision(revision)}
+          description="Assigned automatically when a draft is saved."
+        />
       </div>
 
-      <div
-        style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, alignItems: "flex-end" }}
-      >
-        <DefaultButton text="Major" onClick={() => bumpVersion("major")} />
-        <DefaultButton text="Minor" onClick={() => bumpVersion("minor")} />
-        <DefaultButton text="Patch" onClick={() => bumpVersion("patch")} />
-        <span className="tf-sub" style={{ padding: "6px 0" }}>
-          {hasHistory
-            ? `${historyCount} historical snapshot(s) recorded.`
-            : "No historical snapshots yet — save to record the first baseline."}
-        </span>
-      </div>
+      <p className="tf-sub" style={{ marginTop: 12 }}>
+        {hasHistory
+          ? `${historyCount} revision(s) recorded. Saving assigns the next revision.`
+          : "No revisions yet — save to record the first revision."}
+      </p>
       {hasHistory && (
         <details style={{ marginTop: 12 }}>
-          <summary className="tf-sub">Version history</summary>
+          <summary className="tf-sub">Revision history</summary>
           <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
             {history.map((snapshot, index) => (
               <li key={`${snapshot.id}-${snapshot.updatedAt}-${index}`}>
-                {formatVersionLabel(snapshot.version)} —{" "}
+                {formatRevision(snapshot.revision)} —{" "}
                 {new Date(snapshot.updatedAt).toLocaleString()}{" "}
                 <DefaultButton
-                  text={`Restore ${formatVersionLabel(snapshot.version)}`}
+                  text={`Restore ${formatRevision(snapshot.revision)}`}
                   onClick={() => restoreHistorySnapshot(snapshot)}
                 />
               </li>

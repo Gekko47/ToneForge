@@ -3,35 +3,37 @@
  *
  * Primary store: Office roamingSettings (survives across sessions).
  * Fallback: localStorage (used when Office runtime is unavailable).
- * Credentials are not part of ordinary state. Legacy credential fields are
- * removed during migration and their legacy storage records are purged.
+ *
+ * `profileRecords` is the single source of truth for style profiles: one record
+ * per profile holds its draft, published versions, and revision audit trail.
+ * There is no separate profile list or history map, so no two structures can
+ * disagree. Credentials are not part of ordinary state; legacy credential
+ * fields are removed during migration and their legacy storage records purged.
  */
 
 import { z } from "zod";
 import { logger } from "../../shared/utils/logger";
-import { StyleProfileSchema, type StyleProfile } from "../domain/StyleProfile";
+import { type StyleProfile } from "../domain/StyleProfile";
 import {
   createGovernanceProfile,
   GovernanceProfileSchema,
   type GovernanceProfile,
 } from "../domain/GovernanceProfile";
 import {
-  createDraft,
-  createLifecycleState,
-  ProfileLifecycleStateSchema,
-  type ProfileLifecycleState,
-} from "../domain/ProfileLifecycle";
+  createRecord,
+  newProfileId,
+  ProfileRecordSchema,
+  type ProfileRecord,
+} from "../domain/ProfileRecord";
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(6),
-  profiles: z.array(StyleProfileSchema).default([]),
-  profileHistory: z.record(z.string().uuid(), z.array(StyleProfileSchema)).default({}),
+  version: z.number().int().nonnegative().default(7),
+  profileRecords: z.record(z.string().uuid(), ProfileRecordSchema).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
   governanceHistory: z.record(z.string().uuid(), z.array(GovernanceProfileSchema)).default({}),
   activeGovernanceProfileId: z.string().uuid().nullable().default(null),
-  profileLifecycles: z.record(z.string().uuid(), ProfileLifecycleStateSchema).default({}),
   settings: z
     .object({
       openAiBaseUrl: z.string().url().optional(),
@@ -48,8 +50,9 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v6";
+const STORAGE_KEY = "ToneForge.State.v7";
 const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v6",
   "ToneForge.State.v5",
   "ToneForge.State.v4",
   "ToneForge.State.v3",
@@ -188,14 +191,13 @@ function setLocalStorage(value: Record<string, unknown>): void {
  * Load persisted state.
  *
  * Raw persisted bytes are migrated to the current schema version BEFORE
- * validation, so legacy v0 and v1 state are upgraded instead of being
- * discarded as incompatible.
+ * validation, so legacy v0-v6 state is upgraded instead of discarded.
  */
 export function loadState(): PersistedState {
   const raw = getRoamingSettings() ??
     getLocalStorage() ?? {
       version: CURRENT_STATE_VERSION,
-      profiles: [],
+      profileRecords: {},
       activeProfileId: null,
       settings: {},
     };
@@ -209,7 +211,7 @@ export function loadState(): PersistedState {
       rawContainsLegacyCredential(raw) ||
       (typeof raw.version === "number" && raw.version < CURRENT_STATE_VERSION) ||
       !Object.prototype.hasOwnProperty.call(raw, "governanceHistory") ||
-      !Object.prototype.hasOwnProperty.call(raw, "profileLifecycles")
+      !Object.prototype.hasOwnProperty.call(raw, "profileRecords")
     ) {
       saveState(parsed);
     }
@@ -272,10 +274,6 @@ function rawContainsLegacyCredential(raw: unknown): boolean {
   );
 }
 
-function sameSnapshot(left: StyleProfile, right: StyleProfile): boolean {
-  return JSON.stringify({ ...left, updatedAt: "" }) === JSON.stringify({ ...right, updatedAt: "" });
-}
-
 function appendGovernanceSnapshot(
   history: readonly GovernanceProfile[],
   profile: GovernanceProfile,
@@ -286,62 +284,53 @@ function appendGovernanceSnapshot(
     : [...history, profile];
 }
 
-function appendSnapshot(history: readonly StyleProfile[], profile: StyleProfile): StyleProfile[] {
-  const latest = history[history.length - 1];
-  return latest && sameSnapshot(latest, profile) ? [...history] : [...history, profile];
-}
-
-export function upsertProfile(profile: StyleProfile): void {
+/**
+ * Persist a profile record together with its governance policy.
+ *
+ * Records are the only writer of profile data. When a profile is new, an
+ * initial governance profile is seeded so normative policy always exists for
+ * the record's style; when it already exists, the wrapped style snapshot is
+ * refreshed to match the record's draft or active published version.
+ */
+export function saveProfileRecord(record: ProfileRecord): void {
   const state = loadState();
-  const existingIndex = state.profiles.findIndex((item: StyleProfile) => item.id === profile.id);
-  const history = state.profileHistory[profile.id] ?? [];
-  const governance = state.governanceProfiles[profile.id];
-  const governanceHistory = state.governanceHistory[profile.id] ?? (governance ? [governance] : []);
+  const parsed = ProfileRecordSchema.parse(record);
+  state.profileRecords[parsed.id] = parsed;
 
-  if (existingIndex >= 0) {
-    const current = state.profiles[existingIndex];
-    if (!current) {
-      state.profiles.push(profile);
-      state.profileHistory[profile.id] = appendSnapshot(history, profile);
-      saveState(state);
-      return;
-    }
-    const historyWithCurrent = appendSnapshot(history, current);
-    const updated = {
-      ...current,
-      ...profile,
-      updatedAt: new Date().toISOString(),
-    };
-    state.profiles[existingIndex] = updated;
-    state.profileHistory[profile.id] = appendSnapshot(historyWithCurrent, updated);
-    if (governance) {
-      const nextGovernance = GovernanceProfileSchema.parse({ ...governance, style: updated });
-      state.governanceProfiles[profile.id] = nextGovernance;
-      state.governanceHistory[profile.id] = appendGovernanceSnapshot(
-        governanceHistory,
-        nextGovernance,
-      );
-    }
-  } else {
-    state.profiles.push(profile);
-    state.profileHistory[profile.id] = appendSnapshot(history, profile);
-    const initialGovernance = GovernanceProfileSchema.parse({
-      ...createGovernanceProfile(profile),
-      id: profile.id,
-    });
-    state.governanceProfiles[profile.id] = initialGovernance;
-    state.governanceHistory[profile.id] = [initialGovernance];
+  const style = parsed.draft ?? parsed.published[parsed.published.length - 1]?.profile;
+  if (style) {
+    const existing = state.governanceProfiles[parsed.id];
+    const nextGovernance = existing
+      ? GovernanceProfileSchema.parse({ ...existing, style })
+      : GovernanceProfileSchema.parse({ ...createGovernanceProfile(style), id: parsed.id });
+    state.governanceProfiles[parsed.id] = nextGovernance;
+    const history = state.governanceHistory[parsed.id] ?? [nextGovernance];
+    state.governanceHistory[parsed.id] = appendGovernanceSnapshot(history, nextGovernance);
   }
 
   saveState(state);
 }
 
+/**
+ * Read a profile record, or null when the profile does not exist. Callers that
+ * need a record for a new profile create one with `createRecord`.
+ */
+export function loadProfileRecord(id: string): ProfileRecord | null {
+  return loadState().profileRecords[id] ?? null;
+}
+
+/** Create and persist a brand new record, seeding governance from the draft. */
+export function createProfileRecord(name: string, now: string, seed?: StyleProfile): ProfileRecord {
+  const record = createRecord(newProfileId(), name, now, seed);
+  saveProfileRecord(record);
+  return record;
+}
+
 export function removeProfile(id: string): void {
   const state = loadState();
-  state.profiles = state.profiles.filter((item: StyleProfile) => item.id !== id);
-  const nextHistory = { ...state.profileHistory };
-  delete nextHistory[id];
-  state.profileHistory = nextHistory;
+  const nextRecords = { ...state.profileRecords };
+  delete nextRecords[id];
+  state.profileRecords = nextRecords;
   const nextGovernanceHistory = { ...state.governanceHistory };
   delete nextGovernanceHistory[id];
   state.governanceHistory = nextGovernanceHistory;
@@ -357,26 +346,4 @@ export function setActiveProfile(id: string | null): void {
   const state = loadState();
   state.activeProfileId = id;
   saveState(state);
-}
-
-/**
- * Persist a profile lifecycle. Published versions are immutable, so callers pass
- * the state produced by the lifecycle transition and never edit snapshots in
- * place.
- */
-export function saveProfileLifecycle(lifecycle: ProfileLifecycleState): void {
-  const state = loadState();
-  state.profileLifecycles[lifecycle.profileId] = ProfileLifecycleStateSchema.parse(lifecycle);
-  saveState(state);
-}
-
-/** Read a persisted lifecycle, falling back to a fresh one for a known profile. */
-export function loadProfileLifecycle(
-  profileId: string,
-  seed?: StyleProfile,
-): ProfileLifecycleState {
-  const stored = loadState().profileLifecycles[profileId];
-  if (stored) return stored;
-  const state = createLifecycleState(profileId);
-  return seed ? createDraft(state, { ...seed, id: profileId }, new Date().toISOString()) : state;
 }

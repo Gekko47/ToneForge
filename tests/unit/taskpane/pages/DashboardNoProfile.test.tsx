@@ -3,9 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../../src/core/state/persistence", () => ({
   loadState: vi.fn(() => ({
-    version: 5,
-    profiles: [],
-    profileHistory: {},
+    version: 7,
+    profileRecords: {},
     activeProfileId: null,
     governanceProfiles: {},
     governanceHistory: {},

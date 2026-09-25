@@ -35,7 +35,7 @@ export interface PlanOptions {
   analysisEnd?: number;
   analysisTruncated?: boolean;
   profileId?: string;
-  profileVersion?: string;
+  profileRevision?: number;
   governancePolicyRevision?: number;
 }
 
@@ -370,7 +370,7 @@ export function planChanges(options: PlanOptions): ChangePlan {
       ? {}
       : { analysisTruncated: options.analysisTruncated }),
     ...(options.profileId === undefined ? {} : { profileId: options.profileId }),
-    ...(options.profileVersion === undefined ? {} : { profileVersion: options.profileVersion }),
+    ...(options.profileRevision === undefined ? {} : { profileRevision: options.profileRevision }),
   });
   return ChangePlanSchema.parse(
     markStale({ ...basePlan, conflicts: detectConflicts(changes) }, options.currentDocHash),

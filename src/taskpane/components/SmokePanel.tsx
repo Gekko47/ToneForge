@@ -19,6 +19,7 @@
 
 import React from "react";
 import { loadState } from "../../core/state/persistence";
+import { selectActiveProfile } from "../../core/state/profileSelectors";
 import type { StyleProfile } from "../../core/domain/StyleProfile";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
 import type { Finding } from "../../core/domain/Finding";
@@ -80,9 +81,7 @@ function formatOutcome(outcome: ApplyOutcome): PanelMessage[] {
 }
 
 function resolveActiveProfile(): { profile: StyleProfile } | { error: string } {
-  const state = loadState();
-  const profile =
-    state.profiles.find((item) => item.id === state.activeProfileId) ?? state.profiles[0];
+  const profile = selectActiveProfile(loadState());
   if (!profile) {
     return { error: "No style profile found — create one under Style profile first." };
   }

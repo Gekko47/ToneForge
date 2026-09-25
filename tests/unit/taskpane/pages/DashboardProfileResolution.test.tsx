@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
+import { createRecord } from "../../../../src/core/domain/ProfileRecord";
 
 const mocks = vi.hoisted(() => ({
   loadState: vi.fn(),
@@ -59,9 +60,8 @@ import Dashboard from "../../../../src/taskpane/pages/Dashboard";
 
 function emptyState() {
   return {
-    version: 5,
-    profiles: [] as unknown[],
-    profileHistory: {},
+    version: 7,
+    profileRecords: {} as Record<string, unknown>,
     activeProfileId: null,
     governanceProfiles: {},
     governanceHistory: {},
@@ -96,10 +96,11 @@ describe("Dashboard profile resolution", () => {
     render(<Dashboard />);
     expect(screen.getByRole("heading", { name: "Create a style profile" })).toBeInTheDocument();
 
+    const record = createRecord(profile.id, profile.name, profile.createdAt, profile);
     mocks.loadState.mockReturnValue({
       ...emptyState(),
-      profiles: [profile],
-      activeProfileId: profile.id,
+      profileRecords: { [record.id]: record },
+      activeProfileId: record.id,
     });
     await user.click(await screen.findByRole("button", { name: "Leave profile setup" }));
 

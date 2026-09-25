@@ -6,7 +6,7 @@ export type TaskPaneDestination = "home" | "ai-review" | "profile" | "settings" 
 interface TaskPaneHeaderProps {
   activePage: TaskPaneDestination;
   profileName: string;
-  profileVersion: string;
+  profileRevision: number;
   onNavigate: (destination: TaskPaneDestination) => void;
 }
 
@@ -24,7 +24,7 @@ const DESTINATIONS: readonly {
 export default function TaskPaneHeader({
   activePage,
   profileName,
-  profileVersion,
+  profileRevision,
   onNavigate,
 }: TaskPaneHeaderProps): React.ReactNode {
   const [isOpen, setIsOpen] = useState(false);
@@ -75,10 +75,10 @@ export default function TaskPaneHeader({
       </div>
       <div className="tf-brand-lockup">
         <h1 className="tf-title">ToneForge</h1>
-        <p className="tf-active-profile" title={`${profileName}, version ${profileVersion}`}>
+        <p className="tf-active-profile" title={`${profileName}, revision ${profileRevision}`}>
           <span className="tf-active-profile-label">Active profile</span>
           <strong>{profileName}</strong>
-          <span>v{profileVersion}</span>
+          <span>r{profileRevision}</span>
         </p>
       </div>
       {isOpen && (

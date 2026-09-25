@@ -43,7 +43,7 @@ describe("resolveResolvedPolicy", () => {
     expect(resolved.semantic.avoidWords).toEqual(["jargon", "slang"]);
     expect(resolved.provenance).toMatchObject({
       profileId: profile.id,
-      profileVersion: "1.0.0",
+      profileRevision: profile.revision,
       governanceId: governance.id,
       governanceVersion: governance.version,
     });

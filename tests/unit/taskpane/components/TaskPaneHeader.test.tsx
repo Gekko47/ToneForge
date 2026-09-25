@@ -11,7 +11,7 @@ describe("TaskPaneHeader", () => {
       <TaskPaneHeader
         activePage="home"
         profileName="Corporate editorial"
-        profileVersion="2.4.1"
+        profileRevision={241}
         onNavigate={onNavigate}
       />,
     );
@@ -19,7 +19,7 @@ describe("TaskPaneHeader", () => {
     const trigger = screen.getByRole("button", { name: "Open navigation" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Corporate editorial")).toBeInTheDocument();
-    expect(screen.getByText("v2.4.1")).toBeInTheDocument();
+    expect(screen.getByText("r241")).toBeInTheDocument();
 
     await user.click(trigger);
     const navigation = screen.getByRole("navigation", { name: "Task pane navigation" });
@@ -40,7 +40,7 @@ describe("TaskPaneHeader", () => {
       <TaskPaneHeader
         activePage="home"
         profileName="Corporate editorial"
-        profileVersion="1.0.0"
+        profileRevision={7}
         onNavigate={vi.fn()}
       />,
     );
@@ -60,7 +60,7 @@ describe("TaskPaneHeader", () => {
       <TaskPaneHeader
         activePage="home"
         profileName="Corporate editorial"
-        profileVersion="1.0.0"
+        profileRevision={7}
         onNavigate={vi.fn()}
       />,
     );
@@ -82,7 +82,7 @@ describe("TaskPaneHeader", () => {
       <TaskPaneHeader
         activePage="home"
         profileName="Corporate editorial"
-        profileVersion="1.0.0"
+        profileRevision={7}
         onNavigate={vi.fn()}
       />,
     );
