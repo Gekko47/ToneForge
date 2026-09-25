@@ -1,9 +1,0 @@
-extensionRuntimesActionsItem (type=object)
-  id (type=string)
-  type (type=string)
-    enum=["executeFunction","openPage","executeDataFunction"]
-  displayName (type=string)
-  pinnable (type=boolean)
-  view (type=string)
-  multiselect (type=boolean)
-  supportsNoItemContext (type=boolean)

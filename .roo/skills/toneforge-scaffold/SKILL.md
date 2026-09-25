@@ -74,7 +74,9 @@ npm run stage:verify  # stage-gate checks
 
 This skill is an instruction package — it registers no new executable tools.
 It uses standard agent file-edit, search, and terminal tools plus the
-`filesystem` and `git` MCP servers declared in `.roo/mcp.json`.
+`filesystem` and `git` MCP servers declared in the repository's Roo MCP
+configuration. That configuration is machine-local and gitignored, so it is
+intentionally untracked and must never be committed.
 
 ## Referenced resources
 
