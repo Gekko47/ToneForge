@@ -16,8 +16,8 @@ import { navigateToFinding } from "../../../../src/word/sourceLocator";
 vi.mock("../../../../src/word/sourceLocator", () => ({
   navigateToFinding: vi.fn(async () => ({
     navigated: true,
-    method: "offsets",
-    message: "selected",
+    method: "offsets" as const,
+    message: "Selected the finding range.",
   })),
 }));
 
@@ -97,18 +97,20 @@ describe("Phase C task-pane components", () => {
     expect(screen.getByText(/Current AI review/)).toBeInTheDocument();
   });
 
-  it("exposes finding navigation and actions", () => {
+  it("exposes finding navigation, review, and ignore actions", async () => {
     const item = finding();
-    const onApply = vi.fn();
+    const onReview = vi.fn();
     const onIgnore = vi.fn();
-    render(<FindingCard finding={item} onApply={onApply} onIgnore={onIgnore} />);
+    render(<FindingCard finding={item} onReview={onReview} onIgnore={onIgnore} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Go to text" }));
     expect(navigateToFinding).toHaveBeenCalledWith({ finding: item });
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByText("Selected the finding range.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
     fireEvent.click(screen.getByRole("button", { name: "Ignore" }));
-    expect(onApply).toHaveBeenCalledWith(item);
+    expect(onReview).toHaveBeenCalledWith(item);
     expect(onIgnore).toHaveBeenCalledWith(item.id);
+    expect(screen.queryByRole("button", { name: "Apply" })).not.toBeInTheDocument();
   });
 
   it("renders an empty findings state", () => {
@@ -116,9 +118,10 @@ describe("Phase C task-pane components", () => {
     expect(screen.getByText("No findings detected.")).toBeInTheDocument();
   });
 
-  it("renders before and after values and disabled reasons in pending changes", () => {
+  it("renders before and after values and invokes a real rejection callback", () => {
     const linkedFinding = finding({ actual: "--", expected: "—" });
     const pending = plan();
+    const onReject = vi.fn();
     const linkedPlan = {
       ...pending,
       changes: pending.changes.map((change) => ({ ...change, findingId: linkedFinding.id })),
@@ -128,14 +131,16 @@ describe("Phase C task-pane components", () => {
         plan={linkedPlan}
         findings={[linkedFinding]}
         onApply={vi.fn()}
-        onReject={vi.fn()}
+        onReject={onReject}
       />,
     );
 
     expect(screen.getByText("Before: --")).toBeInTheDocument();
     expect(screen.getByText("After: —")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(onReject).toHaveBeenCalledOnce();
+    expect(screen.getByText("Changes rejected.")).toBeInTheDocument();
   });
 
   it("disables apply with a truthful reason when a plan is blocked", () => {
@@ -245,6 +250,6 @@ describe("Phase C task-pane components", () => {
     );
     expect(screen.getByRole("button", { name: "Review selection" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Review paragraph" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Review entire document" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review eligible document content" })).toBeDisabled();
   });
 });

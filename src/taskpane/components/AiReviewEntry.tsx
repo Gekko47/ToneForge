@@ -77,8 +77,8 @@ export default function AiReviewEntry({
       <h2>AI Review (optional)</h2>
       <p>
         Deterministic checks do not send document text externally. If you opt in, selection or
-        paragraph review sends only the minimized selected context; full-document review sends the
-        eligible document content in bounded batches after a coverage check.
+        paragraph review sends only the minimized selected context; eligible document review sends
+        the acquired, unprotected content in bounded batches after a coverage check.
       </p>
       <p className="tf-sub">
         Consent is scope-specific. You can withdraw it in Settings at any time. Declining leaves
@@ -119,7 +119,7 @@ export default function AiReviewEntry({
           disabled={documentDisabled}
           aria-describedby={documentMessage ? "document-review-hint" : undefined}
         >
-          Review entire document
+          Review eligible document content
         </button>
       </div>
       {selectionMessage && (

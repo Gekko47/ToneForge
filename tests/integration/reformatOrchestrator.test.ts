@@ -591,14 +591,20 @@ describe("reformatDocument integration", () => {
       preview: true,
     });
     const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
+    const governanceRevision = preview.plan.governancePolicyRevision;
+    if (governanceRevision === undefined) throw new Error("preview must capture policy revision");
 
-    const result = await applyReviewedPlan({ plan: preview.plan });
+    const result = await applyReviewedPlan({
+      plan: preview.plan,
+      currentGovernancePolicyRevision: governanceRevision,
+    });
 
     expect(applySpy).toHaveBeenCalledWith(
       preview.plan,
       preview.plan.docHash,
       false,
       expect.any(Array),
+      governanceRevision,
     );
     expect(result.applied).toBe(true);
     expect(result.stale).toBe(false);

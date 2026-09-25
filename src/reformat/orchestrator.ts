@@ -24,11 +24,12 @@ import { getDocumentSnapshot, getStructuredSnapshot, hashDocument } from "../wor
 import { getFormattingSnapshot } from "../word/formattingReader";
 import { type FormattingSnapshot } from "../formatting/formattingSnapshot";
 import { formatProfileVersion, type StyleProfile } from "../core/domain/StyleProfile";
+import { createGovernanceProfile, type GovernanceProfile } from "../core/domain/GovernanceProfile";
+import { resolveResolvedPolicy } from "../core/domain/ResolvedPolicy";
 import type { Change } from "../core/domain/Change";
 import type { ChangePlan } from "../core/domain/ChangePlan";
 import type { LlmProvider, LlmSemanticProvider } from "../ai/providers/LlmProvider";
 import type { DocumentSnapshot as StructuredDocumentSnapshot } from "../core/domain/DocumentSnapshot";
-import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
 import {
   reviewEntireDocument as runDocumentEditorialReview,
   type FullReviewResult,
@@ -136,13 +137,15 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     currentDocHash,
   } = options;
   const readLimit = maxChars ?? DEFAULT_MAX_CHARS;
+  const policy: GovernanceProfile = options.policy ?? createGovernanceProfile(profile);
+  const resolvedPolicy = resolveResolvedPolicy(profile, policy);
 
   // Step 1: Acquire one immutable scope for analysis. The legacy formatting
   // override remains supported for callers that already own a verified DTO.
   const context = await acquireAnalysisContext({
     profile,
     capabilities: options.capabilities ?? FALLBACK_CAPABILITIES,
-    ...(options.policy ? { policy: options.policy } : {}),
+    policy,
     maxChars: readLimit,
   });
   const snapshot = context.snapshot;
@@ -153,6 +156,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   // formatting DTO; the acquisition service is the only analysis read.
   let report = await checkConsistency({
     context: { ...context, formatting },
+    resolvedPolicy,
     includeRawText,
     ...(signal ? { signal } : {}),
     ...(registry ? { registry } : {}),
@@ -163,7 +167,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     findings: report.findings,
     docHash,
     baseDocId: context.identity.documentId,
-    ...(options.policy ? { governancePolicyRevision: options.policy.version } : {}),
+    governancePolicyRevision: resolvedPolicy.governance.version,
     currentDocHash: currentDocHash ?? docHash,
     documentId: context.identity.documentId,
     documentVersion: context.identity.documentVersion,
@@ -277,7 +281,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     liveHash,
     false,
     liveStructured.nodes,
-    options.policy?.version,
+    resolvedPolicy.governance.version,
   );
   const verificationSnapshot = await getDocumentSnapshot({ maxChars: readLimit });
   const verificationHash =

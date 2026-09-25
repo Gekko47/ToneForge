@@ -167,7 +167,10 @@ The original 00–28 stage map remains preserved. Status meanings:
 
 The incoming `ToneForge_Refactor_Implementation` proposal used incompatible
 stage numbers. Its implementation is intentionally mapped here to additive
-phases rather than renumbered as a replacement roadmap.
+phases rather than renumbered as a replacement roadmap. The approved modern UX,
+provider, and consistency execution overlay is recorded in
+[`plans/toneforge-modern-ux-provider-consistency-implementation-plan.md`](plans/toneforge-modern-ux-provider-consistency-implementation-plan.md:1);
+it does not replace the historical A–H evidence map below.
 
 | Refactor work                                                                    | Canonical phase          | Status                          | Verified implementation                                                                                                                                                                                   | Remaining work / gate                                                                                                                                                             |
 | -------------------------------------------------------------------------------- | ------------------------ | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -179,6 +182,35 @@ phases rather than renumbered as a replacement roadmap.
 | Safe apply, performance, security, regression                                    | F — Hardening            | PASS WITH DOCUMENTED LIMITATION | Dependency ordering, preservation/protection checks, post-apply hash verification, bounded AI paths, privacy checks, and 80% core coverage exist.                                                         | Live performance, long-document measurements, and formal security review remain qualified.                                                                                        |
 | Host matrix, release acceptance, consistency seam                                | G — Verification/release | BLOCKED                         | Release check, secret/docs scans, deterministic staging, CI gates, and reserved consistency boundary exist.                                                                                               | The external Word host matrix and release acceptance evidence remain incomplete; Phase H consistency expansion is not started.                                                    |
 | Content Consistency Review C1–C10                                                | H — Reserved future      | NOT STARTED                     | Only the reserved seam exists; no engine is implemented or imported.                                                                                                                                      | Must follow core release acceptance and a separately approved privacy/consent design.                                                                                             |
+
+## Approved modern UX and provider consistency execution plan
+
+The implementation-ready plan in
+[`plans/toneforge-modern-ux-provider-consistency-implementation-plan.md`](plans/toneforge-modern-ux-provider-consistency-implementation-plan.md:1)
+is the execution sequence for the mandatory modern UX, provider, and C1–C10 work.
+Phase 0 is repository-verified; the remaining phases are not complete release
+claims.
+
+| Plan phase | Scope                                                                                                                                      | Status      | Evidence and remaining gate                                                                                                                                                                                                                                                                                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0          | Correctness, trust, truthful coverage, first-run state, and one reviewed-plan Apply/Reject workflow                                        | COMPLETE    | Phase 0 regression tests and the ordered repository verification graph pass; live Word accessibility and host behavior remain external evidence.                                                                                                                                                                                                                                     |
+| 1          | Learned-style versus normative-governance ownership, resolved policy, and Learn Style                                                      | COMPLETE    | [`ResolvedPolicy`](src/core/domain/ResolvedPolicy.ts) resolves learned style and normative governance for analysis and planning; [`learnStyleDraft()`](src/style/learnStyle.ts) and the Profile Learn Style entry point capture, quality-gate, measure, optionally interpret with consent, and persist an editable draft. Live sample capture and provider evidence remain external. |
+| 2          | Capability evidence tiers, verified Word paragraph events, and B23 workflow projection                                                     | NOT STARTED | Requires the resolved policy and live event contract; no live event claim is currently made.                                                                                                                                                                                                                                                                                         |
+| 3          | Focused view decomposition, visual history, policy editing, responsive/accessibility behavior, and draft/published lifecycle               | NOT STARTED | Depends on Phases 1–2 contracts.                                                                                                                                                                                                                                                                                                                                                     |
+| 4          | Provider-neutral gateway, OAuth/PKCE, OpenRouter, dynamic model catalogs, verification summaries, host dashboard, and production packaging | NOT STARTED | Production credential custody and provider flows remain external security/release gates.                                                                                                                                                                                                                                                                                             |
+| 5          | Full C1–C10 consistency engine and task-pane integration                                                                                   | NOT STARTED | Requires approved privacy/coverage and deterministic ownership contracts.                                                                                                                                                                                                                                                                                                            |
+| 6          | Production deployment, rollback, security, accessibility, performance, and final host evidence                                             | NOT STARTED | Requires Phases 0–5 and human Word-host evidence.                                                                                                                                                                                                                                                                                                                                    |
+
+Phase 0 changed the production contract in a deliberately additive way. The
+current task pane now has a first-run profile setup state, preserves findings
+from conservative observer rescans, distinguishes declared scope limitations
+from unexpected coverage gaps, keeps technical acquisition diagnostics in
+Troubleshooting, provides navigation feedback, clears blank optional settings,
+and uses versioned finding fingerprints for ignored findings. Reformat preview
+is separate from the single plan-level Apply and Reject workflow in Pending
+Changes. The existing mutation path remains fail-closed through
+[`applyReviewedPlan()`](src/reformat/orchestrator.ts:507) and
+[`revisionAdapter.ts`](src/word/revisionAdapter.ts:110).
 
 ### Phase dependency graph
 
@@ -250,19 +282,19 @@ remains an explicit release gate.
 
 ### Current verification result
 
-| Check               | Result     | Evidence                                                               |
-| ------------------- | ---------- | ---------------------------------------------------------------------- |
-| Typecheck           | PASS       | `npm run typecheck`                                                    |
-| Lint                | PASS       | `npm run lint`                                                         |
-| Format              | PASS       | `npm run format`                                                       |
-| Tests               | PASS       | `npm run test`: 68 files, 672 tests                                    |
-| Coverage            | PASS       | `npm run test:coverage` passes the 80% exercised-core gate             |
-| Build               | PASS       | `npm run build:check`; Webpack emits no performance warnings           |
-| Artifact budgets    | PASS       | `npm run build:check` enforces 600 KiB JavaScript/initial-page budgets |
-| Manifest validation | PASS       | `npm run validate`                                                     |
-| Stage verification  | PASS       | `npm run stage:verify` runs the ordered chain and release staging      |
-| Manual host matrix  | INCOMPLETE | Desktop evidence only; web Chrome, web Edge, and Mac open              |
-| Release check       | BLOCKED    | Hard human Word-host evidence gate is open                             |
+| Check               | Result     | Evidence                                                                                                                    |
+| ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Typecheck           | PASS       | `npm run typecheck`                                                                                                         |
+| Lint                | PASS       | `npm run lint`                                                                                                              |
+| Format              | PASS       | `npm run format`                                                                                                            |
+| Tests               | PASS       | `npm run test`: 73 files, 693 tests                                                                                         |
+| Coverage            | PASS       | `npm run test:coverage`: 92.90% lines, 92.90% statements, 83.75% functions, 81.53% branches; 80% exercised-core gate passes |
+| Build               | PASS       | `npm run build:check`; Webpack emits no performance warnings                                                                |
+| Artifact budgets    | PASS       | `npm run build:check` enforces 600 KiB JavaScript/initial-page budgets                                                      |
+| Manifest validation | PASS       | `npm run validate`                                                                                                          |
+| Stage verification  | PASS       | `npm run stage:verify` runs the ordered chain and release staging                                                           |
+| Manual host matrix  | INCOMPLETE | Desktop evidence only; web Chrome, web Edge, and Mac open                                                                   |
+| Release check       | BLOCKED    | Hard human Word-host evidence gate is open                                                                                  |
 
 ## Prioritized implementation plan
 
@@ -281,7 +313,10 @@ evidence is not implied by this automated status.
 6. Structured protection validation and post-apply verification pass through the orchestrator.
 7. Pending AI plans apply through `applyReviewedPlan()`; the action is unavailable without a callback.
 8. Configured OpenAI credentials are passed to the registry; mock tests remain offline.
-9. Focused regression tests and the ordered automated gates pass.
+9. Phase 0 first-run, observer-retention, coverage-scope, navigation, optional-settings, and stable-fingerprint regressions pass.
+10. The task pane has one plan-level Apply and Reject path; preview-only ReformatPanel does not expose a competing mutation action.
+11. Technical coverage diagnostics are isolated to Troubleshooting; declared unsupported/protected scope remains visible without claiming a complete document.
+12. Focused regression tests and the ordered automated gates pass.
 
 ### P1 — release engineering and regression — COMPLETE
 

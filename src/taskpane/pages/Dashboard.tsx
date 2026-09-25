@@ -35,8 +35,13 @@ import AiReviewResult from "../components/AiReviewResult";
 import FullReviewPreflight from "../components/FullReviewPreflight";
 import FullReviewProgress from "../components/FullReviewProgress";
 import FullReviewResults from "../components/FullReviewResults";
+import { findingFingerprint } from "../findingFingerprint";
 import { loadState } from "../../core/state/persistence";
-import { formatProfileVersion, StyleProfileSchema } from "../../core/domain/StyleProfile";
+import {
+  formatProfileVersion,
+  StyleProfileSchema,
+  type StyleProfile,
+} from "../../core/domain/StyleProfile";
 import type { Finding } from "../../core/domain/Finding";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
 import type { PersistedState } from "../../core/state/persistence";
@@ -44,18 +49,15 @@ import type { PersistedState } from "../../core/state/persistence";
 const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
 
-const IGNORED_FINDINGS_KEY = "ToneForge.IgnoredFindingIds";
+const IGNORED_FINDINGS_KEY = "ToneForge.IgnoredFindingFingerprints.v1";
 
 type DashboardPage = "home" | "ai-review" | "profile" | "settings" | "troubleshooting";
 
-function resolveActiveProfile(): ReturnType<(typeof StyleProfileSchema)["parse"]> {
+function resolveActiveProfile(): StyleProfile | null {
   const state = loadState();
   const profile =
     state.profiles.find((item) => item.id === state.activeProfileId) ?? state.profiles[0];
-  if (!profile) {
-    throw new Error("No style profile found — create one under Style profile first.");
-  }
-  return StyleProfileSchema.parse(profile);
+  return profile ? StyleProfileSchema.parse(profile) : null;
 }
 
 export function resolveGovernanceProfile(
@@ -129,6 +131,25 @@ function readIgnoredFindingIds(): Set<string> {
 }
 
 export default function Dashboard(): React.ReactNode {
+  const activeProfile = resolveActiveProfile();
+  if (!activeProfile) {
+    return (
+      <main className="tf-card">
+        <h1 className="tf-title">Create a style profile</h1>
+        <p className="tf-sub">
+          ToneForge needs a style profile before it can analyse or safely reformat this document.
+        </p>
+        <Suspense fallback={<div role="status">Loading profile editor…</div>}>
+          <Profile onBack={() => window.location.reload()} />
+        </Suspense>
+      </main>
+    );
+  }
+
+  return <DashboardWithProfile activeProfile={activeProfile} />;
+}
+
+function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }): React.ReactNode {
   const [caps, setCaps] = useState<WordCapabilities | null>(null);
   const [page, setPage] = useState<DashboardPage>("home");
   const [findingsOpen, setFindingsOpen] = useState(false);
@@ -156,7 +177,6 @@ export default function Dashboard(): React.ReactNode {
   const fullAbortRef = useRef<AbortController | null>(null);
   const [fullReviewMessage, setFullReviewMessage] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
-  const activeProfile = resolveActiveProfile();
   const activeProfileKey = `${activeProfile.id}:${activeProfile.version.major}:${activeProfile.version.minor}:${activeProfile.version.patch}`;
 
   useEffect(() => {
@@ -243,8 +263,8 @@ export default function Dashboard(): React.ReactNode {
     }
   }, [ignoredFindingIds]);
 
-  function ignoreFinding(id: string): void {
-    setIgnoredFindingIds((previous) => new Set(previous).add(id));
+  function ignoreFinding(finding: Finding): void {
+    setIgnoredFindingIds((previous) => new Set(previous).add(findingFingerprint(finding)));
   }
 
   function navigate(destination: TaskPaneDestination): void {
@@ -271,7 +291,7 @@ export default function Dashboard(): React.ReactNode {
           ? await getSelectedParagraphText()
           : selected;
       if (!text?.trim()) throw new Error("Select text or place the cursor in a paragraph first.");
-      const profile = resolveActiveProfile();
+      const profile = activeProfile;
       const governance = resolveGovernanceProfile(state, profile);
       const snapshot = await getDocumentSnapshot();
       const structured = await getStructuredSnapshot();
@@ -366,7 +386,7 @@ export default function Dashboard(): React.ReactNode {
       if (!state.settings.fullDocumentReviewConsent) {
         throw new Error("Full-document review consent is required in Settings.");
       }
-      const profile = resolveActiveProfile();
+      const profile = activeProfile;
       const governance = resolveGovernanceProfile(state, profile);
       const result = await reviewEntireDocument({
         snapshot,
@@ -491,7 +511,7 @@ export default function Dashboard(): React.ReactNode {
           ) : page === "profile" ? (
             <Profile onBack={() => navigate("home")} />
           ) : (
-            <DebuggingPanel onBack={() => navigate("home")} />
+            <DebuggingPanel onBack={() => navigate("home")} coverage={status?.coverage ?? null} />
           )}
         </Suspense>
       </main>
@@ -499,10 +519,10 @@ export default function Dashboard(): React.ReactNode {
   }
 
   const observerFindings = (status?.findings ?? []).filter(
-    (finding) => !ignoredFindingIds.has(finding.id),
+    (finding) => !ignoredFindingIds.has(findingFingerprint(finding)),
   );
   const currentGovernanceFindings = (reformatResult?.report.findings ?? observerFindings).filter(
-    (finding) => !ignoredFindingIds.has(finding.id),
+    (finding) => !ignoredFindingIds.has(findingFingerprint(finding)),
   );
   const findings = currentGovernanceFindings;
   const currentStatus = status;
@@ -530,7 +550,14 @@ export default function Dashboard(): React.ReactNode {
             Findings <span>{findings.length}</span>
           </button>
           {findingsOpen && (
-            <FindingsList findings={findings} onApply={markForReview} onIgnore={ignoreFinding} />
+            <FindingsList
+              findings={findings}
+              onReview={markForReview}
+              onIgnore={(findingId) => {
+                const finding = findings.find((item) => item.id === findingId);
+                if (finding) ignoreFinding(finding);
+              }}
+            />
           )}
         </section>
       )}
@@ -616,6 +643,13 @@ export default function Dashboard(): React.ReactNode {
             }
             coverage={pendingPlan?.coverage ?? null}
             onApply={() => applyPendingPlan(pendingPlan)}
+            onReject={() => {
+              if (pendingPlan?.source === "reformat") setReformatResult(null);
+              if (pendingPlan?.source === "full") setFullResult(null);
+              if (pendingPlan?.source === "spot") setAiReview(null);
+              setPendingOpen(false);
+              setApplyMessage("Changes rejected. Nothing was applied to the document.");
+            }}
           />
           {applyMessage && <p role="status">{applyMessage}</p>}
         </section>
@@ -677,7 +711,6 @@ export default function Dashboard(): React.ReactNode {
           <CoverageBanner coverage={status?.coverage ?? null} />
           <ReformatPanel
             profile={activeProfile}
-            capabilities={caps}
             onPreview={(result) => setReformatResult(result)}
           />
         </section>

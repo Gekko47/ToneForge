@@ -4,6 +4,19 @@
 
 - Added additive domain contracts for structured document nodes, governance
   profiles, review requests, and enriched findings/changes/plans.
+- Phase 0 adds a first-run profile setup state, conservative observer-rescan
+  finding retention, scope-qualified coverage semantics, stable versioned
+  ignored-finding fingerprints, user-visible navigation feedback, and safe
+  clearing of blank optional broker settings.
+- Phase 0 makes ReformatPanel preview-only and leaves one reviewed-plan
+  Apply/Reject workflow in Pending Changes; technical coverage diagnostics are
+  isolated to Troubleshooting.
+- Phase 1 adds `ResolvedPolicy` so learned style evidence and normative governance
+  are resolved once for analysis and planning, and always capture a policy
+  revision for safe apply.
+- Phase 1 adds the Learn Style service and Profile entry point: selection/document
+  capture, sample-quality gating, deterministic evidence, optional consented
+  semantic interpretation, and an editable persisted draft.
 - Added state schema v5 with v0-v4 fallback migration, initial governance-profile
   seeding, governance-history snapshots, and current-policy revision enforcement.
 - Added single-pass Word paragraph/style acquisition, explicit structural
@@ -17,7 +30,9 @@
 - Automated verification uses the shared `toneforge-repository-v1` graph for
   typecheck, lint, format, source/artifact secret scans, documentation links,
   skills validation, tests, 80% exercised-core coverage, build, manifest
-  validation, staging, and coherent release-package checks.
+  validation, staging, and coherent release-package checks. The Phase 0 run
+  passes 73 files / 693 tests with 92.90% lines, 92.90% statements, 83.75%
+  functions, and 81.53% branches.
 - Hardened planning with complete document identity, unit-aware targets, change
   preconditions, source/approval lineage, exact AI source slices, fail-closed
   Apply readiness, and credential-free ordinary state.

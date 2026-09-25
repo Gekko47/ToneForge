@@ -1,22 +1,20 @@
 /**
- * Stage 22 — Safe reformat panel.
+ * Stage 22 — Safe reformat preview panel.
  *
- * Preview → confirm → apply workflow built on the Stage 21 orchestrator.
- * The panel never imports `word/revisionAdapter` directly (ESLint forbids
- * it); all mutations flow through `reformatDocument()`, which owns the
- * live re-hash, conflict refusal, and Stage 01 gate checks.
+ * This component creates the exact reviewed plan and hands it to the dashboard.
+ * The single Apply action lives in Pending Changes and is the only production
+ * route into the safe apply orchestration.
  *
  * Boundary: this component may import `reformat/`, `core/*`, `shared/*`,
  * and `ai/providers` types. It must never import `word/revisionAdapter`.
  */
 
 import React from "react";
-import { applyReviewedPlan, reformatDocument, type ReformatResult } from "../../reformat";
+import { reformatDocument, type ReformatResult } from "../../reformat";
 import { loadState } from "../../core/state/persistence";
 import { createGovernanceProfile } from "../../core/domain/GovernanceProfile";
 import type { StyleProfile } from "../../core/domain/StyleProfile";
 import type { LlmSemanticProvider } from "../../ai/providers/LlmProvider";
-import type { WordCapabilities } from "../../word/capabilityProbe";
 
 export interface ReformatPanelProps {
   /** Active style profile driving analysis and planning. */
@@ -27,11 +25,9 @@ export interface ReformatPanelProps {
   maxChars?: number;
   /** Optional semantic provider; tests inject a MockAdapter-backed registry. */
   registry?: LlmSemanticProvider;
-  /** Read-only host capability snapshot; absence blocks actionable Apply. */
-  capabilities?: WordCapabilities | null;
 }
 
-type PanelPhase = "idle" | "previewing" | "ready" | "applying" | "applied" | "refused";
+type PanelPhase = "idle" | "previewing" | "ready";
 
 interface PanelMessage {
   kind: "info" | "success" | "error";
@@ -48,7 +44,6 @@ export default function ReformatPanel({
   profile,
   maxChars,
   registry,
-  capabilities,
   onPreview,
 }: ReformatPanelProps): React.ReactNode {
   const [phase, setPhase] = React.useState<PanelPhase>("idle");
@@ -67,6 +62,7 @@ export default function ReformatPanel({
 
   async function runPreview(): Promise<void> {
     setPhase("previewing");
+    setMessages([]);
     setResult(null);
     try {
       const preview = await reformatDocument({
@@ -91,7 +87,7 @@ export default function ReformatPanel({
         pushMessages([
           {
             kind: "info",
-            text: `Preview ready: ${preview.plan.changes.length} change(s), ${(preview.plan.conflicts ?? []).length} conflict(s). Review below, then Apply.`,
+            text: `Preview ready: ${preview.plan.changes.length} change(s), ${(preview.plan.conflicts ?? []).length} conflict(s). Review the proposed changes in Pending Changes.`,
           },
         ]);
       }
@@ -111,127 +107,7 @@ export default function ReformatPanel({
     }
   }
 
-  async function runApply(): Promise<void> {
-    if (!result || !canApply) return;
-    setPhase("applying");
-    setMessages([]);
-    try {
-      const applied = await applyReviewedPlan({
-        plan: result.plan,
-        currentGovernancePolicyRevision: governance.version,
-        ...(result.report.coverage ? { coverage: result.report.coverage } : {}),
-        allowConflictingApply: false,
-        ...(maxChars !== undefined ? { maxChars } : {}),
-      });
-      if (applied.applied && applied.verified) {
-        setPhase("applied");
-        pushMessages([
-          { kind: "success", text: "All reviewed changes were applied and verified." },
-        ]);
-      } else if (applied.stale) {
-        setPhase("refused");
-        pushMessages([
-          { kind: "error", text: "The document changed since preview. Preview again." },
-        ]);
-      } else {
-        setPhase("refused");
-        const failed = applied.results.find((item) => !item.applied);
-        pushMessages([
-          {
-            kind: "error",
-            text: applied.verificationError ?? failed?.error ?? "Apply was not completed.",
-          },
-        ]);
-      }
-    } catch (err) {
-      setPhase("ready");
-      pushMessages([
-        {
-          kind: "error",
-          text: `Apply failed: ${err instanceof Error ? err.message : String(err)}`,
-        },
-      ]);
-    }
-  }
-
-  const busy = phase === "previewing" || phase === "applying";
-  const capabilitiesVerified = capabilities !== null && capabilities !== undefined;
-  const requiredCapabilities = result
-    ? [
-        ...new Set(
-          result.plan.changes.map((change) => {
-            switch (change.type) {
-              case "insertText":
-                return "supportsInsertText" as const;
-              case "replaceText":
-              case "deleteRange":
-                return "supportsReplaceText" as const;
-              case "insertBreak":
-                return "supportsInsertBreak" as const;
-              case "applyStyle":
-                return "supportsStyles" as const;
-              case "setParagraphFormat":
-                return "supportsParagraphFormat" as const;
-              case "setCharacterFormat":
-                return "supportsCharacterFormat" as const;
-              case "resetCharacterFormatting":
-                return "supportsResetCharacterFormatting" as const;
-              case "setListLevel":
-                return "supportsListLevel" as const;
-            }
-          }),
-        ),
-      ]
-    : [];
-  const unsupportedCapabilities = capabilitiesVerified
-    ? requiredCapabilities.filter((capability) => capabilities[capability] === false)
-    : [];
-  const hostSupportsPlan =
-    capabilitiesVerified && capabilities.supportsRevisions && unsupportedCapabilities.length === 0;
-  const unapprovedChanges =
-    result?.plan.changes.filter(
-      (change) => change.approvalRequired && change.approvalState !== "approved",
-    ) ?? [];
-  const preconditionFailures =
-    result?.plan.changes.filter((change) => change.precondition === undefined) ?? [];
-  const canApply =
-    result !== null &&
-    result.plan.schemaVersion === 2 &&
-    result.plan.changes.length > 0 &&
-    !result.plan.stale &&
-    (result.plan.conflicts ?? []).length === 0 &&
-    hostSupportsPlan &&
-    unapprovedChanges.length === 0 &&
-    preconditionFailures.length === 0;
-  const readinessReasons = result
-    ? [
-        ...(result.plan.schemaVersion !== 2
-          ? ["Preview again to create a schema version 2 plan."]
-          : []),
-        ...(result.report.coverage?.complete === false
-          ? [
-              "Analysis coverage is incomplete; apply is advisory and may be refused by reviewed apply.",
-            ]
-          : []),
-        ...(result.plan.stale ? ["Preview again because the document changed."] : []),
-        ...((result.plan.conflicts ?? []).length > 0
-          ? ["Resolve plan conflicts before applying."]
-          : []),
-        ...unsupportedCapabilities.map(
-          (capability) => `This host cannot perform ${capability.replace("supports", "")}.`,
-        ),
-        ...(!result.tracking.managed ? ["Managed Track Changes is unavailable."] : []),
-        ...(unapprovedChanges.length > 0
-          ? [`${unapprovedChanges.length} change(s) require approval before applying.`]
-          : []),
-        ...(preconditionFailures.length > 0
-          ? [`${preconditionFailures.length} change(s) have no verifiable target precondition.`]
-          : []),
-        ...(!hostSupportsPlan && result.plan.changes.length > 0
-          ? ["The current host capability check does not support this plan."]
-          : []),
-      ]
-    : [];
+  const busy = phase === "previewing";
   const planCoverage = result?.report.coverage ?? null;
   const coverageIncomplete = planCoverage?.complete === false;
 
@@ -239,9 +115,8 @@ export default function ReformatPanel({
     <section aria-label="Safe reformat" style={{ marginTop: "1.5rem" }}>
       <h2>Safe reformat</h2>
       <p>
-        Preview the planned changes for profile “{profile.name}”, then confirm to apply them with
-        revision tracking. The orchestrator re-hashes the document immediately before applying and
-        refuses stale or conflicting plans.
+        Preview the planned changes for profile “{profile.name}”. Review the exact plan in Pending
+        Changes before using the single Apply action with revision tracking.
       </p>
 
       <p className="tf-sub">
@@ -249,44 +124,11 @@ export default function ReformatPanel({
         reformat remains available when semantic analysis is disabled.
       </p>
 
-      {!capabilitiesVerified && (
-        <p role="status" className="tf-sub">
-          Word is checking mutation readiness. Preview is available while the host is inspected.
-        </p>
-      )}
-      {capabilitiesVerified && !hostSupportsPlan && (
-        <p role="status" className="tf-sub">
-          This Word host does not support every operation in the reviewed plan. Preview remains
-          available; unsupported operations must be fixed in the plan before apply.
-        </p>
-      )}
-
       <div style={{ marginTop: "0.75rem" }}>
         <button type="button" onClick={runPreview} disabled={busy}>
           {phase === "previewing" ? "Previewing…" : "Preview changes"}
         </button>
-        <button
-          type="button"
-          onClick={runApply}
-          disabled={busy || !canApply}
-          aria-describedby={!canApply ? "apply-readiness" : undefined}
-          style={{ marginLeft: "0.5rem" }}
-        >
-          {phase === "applying" ? "Applying…" : "Apply changes"}
-        </button>
       </div>
-      {(!capabilitiesVerified || !canApply) && (
-        <ul id="apply-readiness" className="tf-sub" aria-live="polite">
-          {!capabilitiesVerified && (
-            <li>
-              Apply performs a fresh host capability check immediately before any tracked edit.
-            </li>
-          )}
-          {readinessReasons.map((reason) => (
-            <li key={reason}>{reason}</li>
-          ))}
-        </ul>
-      )}
 
       {result && (result.plan.conflicts ?? []).length > 0 && (
         <div style={{ marginTop: "0.75rem" }}>

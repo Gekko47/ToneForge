@@ -149,24 +149,26 @@ export default function SettingsForm(): React.ReactNode {
       return;
     }
     const current = loadState();
-    const next: PersistedState = {
-      ...current,
-      settings: {
-        ...current.settings,
-        openAiBaseUrl: llmDraft.openAiBaseUrl.trim(),
-        openAiModel: llmDraft.openAiModel.trim(),
-        llmProvider: llmDraft.llmProvider,
-        spotReviewConsent: llmDraft.spotReviewConsent,
-        fullDocumentReviewConsent: llmDraft.fullDocumentReviewConsent,
-        semanticOptIn: llmDraft.semanticOptIn,
-      },
+    const baseUrl = llmDraft.openAiBaseUrl.trim();
+    const model = llmDraft.openAiModel.trim();
+    const settings = {
+      ...current.settings,
+      llmProvider: llmDraft.llmProvider,
+      spotReviewConsent: llmDraft.spotReviewConsent,
+      fullDocumentReviewConsent: llmDraft.fullDocumentReviewConsent,
+      semanticOptIn: llmDraft.semanticOptIn,
     };
+    if (baseUrl) settings.openAiBaseUrl = baseUrl;
+    else delete settings.openAiBaseUrl;
+    if (model) settings.openAiModel = model;
+    else delete settings.openAiModel;
+    const next: PersistedState = { ...current, settings };
     saveState(next);
     const saved = { ...llmDraft };
     setLlmBaseline(saved);
     setLlmDraft(saved);
     logger.info("LLM settings saved", {
-      model: saved.openAiModel,
+      model: saved.openAiModel || "deployment default",
       provider: saved.llmProvider,
       credentialMode: "broker",
     });

@@ -53,6 +53,7 @@ export {
   type GovernanceProfile,
   createGovernanceProfile,
 } from "./GovernanceProfile";
+export { ResolvedPolicySchema, type ResolvedPolicy, resolveResolvedPolicy } from "./ResolvedPolicy";
 export {
   ReviewRequestSchema,
   ReviewOperationSchema,

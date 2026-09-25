@@ -61,16 +61,40 @@ describe("buildCoverage", () => {
     expect(report.unprocessed).toContain("Required in-scope node type inaccessible: body");
   });
 
-  it("applies exclusions", () => {
-    const nodes = [makeNode("paragraph"), makeNode("caption")];
+  it("keeps declared exclusions visible without making the requested scope incomplete", () => {
+    const nodes = [makeNode("body"), makeNode("paragraph"), makeNode("caption")];
     const report = buildCoverage({
       nodes,
       text: "hello\ncaption text",
       exclusions: [{ reason: "captions excluded", nodeTypes: ["caption"] }],
+      acquisition: {
+        structuralCoverage: "partial",
+        unsupported: ["tables", "headers", "footers"],
+        analyzedCharacterCount: 22,
+        completeDocumentCharacterCount: 22,
+      },
     });
     expect(report.excluded).toHaveLength(1);
     expect(report.excluded[0]!.reason).toBe("captions excluded");
     expect(report.excluded[0]!.locations).toContain("body/captions/0");
+    expect(report.unsupported).toEqual(["tables", "headers", "footers"]);
+    expect(report.complete).toBe(true);
+  });
+
+  it("marks an unexpectedly truncated analysis window incomplete", () => {
+    const nodes = [makeNode("body"), makeNode("paragraph")];
+    const report = buildCoverage({
+      nodes,
+      text: "hello",
+      acquisition: {
+        structuralCoverage: "partial",
+        unsupported: ["tables"],
+        analyzedCharacterCount: 5,
+        completeDocumentCharacterCount: 50,
+      },
+    });
+    expect(report.complete).toBe(false);
+    expect(report.unprocessed).toContain("Analysis window is shorter than the complete document");
   });
 
   it("generates a unique runId each call", () => {

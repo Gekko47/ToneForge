@@ -28,8 +28,10 @@ import type { AnalysisContext } from "./analysisContext";
 import { logger } from "../shared/utils/logger";
 import { FindingSchema } from "../core/domain/Finding";
 import type { Finding } from "../core/domain/Finding";
+import { createGovernanceProfile, type GovernanceProfile } from "../core/domain/GovernanceProfile";
 import { StyleProfileSchema } from "../core/domain/StyleProfile";
 import type { StyleProfile } from "../core/domain/StyleProfile";
+import { resolveResolvedPolicy, type ResolvedPolicy } from "../core/domain/ResolvedPolicy";
 import type { DeviationOptions } from "./deviationEngine";
 import type { LlmSemanticProvider } from "../ai/providers/LlmProvider";
 import type { DocumentNode } from "../core/domain/DocumentSnapshot";
@@ -116,6 +118,10 @@ export type ConsistencyReport = z.infer<typeof ConsistencyReportSchema>;
 export interface CheckConsistencyOptions {
   text?: string;
   profile?: StyleProfile;
+  /** Normative policy; analysis resolves it with the learned profile. */
+  policy?: GovernanceProfile;
+  /** Pre-resolved policy for callers that already own the canonical snapshot. */
+  resolvedPolicy?: ResolvedPolicy;
   snapshot?: FormattingSnapshot;
   docHash?: string;
   includeRawText?: boolean;
@@ -207,6 +213,14 @@ export async function checkConsistency(
     throw new Error("checkConsistency requires a StyleProfile or an AnalysisContext");
   }
   const profile = StyleProfileSchema.parse(profileInput);
+  const governance = context?.policy ?? options.policy ?? createGovernanceProfile(profile);
+  const resolvedPolicy = options.resolvedPolicy ?? resolveResolvedPolicy(profile, governance);
+  const analysisProfile = StyleProfileSchema.parse({
+    ...profile,
+    typography: resolvedPolicy.typography,
+    houseStyle: resolvedPolicy.houseStyle,
+    semantic: resolvedPolicy.semantic,
+  });
   const snapshotInput = context?.formatting ?? options.snapshot;
   const snapshot = snapshotInput ? FormattingSnapshotSchema.parse(snapshotInput) : undefined;
 
@@ -224,8 +238,8 @@ export async function checkConsistency(
   }
 
   const deterministic: Finding[] = [];
-  deterministic.push(...findTypographyIssues({ text, rules: profile.typography }));
-  deterministic.push(...findHouseStyleIssues({ text, rules: profile.houseStyle }));
+  deterministic.push(...findTypographyIssues({ text, rules: analysisProfile.typography }));
+  deterministic.push(...findHouseStyleIssues({ text, rules: analysisProfile.houseStyle }));
 
   const formatting: Finding[] = snapshot ? findFormattingIssues({ snapshot }) : [];
 
@@ -238,7 +252,7 @@ export async function checkConsistency(
       ...(registry ? { registry } : {}),
     };
     try {
-      semantic = await detectSemanticDeviations(text, profile, deviationOpts);
+      semantic = await detectSemanticDeviations(text, analysisProfile, deviationOpts);
     } catch (err) {
       // Caller cancellation is non-retryable per ADR-0011 and must surface
       // to the caller so Stage 21 and the UI can distinguish cancel from

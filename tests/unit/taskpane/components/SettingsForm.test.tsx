@@ -113,6 +113,25 @@ describe("SettingsForm", () => {
     ).toBe(true);
   });
 
+  it("removes optional broker configuration when cleared", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<SettingsForm />);
+    const llmSection = within(container).getByRole("region", { name: "LLM" });
+    const baseUrlInput = within(llmSection).getByDisplayValue(
+      "https://localhost:3000/__toneforge/llm/v1",
+    );
+    const modelInput = within(llmSection).getByDisplayValue("gpt-4o-mini");
+
+    await user.clear(baseUrlInput);
+    await user.clear(modelInput);
+    await user.click(within(llmSection).getByRole("button", { name: "Save LLM" }));
+
+    await waitFor(() => expect(mocks.saveState).toHaveBeenCalledOnce());
+    const settings = mocks.saveState.mock.calls[0]?.[0].settings;
+    expect(settings).not.toHaveProperty("openAiBaseUrl");
+    expect(settings).not.toHaveProperty("openAiModel");
+  });
+
   it("rejects an invalid broker URL", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);

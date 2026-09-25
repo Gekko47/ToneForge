@@ -20,15 +20,19 @@ export default function FullReviewPreflight({
   disabled = false,
 }: FullReviewPreflightProps): React.ReactNode {
   return (
-    <section aria-label="Full-document review preflight">
-      <h2>Full-document review</h2>
+    <section aria-label="Eligible document review preflight">
+      <h2>Eligible document review</h2>
       <p>
         Review scope: {nodeCount} editable node(s), approximately {approximateWords} words.
       </p>
       <p>
-        {protectedCount} protected node(s) will be excluded and will not be sent to {providerName}.
+        {protectedCount} protected or unavailable node(s) will be excluded and will not be sent to{" "}
+        {providerName}.
       </p>
-      <p>Review runs in bounded batches. A partial result is not a complete review.</p>
+      <p>
+        Review runs in bounded batches. Unsupported document areas remain outside this review and a
+        partial result is not a complete document review.
+      </p>
       <div style={{ display: "flex", gap: "0.5rem" }}>
         <button type="button" onClick={onStart} disabled={disabled}>
           Start review

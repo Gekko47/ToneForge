@@ -3,21 +3,24 @@
  * severity, explanation, actual vs expected, location, and actions.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import type { Finding } from "../../core/domain/Finding";
 import { navigateToFinding } from "../../word/sourceLocator";
 
 export interface FindingCardProps {
   finding: Finding;
-  onApply?: ((finding: Finding) => void) | undefined;
+  onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
 }
 
 export default function FindingCard({
   finding,
-  onApply,
+  onReview,
   onIgnore,
 }: FindingCardProps): React.ReactNode {
+  const [navigationState, setNavigationState] = useState<
+    { status: "idle" } | { status: "working" } | { status: "message"; message: string }
+  >({ status: "idle" });
   const sourceLabel =
     finding.source === "deterministic"
       ? "Deterministic"
@@ -29,12 +32,14 @@ export default function FindingCard({
     ? finding.risk.charAt(0).toUpperCase() + finding.risk.slice(1)
     : "None";
 
-  function handleGoToText(): void {
-    navigateToFinding({ finding });
+  async function handleGoToText(): Promise<void> {
+    setNavigationState({ status: "working" });
+    const result = await navigateToFinding({ finding });
+    setNavigationState({ status: "message", message: result.message });
   }
 
-  function handleApply(): void {
-    onApply?.(finding);
+  function handleReview(): void {
+    onReview?.(finding);
   }
 
   function handleIgnore(): void {
@@ -74,12 +79,17 @@ export default function FindingCard({
       </footer>
 
       <nav className="tf-finding-actions" aria-label="Finding actions">
-        <button type="button" onClick={handleGoToText}>
-          Go to text
+        <button
+          type="button"
+          onClick={() => void handleGoToText()}
+          disabled={navigationState.status === "working"}
+          aria-describedby="finding-navigation-status"
+        >
+          {navigationState.status === "working" ? "Going to text…" : "Go to text"}
         </button>
-        {onApply && (
-          <button type="button" onClick={handleApply}>
-            Apply
+        {onReview && (
+          <button type="button" onClick={handleReview}>
+            Review
           </button>
         )}
         {onIgnore && (
@@ -88,6 +98,14 @@ export default function FindingCard({
           </button>
         )}
       </nav>
+      <p
+        id="finding-navigation-status"
+        className="tf-sub"
+        role={navigationState.status === "message" ? "status" : undefined}
+        aria-live="polite"
+      >
+        {navigationState.status === "message" ? navigationState.message : ""}
+      </p>
     </article>
   );
 }

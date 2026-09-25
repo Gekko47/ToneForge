@@ -271,3 +271,79 @@ preserved for traceability. The key current decisions are:
 - **Evidence**: `package.json`, `package-lock.json`,
   `plans/dependency-remediation-plan.md` (Section 7), and the passing
   `toneforge-repository-v1` graph.
+
+## ADR-0043 — Project the task pane from one canonical workflow
+
+- **Status**: Accepted as the Phase 2 implementation contract (2026-09-25)
+- **Context**: The task pane currently coordinates findings, coverage, preview,
+  Pending Changes, navigation, and Apply across multiple component-local states.
+  That works for the initial screens but creates a risk that the view, the plan,
+  and the mutation path can disagree. The approved modern UX plan requires B23:
+  the task pane must be a projection of one canonical analysis → plan → review →
+  apply workflow, not a parallel workflow.
+- **Decision**: Introduce a provider-agnostic workflow state owned by an
+  orchestration service. Task-pane views may select, review, navigate, reject,
+  and request the next user task, but they must not own independent mutation or
+  readiness state. The existing `ChangePlan` identity, document hash, policy
+  revision, and fail-closed adapter gates remain authoritative.
+- **Consequences**: B23 is an additive refactor in Phase 2, with migration and
+  component tests required. The current Phase 0 preview-only ReformatPanel and
+  plan-level Pending Changes Apply/Reject actions are compatibility steps toward
+  the projection and remain the only production mutation path until Phase 2 is
+  complete.
+- **Evidence**: `plans/toneforge-modern-ux-provider-consistency-implementation-plan.md`,
+  `src/taskpane/pages/Dashboard.tsx`, `src/taskpane/components/ReformatPanel.tsx`,
+  `src/taskpane/components/PendingChanges.tsx`, and
+  `src/reformat/orchestrator.ts`.
+
+## ADR-0044 — Keep Phase 0 review and coverage semantics truthful
+
+- **Status**: Accepted (2026-09-25)
+- **Context**: The previous task-pane presentation could imply that a Finding
+  could be applied directly, that declared unsupported scope meant the requested
+  scope was incomplete, or that acquisition diagnostics belonged in the normal
+  workflow. The observer also needed to retain findings produced by a
+  conservative full rescan. Ignored-finding persistence based on generated UUIDs
+  was not stable across analysis runs.
+- **Decision**: Use a first-run profile setup state; make ReformatPanel
+  preview-only; expose one plan-level Apply and Reject in Pending Changes; keep
+  acquisition diagnostics in Troubleshooting; define coverage completeness as
+  the absence of unexpected processing gaps while retaining unsupported and
+  protected exclusions; await navigation results and report failures; and key
+  ignored findings by a versioned content fingerprint that excludes UUIDs.
+- **Consequences**: The UI no longer claims more certainty or completeness than
+  the analysis provides, and no duplicate production mutation action is exposed.
+  The Phase 0 verification gate passes with 71 files and 688 tests; live Word
+  accessibility, host behavior, and release evidence remain separate gates.
+- **Evidence**: `src/taskpane/pages/Dashboard.tsx`,
+  `src/taskpane/components/FindingCard.tsx`,
+  `src/taskpane/components/ReformatPanel.tsx`,
+  `src/taskpane/components/CoverageBanner.tsx`,
+  `src/taskpane/components/DebuggingPanel.tsx`,
+  `src/taskpane/findingFingerprint.ts`, `src/analysis/coverage.ts`, and
+  `src/word/documentObserver.ts`.
+
+## ADR-0045 — Resolve learned style and governance into one policy contract
+
+- **Status**: Accepted (2026-09-25)
+- **Context**: `StyleProfile` is the learned and measured style contract, while
+  `GovernanceProfile` is the normative scope, protection, terminology, editorial,
+  and rule envelope. Analysis previously read the profile typography and
+  house-style fields directly, and planning captured a governance revision only
+  when a caller supplied a policy. That allowed learned evidence and normative
+  policy to be interpreted independently and produced plans without a policy
+  revision on the default path.
+- **Decision**: Add `ResolvedPolicySchema` and `resolveResolvedPolicy()` in
+  `src/core/domain/ResolvedPolicy.ts`. The resolver keeps typography and measured
+  style as learned evidence, merges normative terminology and non-default editorial
+  overrides, and exposes scope, protection, rules, and provenance. Analysis
+  consumes the resolved contract and the orchestrator always captures and checks
+  its governance revision.
+- **Consequences**: Deterministic and semantic engines receive one effective
+  policy, and plan/apply validation cannot silently omit the current policy
+  revision. Existing governance defaults do not erase learned semantic evidence.
+  A later lifecycle contract can add explicit draft/published editorial overrides
+  without changing the current resolution rule.
+- **Evidence**: `src/core/domain/ResolvedPolicy.ts`,
+  `src/analysis/consistencyChecker.ts`, `src/reformat/orchestrator.ts`, and
+  `tests/unit/core/domain/ResolvedPolicy.test.ts`.

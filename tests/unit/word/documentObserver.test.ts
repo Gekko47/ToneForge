@@ -23,13 +23,23 @@ function makeProfile() {
   return createEmptyProfile("Test Profile");
 }
 
+function makeProfileWithEmDash() {
+  return {
+    ...createEmptyProfile("Em dash profile"),
+    typography: {
+      ...createEmptyProfile("Em dash profile").typography,
+      emDash: "em" as const,
+    },
+  };
+}
+
 function mockOffice() {
   (globalThis as { Office?: unknown }).Office = {
     run: <T>(func: (context: unknown) => Promise<T>) =>
       func({
         document: {
           body: {
-            text: "hello world",
+            text: "hello -- world",
             load: vi.fn(),
             paragraphs: { load: vi.fn(), items: [] },
             getRange: vi.fn(() => ({
@@ -126,12 +136,12 @@ describe("documentObserver", () => {
     expect(onStatus).not.toHaveBeenCalled();
   });
 
-  it("emits status with dirty count and stale flag", async () => {
+  it("retains findings from a conservative full rescan", async () => {
     const onStatus = vi.fn();
     const observer = createDocumentObserver({
       debounceMs: 50,
       onStatus,
-      profile: makeProfile(),
+      profile: makeProfileWithEmDash(),
     });
 
     observer.startObserver();
@@ -141,7 +151,11 @@ describe("documentObserver", () => {
     expect(lastCall).toBeDefined();
     expect(lastCall.dirtyCount).toBeGreaterThanOrEqual(0);
     expect(lastCall.stale).toBe(false);
-    expect(Array.isArray(lastCall.findings)).toBe(true);
+    expect(
+      lastCall.findings.some(
+        (finding: { category: string }) => finding.category === "typography.emDash",
+      ),
+    ).toBe(true);
   });
 
   it("handles missing profile gracefully", () => {

@@ -157,6 +157,6 @@ describe("authoritative coverage accounting", () => {
     expect(coverage.plannedChangeCount).toBe(1);
     expect(coverage.appliedChangeCount).toBe(0);
     expect(coverage.changedNodeIds).toEqual(["body"]);
-    expect(coverage.complete).toBe(false);
+    expect(coverage.complete).toBe(true);
   });
 });

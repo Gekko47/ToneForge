@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Toggle } from "@fluentui/react";
+import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import {
   isTrackedEditingEnabled,
   prepareReformatHost,
@@ -10,10 +11,14 @@ import { formatDiagnostics, probeOfficeRuntime } from "../../shared/office/diagn
 
 interface DebuggingPanelProps {
   onBack: () => void;
+  coverage?: CoverageReport | null;
 }
 
 /** Technical troubleshooting surface, intentionally separate from the normal workflow. */
-export default function DebuggingPanel({ onBack }: DebuggingPanelProps): React.ReactNode {
+export default function DebuggingPanel({
+  onBack,
+  coverage = null,
+}: DebuggingPanelProps): React.ReactNode {
   const [capabilities, setCapabilities] = useState<Awaited<
     ReturnType<typeof prepareReformatHost>
   > | null>(null);
@@ -105,6 +110,28 @@ export default function DebuggingPanel({ onBack }: DebuggingPanelProps): React.R
           <pre className="tf-debug-output" aria-live="polite">
             {diagnostics}
           </pre>
+        )}
+      </section>
+      <section aria-label="Analysis coverage diagnostics" className="tf-debug-section">
+        <h2>Analysis coverage diagnostics</h2>
+        {coverage ? (
+          <pre className="tf-debug-output" aria-live="polite">
+            {JSON.stringify(
+              {
+                complete: coverage.complete,
+                processedCharacterCount: coverage.processedCharacterCount,
+                examinedNodeCount: coverage.examinedNodeIds.length,
+                unsupported: coverage.unsupported,
+                unprocessed: coverage.unprocessed,
+                excluded: coverage.excluded,
+                acquisition: coverage.acquisition ?? null,
+              },
+              null,
+              2,
+            )}
+          </pre>
+        ) : (
+          <p className="tf-sub">No analysis coverage has been recorded in this session.</p>
         )}
       </section>
       <section aria-label="Mutation readiness" className="tf-debug-section">

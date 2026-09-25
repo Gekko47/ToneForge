@@ -9,7 +9,7 @@
 
 import { debounce } from "../shared/utils/debounce";
 import { logger } from "../shared/utils/logger";
-import { mergeFindings, createRunId } from "../analysis/incrementalCoordinator";
+import { createRunId } from "../analysis/incrementalCoordinator";
 import { checkConsistency } from "../analysis/consistencyChecker";
 import { acquireAnalysisContext } from "./analysisAcquisition";
 import type { AnalysisCapabilities } from "../analysis/analysisContext";
@@ -151,29 +151,27 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       });
       if (isObsolete()) return;
 
-      const nodes = [...context.nodes];
-      const dirtyNodeIds = nodes.map((node) => node.nodeId);
+      const examinedNodeIds = context.nodes.map((node) => node.nodeId);
       const report = await checkConsistency({
         context,
         includeRawText: false,
       });
       if (isObsolete()) return;
 
-      const mergedFindings = mergeFindings([], dirtyNodeIds, () => report.findings);
       const coverage = report.coverage ?? null;
-      state.findings = mergedFindings;
+      state.findings = report.findings;
       state.coverage = coverage;
       state.lastScan = new Date().toISOString();
       state.lastAcceptedRunId = runId;
-      state.dirtyCount = dirtyNodeIds.length;
+      state.dirtyCount = examinedNodeIds.length;
       state.stale = false;
       state.error = null;
-      const coverageComplete = coverage?.complete === true;
-      state.phase = !coverageComplete
-        ? "incomplete"
-        : mergedFindings.length === 0
-          ? "clean"
-          : "fresh";
+      state.phase =
+        coverage?.complete === false
+          ? "incomplete"
+          : report.findings.length === 0
+            ? "clean"
+            : "fresh";
       emitStatus();
     } catch (err) {
       if (!isCurrent()) return;

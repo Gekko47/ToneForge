@@ -96,6 +96,34 @@ Deterministic rules/formatting   Optional AI review
     plans are verified from a fresh formatting snapshot rather than inferred from
     adapter success.
 
+## Phase 0 implementation and approved evolution
+
+The Phase 0 implementation keeps the current service boundaries while making
+workflow state and evidence truthful. The Dashboard has a first-run profile
+setup state; the observer retains findings from a conservative full rescan;
+coverage reports unexpected processing gaps separately from declared unsupported
+or protected scope; Finding cards expose Review rather than a mutation action;
+and Pending Changes owns the single plan-level Apply and Reject workflow.
+Technical acquisition diagnostics remain in Troubleshooting. The production
+`ReformatPanel` is preview-only, and the exact `ChangePlan` is passed to
+`applyReviewedPlan()` only after user review and all existing safety checks.
+Ignored findings use a versioned content fingerprint that excludes generated
+UUIDs, and optional broker settings are omitted when cleared.
+
+The approved Phase 1–6 plan adds a resolved policy contract between learned
+style evidence and normative governance, followed by Learn Style, B23 workflow
+projection, Word event evidence, provider gateway contracts, dynamic model
+catalogs, C1–C10, and production/security/accessibility/performance evidence.
+Phase 1 is implemented: [`resolveResolvedPolicy()`](../src/core/domain/ResolvedPolicy.ts)
+is consumed by analysis and the orchestrator always records a policy revision,
+and [`learnStyleDraft()`](../src/style/learnStyle.ts) plus the Profile entry
+point create an editable, quality-gated draft. The B23, provider, C1–C10, and
+release contracts remain planned boundaries, not claims of current OAuth, live
+Word event, or release capability. They must preserve the same `ChangePlan` and
+single mutation path. The implementation sequence is recorded
+in
+[`plans/toneforge-modern-ux-provider-consistency-implementation-plan.md`](../plans/toneforge-modern-ux-provider-consistency-implementation-plan.md:1).
+
 ## StyleProfile field enforcement
 
 The editable profile is the single source for analysis and planning. Measured

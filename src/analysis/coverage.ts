@@ -80,7 +80,8 @@ export function buildCoverage(options: CoverageOptions): CoverageReport {
 
   requiredNodeTypes.forEach((requiredType) => {
     const alternatives = requiredType.split("/");
-    if (!nodes.some((node) => alternatives.includes(node.type) && node.includedInGovernance)) {
+    const discovered = nodes.some((node) => alternatives.includes(node.type));
+    if (!discovered) {
       unprocessed.push(`Required in-scope node type inaccessible: ${requiredType}`);
     }
   });
@@ -120,7 +121,10 @@ export function buildCoverage(options: CoverageOptions): CoverageReport {
           "No verified Word changed-range event; conservative full rescan is supported.",
       }
     : undefined;
-  const complete = unprocessed.length === 0 && excluded.length === 0 && unsupported.length === 0;
+  // `complete` describes the requested analysis scope. Declared unsupported
+  // containers and protected exclusions remain visible in the report, but only
+  // unexpected processing gaps make the requested scope incomplete.
+  const complete = unprocessed.length === 0;
 
   return CoverageReportSchema.parse({
     runId: uuidv4(),

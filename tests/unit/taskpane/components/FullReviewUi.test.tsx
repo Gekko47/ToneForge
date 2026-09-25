@@ -9,7 +9,7 @@ import FullReviewResults from "../../../../src/taskpane/components/FullReviewRes
 import AiReviewResult from "../../../../src/taskpane/components/AiReviewResult";
 
 describe("full review and AI result UI states", () => {
-  it("shows scope, protection, batching, start, and cancel controls", () => {
+  it("shows eligible scope, exclusions, batching, start, and cancel controls", () => {
     const start = vi.fn();
     const cancel = vi.fn();
     render(
@@ -22,8 +22,12 @@ describe("full review and AI result UI states", () => {
         onCancel={cancel}
       />,
     );
+    expect(screen.getByRole("heading", { name: "Eligible document review" })).toBeInTheDocument();
     expect(screen.getByText(/12 editable node/)).toBeInTheDocument();
-    expect(screen.getByText(/2 protected node/)).toBeInTheDocument();
+    expect(screen.getByText(/2 protected or unavailable node/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Unsupported document areas remain outside this review/),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start review" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(start).toHaveBeenCalledOnce();

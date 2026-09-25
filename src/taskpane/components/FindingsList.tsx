@@ -9,13 +9,13 @@ import FindingCard from "./FindingCard";
 export interface FindingsListProps {
   findings: Finding[];
   pageSize?: number;
-  onApply?: ((finding: Finding) => void) | undefined;
+  onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
 }
 
 export default function FindingsList({
   findings,
-  onApply,
+  onReview,
   onIgnore,
   pageSize = 50,
 }: FindingsListProps): React.ReactNode {
@@ -28,7 +28,7 @@ export default function FindingsList({
     <section aria-label="Findings list">
       <h3 style={{ marginBottom: "0.5rem" }}>{findings.length} finding(s)</h3>
       {findings.slice(0, visibleCount).map((finding) => (
-        <FindingCard key={finding.id} finding={finding} onApply={onApply} onIgnore={onIgnore} />
+        <FindingCard key={finding.id} finding={finding} onReview={onReview} onIgnore={onIgnore} />
       ))}
       {visibleCount < findings.length && (
         <button type="button" onClick={() => setVisibleCount((count) => count + pageSize)}>
