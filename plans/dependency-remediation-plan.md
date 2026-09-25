@@ -1,8 +1,13 @@
 # ToneForge Dependency and Toolchain Remediation Plan
 
-**Status:** Proposed plan; no dependency changes have been made.
+**Status:** Implemented for Phases 0, 2, 3, 3A, 4, and 5. Phase 1 is
+**deferred**; Phase 3B is **deferred by maintainer instruction**. See
+[Section 7](#7-implementation-evidence) for the verified results.
 
-**Decision already confirmed:** sideloading remains a required debugging path. The legacy Office tooling chain is not being removed as part of routine cleanup.
+**Decision already confirmed:** sideloading remains a required debugging path. The legacy Office tooling chain was contained by a parent release, not by nested overrides.
+
+**Phase 3B is intentionally not implemented.** Microsoft 365 Agents Toolkit remains
+a future project import/restructure initiative, not a dependency change.
 
 ## 1. Current validated baseline
 
@@ -352,8 +357,126 @@ Then perform:
 
 ## 6. Unresolved risks and confirmation points
 
-1. The project’s exact supported npm 10.x version is not pinned in [`package.json`](package.json:9); confirm the maintainer-approved npm version before lockfile regeneration.
-2. The Office tooling parent upgrade path and current supported release must be checked against the live npm registry under Node 20; do not infer a safe version from the warning text.
-3. Audit findings need per-advisory reachability classification. The 44 total findings are a review queue, not a list of 44 independent upgrades.
-4. The clean-install failure must be resolved against a committed candidate before dependency changes are considered reproducible.
-5. The current working tree already contains unrelated prior remediation edits; dependency work should be isolated in a separate commit or branch.
+1. **Open.** The project’s exact supported npm 10.x version is still not pinned in [`package.json`](package.json:9). The lockfile was regenerated with npm `12.0.2`, which satisfies the declared `>=10.0.0` engine, but CI resolves its own npm. Pin the maintainer-approved npm version if exact reproducibility across machines is required.
+2. **Resolved.** The Office tooling parent upgrade path was checked against the live npm registry. `office-addin-debugging@5.1.6` was selected on measured evidence; see Section 7.
+3. **Partially resolved.** Audit findings dropped from 44 to 25. The remainder is classified in Section 7.4; no finding was silently ignored.
+4. **Open (deferred).** The clean-install check still tests committed `HEAD`. It must be re-run once this change is committed, because the script deliberately ignores the working tree. Phase 1 was not implemented in this pass.
+5. **Resolved.** The prior remediation edits were committed first (`01eee64`); the dependency work is isolated in its own commit.
+
+## 7. Implementation evidence
+
+All results below were measured on this repository. Phase 3B was not
+implemented, by maintainer instruction.
+
+### 7.1 Changes applied
+
+| Package                  | Before    | After    | Reason                                                                                        |
+| ------------------------ | --------- | -------- | --------------------------------------------------------------------------------------------- |
+| `office-addin-debugging` | `^4.0.0`  | `^5.1.6` | First release line whose `office-addin-dev-settings` dependency is free of TeamsFx/Azure MSAL |
+| `@playwright/test`       | `^1.48.0` | removed  | No import in `src/`, `tests/`, `scripts/`, `.github/`, config, or docs                        |
+| `esbuild`                | `^0.24.0` | removed  | Root declaration unused; Vite carries its own nested `esbuild@0.21.5`                         |
+
+`package-lock.json` was regenerated with `npm install --package-lock-only`. It was
+not hand-edited. `lockfileVersion` remains **3**.
+
+**`@types/uuid` was deliberately kept.** The plan listed it as a candidate, but
+`uuid@9.0.1` ships no `.d.ts` files and declares no `types` field; the only
+declaration available is `@types/uuid`. Removing it breaks typecheck for the 13
+modules that import `uuid`. This finding invalidates the original assumption.
+
+### 7.2 Why 5.1.6 and not 6.x/7.x
+
+Measured in isolated installs:
+
+| Parent version   | CLI parent introduced              | Legacy entries | Verdict                               |
+| ---------------- | ---------------------------------- | -------------- | ------------------------------------- |
+| `4.6.7` (prev)   | `@microsoft/teamsfx-cli@1.1.5`     | many           | Baseline                              |
+| `5.1.6`          | `@microsoft/teamsapp-cli@3.0.2`    | 9              | **Selected**                          |
+| `6.1.2`          | `@microsoft/m365agentstoolkit-cli` | 12             | Rejected: pulls Agents Toolkit        |
+| `7.0.1` (latest) | `@microsoft/m365agentstoolkit-cli` | 25             | Rejected: worst legacy surface of all |
+
+`office-addin-debugging@6.0.0+` and `7.x` introduce
+`@microsoft/m365agentstoolkit-cli`, which reintroduces TeamsFx _and_ adds the
+Agents Toolkit dependency the maintainer explicitly rejected. `7.0.1` is the
+largest jump and the worst deprecation surface. `5.1.6` is the minimum safe
+parent release: it removes the deprecated chain **without** adopting Agents
+Toolkit.
+
+The `office-addin-dev-settings` boundary is the precise cause. Versions `1.15.1`
+and `2.0.0` depend on `@microsoft/teamsfx-cli@1.1.5`; **`2.1.0` is the first
+release with no TeamsFx dependency at all**. `office-addin-debugging@5.1.6`
+depends on `office-addin-dev-settings@^2.3.6`, which is past that boundary.
+
+### 7.3 CLI compatibility
+
+`start --help` and `stop --help` were compared byte-for-byte between the previous
+`4.6.7` and the selected `5.1.6`. The output is **identical**, including the
+`[platform]` positional argument. ToneForge's contract is preserved:
+
+- `npm run sideload` → `office-addin-debugging start manifest.xml`
+- `npm run stop` → `office-addin-debugging stop manifest.xml`
+- `npm run start:desktop` → `office-addin-debugging start manifest.xml desktop`
+- `.vscode/tasks.json` pre-launch task → `start:desktop -- --app Word`
+
+No override, no `resolutions` block, and no nested package edit was introduced.
+
+### 7.4 Measured results
+
+| Signal                           | Before | After    | Change     |
+| -------------------------------- | ------ | -------- | ---------- |
+| `EBADENGINE` warnings on install | 10     | **0**    | Eliminated |
+| Deprecated warning lines         | 42     | **13**   | −69%       |
+| Lockfile entries                 | 1600   | **1341** | −259       |
+| `npm audit` total                | 44     | **25**   | −43%       |
+| `npm audit` critical             | 3      | **2**    | −1         |
+
+The `@azure/msal-node@1.18.4` `EBADENGINE` warning is gone because that package
+exited the graph entirely, along with `@azure/ms-rest-js`,
+`@azure/ms-rest-azure-js`, `@azure/core-http`, and the legacy `msal` package.
+
+**Remaining audit findings are classified, not dismissed:**
+
+- `vitest` / `@vitest/coverage-v8` / `vite` (critical, high) — dev-only test
+  runner. Fix requires a Vitest 2 → 5 major migration, which
+  [Section 5](#5-explicitly-deferred-or-prohibited-changes) prohibits as routine
+  cleanup. Requires a separate, tested change.
+- `office-addin-debugging` and its `adm-zip` / `tmp` / `teamsfx-core` chain (high)
+  — dev-only sideload tooling. The only available fix is `7.0.1`, which drags in
+  Agents Toolkit. Contained, not reachable from shipped add-in code.
+- No remaining finding is reachable from production runtime dependencies
+  (`react`, `react-dom`, `@fluentui/react`, `react-error-boundary`, `uuid`,
+  `zod`).
+
+**Retained deprecations, with exact parent paths:**
+
+- `uuid@9.0.1` (direct) and `uuid@8.3.2` (Office tooling) — retained per
+  [Phase 4](#phase-4--handle-direct-deprecations-individually); a UUID major
+  migration is a code migration, not a dependency bump.
+- `eslint@9.39.5` (direct) — retained; flat config and TypeScript plugin
+  compatibility are proven and lint passes with `--max-warnings 0`.
+- `@microsoft/teamsapp-cli@3.0.2` — transitive via `office-addin-dev-settings`.
+  This is the single remaining Office-chain deprecation. It is development-only.
+- `glob`, `tar`, `inflight`, `prebuild-install`, `whatwg-encoding`,
+  `node-domexception`, `git-raw-commits` — transitive build/test tooling,
+  retained per Phase 4.
+
+### 7.5 Verification performed
+
+`npm run verify` passed all 13 stages of `toneforge-repository-v1`:
+
+typecheck → lint → format → secret-scan → docs → skills → test → coverage →
+build-artifacts → built-secret-scan → manifest → package → package-check.
+
+- 68/68 test files pass; the 80% coverage gate passes.
+- Production build succeeds; the 614400-byte JavaScript budget passes.
+- Manifest validation, release staging, and release package check pass.
+- `npm ls --depth=0` reports no invalid or extraneous root dependencies.
+- `npm ci` completes from the regenerated lockfile with zero `EBADENGINE`.
+
+**Human gates still outstanding (not claimed as passing):**
+
+1. A manual `npm run sideload` start/stop/reload smoke in Word Desktop.
+2. An F5 run using `.vscode/launch.json` proving webview attach and a firing
+   breakpoint.
+
+These are host-only actions and cannot be evidenced from the command line.

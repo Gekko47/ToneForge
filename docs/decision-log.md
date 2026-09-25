@@ -235,3 +235,39 @@ preserved for traceability. The key current decisions are:
   `src/commands/commands.ts`, `scripts/validate-manifest.mjs`,
   `scripts/verification-graph.mjs`, `scripts/clean-install-check.mjs`,
   `scripts/check-release-package.mjs`, and the command contract tests.
+
+## ADR-0042 — Contain the Office sideload chain by parent release, not nested overrides
+
+- **Status**: Accepted (2026-09-25)
+- **Context**: Sideloading is a required debugging path, but
+  `office-addin-debugging@4.x` reached
+  `@microsoft/teamsfx-cli@1.1.5` through `office-addin-dev-settings@^1.15.1`,
+  pulling `@azure/msal-node@1.0.0-beta.6`/`1.18.4`, `@azure/ms-rest-js`,
+  `@azure/ms-rest-azure-js`, `@azure/core-http`, and legacy `msal`. This
+  produced 10 `EBADENGINE` warnings and 42 deprecation warnings during
+  `npm ci`. The obvious remedies were nested `overrides` or
+  `npm audit fix --force`, both of which fork Microsoft's tooling graph.
+  `office-addin-dev-settings@2.1.0` is the first release with no TeamsFx
+  dependency. `office-addin-debugging@6.x` and `7.x` reach it only by
+  introducing `@microsoft/m365agentstoolkit-cli`, which the maintainer
+  explicitly rejected for this repository.
+- **Decision**: Move the single parent declaration to
+  `office-addin-debugging@^5.1.6`, the minimum release line past the
+  TeamsFx boundary that does not adopt Agents Toolkit. Add no `overrides`,
+  no `resolutions`, and no nested lockfile edits. Regenerate
+  `package-lock.json` through npm only. Remove the unused direct
+  `@playwright/test` and `esbuild` declarations. Retain `@types/uuid`,
+  because `uuid@9.0.1` ships no declarations of its own.
+- **Consequences**: `npm ci` emits zero `EBADENGINE` warnings, deprecation
+  warnings fall from 42 to 13, lockfile entries fall from 1600 to 1341, and
+  `npm audit` findings fall from 44 to 25. The `start` and `stop` CLI
+  contracts are byte-identical, so `sideload`, `stop`, `start:desktop`, and
+  the VS Code pre-launch task are unaffected. One dev-only deprecation
+  remains (`@microsoft/teamsapp-cli@3.0.2` via `office-addin-dev-settings`),
+  and the remaining audit findings require a Vitest 2 to 5 major migration or
+  the rejected Agents Toolkit jump. Both are deliberately out of scope.
+  Microsoft 365 Agents Toolkit stays deferred as a separate project
+  import/restructure initiative.
+- **Evidence**: `package.json`, `package-lock.json`,
+  `plans/dependency-remediation-plan.md` (Section 7), and the passing
+  `toneforge-repository-v1` graph.
