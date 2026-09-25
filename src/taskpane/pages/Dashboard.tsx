@@ -132,7 +132,12 @@ function readIgnoredFindingIds(): Set<string> {
 }
 
 export default function Dashboard(): React.ReactNode {
-  const activeProfile = resolveActiveProfile();
+  // Held in state rather than resolved on every render so a profile created in
+  // the first-run editor can be picked up without reloading the task pane. A
+  // reload would discard the Office runtime, the capability probe, and the
+  // document observer the dashboard already established.
+  const [activeProfile, setActiveProfile] = useState<StyleProfile | null>(resolveActiveProfile);
+
   if (!activeProfile) {
     return (
       <main className="tf-card">
@@ -141,13 +146,13 @@ export default function Dashboard(): React.ReactNode {
           ToneForge needs a style profile before it can analyse or safely reformat this document.
         </p>
         <Suspense fallback={<div role="status">Loading profile editor…</div>}>
-          <Profile onBack={() => window.location.reload()} />
+          <Profile onBack={() => setActiveProfile(resolveActiveProfile())} />
         </Suspense>
       </main>
     );
   }
 
-  return <DashboardWithProfile activeProfile={activeProfile} />;
+  return <DashboardWithProfile key={activeProfile.id} activeProfile={activeProfile} />;
 }
 
 function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }): React.ReactNode {
