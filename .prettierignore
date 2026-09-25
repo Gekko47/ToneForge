@@ -1,0 +1,13 @@
+# Prettier has no parser for these files, so `prettier --check .` must skip
+# them rather than fail. Both are Git plumbing/config, not source.
+.gitattributes
+.gitignore
+
+# Build output and dependencies.
+dist/
+build/
+coverage/
+node_modules/
+
+# Generated release and coverage artifacts.
+*.tsbuildinfo
