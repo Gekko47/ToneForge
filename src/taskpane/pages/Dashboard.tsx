@@ -28,6 +28,7 @@ import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
 import GovernanceDashboard from "../components/GovernanceDashboard";
 import FindingsList from "../components/FindingsList";
+import FindingsToolbar from "../components/FindingsToolbar";
 import CoverageBanner from "../components/CoverageBanner";
 import StaleBanner from "../components/StaleBanner";
 import AiReviewEntry from "../components/AiReviewEntry";
@@ -37,6 +38,13 @@ import FullReviewPreflight from "../components/FullReviewPreflight";
 import FullReviewProgress from "../components/FullReviewProgress";
 import FullReviewResults from "../components/FullReviewResults";
 import { findingFingerprint } from "../findingFingerprint";
+import {
+  createWorkflowState,
+  selectCurrentTask,
+  selectNextFindingIndex,
+  selectPreviousFindingIndex,
+  workflowReducer,
+} from "../workflow/workflowState";
 import { loadState } from "../../core/state/persistence";
 import {
   formatProfileVersion,
@@ -183,7 +191,22 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const fullAbortRef = useRef<AbortController | null>(null);
   const [fullReviewMessage, setFullReviewMessage] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
+  const [workflow, dispatchWorkflow] = React.useReducer(
+    workflowReducer,
+    undefined,
+    createWorkflowState,
+  );
+  const currentTask = selectCurrentTask(workflow);
   const activeProfileKey = `${activeProfile.id}:${activeProfile.version.major}:${activeProfile.version.minor}:${activeProfile.version.patch}`;
+
+  useEffect(() => {
+    const phase = status?.phase ?? "notStarted";
+    dispatchWorkflow({
+      type: "analysis/scan",
+      scanStatus: phase === "notStarted" ? "idle" : phase,
+    });
+    dispatchWorkflow({ type: "analysis/findings", findings: status?.findings ?? [] });
+  }, [status]);
 
   useEffect(() => {
     void prepareReformatHost()
@@ -561,14 +584,34 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             Findings <span>{findings.length}</span>
           </button>
           {findingsOpen && (
-            <FindingsList
-              findings={findings}
-              onReview={markForReview}
-              onIgnore={(findingId) => {
-                const finding = findings.find((item) => item.id === findingId);
-                if (finding) ignoreFinding(finding);
-              }}
-            />
+            <>
+              <FindingsToolbar
+                label={currentTask.label}
+                nextAction={currentTask.nextAction}
+                total={findings.length}
+                selectedIndex={workflow.planReview.selectedFindingIndex}
+                onPrevious={() =>
+                  dispatchWorkflow({
+                    type: "plan/selectFinding",
+                    index: selectPreviousFindingIndex(workflow),
+                  })
+                }
+                onNext={() =>
+                  dispatchWorkflow({
+                    type: "plan/selectFinding",
+                    index: selectNextFindingIndex(workflow),
+                  })
+                }
+              />
+              <FindingsList
+                findings={findings}
+                onReview={markForReview}
+                onIgnore={(findingId) => {
+                  const finding = findings.find((item) => item.id === findingId);
+                  if (finding) ignoreFinding(finding);
+                }}
+              />
+            </>
           )}
         </section>
       )}
