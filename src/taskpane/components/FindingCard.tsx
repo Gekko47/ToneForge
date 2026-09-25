@@ -21,6 +21,9 @@ export default function FindingCard({
   const [navigationState, setNavigationState] = useState<
     { status: "idle" } | { status: "working" } | { status: "message"; message: string }
   >({ status: "idle" });
+  // Each card owns its status element; a shared id would collapse every card's
+  // message onto the first rendered status node for assistive technology.
+  const navigationStatusId = `finding-navigation-status-${finding.id}`;
   const sourceLabel =
     finding.source === "deterministic"
       ? "Deterministic"
@@ -34,8 +37,16 @@ export default function FindingCard({
 
   async function handleGoToText(): Promise<void> {
     setNavigationState({ status: "working" });
-    const result = await navigateToFinding({ finding });
-    setNavigationState({ status: "message", message: result.message });
+    try {
+      const result = await navigateToFinding({ finding });
+      setNavigationState({ status: "message", message: result.message });
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setNavigationState({
+        status: "message",
+        message: `Finding ${finding.id} could not be selected: ${detail}`,
+      });
+    }
   }
 
   function handleReview(): void {
@@ -83,7 +94,7 @@ export default function FindingCard({
           type="button"
           onClick={() => void handleGoToText()}
           disabled={navigationState.status === "working"}
-          aria-describedby="finding-navigation-status"
+          aria-describedby={navigationStatusId}
         >
           {navigationState.status === "working" ? "Going to text…" : "Go to text"}
         </button>
@@ -99,7 +110,7 @@ export default function FindingCard({
         )}
       </nav>
       <p
-        id="finding-navigation-status"
+        id={navigationStatusId}
         className="tf-sub"
         role={navigationState.status === "message" ? "status" : undefined}
         aria-live="polite"

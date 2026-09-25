@@ -157,6 +157,11 @@ describe("authoritative coverage accounting", () => {
     expect(coverage.plannedChangeCount).toBe(1);
     expect(coverage.appliedChangeCount).toBe(0);
     expect(coverage.changedNodeIds).toEqual(["body"]);
-    expect(coverage.complete).toBe(true);
+    // The only paragraph node is excluded from governance, so it stays visible
+    // in `excluded` but cannot satisfy the required in-scope node type.
+    expect(coverage.unprocessed).toEqual([
+      "Required in-scope node type inaccessible: paragraph/heading",
+    ]);
+    expect(coverage.complete).toBe(false);
   });
 });

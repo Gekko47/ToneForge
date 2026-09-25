@@ -80,7 +80,12 @@ export function buildCoverage(options: CoverageOptions): CoverageReport {
 
   requiredNodeTypes.forEach((requiredType) => {
     const alternatives = requiredType.split("/");
-    const discovered = nodes.some((node) => alternatives.includes(node.type));
+    // A required type counts as discovered only when a node that governance
+    // actually includes was acquired. Excluded nodes stay visible in
+    // `excluded` and must not mask an inaccessible in-scope container.
+    const discovered = nodes.some(
+      (node) => node.includedInGovernance && alternatives.includes(node.type),
+    );
     if (!discovered) {
       unprocessed.push(`Required in-scope node type inaccessible: ${requiredType}`);
     }

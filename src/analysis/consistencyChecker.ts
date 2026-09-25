@@ -214,7 +214,18 @@ export async function checkConsistency(
   }
   const profile = StyleProfileSchema.parse(profileInput);
   const governance = context?.policy ?? options.policy ?? createGovernanceProfile(profile);
-  const resolvedPolicy = options.resolvedPolicy ?? resolveResolvedPolicy(profile, governance);
+  // A pre-resolved policy carries its own profile. Applying rules resolved from a
+  // different profile while reporting `profileId` for the selected one would
+  // attribute findings to the wrong policy, so the mismatch is refused here.
+  const suppliedPolicy = options.resolvedPolicy;
+  if (suppliedPolicy !== undefined && suppliedPolicy.profile.id !== profile.id) {
+    throw new Error(
+      "checkConsistency received a resolvedPolicy resolved from a different StyleProfile",
+    );
+  }
+  const resolvedPolicy = suppliedPolicy ?? resolveResolvedPolicy(profile, governance);
+  // Report the identity of the policy whose rules are actually applied.
+  const policyProfileId = resolvedPolicy.profile.id;
   const analysisProfile = StyleProfileSchema.parse({
     ...profile,
     typography: resolvedPolicy.typography,
@@ -234,7 +245,13 @@ export async function checkConsistency(
         })
       : undefined;
   if (text.trim().length === 0) {
-    return buildReport([], profile.id, docHash ?? hashText(text), { status: "skipped" }, coverage);
+    return buildReport(
+      [],
+      policyProfileId,
+      docHash ?? hashText(text),
+      { status: "skipped" },
+      coverage,
+    );
   }
 
   const deterministic: Finding[] = [];
@@ -270,5 +287,11 @@ export async function checkConsistency(
 
   const findings = unifyFindings({ deterministic, formatting, semantic });
 
-  return buildReport(findings, profile.id, docHash ?? hashText(text), semanticStatus, coverage);
+  return buildReport(
+    findings,
+    policyProfileId,
+    docHash ?? hashText(text),
+    semanticStatus,
+    coverage,
+  );
 }

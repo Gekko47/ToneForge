@@ -69,33 +69,39 @@ function resolveHouseStyle(
 
 function resolveSemantic(learned: SemanticProfile, editorial: EditorialPolicy): SemanticProfile {
   const defaults = EditorialPolicySchema.parse({});
+  const explicit = new Set<string>(editorial.explicitFields);
 
-  // Existing governance records were created before editorial overrides were
-  // distinguished from defaults. Only non-default normative values override
-  // learned evidence until an explicit lifecycle field is introduced later.
-  const value = <T>(normative: T, learnedValue: T, defaultValue: T): T =>
-    Object.is(normative, defaultValue) ? learnedValue : normative;
+  // A normative value wins when the governance author set it, or when it differs
+  // from the schema default. Records written before explicit-set metadata
+  // existed carry an empty list, so only their non-default values override
+  // learned evidence.
+  const value = <T>(field: string, normative: T, learnedValue: T, defaultValue: T): T =>
+    explicit.has(field) || !Object.is(normative, defaultValue) ? normative : learnedValue;
 
   return SemanticProfileSchema.parse({
-    tone: value(editorial.tone, learned.tone, defaults.tone),
-    voice: value(editorial.voice, learned.voice, defaults.voice),
-    formality: value(editorial.formality, learned.formality, defaults.formality),
+    tone: value("tone", editorial.tone, learned.tone, defaults.tone),
+    voice: value("voice", editorial.voice, learned.voice, defaults.voice),
+    formality: value("formality", editorial.formality, learned.formality, defaults.formality),
     readingGradeTarget: value(
+      "readingGradeTarget",
       editorial.readingGradeTarget,
       learned.readingGradeTarget,
       defaults.readingGradeTarget,
     ),
     preferredSentenceLength: value(
+      "preferredSentenceLength",
       editorial.preferredSentenceLength,
       learned.preferredSentenceLength,
       defaults.preferredSentenceLength,
     ),
     vocabularyRegister: value(
+      "vocabularyRegister",
       editorial.vocabularyRegister,
       learned.vocabularyRegister,
       defaults.vocabularyRegister,
     ),
     rhetoricalStyle: value(
+      "rhetoricalStyle",
       editorial.rhetoricalStyle,
       learned.rhetoricalStyle,
       defaults.rhetoricalStyle,

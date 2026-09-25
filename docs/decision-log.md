@@ -313,7 +313,7 @@ preserved for traceability. The key current decisions are:
   ignored findings by a versioned content fingerprint that excludes UUIDs.
 - **Consequences**: The UI no longer claims more certainty or completeness than
   the analysis provides, and no duplicate production mutation action is exposed.
-  The Phase 0 verification gate passes with 71 files and 688 tests; live Word
+  The Phase 0 verification gate passes with 73 files and 693 tests; live Word
   accessibility, host behavior, and release evidence remain separate gates.
 - **Evidence**: `src/taskpane/pages/Dashboard.tsx`,
   `src/taskpane/components/FindingCard.tsx`,

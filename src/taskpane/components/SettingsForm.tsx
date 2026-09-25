@@ -164,7 +164,9 @@ export default function SettingsForm(): React.ReactNode {
     else delete settings.openAiModel;
     const next: PersistedState = { ...current, settings };
     saveState(next);
-    const saved = { ...llmDraft };
+    // Baseline and draft must reflect the values that were actually persisted,
+    // otherwise untrimmed input leaves the section falsely dirty after a save.
+    const saved: LlmDraft = { ...llmDraft, openAiBaseUrl: baseUrl, openAiModel: model };
     setLlmBaseline(saved);
     setLlmDraft(saved);
     logger.info("LLM settings saved", {

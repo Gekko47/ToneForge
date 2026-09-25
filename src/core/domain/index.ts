@@ -52,6 +52,9 @@ export {
   GovernanceProfileSchema,
   type GovernanceProfile,
   createGovernanceProfile,
+  EDITORIAL_OVERRIDE_FIELDS,
+  type EditorialOverrideField,
+  withExplicitEditorialFields,
 } from "./GovernanceProfile";
 export { ResolvedPolicySchema, type ResolvedPolicy, resolveResolvedPolicy } from "./ResolvedPolicy";
 export {

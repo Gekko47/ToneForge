@@ -113,6 +113,38 @@ describe("Phase C task-pane components", () => {
     expect(screen.queryByRole("button", { name: "Apply" })).not.toBeInTheDocument();
   });
 
+  it("leaves the working state and reports a failure when navigation rejects", async () => {
+    const item = finding();
+    vi.mocked(navigateToFinding).mockRejectedValueOnce(new Error("host unavailable"));
+    render(<FindingCard finding={item} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Go to text" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      `Finding ${item.id} could not be selected: host unavailable`,
+    );
+    expect(screen.getByRole("button", { name: "Go to text" })).toBeEnabled();
+  });
+
+  it("gives each card its own navigation status id", () => {
+    const first = finding();
+    const second = finding();
+    render(
+      <div>
+        <FindingCard finding={first} />
+        <FindingCard finding={second} />
+      </div>,
+    );
+
+    const buttons = screen.getAllByRole("button", { name: "Go to text" });
+    const ids = buttons.map((button) => button.getAttribute("aria-describedby"));
+    expect(new Set(ids).size).toBe(2);
+    expect(ids).toEqual([
+      `finding-navigation-status-${first.id}`,
+      `finding-navigation-status-${second.id}`,
+    ]);
+  });
+
   it("renders an empty findings state", () => {
     render(<FindingsList findings={[]} />);
     expect(screen.getByText("No findings detected.")).toBeInTheDocument();

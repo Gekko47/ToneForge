@@ -33,4 +33,14 @@ describe("findingFingerprint", () => {
 
     expect(findingFingerprint(second)).not.toBe(findingFingerprint(first));
   });
+
+  it("ignores absolute character offsets so earlier edits do not change identity", () => {
+    const first = finding(uuidv4());
+    const second = {
+      ...finding(uuidv4()),
+      range: { start: 104, end: 106, unit: "character" as const },
+    };
+
+    expect(findingFingerprint(second)).toBe(findingFingerprint(first));
+  });
 });

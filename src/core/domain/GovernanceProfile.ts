@@ -51,6 +51,19 @@ export const TerminologyPolicySchema = z.object({
 
 export type TerminologyPolicy = z.infer<typeof TerminologyPolicySchema>;
 
+/** Editorial fields a governance author can pin explicitly. */
+export const EDITORIAL_OVERRIDE_FIELDS = [
+  "tone",
+  "voice",
+  "formality",
+  "readingGradeTarget",
+  "preferredSentenceLength",
+  "vocabularyRegister",
+  "rhetoricalStyle",
+] as const;
+
+export type EditorialOverrideField = (typeof EDITORIAL_OVERRIDE_FIELDS)[number];
+
 export const EditorialPolicySchema = z.object({
   tone: z.string().trim().min(1).default("neutral"),
   voice: z.string().trim().min(1).default("third-person"),
@@ -60,9 +73,25 @@ export const EditorialPolicySchema = z.object({
   vocabularyRegister: z.enum(["simple", "standard", "technical", "academic"]).default("standard"),
   rhetoricalStyle: z.string().trim().min(1).default("direct"),
   avoidWords: z.array(z.string()).default([]),
+  /**
+   * Fields the governance author set on purpose. A pinned field stays
+   * authoritative even when its value equals the schema default, which is
+   * otherwise indistinguishable from an unset field. Records written before
+   * this metadata existed parse with an empty list and keep the legacy rule
+   * where only non-default values override learned evidence.
+   */
+  explicitFields: z.array(z.enum(EDITORIAL_OVERRIDE_FIELDS)).default([]),
 });
 
 export type EditorialPolicy = z.infer<typeof EditorialPolicySchema>;
+
+/** Mark editorial fields as explicitly set so a default value stays authoritative. */
+export function withExplicitEditorialFields(
+  editorial: Partial<EditorialPolicy>,
+  fields: readonly EditorialOverrideField[],
+): EditorialPolicy {
+  return EditorialPolicySchema.parse({ ...editorial, explicitFields: [...fields] });
+}
 
 export const GovernanceRuleSchema = z.object({
   id: z.string().uuid(),

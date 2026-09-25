@@ -7,6 +7,8 @@ import {
 import { withSemanticHelpers } from "../../../src/ai/providers/LlmProvider";
 import { MockAdapter } from "../../../src/ai/providers/mockAdapter";
 import { StyleProfileSchema } from "../../../src/core/domain/StyleProfile";
+import { createGovernanceProfile } from "../../../src/core/domain/GovernanceProfile";
+import { resolveResolvedPolicy } from "../../../src/core/domain/ResolvedPolicy";
 import { SAMPLE_PROFILE } from "../../fixtures/sampleDocs";
 import type { FormattingSnapshot } from "../../../src/formatting/formattingSnapshot";
 
@@ -298,5 +300,33 @@ describe("checkConsistency", () => {
         includeRawText: false,
       }),
     ).rejects.toThrow();
+  });
+
+  it("rejects a resolved policy belonging to a different profile", async () => {
+    const otherProfile = StyleProfileSchema.parse({
+      ...SAMPLE_PROFILE,
+      id: "33333333-3333-4333-8333-333333333333",
+    });
+
+    await expect(
+      checkConsistency({
+        text: "Some text.",
+        profile: PROFILE,
+        resolvedPolicy: resolveResolvedPolicy(otherProfile, createGovernanceProfile(otherProfile)),
+        includeRawText: false,
+      }),
+    ).rejects.toThrow(/different StyleProfile/);
+  });
+
+  it("reports the profile of the policy it applied", async () => {
+    const resolvedPolicy = resolveResolvedPolicy(PROFILE, createGovernanceProfile(PROFILE));
+    const report = await checkConsistency({
+      text: "Some text.",
+      profile: PROFILE,
+      resolvedPolicy,
+      includeRawText: false,
+    });
+
+    expect(report.profileId).toBe(resolvedPolicy.profile.id);
   });
 });

@@ -3,6 +3,7 @@ import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/dom
 import {
   createGovernanceProfile,
   GovernanceProfileSchema,
+  withExplicitEditorialFields,
 } from "../../../../src/core/domain/GovernanceProfile";
 import { resolveResolvedPolicy } from "../../../../src/core/domain/ResolvedPolicy";
 
@@ -56,5 +57,18 @@ describe("resolveResolvedPolicy", () => {
     expect(resolved.semantic.avoidWords).toEqual(["jargon"]);
     expect(resolved.houseStyle.preferredTerminology).toEqual({ color: "colour" });
     expect(resolved.houseStyle.bannedTerms).toEqual(["obsolete"]);
+  });
+
+  it("keeps an explicitly set governance value authoritative even when it equals the default", () => {
+    const profile = learnedProfile();
+    const governance = GovernanceProfileSchema.parse({
+      ...createGovernanceProfile(profile),
+      editorial: withExplicitEditorialFields({ tone: "neutral" }, ["tone"]),
+    });
+
+    const resolved = resolveResolvedPolicy(profile, governance);
+
+    expect(resolved.editorial.tone).toBe("neutral");
+    expect(resolved.semantic.tone).toBe("neutral");
   });
 });

@@ -7,6 +7,7 @@ function makeNode(
   type: string,
   text: string = "sample text",
   sourcePath: string = `body/${type}s/0`,
+  includedInGovernance: boolean = true,
 ): ReturnType<typeof DocumentNodeSchema.parse> {
   return DocumentNodeSchema.parse({
     nodeId: uuidv4(),
@@ -14,8 +15,9 @@ function makeNode(
     text,
     sourcePath,
     editable: true,
-    includedInGovernance: true,
-    includedInAIReview: true,
+    includedInGovernance,
+    includedInAIReview: includedInGovernance,
+    ...(includedInGovernance ? {} : { protectionReason: "Protected text" }),
   });
 }
 
@@ -95,6 +97,19 @@ describe("buildCoverage", () => {
     });
     expect(report.complete).toBe(false);
     expect(report.unprocessed).toContain("Analysis window is shorter than the complete document");
+  });
+
+  it("does not count excluded nodes as a discovered required type", () => {
+    const nodes = [
+      makeNode("body", "hello", "body/0"),
+      makeNode("paragraph", "protected", "body/paragraphs/0", false),
+    ];
+    const report = buildCoverage({ nodes, text: "hello\nprotected" });
+
+    expect(report.unprocessed).toContain(
+      "Required in-scope node type inaccessible: paragraph/heading",
+    );
+    expect(report.excluded.map((entry) => entry.reason)).toContain("Protected text");
   });
 
   it("generates a unique runId each call", () => {
