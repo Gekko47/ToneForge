@@ -205,8 +205,8 @@ None beyond the current repository baseline.
 ### Verification
 
 Phase 3 verification passed on the working tree; the current repository gate
-reports 84 test files and 736 tests with 93.02% lines / 82.02% statements /
-80.95% functions / 93.02% branches, and a passing `toneforge-repository-v1`
+reports 87 test files and 767 tests with 93.16% lines / 93.16% statements /
+81.05% functions / 81.83% branches, and a passing `toneforge-repository-v1`
 graph. The Review
 control currently records reviewed status only; B23 central plan navigation and
 selection context are deliberately deferred to Phase 2.

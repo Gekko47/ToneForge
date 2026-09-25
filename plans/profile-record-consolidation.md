@@ -98,7 +98,7 @@ verifiable after the fact.
 | `ReviewRequest`  | `profileVersion: string`  | `profileRevision: number`          |
 | `ResolvedPolicy` | `profileVersion: string`  | `profileRevision: number`          |
 | `PlanOptions`    | `profileVersion?: string` | `profileRevision?: number`         |
-| `TaskPaneHeader` | `profileVersion: string`  | `profileRevision: number` (`v{n}`) |     |
+| `TaskPaneHeader` | `profileVersion: string`  | `profileRevision: number` (`r{n}`) |
 
 `profileRevision` and the existing `governancePolicyRevision` are now both
 integers and mean the same kind of thing: "which version of what was this

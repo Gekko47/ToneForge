@@ -35,8 +35,8 @@
   typecheck, lint, format, source/artifact secret scans, documentation links,
   skills validation, tests, 80% exercised-core coverage, build, manifest
   validation, staging, and coherent release-package checks. The current run
-  passes 87 files / 767 tests with 93.16% lines, 81.81% statements, 80.81%
-  functions, and 93.16% branches.
+  passes 87 files / 767 tests with 93.16% lines, 93.16% statements, 81.05%
+  functions, and 81.83% branches.
 - Phase 3 adds the organizational profile record: one editable draft, immutable
   published versions, explicit activation, restore-as-draft, and discard, plus
   an append-only revision audit trail that keeps the newest 20 revisions and

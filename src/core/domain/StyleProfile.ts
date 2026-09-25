@@ -104,10 +104,6 @@ export const StyleProfileSchema = z.object({
 export type StyleProfile = z.infer<typeof StyleProfileSchema>;
 
 /**
- * Create a new empty profile. The revision defaults to 0 and is reassigned by
- * `createRecord`/`updateDraft` when the profile is first written.
- */
-/**
  * A blank profile scaffold.
  *
  * `revision` defaults to 1 because that is the number the record assigns on

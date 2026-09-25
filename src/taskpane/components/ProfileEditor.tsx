@@ -27,7 +27,7 @@ import {
   saveProfileRecord,
   setActiveProfile,
 } from "../../core/state/index";
-import { effectiveProfile, updateDraft } from "../../core/domain/ProfileRecord";
+import { effectiveProfile, updateDraft, type ProfileRecord } from "../../core/domain/ProfileRecord";
 import { selectAllProfiles } from "../../core/state/profileSelectors";
 import { diffProfiles } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
@@ -342,7 +342,12 @@ function option(key: string, text: string): IDropdownOption {
   return { key, text };
 }
 
-export default function ProfileEditor(): React.ReactNode {
+export interface ProfileEditorProps {
+  /** Called after a save so the page can refresh its own record state. */
+  onRecordSaved?: (record: ProfileRecord) => void;
+}
+
+export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}): React.ReactNode {
   const [context, setContext] = React.useState<ProfileEditorState>(initialContext);
   const { baseProfile, savedProfile, profiles, history, values, savedAt, fieldErrors, error } =
     context;
@@ -466,13 +471,15 @@ export default function ProfileEditor(): React.ReactNode {
 
     if (!record) {
       // No record yet: the first save creates one, so the profile always has a
-      // revision audit trail from the moment it exists.
+      // revision audit trail from the moment it exists. `createProfileRecord`
+      // persists it, so saving again here would write the record twice.
       record = createProfileRecord(validation.profile.name, updatedAt, validation.profile);
     } else {
       record = updateDraft(record, validation.profile, updatedAt).record;
+      saveProfileRecord(record);
     }
-    saveProfileRecord(record);
     setActiveProfile(record.id);
+    onRecordSaved?.(record);
 
     const profile = record.draft ?? effectiveProfile(record);
     if (!profile) return;

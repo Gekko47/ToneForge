@@ -89,7 +89,7 @@ describe("SettingsForm", () => {
     expect(logged).not.toMatch(/key|prompt|document text/i);
   });
 
-  it("clears a legacy stored credential and selects mock", async () => {
+  it("clears a legacy stored credential without discarding the current draft", async () => {
     const user = userEvent.setup();
     const { container } = render(<SettingsForm />);
     mocks.clearPersistedCredentials.mockImplementation(() => {
@@ -101,16 +101,23 @@ describe("SettingsForm", () => {
     });
     const llmSection = within(container).getByRole("region", { name: "Provider and privacy" });
 
+    await user.type(within(llmSection).getByDisplayValue("gpt-4o-mini"), "-edited");
     await user.click(
       within(llmSection).getByRole("button", { name: "Clear legacy stored credential" }),
     );
 
     expect(mocks.clearPersistedCredentials).toHaveBeenCalledOnce();
+    // The purge moves the baseline only: the unsaved model edit survives, so the
+    // section stays unsaved rather than claiming a save that never happened.
+    expect(within(llmSection).getByDisplayValue("gpt-4o-mini-edited")).toBeInTheDocument();
+    expect(
+      within(llmSection).getByRole("button", { name: "Save provider and privacy" }),
+    ).toBeEnabled();
     expect(
       within(llmSection)
-        .getAllByRole("status")
+        .queryAllByRole("status")
         .some((node) => node.textContent?.includes("Provider and privacy settings saved")),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("removes optional broker configuration when cleared", async () => {

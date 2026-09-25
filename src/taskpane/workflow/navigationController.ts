@@ -50,7 +50,9 @@ export function createNavigationController(
     inFlight = request.requestId;
     try {
       const outcome = await options.navigate(request);
-      accepted = request.requestId;
+      // Only a successful outcome is accepted: a failed one stays retryable
+      // under the same requestId, so a retry is not rejected as stale.
+      if (outcome.ok) accepted = request.requestId;
       options.onOutcome?.(outcome);
       return outcome;
     } catch (error: unknown) {

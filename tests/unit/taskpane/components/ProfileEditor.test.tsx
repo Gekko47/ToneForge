@@ -244,7 +244,9 @@ describe("ProfileEditor", () => {
     await waitFor(() => {
       expect(mocks.createProfileRecord).toHaveBeenCalledTimes(1);
     });
-    expect(mocks.saveProfileRecord).toHaveBeenCalledWith(created);
+    // `createProfileRecord` persists the record itself, so the editor must not
+    // write it a second time.
+    expect(mocks.saveProfileRecord).not.toHaveBeenCalled();
     expect(mocks.setActiveProfile).toHaveBeenCalledWith(created.id);
   });
 

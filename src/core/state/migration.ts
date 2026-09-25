@@ -95,10 +95,14 @@ function defaultState(): PersistedState {
 }
 
 function readCurrentState(obj: Record<string, unknown>): PersistedState {
+  // Normalize first so the active id is validated against the records that
+  // actually survive, not the raw input: a record dropped as invalid must not
+  // stay reachable through activeProfileId.
+  const profileRecords = normalizeRecords(obj.profileRecords);
   return {
     version: CURRENT_STATE_VERSION,
-    profileRecords: normalizeRecords(obj.profileRecords),
-    activeProfileId: normalizeActiveProfileId(obj.activeProfileId, obj.profileRecords),
+    profileRecords,
+    activeProfileId: normalizeActiveProfileId(obj.activeProfileId, profileRecords),
     governanceProfiles: normalizeGovernanceProfiles(obj.governanceProfiles),
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, obj.governanceProfiles),
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
@@ -317,10 +321,12 @@ function normalizeActiveProfileIdFromProfiles(raw: unknown, rawProfiles: unknown
   return raw;
 }
 
-function normalizeActiveProfileId(raw: unknown, rawRecords: unknown): string | null {
+function normalizeActiveProfileId(
+  raw: unknown,
+  records: Record<string, ProfileRecord>,
+): string | null {
   if (typeof raw !== "string") return null;
-  if (!rawRecords || typeof rawRecords !== "object") return null;
-  return Object.prototype.hasOwnProperty.call(rawRecords, raw) ? raw : null;
+  return Object.prototype.hasOwnProperty.call(records, raw) ? raw : null;
 }
 
 function normalizeSettings(raw: unknown): PersistedState["settings"] {

@@ -20,13 +20,13 @@ import { type PersistedState } from "../../../../src/core/state/persistence";
 const STAMP = "2026-01-01T00:00:00.000Z";
 
 /** A record with `saves` extra draft saves, so its revision is `saves + 1`. */
-function record(name: string, saves = 0): ProfileRecord {
+function record(name: string, saves = 0, updatedAt = STAMP): ProfileRecord {
   const id = newProfileId();
-  let rec = createRecord(id, name, STAMP, createEmptyProfile(name, 1));
+  let rec = createRecord(id, name, updatedAt, createEmptyProfile(name, 1));
   Array.from({ length: saves }, (_unused, index) => index).forEach(() => {
     const draft = rec.draft;
     if (!draft) throw new Error("expected the record to have a draft");
-    rec = updateDraft(rec, { ...draft, name }, STAMP).record;
+    rec = updateDraft(rec, { ...draft, name }, updatedAt).record;
   });
   return rec;
 }
@@ -64,11 +64,16 @@ describe("profileSelectors", () => {
     });
   });
 
-  it("orders the picker list by newest revision first", () => {
-    const older = record("Older", 1);
-    const newer = record("Newer", 4);
+  it("orders the picker list by newest activity first", () => {
+    // The lower-revision record was saved last, so activity order and revision
+    // order disagree: the picker must follow the activity timestamp.
+    const olderRevision = record("Older", 1, "2026-01-02T00:00:00.000Z");
+    const newerRevision = record("Newer", 4, "2026-01-01T00:00:00.000Z");
 
-    expect(selectRecordList(state([older, newer])).map((s) => s.name)).toEqual(["Newer", "Older"]);
+    expect(selectRecordList(state([newerRevision, olderRevision])).map((s) => s.name)).toEqual([
+      "Older",
+      "Newer",
+    ]);
   });
 
   it("returns the effective profile per record", () => {

@@ -25,9 +25,9 @@ export interface ProfileSummary {
 
 /** Ordered list of records for pickers, newest activity first. */
 export function selectRecordList(state: PersistedState): ProfileSummary[] {
-  return Object.values(state.profileRecords)
-    .map(selectRecordSummary)
-    .sort((left, right) => right.revision - left.revision);
+  return Object.entries(state.profileRecords)
+    .sort(([, left], [, right]) => right.updatedAt.localeCompare(left.updatedAt))
+    .map(([, record]) => selectRecordSummary(record));
 }
 
 export function selectRecordSummary(record: ProfileRecord): ProfileSummary {

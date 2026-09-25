@@ -72,10 +72,11 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
 
   function clearLegacyCredential(): void {
     clearPersistedCredentials();
+    // Only the baseline moves: unsaved model and consent edits are the user's
+    // work and must survive a credential purge.
     const cleared = toLlmDraft(loadState().settings);
     setBaseline(cleared);
-    setDraft(cleared);
-    setStatus(markSaved());
+    setStatus(isLlmDraftDirty(normalizeLlmDraft(draft), cleared) ? markDirty() : markSaved());
   }
 
   return (

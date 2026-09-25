@@ -82,6 +82,12 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
     setRecord(next);
   }
 
+  // The editor persists the record itself, so the page re-reads it rather than
+  // keeping a copy that could overwrite the freshly saved draft later.
+  function refreshRecord(saved: ProfileRecord): void {
+    setRecord(loadProfileRecord(saved.id) ?? saved);
+  }
+
   return (
     <div className="tf-card" data-page="profile">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
@@ -113,7 +119,7 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
         )}
       </section>
       {record && <ProfileRecordSection record={record} onChange={applyRecord} />}
-      <ProfileEditor />
+      <ProfileEditor onRecordSaved={refreshRecord} />
     </div>
   );
 }

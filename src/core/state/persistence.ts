@@ -21,6 +21,7 @@ import {
 } from "../domain/GovernanceProfile";
 import {
   createRecord,
+  effectiveProfile,
   newProfileId,
   ProfileRecordSchema,
   type ProfileRecord,
@@ -290,14 +291,15 @@ function appendGovernanceSnapshot(
  * Records are the only writer of profile data. When a profile is new, an
  * initial governance profile is seeded so normative policy always exists for
  * the record's style; when it already exists, the wrapped style snapshot is
- * refreshed to match the record's draft or active published version.
+ * refreshed to match the record's effective profile (the active published
+ * version, else the draft), so governance never cites an unpublished draft.
  */
 export function saveProfileRecord(record: ProfileRecord): void {
   const state = loadState();
   const parsed = ProfileRecordSchema.parse(record);
   state.profileRecords[parsed.id] = parsed;
 
-  const style = parsed.draft ?? parsed.published[parsed.published.length - 1]?.profile;
+  const style = effectiveProfile(parsed);
   if (style) {
     const existing = state.governanceProfiles[parsed.id];
     const nextGovernance = existing

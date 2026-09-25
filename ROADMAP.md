@@ -287,8 +287,8 @@ remains an explicit release gate.
 | Typecheck           | PASS       | `npm run typecheck`                                                                                                         |
 | Lint                | PASS       | `npm run lint`                                                                                                              |
 | Format              | PASS       | `npm run format`                                                                                                            |
-| Tests               | PASS       | `npm run test`: 84 files, 736 tests                                                                                         |
-| Coverage            | PASS       | `npm run test:coverage`: 93.02% lines, 82.02% statements, 80.95% functions, 93.02% branches; 80% exercised-core gate passes |
+| Tests               | PASS       | `npm run test`: 87 files, 767 tests                                                                                         |
+| Coverage            | PASS       | `npm run test:coverage`: 93.16% lines, 93.16% statements, 81.05% functions, 81.83% branches; 80% exercised-core gate passes |
 | Build               | PASS       | `npm run build:check`; Webpack emits no performance warnings                                                                |
 | Artifact budgets    | PASS       | `npm run build:check` enforces 600 KiB JavaScript/initial-page budgets                                                      |
 | Manifest validation | PASS       | `npm run validate`                                                                                                          |
