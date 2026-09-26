@@ -29,6 +29,7 @@ import {
   normalizeLlmDraft,
   PROVIDER_OPTIONS,
   providerAcceptsUserApiKey,
+  CONSISTENCY_CONSENT_EXPLANATION,
   providerOption,
   toLlmDraft,
   validateBrokerBaseUrl,
@@ -189,6 +190,19 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
         onText="Enabled"
         offText="Disabled"
       />
+      {/* The third consent, in its own block with its own explanation. Grouping it
+          visually with the two above it would imply it is covered by them, which is
+          the one thing it must never be. */}
+      <div className="tf-consent-block">
+        <Toggle
+          label="Allow cross-report consistency review"
+          checked={draft.consistencyReviewConsent}
+          onChange={(_event, value) => patch({ consistencyReviewConsent: value ?? false })}
+          onText="Enabled"
+          offText="Disabled"
+        />
+        <p className="tf-settings-note">{CONSISTENCY_CONSENT_EXPLANATION}</p>
+      </div>
     </SettingsSectionCard>
   );
 }

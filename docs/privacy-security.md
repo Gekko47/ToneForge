@@ -75,6 +75,40 @@ security posture and known limitations.
 - Protected nodes and preservation literals are rejected before application.
 - Coverage gaps block full-document review/export paths.
 
+## Cross-report consistency review (Phase 5)
+
+The consistency engine is the widest data-egress surface in the product and is
+governed separately from every other review.
+
+**Three consents, none of which implies another.** Spot review,
+full-document review, and semantic opt-in are all scope-specific. A fourth flag,
+`settings.consistencyReviewConsent` (state v9), gates the consistency engine
+alone. It defaults to `false`, `migrateV8ToV9` sets it to `false` rather than
+deriving it, and `normalizeSettings` re-derives every consent flag from a strict
+boolean so a persisted `"yes"` or `1` reads as a refusal rather than as
+permission. A user who agreed to send a selection has not agreed to send a whole
+document to be compared against itself.
+
+**What leaves the add-in.** The whole document's text, and nothing else. Not the
+profile, not the governance policy, not the model catalog, not a credential. The
+engine reuses the already-configured provider and model and has no provider
+picker of its own.
+
+**What never leaves.** No credential, in any code path. Consistency findings
+carry document text in their evidence, so they are subject to the same redaction
+rules as any other finding; `logger` and `OpenAiAdapter.redact` continue to apply
+and the engine logs only a check id and an error name on failure.
+
+**What the engine will not do without being asked.** It is never invoked from
+the typing path, the document observer, or any incremental scan. The entry point
+is a button, and the preflight is shown before anything is sent.
+
+**Cost proportionality.** Pairwise comparison is quadratic, so a run is bounded
+at 400 statements and the bound is reported as a limitation. Without a configured
+provider the engine still runs every deterministic comparison, reports the
+candidates it could not adjudicate, and sets `usedModel: false` — it does not
+silently substitute a stub that would let a report read as model-reviewed.
+
 ## Dependency advisory audit — 2026-09-26
 
 `npm audit` reports 25 advisories. The classification below is by **whether the

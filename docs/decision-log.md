@@ -685,3 +685,92 @@ with rather than discovered.
 - `scripts/host-matrix.mjs`, `scripts/generate-host-matrix.mjs`,
   `tests/unit/scripts/hostMatrix.test.ts`
 - `npm run host:matrix` — currently reports 4 hosts, 0 fully passing
+
+## ADR-0052 — Content consistency is a separate, opt-in, non-deterministic engine
+
+- Status: Accepted
+- Date: 2026-09-26
+- Supersedes: the deterministic-first reading of Phase 5 step 3 in
+  [`plans/toneforge-modern-ux-provider-consistency-implementation-plan.md`](../plans/toneforge-modern-ux-provider-consistency-implementation-plan.md),
+  and the "Phase H reserved until core release" constraint in
+  [`ROADMAP.md`](../ROADMAP.md)
+- Extends: ADR-0031 (additive layering), ADR-0032 (consent-gated AI review)
+
+### Context
+
+ToneForge's governing rule is deterministic-first: interpretation goes to a model
+only where a rule cannot decide, and the deterministic engine is what runs while a
+user types. C1–C10, the cross-report content-consistency checks, do not fit that
+shape. Comparing two statements in different sections and deciding whether they
+_contradict_ is interpretation. No rule answers it, and a rule that approximated
+one would be confidently wrong on exactly the cases that matter.
+
+Two prior positions had to be overturned rather than refined:
+
+1. The plan's Phase 5 step 3 said to "keep C1–C10 deterministic unless a specific
+   check is explicitly semantic and consent-gated". That makes the engine
+   deterministic by default, which is the opposite of what these checks are.
+2. [`ROADMAP.md`](../ROADMAP.md) reserved the seam until "core release
+   acceptance and a separately approved privacy/consent design". Reserving it
+   indefinitely would have meant the engine shipped after a release users had
+   already installed — a worse sequence than shipping it opt-in alongside the
+   feature it belongs to.
+
+A third constraint was inherited from ADR-0031: layering only, never replacement.
+The engine must therefore produce findings that flow through the existing planner,
+review, and mutation path, not a parallel one.
+
+### Decision
+
+**C1–C10 are ten cross-report, non-deterministic checkers in a self-contained
+engine, run only on explicit user opt-in.**
+
+- The engine lives in `src/analysis/consistency/` and is the **single sanctioned
+  exception** to deterministic-first. It does not weaken the rule for anything
+  else; `rules/`, `formatting/`, and `style/metrics` remain pure.
+- It has **its own pipeline** — segment, compare, adjudicate, consolidate — with
+  its own progress, cancellation, and stale-run handling. It is never called from
+  the live typing observer or any other incremental path. A cross-report check
+  over a moving document produces contradictory answers, so it runs on a
+  whole-document snapshot the user chose to review, never continuously.
+- It has **its own opt-in toggle** and **its own consent flag**
+  (`consistencyReviewConsent`, distinct from spot review, full-document review,
+  and semantic opt-in). A user who agreed to send text for one of those has not
+  agreed to send it for this.
+- It reuses the **already-configured provider and model**. It introduces no second
+  credential, no second settings surface, and no second model selection.
+- Within the engine, each check compares **deterministically first** and escalates
+  a candidate to model adjudication only when the structured comparison is
+  genuinely ambiguous. Most candidates never reach the model.
+- Output flows through the **existing** `ChangePlan` and the **sole** mutation
+  path. Consistency findings carry a distinct `kind: "consistency"`, so a user can
+  tell at a glance which findings came from a non-deterministic engine.
+
+### Consequences
+
+Positive: the deterministic engine's guarantees are intact and its tests stay
+pure. The user sees, before anything is sent, exactly what this feature does and
+that it is separate from the others. Because the output is a normal `ChangePlan`,
+the protection, stale, conflict, approval, coverage, and capability gates all apply
+unchanged — a consistency finding cannot bypass one of them.
+
+Negative: this is the one part of ToneForge that cannot be fully verified by unit
+test. "These two sentences contradict" has real false positives and real false
+negatives, and no test can enumerate them. So the engine reports its own coverage
+honestly, every finding carries the pair of statements that produced it, and
+adjudication records a confidence. A low-confidence finding is surfaced as
+advisory rather than actionable, because a non-deterministic engine that silently
+rewrites prose is a worse outcome than one that asks.
+
+The engine is also slower than the typing path: cross-report comparison is
+quadratic in the number of statements. That is a reason to keep it opt-in and off
+the incremental path, not a reason to bound it silently — the bound is stated in
+the coverage report.
+
+### Evidence
+
+- `src/analysis/consistency/contracts.ts` — the ten check IDs and the consent gate
+- `src/analysis/consistency/checks/` — one pure module per check
+- `src/analysis/consistency/engine.ts` — the pipeline
+- `eslint.config.mjs` — the documented `ai/providers` exception for this directory
+- `tests/unit/analysis/consistency/`

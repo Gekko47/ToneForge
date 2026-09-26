@@ -110,6 +110,36 @@ export default [
     },
   },
   {
+    // The cross-report consistency engine is the ONE sanctioned exception to
+    // deterministic-first (ADR-0052). It may reach `ai/providers` to reuse the
+    // already-configured model for adjudication; it may NOT reach Word, the
+    // task pane, commands, or the revision adapter. Those four restrictions are
+    // what keep the exception from becoming a general one: the engine consumes
+    // a plain-text snapshot the caller supplies, so it cannot read or mutate a
+    // live document even by accident.
+    files: ["src/analysis/consistency/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/word/*",
+                "**/taskpane/*",
+                "**/commands/*",
+                "**/reformat/*",
+                "**/changes/*",
+              ],
+              message:
+                "analysis/consistency/ must not reach Word, the task pane, commands, the orchestrator, or the planner. It consumes a text snapshot and emits findings (ADR-0052).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Enforces docs/architecture.md: formatting/ must stay deterministic —
     // no Office, AI, or UI dependencies. Live Word reads live in src/word/
     // (see ADR-0006 and ADR-0013).

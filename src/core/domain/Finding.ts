@@ -1,12 +1,22 @@
 /**
- * Unified Finding model used by BOTH deterministic and semantic engines.
- * Rules/UI never mutate Word directly — findings feed ChangePlan.
+ * Unified Finding model used by the deterministic, semantic, formatting, and
+ * cross-report consistency engines. Rules/UI never mutate Word directly —
+ * findings feed ChangePlan.
  */
 
 import { z } from "zod";
 import { ChangePreconditionSchema } from "./Change";
 
-export const FindingKindSchema = z.enum(["deterministic", "semantic", "formatting"]);
+/**
+ * `consistency` is its own kind rather than a flavour of `semantic`.
+ *
+ * The difference is not cosmetic. Consistency findings come from the one engine
+ * that is non-deterministic by design (ADR-0052), so a user reviewing a plan
+ * must be able to tell at a glance which findings came from a comparison that
+ * could be wrong. Folding them into `semantic` would hide exactly the property
+ * that matters most about them.
+ */
+export const FindingKindSchema = z.enum(["deterministic", "semantic", "formatting", "consistency"]);
 export type FindingKind = z.infer<typeof FindingKindSchema>;
 
 export const SeveritySchema = z.enum(["info", "warning", "error"]);

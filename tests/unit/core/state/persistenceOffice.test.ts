@@ -96,6 +96,7 @@ describe("persistence with Office roamingSettings", () => {
         openAiCredentialMode: "broker" as const,
         spotReviewConsent: false,
         fullDocumentReviewConsent: false,
+        consistencyReviewConsent: false,
         semanticOptIn: false,
         telemetryDisabled: true,
       },

@@ -50,6 +50,7 @@ describe("persistence", () => {
         openAiCredentialMode: "broker",
         spotReviewConsent: false,
         fullDocumentReviewConsent: false,
+        consistencyReviewConsent: false,
         semanticOptIn: false,
         telemetryDisabled: false,
       },

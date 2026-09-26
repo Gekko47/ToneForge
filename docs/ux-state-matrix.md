@@ -77,6 +77,31 @@ Two of these are deliberate rather than incidental:
 Every status is text. Colour is supplementary, and the destructive disconnect
 warning is announced, not merely coloured.
 
+## Consistency review states (Phase 5)
+
+The consistency engine has its own entry point, its own consent, and its own
+states. It never borrows a state from the spot or full-document review, because
+a user who reached one of those has not agreed to this.
+
+| State                      | What the user sees                                                                                                                            | What the add-in does                                                                                       |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Not offered                | Nothing. The section is absent rather than shown disabled, so the feature does not advertise itself before consent                            | No entry rendered                                                                                          |
+| Consent withheld           | The entry is visible; the button is disabled and names the missing consent, stating that it is separate from the permissions above            | Refuses; the engine's own gate refuses a second time at run time                                           |
+| Consent given, no provider | The entry is visible; the button is disabled and points to Settings                                                                           | Refuses                                                                                                    |
+| Preflight                  | Scope in words and statements, the provider name, that a model judges part of the answer and can be wrong, and that nothing is changed        | Sends nothing. This is the last point a user can back out without anything leaving the add-in              |
+| Preflight, over the bound  | As above, plus an alert naming how many statements will **not** be examined and that a clean result would not mean the document is consistent | Sends nothing                                                                                              |
+| Running                    | Named phase, a live percentage, and a cancel button                                                                                           | Segments, compares, adjudicates, consolidates; re-checks cancellation between every candidate              |
+| Cancelled mid-run          | A partial-results alert, never a clean finish                                                                                                 | Discards the run entirely; no report is produced                                                           |
+| Document changed mid-run   | An error naming the stale document                                                                                                            | Discards the report rather than reporting against text the user is no longer looking at                    |
+| Complete, conflicts found  | Coverage first, then each issue with **both** compared statements, both section names, and a confidence percentage                            | Changes nothing in Word                                                                                    |
+| Complete, partial coverage | Coverage leads with "not a complete review"; the empty state says to check the coverage above before treating it as clean                     | Reports what it found and what it did not                                                                  |
+| Deterministic-only run     | States plainly that no language model was used                                                                                                | Runs the direct comparisons, reports the unadjudicated candidates as a limitation, sets `usedModel: false` |
+| Low-confidence issue       | Labelled advisory only, and stated as unable to change anything on its own                                                                    | `actionable: false`; the planner produces no change from it                                                |
+
+The reporting rules above are the load-bearing part. A consistency engine's
+failure mode is not crashing — it is producing a confident, wrong, or partial
+result that reads as complete.
+
 ## Phase 0 workflow and trust contract
 
 - First run without an active profile opens a plain-language Style Profile setup

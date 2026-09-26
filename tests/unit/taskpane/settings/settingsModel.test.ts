@@ -16,6 +16,7 @@ const SETTINGS: PersistedState["settings"] = {
   openAiCredentialMode: "broker",
   spotReviewConsent: false,
   fullDocumentReviewConsent: false,
+  consistencyReviewConsent: false,
   telemetryDisabled: true,
   semanticOptIn: false,
 };
@@ -26,6 +27,7 @@ const DRAFT: LlmSettingsDraft = {
   llmProvider: "openai",
   spotReviewConsent: true,
   fullDocumentReviewConsent: false,
+  consistencyReviewConsent: false,
   semanticOptIn: true,
 };
 
@@ -37,6 +39,7 @@ describe("settings model", () => {
       llmProvider: "mock",
       spotReviewConsent: false,
       fullDocumentReviewConsent: false,
+      consistencyReviewConsent: false,
       semanticOptIn: false,
     });
   });

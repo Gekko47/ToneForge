@@ -47,17 +47,18 @@ Deterministic rules/formatting   Optional AI review
 
 ## Module boundaries
 
-| Module                                 | Allowed imports                                                                         | Forbidden imports                                          |
-| -------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `core/domain`                          | `zod`, `shared/utils`                                                                   | `word`, `ai`, UI, `Office`                                 |
-| `rules`, `formatting`, `style/metrics` | `core/domain`, `shared/utils`                                                           | `ai`, `Office`, UI                                         |
-| `analysis`                             | `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils`                    | UI, `word/revisionAdapter`                                 |
-| `changes`                              | `core/domain`, `shared/utils`                                                           | analysis, rules, formatting, style, ai, word, UI, `Office` |
-| `reformat`                             | core, analysis, changes, formatting DTOs, word boundary, AI providers, shared utilities | taskpane, commands, direct `Office.run`                    |
-| `word`                                 | shared Office helpers, core domain, and permitted deterministic readers                 | AI, UI                                                     |
-| `ai/gateway`                           | `core/config`, `core/domain`, `shared/utils`, `ai/providers/retry`                      | Word, UI, `Office`                                         |
-| `ai/providers`                         | core config, shared utilities, `ai/gateway` (types only)                                | Word, UI                                                   |
-| `taskpane` / `commands`                | core, shared, approved service boundaries                                               | direct `word/revisionAdapter` imports and direct mutation  |
+| Module                                 | Allowed imports                                                                         | Forbidden imports                                               |
+| -------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `core/domain`                          | `zod`, `shared/utils`                                                                   | `word`, `ai`, UI, `Office`                                      |
+| `rules`, `formatting`, `style/metrics` | `core/domain`, `shared/utils`                                                           | `ai`, `Office`, UI                                              |
+| `analysis`                             | `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils`                    | UI, `word/revisionAdapter`                                      |
+| `analysis/consistency`                 | `core/domain`, `ai/providers`, `shared/utils`                                           | `word`, `taskpane`, `commands`, `reformat`, `changes`, `Office` |
+| `changes`                              | `core/domain`, `shared/utils`                                                           | analysis, rules, formatting, style, ai, word, UI, `Office`      |
+| `reformat`                             | core, analysis, changes, formatting DTOs, word boundary, AI providers, shared utilities | taskpane, commands, direct `Office.run`                         |
+| `word`                                 | shared Office helpers, core domain, and permitted deterministic readers                 | AI, UI                                                          |
+| `ai/gateway`                           | `core/config`, `core/domain`, `shared/utils`, `ai/providers/retry`                      | Word, UI, `Office`                                              |
+| `ai/providers`                         | core config, shared utilities, `ai/gateway` (types only)                                | Word, UI                                                        |
+| `taskpane` / `commands`                | core, shared, approved service boundaries                                               | direct `word/revisionAdapter` imports and direct mutation       |
 
 ### Provider connection boundary (Phase 4)
 
@@ -74,9 +75,29 @@ documented:
    Settings field that can name an arbitrary host.
 
 `ai/providers` extends `GatewayRoutedAdapter` and holds no credential of any
-kind. Every remote provider — OpenAI, Anthropic, OpenRouter — is routed through
+kind. Every remote provider - OpenAI, Anthropic, OpenRouter - is routed through
 the same connection contract; the only difference between them is the request
 and response shape.
+
+### Consistency engine boundary (Phase 5)
+
+`analysis/consistency` is the **single sanctioned exception** to
+deterministic-first (ADR-0052). Three boundaries keep that exception from
+becoming a precedent:
+
+1. **It is never reached from the typing path.** No module in `word/`, no
+   observer, no incremental scan may import it. `eslint.config.mjs` forbids
+   `word`, `taskpane`, `commands`, `reformat`, and `changes` from importing
+   _into_ the engine, and the engine itself imports only `core/domain`,
+   `ai/providers`, and `shared/utils`.
+2. **`ai/providers` is allowed, deliberately and narrowly.** The engine is the
+   one place that may ask a model to judge something. The eslint scope says so
+   in a comment rather than leaving the exception implicit, because an
+   undocumented exception is indistinguishable from a mistake.
+3. **Its output is an ordinary `Finding`.** `bridge.ts` is the only crossing
+   point. `consistency` was added to `FindingKind`, so a consistency finding is
+   planned, gated, and applied through exactly the same path as every other
+   finding. It gains no privileged route to the document.
 
 ## Data flow and compatibility
 

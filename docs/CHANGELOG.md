@@ -78,6 +78,44 @@
   connection; state migration accepted a connection filed under the wrong
   provider; and the verification summary would have accepted a caller-supplied
   pass for the human host gate.
+- Phase 5 implements the cross-report consistency engine that the ROADMAP had
+  reserved as Phase H. Per ADR-0052 it is a **separate** engine with its own
+  pipeline, its own third consent, and its own opt-in — never the typing path,
+  never the observer. This supersedes both the plan's Phase 5 instruction to
+  "keep C1-C10 deterministic" and the ROADMAP's "Phase H reserved until
+  release", on the release authority's direction.
+- Added ten cross-report checks (C1-C10) over a whole-document snapshot:
+  terminology drift, numeric contradiction, temporal conflict, entity attribute
+  conflict, definitional conflict, unit inconsistency, status contradiction,
+  reference conflict, section promise mismatch, and scope contradiction. Each
+  narrows deterministically first; only the residue reaches the model.
+- A candidate conflict is a distinct type from a finding. Only a deterministic
+  resolution or a `contradiction` verdict promotes it, an unreadable model
+  answer is `unclear` at confidence 0, and a run against a document that has
+  since changed is discarded rather than reported.
+- The engine reports its own coverage. Pairwise comparison is bounded at 400
+  statements, the bound appears in the report as a limitation, and a partial
+  result is labelled as such in both the panel and the summary line.
+- `consistency` was added to `FindingKind`, so a consistency finding is planned,
+  gated, and applied through exactly the same path as every other finding. It
+  has no privileged route to the document.
+- State schema v9 adds `settings.consistencyReviewConsent`, a fourth consent
+  flag that is never inherited from the other three. The v8 migration sets it to
+  `false` rather than deriving it, and all four consent flags are now re-derived
+  from strict booleans on load, so a persisted `"yes"` reads as a refusal.
+- Fixed: `compareDates` reported a month-only date as _the same date_ as a
+  precise one in that month, a false negative that read as a decision; C4's
+  proper-noun entity anchor was being discarded by the generic vocabulary
+  threshold before it could run; C8 did not recognise `Smith (2019)`, the most
+  common citation form, leaving it inert on most real text; C10 detected
+  narrowing only through conjunctions and missed the negation that does the
+  actual work in "however three are not yet"; and `normalizeSettings` spread raw
+  persisted values over the defaults, so a stored non-boolean in a consent field
+  would have read as permission.
+- The ten checks are **unvalidated heuristics**. They have not been calibrated
+  against a real corpus and will produce false positives on real prose. The
+  engine has never been run against a real document or a real model; all
+  evidence is unit tests and `MockAdapter`.
 - Automated verification uses the shared `toneforge-repository-v1` graph for
   typecheck, lint, format, source/artifact secret scans, documentation links,
   skills validation, tests, 80% exercised-core coverage, build, manifest

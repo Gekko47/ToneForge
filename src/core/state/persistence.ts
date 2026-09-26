@@ -30,7 +30,7 @@ import {
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(8),
+  version: z.number().int().nonnegative().default(9),
   profileRecords: z.record(z.string().uuid(), ProfileRecordSchema).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
@@ -47,6 +47,18 @@ const StateSchema = z.object({
       openAiCredentialMode: z.literal("broker").default("broker"),
       spotReviewConsent: z.boolean().default(false),
       fullDocumentReviewConsent: z.boolean().default(false),
+      /**
+       * v9. The third and separate consent, belonging only to the cross-report
+       * consistency engine.
+       *
+       * This is not derived from `fullDocumentReviewConsent` or `semanticOptIn`
+       * and must never be. A user who agreed to send a selection for a formatting
+       * review, or a whole document for a style review, has not agreed to send a
+       * whole document to be compared pairwise against itself by a
+       * non-deterministic engine. Defaults to false, so a v8 user who has never
+       * seen this control cannot have it silently switched on.
+       */
+      consistencyReviewConsent: z.boolean().default(false),
       telemetryDisabled: z.boolean().default(true),
       semanticOptIn: z.boolean().default(false),
     })
@@ -64,8 +76,9 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v8";
+const STORAGE_KEY = "ToneForge.State.v9";
 const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v8",
   "ToneForge.State.v7",
   "ToneForge.State.v6",
   "ToneForge.State.v5",

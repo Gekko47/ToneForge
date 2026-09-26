@@ -16,13 +16,14 @@ import {
 import { ProviderConnectionSchema, type ProviderConnection } from "../domain/ProviderConnection";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 8;
+export const CURRENT_STATE_VERSION = 9;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
   openAiCredentialMode: "broker",
   spotReviewConsent: false,
   fullDocumentReviewConsent: false,
+  consistencyReviewConsent: false,
   telemetryDisabled: true,
   semanticOptIn: false,
 };
@@ -78,6 +79,8 @@ export function migrate(raw: unknown): PersistedState {
       return migrateLegacyToCurrent(obj);
     case 7:
       return migrateV7ToV8(obj);
+    case 8:
+      return migrateV8ToV9(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -95,6 +98,22 @@ function defaultState(): PersistedState {
     activeGovernanceProfileId: null,
     settings: { ...DEFAULT_SETTINGS },
     providerConnections: {},
+  };
+}
+
+/**
+ * v8 -> v9: add the consistency engine's own consent, switched off.
+ *
+ * Every other setting is carried across untouched. The one new field is set to
+ * `false` rather than being derived from any existing consent, because the whole
+ * point of a third, separate consent is that it cannot be inherited: a v8 user
+ * agreed to whatever v8 asked, and v8 never asked this.
+ */
+function migrateV8ToV9(obj: Record<string, unknown>): PersistedState {
+  const current = readCurrentState(obj);
+  return {
+    ...current,
+    settings: { ...current.settings, consistencyReviewConsent: false },
   };
 }
 
@@ -425,6 +444,16 @@ function normalizeSettings(raw: unknown): PersistedState["settings"] {
     ...DEFAULT_SETTINGS,
     ...safeSettings,
     openAiCredentialMode: "broker",
+    // Consent flags are re-derived from strict booleans rather than spread
+    // through. Everything else here is a preference and a wrong value is merely
+    // wrong; a consent flag gates whether raw document text leaves the add-in, so
+    // a stored `"yes"` or `1` must read as a refusal rather than as permission.
+    // Anything that is not literally `true` becomes `false`.
+    spotReviewConsent: safeSettings.spotReviewConsent === true,
+    fullDocumentReviewConsent: safeSettings.fullDocumentReviewConsent === true,
+    consistencyReviewConsent: safeSettings.consistencyReviewConsent === true,
+    telemetryDisabled: safeSettings.telemetryDisabled !== false,
+    semanticOptIn: safeSettings.semanticOptIn === true,
   } as PersistedState["settings"];
 }
 

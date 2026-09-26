@@ -34,7 +34,7 @@ the status table.
 | Phase 1 resolved policy/Learn Style | [`ResolvedPolicy`](../src/core/domain/ResolvedPolicy.ts) resolves learned profile evidence and normative governance for analysis and planning. [`learnStyleDraft()`](../src/style/learnStyle.ts) and the Profile Learn Style panel capture, quality-gate, measure, optionally interpret with explicit consent, and persist an editable draft.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Live Word sample capture and real provider consent flows remain external evidence.                                                                                                                                                          |
 | Phase 3 record and settings         | [`ProfileRecord`](../src/core/domain/ProfileRecord.ts) is the single persisted store for a profile: one mutable draft, immutable published versions with explicit activation and restore-as-draft, and an append-only revision audit trail capped at the newest 20 plus every published revision. State v7 replaces `profiles`, `profileHistory`, and `profileLifecycles` with one `profileRecords` map and migrates v6 by folding the edit trail and the approval trail into non-colliding revision numbers. Revisions are plain integers, so a `ChangePlan` cites the exact revision it was built from. [`profileSelectors`](../src/core/state/profileSelectors.ts) replaces the old field reads with pure projections. [`ProfileRecordSection`](../src/taskpane/components/ProfileRecordSection.tsx) exposes the transitions and renders the [`ProfileHistoryCompare`](../src/taskpane/components/ProfileHistoryCompare.tsx) side-by-side view. Settings is split into Styling, Provider and privacy, and Telemetry sections over the pure [`settingsModel`](../src/taskpane/settings/settingsModel.ts) with the reduced-noise [`useAnnouncement()`](../src/taskpane/settings/useAnnouncement.ts) hook. | Live Word and assistive-technology behaviour of the new controls remains external evidence. The three-profile-at-cap payload is measured against the `Office.roamingSettings` budget in `tests/unit/core/state/profileStateBudget.test.ts`. |
 | Stage 6 command/release scope       | [`COMMAND_REGISTRY`](../src/commands/commandRegistry.ts) is the typed source for command identity, labels, JSON/XML action metadata, navigation targets, and handlers. [`validate-manifest.mjs`](../scripts/validate-manifest.mjs) checks equivalent JSON/XML destinations and labels. [`verification-graph.mjs`](../scripts/verification-graph.mjs) is the named ordered graph used by local, CI, and release automation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | XML fallback intentionally uses `ShowTaskpane` navigation rather than JSON `executeFunction`; both real sideload paths and human host evidence remain external gates.                                                                       |
-| Phase G/H seam                      | [`src/analysis/consistency/README.md`](../src/analysis/consistency/README.md) and the lint boundary exist.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The proposed types stub and CI guard are not present; Phase H is reserved and not started.                                                                                                                                                  |
+| Phase 5 consistency engine          | [`src/analysis/consistency/`](../src/analysis/consistency/README.md) implements C1–C10 as a separate opt-in non-deterministic engine with its own pipeline, its own third consent (`consistencyReviewConsent`, state v9), its own task-pane surface, and a coverage report. See the Phase 5 disposition below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Verified only by unit tests and `MockAdapter`. Never run against a real document in a real Word host.                                                                                                                                       |
 | Automated verification              | Typecheck, lint, format, secret/docs scans, tests, coverage, build, artifact budgets, manifest validation, and staging verification are release-chain gates.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Webpack emits no performance warnings; release acceptance remains blocked by host evidence.                                                                                                                                                 |
 | Test suite                          | Full Vitest suite passes with 87 files and 767 tests; focused Phase 0–3 regression suites pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Warning/refusal tests intentionally emit diagnostic stderr logs.                                                                                                                                                                            |
 | Coverage                            | `npm run test:coverage` passes the 80% gate with 93.16% lines, 93.16% statements, 81.05% functions, and 81.83% branches; taskpane behavior is component-tested and built separately.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `all: false` avoids Windows V8 path-case duplicate records; untested entrypoint TSX is not counted as exercised core code.                                                                                                                  |
@@ -115,7 +115,7 @@ performance, and formal production credential custody remain external gates.
 ## Phase 4 disposition
 
 Phase 4 is repository-complete. `npm run verify` passes all 13 stages of
-`toneforge-repository-v1` at 100 files / 1109 tests with 93.8% lines, 82.95%
+`toneforge-repository-v1` at 106 files / 1253 tests with 94.3% lines, 83.07%
 branches, and 81.29% functions. The four Phase 4 bugs listed in the changelog
 were found and fixed by the new tests.
 
@@ -135,6 +135,58 @@ What Phase 4 does **not** close:
 **Phase 6 is HELD** by release authority pending further testing. Its full scope
 is preserved and resumable.
 
+## Phase 5 disposition
+
+Phase 5 implements the cross-report consistency engine that the ROADMAP had
+reserved as "Phase H". Per ADR-0052 this supersedes both the plan's Phase 5
+instruction to "keep C1–C10 deterministic" and the ROADMAP's "Phase H reserved
+until release" — the release authority directed that these be non-deterministic
+checkers in a separate engine with its own opt-in.
+
+Repository-complete. It is a **separate** engine: its own pipeline, its own
+third consent, its own entry point, its own coverage report. `consistency` was
+added to `FindingKind`, so a consistency finding is an ordinary finding that
+passes every existing gate and the single mutation path rather than bypassing
+them.
+
+Five real defects were found by the new tests and fixed, rather than adjusted
+around:
+
+1. `compareDates` treated a coarse month-only date as `same` against a precise
+   date in the same month — a false negative that read as a decision. It is now
+   `incomparable`, meaning "no conclusion", while a coarse date in a genuinely
+   different month is still a conflict.
+2. C4's proper-noun entity anchor was being pre-filtered out by the generic
+   vocabulary-overlap threshold, discarding exactly the pairs C4 exists to find.
+3. C8 did not recognise `Smith (2019)`, the most common citation form, so it
+   would have been silently inert on most real text.
+4. C10 detected narrowing only through conjunctions, missing the negation that
+   does the actual work in "however three are not yet".
+5. `normalizeSettings` spread raw persisted values over the defaults, so a
+   stored `"yes"` in a consent field would have read as permission. All four
+   consent flags are now derived from strict booleans.
+
+What Phase 5 does **not** close:
+
+- The engine has **never been run against a real document or a real model**.
+  Every check, the pipeline, the bridge, and the surface are covered by unit
+  tests using `MockAdapter` and injected fetch doubles. That is a typed
+  contract, not a verified integration.
+- The ten checks are heuristic. C1–C10 will both miss real conflicts below their
+  subject-overlap thresholds and, more importantly, **will produce false
+  positives on real prose**. They have not been calibrated against a corpus.
+- The engine is quadratic and bounded at 400 statements. A document above that
+  bound reports partial coverage rather than silently truncating, but partial
+  coverage is not full coverage and a clean partial result is not a clean
+  document.
+- A consistency finding can propose rewriting prose. Below 0.7 confidence it is
+  marked `actionable: false` and produces no change; above it, the plan still
+  goes through the ordinary review and apply gates. No model has yet been asked
+  to judge real candidate pairs, so the confidence scale is unvalidated.
+- ADR-0052 is the **single** sanctioned exception to deterministic-first. It is
+  recorded as an exception, not a precedent, and no other non-deterministic
+  engine is authorized by it.
+
 ## Current open gates
 
 1. Complete manual host verification in the matrix in
@@ -151,8 +203,11 @@ is preserved and resumable.
    [`privacy-security.md`](privacy-security.md) before resuming Phase 6. `uuid`
    ships and carries a moderate advisory; its vulnerable code path is not
    reachable today, but the version is still in the bundle.
-6. Consider the reserved Phase H consistency expansion only after release
-   acceptance.
+6. Calibrate the ten consistency checks against a real document corpus before
+   any release claim rests on them. They are unvalidated heuristics today, and
+   a check that fires on everything is worse than one that fires on nothing.
+7. Run the consistency engine once against a real document in a real Word host
+   with a real provider. Every result so far is a `MockAdapter` double.
 
 The deterministic repository chain and 80% exercised-core coverage gate are
 required to pass. The release check is intentionally blocked by the open human

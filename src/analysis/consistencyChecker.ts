@@ -57,6 +57,9 @@ export const ConsistencySummarySchema = z.object({
     deterministic: z.number().int().nonnegative(),
     formatting: z.number().int().nonnegative(),
     semantic: z.number().int().nonnegative(),
+    // Counted apart from `semantic` so a report shows how much came from the
+    // non-deterministic cross-report engine (ADR-0052).
+    consistency: z.number().int().nonnegative(),
   }),
 });
 
@@ -136,7 +139,9 @@ function emptySummary(): ConsistencySummary {
   return {
     total: 0,
     bySeverity: { info: 0, warning: 0, error: 0 },
-    byKind: { deterministic: 0, formatting: 0, semantic: 0 },
+    // `consistency` is counted separately from `semantic` so a run's summary
+    // shows how much of it came from the non-deterministic engine (ADR-0052).
+    byKind: { deterministic: 0, formatting: 0, semantic: 0, consistency: 0 },
   };
 }
 

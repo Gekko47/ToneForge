@@ -66,12 +66,24 @@ export function providerAcceptsUserApiKey(provider: ProviderId): boolean {
   return provider === "openrouter";
 }
 
+/**
+ * Why the consistency consent is a separate control, in the user's own terms.
+ *
+ * Kept beside the model rather than only in documentation so the reason travels
+ * with the thing it justifies. Someone reading Settings and nothing else should
+ * still be able to see why this toggle is not covered by the two above it.
+ */
+export const CONSISTENCY_CONSENT_EXPLANATION =
+  "Cross-report consistency review compares the whole document against itself using a language model. " +
+  "It is a separate check, it always covers the whole document, and it is not covered by the permissions above.";
+
 export const LlmSettingsDraftSchema = z.object({
   openAiBaseUrl: z.string(),
   openAiModel: z.string(),
   llmProvider: z.enum(["openai", "anthropic", "openrouter", "mock"]),
   spotReviewConsent: z.boolean(),
   fullDocumentReviewConsent: z.boolean(),
+  consistencyReviewConsent: z.boolean(),
   semanticOptIn: z.boolean(),
 });
 
@@ -96,6 +108,7 @@ export function toLlmDraft(settings: PersistedState["settings"]): LlmSettingsDra
     llmProvider: settings.llmProvider,
     spotReviewConsent: settings.spotReviewConsent,
     fullDocumentReviewConsent: settings.fullDocumentReviewConsent,
+    consistencyReviewConsent: settings.consistencyReviewConsent,
     semanticOptIn: settings.semanticOptIn,
   };
 }
@@ -240,6 +253,7 @@ export function applyLlmDraft(
     llmProvider: normalized.llmProvider,
     spotReviewConsent: normalized.spotReviewConsent,
     fullDocumentReviewConsent: normalized.fullDocumentReviewConsent,
+    consistencyReviewConsent: normalized.consistencyReviewConsent,
     semanticOptIn: normalized.semanticOptIn,
   };
   if (normalized.openAiBaseUrl) next.openAiBaseUrl = normalized.openAiBaseUrl;

@@ -310,6 +310,14 @@ button:disabled {
   font-size: 12px;
 }
 
+/* A consent that is deliberately separate from the ones above it. The rule and
+   the gap exist to say "this is a different decision", not to decorate it. */
+.tf-consent-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--tf-border);
+}
+
 .tf-collapsible-header {
   width: 100%;
   display: flex;

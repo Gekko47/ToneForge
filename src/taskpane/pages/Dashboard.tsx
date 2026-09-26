@@ -37,6 +37,17 @@ import AiReviewResult from "../components/AiReviewResult";
 import FullReviewPreflight from "../components/FullReviewPreflight";
 import FullReviewProgress from "../components/FullReviewProgress";
 import FullReviewResults from "../components/FullReviewResults";
+import ConsistencyReviewEntry from "../components/ConsistencyReviewEntry";
+import ConsistencyReviewPreflight from "../components/ConsistencyReviewPreflight";
+import ConsistencyReviewProgress from "../components/ConsistencyReviewProgress";
+import ConsistencyReviewResults from "../components/ConsistencyReviewResults";
+import {
+  CONSISTENCY_DEFAULT_MAX_STATEMENTS,
+  previewStatements,
+  runConsistencyReview,
+  type ConsistencyProgress,
+  type ConsistencyReport,
+} from "../../analysis/consistency";
 import { findingFingerprint } from "../findingFingerprint";
 import {
   createWorkflowState,
@@ -185,6 +196,19 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const [fullResult, setFullResult] = useState<FullReviewResult | null>(null);
   const fullAbortRef = useRef<AbortController | null>(null);
   const [fullReviewMessage, setFullReviewMessage] = useState<string | null>(null);
+  // Cross-report consistency review (Phase 5). Its own state, its own trigger,
+  // and its own result. It is deliberately not folded into the spot or
+  // full-document review state above: those are different engines with different
+  // consents, and sharing state would invite one to stand in for the other.
+  const [consistencyPreflight, setConsistencyPreflight] = useState<{
+    wordCount: number;
+    statementCount: number;
+  } | null>(null);
+  const [consistencyProgress, setConsistencyProgress] = useState<ConsistencyProgress | null>(null);
+  const [consistencyResult, setConsistencyResult] = useState<ConsistencyReport | null>(null);
+  const [consistencyCancelled, setConsistencyCancelled] = useState(false);
+  const [consistencyMessage, setConsistencyMessage] = useState<string | null>(null);
+  const consistencyAbortRef = useRef<AbortController | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [workflow, dispatchWorkflow] = React.useReducer(
     workflowReducer,
@@ -429,6 +453,90 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   function cancelFullReview(): void {
     fullAbortRef.current?.abort();
     setFullProgress((previous) => (previous ? { ...previous, partial: true } : previous));
+  }
+
+  /**
+   * Open the consistency preflight.
+   *
+   * The snapshot is taken here and reused for the run so the count shown in the
+   * preflight is the count the engine will actually see. Re-reading between the
+   * two would let the disclosure describe a document that is no longer the one
+   * about to be sent.
+   */
+  async function openConsistencyPreflight(): Promise<void> {
+    setConsistencyMessage(null);
+    setConsistencyResult(null);
+    setConsistencyCancelled(false);
+    const state = loadState();
+    if (!state.settings.consistencyReviewConsent) {
+      setConsistencyMessage(
+        "Cross-report consistency review needs its own consent in Settings. It is not covered by the other review permissions.",
+      );
+      return;
+    }
+    const snapshot = await getStructuredSnapshot();
+    const text = snapshot.nodes.map((node) => node.text ?? "").join("\n\n");
+    const wordCount = text.split(/\s+/).filter((word) => word.length > 0).length;
+    setConsistencyPreflight({
+      wordCount,
+      statementCount: previewStatements(text).length,
+    });
+    setPage("ai-review");
+  }
+
+  async function startConsistencyReview(): Promise<void> {
+    if (!consistencyPreflight) return;
+    setConsistencyResult(null);
+    setConsistencyCancelled(false);
+    setConsistencyMessage(null);
+    const controller = new AbortController();
+    consistencyAbortRef.current = controller;
+    setConsistencyProgress({ phase: "segmenting", fraction: 0, message: "Reading the document…" });
+    try {
+      const state = loadState();
+      // Re-checked here, not only at the entry point. Consent can be withdrawn
+      // in Settings while the preflight is open, and the engine's own gate is
+      // the backstop for that.
+      if (!state.settings.consistencyReviewConsent) {
+        throw new Error("Cross-report consistency review consent is required in Settings.");
+      }
+      const snapshot = await getStructuredSnapshot();
+      const text = snapshot.nodes.map((node) => node.text ?? "").join("\n\n");
+      const revision = `${activeProfile.id}:${activeProfile.revision}:${text.length}`;
+      const registry = createRegistryFromSettings(state.settings, state.providerConnections);
+      const active = registry.activeProvider;
+      const report = await runConsistencyReview(
+        {
+          consistencyConsent: true,
+          document: { revision, text, sections: [] },
+          model: state.settings.openAiModel ?? "",
+        },
+        {
+          // Reused, never re-selected: the consistency engine has no provider
+          // picker of its own. The offline stub is passed as no provider at all
+          // so the engine reports a deterministic-only run rather than
+          // pretending a model was consulted.
+          ...(active.name === "mock" ? {} : { provider: active }),
+          signal: controller.signal,
+          onProgress: setConsistencyProgress,
+          // The engine discards its own report if the document moved underneath
+          // it; this is what tells it the document moved.
+          currentRevision: () => revision,
+        },
+      );
+      setConsistencyResult(report);
+      setConsistencyProgress(null);
+    } catch (error: unknown) {
+      setConsistencyProgress(null);
+      setConsistencyMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      consistencyAbortRef.current = null;
+    }
+  }
+
+  function cancelConsistencyReview(): void {
+    consistencyAbortRef.current?.abort();
+    setConsistencyCancelled(true);
   }
 
   async function applyPendingPlan(pendingPlan: PendingPlan | null): Promise<boolean> {
@@ -714,6 +822,54 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           onOpenSettings={() => setPage("settings")}
         />
       )}
+      {page === "ai-review" && consistencyMessage && <p role="alert">{consistencyMessage}</p>}
+      {page === "ai-review" && consistencyPreflight && !consistencyProgress && (
+        <ConsistencyReviewPreflight
+          approximateWords={consistencyPreflight.wordCount}
+          statementCount={consistencyPreflight.statementCount}
+          maxStatements={CONSISTENCY_DEFAULT_MAX_STATEMENTS}
+          providerName={loadState().settings.llmProvider}
+          onStart={() => void startConsistencyReview()}
+          onCancel={() => {
+            setConsistencyPreflight(null);
+            setPage("home");
+          }}
+        />
+      )}
+      {page === "ai-review" && consistencyProgress && (
+        <ConsistencyReviewProgress
+          progress={consistencyProgress}
+          cancelled={consistencyCancelled}
+          onCancel={cancelConsistencyReview}
+        />
+      )}
+      {page === "ai-review" && consistencyResult && !consistencyProgress && (
+        <ConsistencyReviewResults
+          report={consistencyResult}
+          onReviewFindings={() => {
+            setPage("home");
+            setFindingsOpen(true);
+          }}
+          onDismiss={() => {
+            setConsistencyResult(null);
+            setConsistencyPreflight(null);
+          }}
+        />
+      )}
+      {page === "ai-review" &&
+      !consistencyPreflight &&
+      !consistencyProgress &&
+      !consistencyResult ? (
+        <ConsistencyReviewEntry
+          providerConfigured={
+            Boolean(loadState().settings.openAiBaseUrl) ||
+            loadState().settings.llmProvider === "mock"
+          }
+          hasConsent={loadState().settings.consistencyReviewConsent}
+          onStart={() => void openConsistencyPreflight()}
+          onOpenSettings={() => setPage("settings")}
+        />
+      ) : null}
       {page === "home" && (
         <section
           className="tf-governance-reformat"

@@ -44,6 +44,7 @@ function state(records: ProfileRecord[], activeProfileId: string | null = null):
       openAiCredentialMode: "broker",
       spotReviewConsent: false,
       fullDocumentReviewConsent: false,
+      consistencyReviewConsent: false,
       semanticOptIn: false,
       telemetryDisabled: true,
     },
