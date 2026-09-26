@@ -16,10 +16,14 @@
  *    it.
  * 3. **Deterministic comparison comes first.** The ten checks run before anything
  *    is sent anywhere. Only candidates the checks could not settle are escalated.
- * 4. **It reports its own coverage.** The pairwise comparison is quadratic, so it
- *    is bounded, and the bound appears in the report rather than being applied
- *    quietly. A truncated review that reads as a complete one is the failure mode
- *    that matters here.
+ * 4. **It reports its own coverage.** The pairwise comparison is quadratic, so
+ *    it is bounded, and the bound appears in the report rather than being
+ *    applied quietly. A partial review that reads as a complete one is the
+ *    failure mode that matters here.
+ *
+ *    The bound is on *pairs*, not on content. Every statement is examined; what
+ *    is skipped is a precisely counted set of comparisons between statements in
+ *    different windows. See `batching.ts` for why the windows do not overlap.
  */
 
 import { z } from "zod";
@@ -41,6 +45,12 @@ import {
 } from "./contracts";
 import { CONSISTENCY_CHECKERS, type IndexedStatement } from "./checks";
 import { splitSentences } from "./checks/primitives";
+import {
+  crossWindowPairCount,
+  describeCrossWindowGap,
+  partitionStatementWindows,
+  totalPairCount,
+} from "./batching";
 
 /** Thrown when a run is superseded or cancelled. Not a bug; a normal outcome. */
 export class ConsistencyRunCancelled extends Error {
@@ -429,12 +439,13 @@ export async function runConsistencyReview(
     request.document.sections,
   );
   const total = statements.length;
-  const limited = statements.slice(0, request.maxStatements);
+  // Every statement is examined. What is bounded is the number of *pairs*
+  // compared, and the size of that gap is reported exactly — see `batching.ts`.
+  const windows = partitionStatementWindows(statements, { windowSize: request.maxStatements });
+  const skippedPairs = crossWindowPairCount(total, windows);
   const limitations: string[] = [];
-  if (total > limited.length) {
-    limitations.push(
-      `Compared the first ${limited.length} of ${total} statements. Cross-report comparison is pairwise, so a longer document needs either a higher limit or a second run.`,
-    );
+  if (skippedPairs > 0) {
+    limitations.push(describeCrossWindowGap(total, skippedPairs));
   }
 
   // --- compare -------------------------------------------------------------
@@ -442,16 +453,23 @@ export async function runConsistencyReview(
   const candidates: ConsistencyCandidate[] = [];
   const selected = new Set<ConsistencyCheckId>(request.checks);
   const activeCheckers = CONSISTENCY_CHECKERS.filter((checker) => selected.has(checker.id));
-  activeCheckers.forEach((checker, index) => {
-    assertNotCancelled(options);
-    report({
-      phase: "comparing",
-      fraction: 0.1 + (0.5 * (index + 1)) / Math.max(activeCheckers.length, 1),
-      message: `Checking ${checker.id} — ${CONSISTENCY_CHECKS[checker.id].title}…`,
+  activeCheckers.forEach((checker, checkerIndex) => {
+    windows.forEach((window, windowIndex) => {
+      assertNotCancelled(options);
+      const windowCount = Math.max(windows.length, 1);
+      const checkCount = Math.max(activeCheckers.length, 1);
+      report({
+        phase: "comparing",
+        fraction: 0.1 + (0.5 * (checkerIndex * windowCount + windowIndex + 1)) / (checkCount * windowCount),
+        message:
+          windows.length === 1
+            ? `Checking ${checker.id} — ${CONSISTENCY_CHECKS[checker.id].title}…`
+            : `Checking ${checker.id} in part ${windowIndex + 1} of ${windowCount} — ${CONSISTENCY_CHECKS[checker.id].title}…`,
+      });
+      const found = checker.run({ statements: window.statements, headings });
+      perCheck[checker.id] = (perCheck[checker.id] ?? 0) + found.length;
+      candidates.push(...found);
     });
-    const found = checker.run({ statements: limited, headings });
-    perCheck[checker.id] = found.length;
-    candidates.push(...found);
   });
 
   // Checks that were not selected are reported as zero rather than omitted, so
@@ -505,13 +523,18 @@ export async function runConsistencyReview(
   const usedModel = answeredCount > 0;
 
   const coverage = ConsistencyCoverageSchema.parse({
-    // Complete means every statement was compared *and* every candidate that
-    // needed a judgement got one. With no ambiguous candidates there was nothing
-    // to judge, so a run without a provider is genuinely complete.
-    complete: total <= limited.length && unreviewed === 0,
-    statementsConsidered: limited.length,
+    // Complete means every pair was compared *and* every candidate that needed a
+    // judgement got one. Every statement is examined either way, so a windowed
+    // run is incomplete on pairs rather than on content — and
+    // `crossWindowPairsSkipped` says exactly how many. With no ambiguous
+    // candidates there was nothing to judge, so a run without a provider is
+    // genuinely complete.
+    complete: skippedPairs === 0 && unreviewed === 0,
+    statementsConsidered: total,
     statementsTotal: total,
-    comparisonsMade: (limited.length * (limited.length - 1)) / 2,
+    comparisonsMade: totalPairCount(total) - skippedPairs,
+    crossWindowPairsSkipped: skippedPairs,
+    windowsExamined: windows.length,
     perCheck,
     limitations,
     modelAdjudicated: answeredCount,

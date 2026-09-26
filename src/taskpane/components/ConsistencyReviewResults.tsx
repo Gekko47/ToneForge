@@ -44,7 +44,10 @@ export default function ConsistencyReviewResults({
         <p role="status">
           {coverage.complete
             ? `Reviewed the whole document: ${coverage.statementsConsidered} statements, ${coverage.comparisonsMade} comparisons.`
-            : `Partial review: ${coverage.statementsConsidered} of ${coverage.statementsTotal} statements, ${coverage.comparisonsMade} comparisons. This is not a complete review of the document.`}
+            : // Every statement is examined; the gap is between windows. Saying
+              // "X of Y statements" here would be a claim truncation is no longer
+              // true of, and it would hide the much narrower real limitation.
+              `Partial review: all ${coverage.statementsConsidered} statements were examined across ${coverage.windowsExamined} windows, and ${coverage.comparisonsMade} comparisons were made. ${coverage.crossWindowPairsSkipped} comparison(s) between statements in different windows were not made, so this is not a complete review of the document.`}
         </p>
         <p className="tf-sub">
           {report.usedModel

@@ -336,11 +336,14 @@ export const ConsistencyReviewRequestSchema = z.object({
    */
   model: z.string().trim().default(""),
   /**
-   * Statements above this count stop being compared pairwise.
+   * Statements compared together in one window.
    *
-   * Cross-report comparison is quadratic, so an unbounded run on a large document
-   * would stall the pane. The bound is a parameter and is reported in the
-   * coverage rather than being hidden in the implementation.
+   * Cross-report comparison is quadratic, so an unbounded run on a large
+   * document would stall the pane. Every statement is still examined; a document
+   * longer than this is split into windows, and the pairs that fall between
+   * windows are counted and reported rather than silently dropped. The bound is
+   * a parameter and appears in the coverage rather than being hidden in the
+   * implementation.
    */
   maxStatements: z.number().int().positive().max(2000).default(CONSISTENCY_DEFAULT_MAX_STATEMENTS),
   /**
@@ -387,12 +390,30 @@ export function parseConsistencyReviewRequest(raw: unknown): ConsistencyReviewRe
 // ---------------------------------------------------------------------------
 
 export const ConsistencyCoverageSchema = z.object({
-  /** True when every statement was compared against every other. */
+  /**
+   * True when every statement was compared against every other.
+   *
+   * Note this is about *pairs*, not statements. A windowed run examines every
+   * statement and can still be incomplete, because two statements in different
+   * windows were never compared. `crossWindowPairsSkipped` says by how much.
+   */
   complete: z.boolean(),
   statementsConsidered: z.number().int().nonnegative(),
-  /** Total statements the engine saw, including any excluded by the bound. */
+  /** Total statements the engine saw. Every one is examined in a windowed run. */
   statementsTotal: z.number().int().nonnegative(),
   comparisonsMade: z.number().int().nonnegative(),
+  /**
+   * Statement pairs that exist in the document but were not compared because
+   * the two statements fell in different windows.
+   *
+   * Zero for any document at or under the window size, which is the common
+   * case. A positive number is a real, bounded, stated gap: every statement was
+   * read, and a contradiction between two distant sections may not have been
+   * looked for.
+   */
+  crossWindowPairsSkipped: z.number().int().nonnegative().default(0),
+  /** How many windows the statements were split across. 1 for a short document. */
+  windowsExamined: z.number().int().nonnegative().default(1),
   /** Per-check candidate counts, so a check that produced nothing is visible. */
   perCheck: z.record(ConsistencyCheckIdSchema, z.number().int().nonnegative()).default({}),
   /** Why coverage is not complete, in plain language. */

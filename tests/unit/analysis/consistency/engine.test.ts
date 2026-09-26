@@ -348,11 +348,29 @@ describe("running a review", () => {
     expect(report.coverage.limitations.join(" ")).toMatch(/first 1 of/i);
   });
 
-  it("marks coverage incomplete and says so when the statement cap bites", async () => {
+  /**
+   * A windowed run examines everything and skips a counted set of pairs.
+   *
+   * This replaced a truncation test, which asserted that statements past the
+   * bound went unexamined. That property is now deliberately false: the gap
+   * moved from content to comparisons, and a test still asserting the old one
+   * would have kept the weaker behaviour alive.
+   */
+  it("examines every statement and counts the pairs it skipped", async () => {
     const report = await runConsistencyReview(request({ maxStatements: 1 }));
     expect(report.coverage.complete).toBe(false);
-    expect(report.coverage.statementsTotal).toBeGreaterThan(report.coverage.statementsConsidered);
-    expect(report.coverage.limitations.join(" ")).toMatch(/first 1 of/i);
+    expect(report.coverage.statementsConsidered).toBe(report.coverage.statementsTotal);
+    expect(report.coverage.windowsExamined).toBeGreaterThan(1);
+    // Two statements in two single-statement windows: the one pair between
+    // them is the whole gap, and it has to be stated rather than implied.
+    expect(report.coverage.crossWindowPairsSkipped).toBe(1);
+    expect(report.coverage.limitations.join(" ")).toMatch(/1 pair comparison/i);
+  });
+
+  it("reports no skipped pairs and stays complete for a short document", async () => {
+    const report = await runConsistencyReview(request());
+    expect(report.coverage.windowsExamined).toBe(1);
+    expect(report.coverage.crossWindowPairsSkipped).toBe(0);
   });
 
   it("emits progress that starts before the end and ends at one", async () => {

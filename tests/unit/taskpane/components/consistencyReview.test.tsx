@@ -30,6 +30,8 @@ function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
       statementsConsidered: 120,
       statementsTotal: 120,
       comparisonsMade: 7140,
+      crossWindowPairsSkipped: 0,
+      windowsExamined: 1,
       perCheck: { C1: 1, C2: 0, C3: 1, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0, C9: 0, C10: 0 },
       limitations: [],
       modelAdjudicated: 2,
@@ -39,7 +41,7 @@ function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
 }
 
 describe("the consistency preflight", () => {
-  it("warns that a truncated run is not a complete review", () => {
+  it("warns that a windowed run is not a complete review", () => {
     render(
       <ConsistencyReviewPreflight
         approximateWords={9000}
@@ -51,11 +53,16 @@ describe("the consistency preflight", () => {
       />,
     );
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toMatch(/not be examined/i);
+    // Every statement is examined now, so the honest limitation is the pairs
+    // between windows — not the statements past the bound, which the old
+    // wording claimed and which is no longer true.
+    expect(alert.textContent).toMatch(/3 windows/);
+    expect(alert.textContent).toMatch(/different windows is not looked for/i);
     expect(alert.textContent).toMatch(/would not mean the whole document is consistent/i);
+    expect(alert.textContent).not.toMatch(/will not be examined/i);
   });
 
-  it("gives no truncation warning when the whole document fits", () => {
+  it("gives no windowing warning when the whole document fits", () => {
     render(
       <ConsistencyReviewPreflight
         approximateWords={400}
@@ -139,17 +146,26 @@ describe("consistency results", () => {
     );
   });
 
-  it("says a partial run is not a complete review", () => {
+  /**
+   * The summary must name the real gap.
+   *
+   * It used to read "400 of 900 statements", which was true of a truncated run
+   * and is false of a windowed one. All 900 are examined now, so the honest
+   * statement is about the pairs that fell between windows.
+   */
+  it("says a windowed partial run is not a complete review", () => {
     render(
       <ConsistencyReviewResults
         report={report({
           coverage: {
             complete: false,
-            statementsConsidered: 400,
+            statementsConsidered: 900,
             statementsTotal: 900,
-            comparisonsMade: 79800,
+            comparisonsMade: 239400,
+            crossWindowPairsSkipped: 165000,
+            windowsExamined: 3,
             perCheck: {},
-            limitations: ["Compared the first 400 of 900 statements."],
+            limitations: ["Compared 900 statements in windows."],
             modelAdjudicated: 3,
           },
         })}
@@ -157,8 +173,13 @@ describe("consistency results", () => {
         onDismiss={() => undefined}
       />,
     );
-    expect(screen.getByText(/not a complete review/i)).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toMatch(/first 400 of 900/);
+    const summary = screen.getByText(/not a complete review/i);
+    expect(summary.textContent).toMatch(/all 900 statements were examined/i);
+    expect(summary.textContent).toMatch(/3 windows/);
+    expect(summary.textContent).toMatch(/165000 comparison\(s\)/);
+    // The old truncation phrasing must not survive in either surface.
+    expect(summary.textContent).not.toMatch(/400 of 900/);
+    expect(summary.textContent).not.toMatch(/first 400 of 900/);
   });
 
   it("refuses to let an empty result read as a clean bill of health when partial", () => {
@@ -170,6 +191,8 @@ describe("consistency results", () => {
             statementsConsidered: 400,
             statementsTotal: 900,
             comparisonsMade: 79800,
+            crossWindowPairsSkipped: 0,
+            windowsExamined: 1,
             perCheck: {},
             limitations: ["Compared the first 400 of 900 statements."],
             modelAdjudicated: 0,

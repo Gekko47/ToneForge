@@ -7,14 +7,15 @@
  *
  * - the whole document is sent, not a selection;
  * - a language model judges part of the answer and can be wrong;
- * - the comparison is pairwise, so a very long document is bounded and may not
- *   be covered in full;
+ * - the comparison is pairwise, so a very long document is split into windows;
  * - nothing in Word is changed.
  *
- * The "partial" line matters most. A cross-report check that quietly examined
- * half a document and reported nothing is indistinguishable from one that
- * examined all of it and found nothing, so the bound is stated here rather than
- * discovered afterwards.
+ * The windowing line matters most, and its wording changed with the engine. A
+ * long document used to be *truncated* — the tail was never read — so the
+ * disclosure said so. Now every statement is examined and the gap is between
+ * windows, which is a weaker and more specific limitation. Saying "the rest
+ * will not be examined" would now be false, and saying nothing would let a
+ * reader infer full pairwise coverage they are not getting.
  */
 
 import React from "react";
@@ -38,7 +39,7 @@ export default function ConsistencyReviewPreflight({
   onCancel,
   disabled = false,
 }: ConsistencyReviewPreflightProps): React.ReactNode {
-  const truncated = statementCount > maxStatements;
+  const windows = Math.max(1, Math.ceil(statementCount / Math.max(1, maxStatements)));
   return (
     <section aria-label="Consistency review preflight">
       <h2>Consistency review — please confirm</h2>
@@ -51,15 +52,17 @@ export default function ConsistencyReviewPreflight({
         Its answers can be wrong, so every result below shows what it compared and how confident it
         was.
       </p>
-      {truncated ? (
+      {windows > 1 ? (
         <p role="alert">
-          This document splits into {statementCount} statements, and a single run compares at most{" "}
-          {maxStatements} of them. The rest will not be examined in this run, so a clean result
-          would not mean the whole document is consistent.
+          This document splits into {statementCount} statements, which are compared in {windows}{" "}
+          windows of about {maxStatements}. Every statement is examined, but a contradiction between
+          two statements in different windows is not looked for, so a clean result would not mean
+          the whole document is consistent. The report states how many comparisons were skipped.
         </p>
       ) : (
         <p>
-          The document splits into {statementCount} statements and all of them will be compared.
+          The document splits into {statementCount} statements and all of them will be compared
+          against each other.
         </p>
       )}
       <p>Nothing in your document is changed by this review.</p>
