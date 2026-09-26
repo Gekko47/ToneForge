@@ -15,6 +15,7 @@
 
 import { createLlmRegistry } from "../../ai/providers/registry";
 import { env } from "../../core/config/env";
+import { isProviderAvailable } from "./settingsModel";
 import {
   ProviderConnectionSchema,
   type BaseOriginClass,
@@ -48,6 +49,14 @@ export function connectionFromSettings(
   providerConnections?: PersistedState["providerConnections"],
 ): ProviderConnection | undefined {
   if (settings.llmProvider === "mock") return undefined;
+  /*
+   * A provider the deployment cannot reach is refused here rather than at request
+   * time, so the registry falls back to the offline mock instead of building an
+   * adapter that would fail on first use. Persisted state may still name an
+   * unavailable provider: a build can narrow what it offers without a migration
+   * (ADR-0060).
+   */
+  if (!isProviderAvailable(settings.llmProvider)) return undefined;
 
   // A stored connection is authoritative: it was issued by the gateway, and
   // re-deriving one from the OpenAI-shaped settings fields would discard the

@@ -1,7 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import ConsistencyReviewEntry from "../../../../src/taskpane/components/ConsistencyReviewEntry";
 import ConsistencyReviewPreflight from "../../../../src/taskpane/components/ConsistencyReviewPreflight";
 import ConsistencyReviewProgress from "../../../../src/taskpane/components/ConsistencyReviewProgress";
 import ConsistencyReviewResults from "../../../../src/taskpane/components/ConsistencyReviewResults";
@@ -9,14 +7,15 @@ import { CONSISTENCY_DEFAULT_MAX_STATEMENTS } from "../../../../src/analysis/con
 import type { ConsistencyReport } from "../../../../src/analysis/consistency";
 
 /**
- * These tests assert what the surface is forbidden to do, mostly:
+ * These tests assert what the review surface is forbidden to do, mostly:
  *
- * - the entry must not start a review without its own consent, and must not
- *   offer a selection or paragraph variant;
  * - the preflight must say when a run will be partial, because "no problems
  *   found" over part of a document reads as "no problems found";
  * - the results must show coverage and both compared statements, and must label
  *   a low-confidence finding as advisory.
+ *
+ * The consent gate itself moved up into `AiReviewSection`, which now owns the
+ * whole ladder; `aiReviewBlocker` is covered in `AiReviewSection.test.tsx`.
  */
 
 function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
@@ -38,77 +37,6 @@ function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
     ...overrides,
   };
 }
-
-describe("the consistency entry", () => {
-  it("starts a review when consent and a provider are both present", async () => {
-    const onStart = vi.fn();
-    render(
-      <ConsistencyReviewEntry
-        providerConfigured
-        hasConsent
-        onStart={onStart}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    await userEvent.click(screen.getByRole("button", { name: /consistency/i }));
-    expect(onStart).toHaveBeenCalled();
-  });
-
-  it("refuses to start without its own consent, and says why", () => {
-    const onStart = vi.fn();
-    render(
-      <ConsistencyReviewEntry
-        providerConfigured
-        hasConsent={false}
-        onStart={onStart}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    const button = screen.getByRole("button", { name: /consistency/i });
-    expect(button).toBeDisabled();
-    // The reason names the separation explicitly. A generic "configure first"
-    // would leave a user who already granted the other two consents stuck.
-    expect(screen.getByText(/its own consent/i)).toBeTruthy();
-    expect(screen.getByText(/not covered by them/i)).toBeTruthy();
-  });
-
-  it("offers no selection or paragraph variant", () => {
-    render(
-      <ConsistencyReviewEntry
-        providerConfigured
-        hasConsent
-        onStart={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: /selection/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /paragraph/i })).toBeNull();
-  });
-
-  it("states that the whole document is sent", () => {
-    render(
-      <ConsistencyReviewEntry
-        providerConfigured
-        hasConsent
-        onStart={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(screen.getByText(/whole document at/i)).toBeTruthy();
-  });
-
-  it("warns that a model is involved and can be wrong", () => {
-    render(
-      <ConsistencyReviewEntry
-        providerConfigured
-        hasConsent
-        onStart={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(screen.getByText(/can be wrong/i)).toBeTruthy();
-  });
-});
 
 describe("the consistency preflight", () => {
   it("warns that a truncated run is not a complete review", () => {

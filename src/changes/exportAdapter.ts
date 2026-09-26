@@ -37,8 +37,3 @@ export function toRevisionsCsv(
   });
   return rows.join("\n");
 }
-
-export function toAuditJson(value: unknown, coverage: CoverageReport): string {
-  if (!coverage.complete) throw new Error("Export blocked: FAILED_COVERAGE");
-  return JSON.stringify({ value, coverage }, null, 2);
-}

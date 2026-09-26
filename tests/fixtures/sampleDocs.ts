@@ -1,4 +1,5 @@
 import { FindingSchema, type Finding } from "../../src/core/domain/Finding";
+import { DocumentNodeSchema } from "../../src/core/domain/DocumentSnapshot";
 
 /**
  * Build a valid `Finding` for a component or integration test.
@@ -19,6 +20,31 @@ export function sampleFinding(overrides: Partial<Finding> = {}): Finding {
     nodeIds: ["33333333-3333-3333-3333-333333333333"],
     source: "deterministic",
     ...overrides,
+  });
+}
+
+/**
+ * Build a schema-valid in-scope `DocumentNode` for coverage and analysis tests.
+ *
+ * Parsed through the real schema on purpose: a hand-rolled node that omits
+ * `sourcePath` or `includedInGovernance` produces a coverage report that fails
+ * validation, which reads as a bug in the code under test rather than in the
+ * fixture.
+ */
+export function sampleNode(
+  type: "paragraph" | "body" = "paragraph",
+  text = "sample text",
+  includedInGovernance = true,
+): ReturnType<typeof DocumentNodeSchema.parse> {
+  return DocumentNodeSchema.parse({
+    nodeId: "55555555-5555-5555-5555-555555555555",
+    type,
+    text,
+    sourcePath: `body/${type}s/0`,
+    editable: true,
+    includedInGovernance,
+    includedInAIReview: includedInGovernance,
+    ...(includedInGovernance ? {} : { protectionReason: "Protected text" }),
   });
 }
 

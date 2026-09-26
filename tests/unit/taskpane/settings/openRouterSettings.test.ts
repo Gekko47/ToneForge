@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildModelOptions,
+  isProviderAvailable,
   isSelectableModel,
   OPENROUTER_DEFAULT_BASE_URL,
   PROVIDER_OPTIONS,
@@ -38,12 +39,15 @@ function catalog(models: ModelDescriptor[]): ModelCatalog {
 }
 
 describe("provider options", () => {
-  it("offers all four providers", () => {
+  it("offers every provider, with the reachable ones first", () => {
+    // Order carries meaning: the two providers this build can actually reach
+    // come before the two it cannot, so the default reading of the list is
+    // accurate rather than optimistic-then-corrected.
     expect(PROVIDER_OPTIONS.map((option) => option.key)).toEqual([
       "mock",
+      "openrouter",
       "openai",
       "anthropic",
-      "openrouter",
     ]);
   });
 
@@ -51,6 +55,28 @@ describe("provider options", () => {
     PROVIDER_OPTIONS.forEach((option) => {
       expect(option.authNote.length).toBeGreaterThan(0);
     });
+  });
+
+  it("marks the providers this build cannot reach, with a reason", () => {
+    // The contradiction this fixes: `oauthState` resolved Anthropic to "oauth"
+    // while this dropdown said "deployment-managed", so a user had no way to
+    // tell which was true (ADR-0060).
+    expect(isProviderAvailable("mock")).toBe(true);
+    expect(isProviderAvailable("openrouter")).toBe(true);
+    expect(isProviderAvailable("openai")).toBe(false);
+    expect(isProviderAvailable("anthropic")).toBe(false);
+    expect(providerOption("anthropic").unavailableReason).toMatch(/not enabled/i);
+  });
+
+  it("never marks the offline stub unavailable", () => {
+    // The fallback must never be the thing that fails closed, or a build with
+    // no reachable provider would have nothing left to offer.
+    expect(providerOption("mock").unavailableReason).toBeNull();
+  });
+
+  it("fails closed to the offline stub for an unrecognized provider", () => {
+    expect(providerOption("gemini" as never).key).toBe("mock");
+    expect(isProviderAvailable("gemini" as never)).toBe(true);
   });
 
   it("describes the offline stub as making no network call", () => {

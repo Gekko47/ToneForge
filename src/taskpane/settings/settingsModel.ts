@@ -26,6 +26,14 @@ export interface ProviderOption {
   text: string;
   /** How the credential reaches the provider, stated plainly for the user. */
   authNote: string;
+  /**
+   * Why this provider cannot be selected right now, or `null` when it can.
+   *
+   * A provider the runtime cannot reach is shown with its reason rather than
+   * hidden or offered. Offering it and failing later is the same defect as a
+   * disabled Apply that refuses on click (ADR-0060).
+   */
+  unavailableReason: string | null;
 }
 
 export const PROVIDER_OPTIONS: ProviderOption[] = [
@@ -33,24 +41,34 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     key: "mock",
     text: "Mock (offline)",
     authNote: "No network call. ToneForge answers from its built-in offline stub.",
-  },
-  {
-    key: "openai",
-    text: "OpenAI",
-    authNote: "Deployment-managed. The gateway holds the credential; the add-in never sees it.",
-  },
-  {
-    key: "anthropic",
-    text: "Anthropic",
-    authNote: "Deployment-managed. The gateway holds the credential; the add-in never sees it.",
+    unavailableReason: null,
   },
   {
     key: "openrouter",
     text: "OpenRouter",
     authNote:
       "You supply an API key. It is sent once to the gateway over the same-origin loopback channel and is not stored in ToneForge, in the browser, or in the bundle.",
+    unavailableReason: null,
+  },
+  {
+    key: "openai",
+    text: "OpenAI",
+    authNote: "Deployment-managed. The gateway holds the credential; the add-in never sees it.",
+    unavailableReason:
+      "Unavailable in this build. A deployment-managed OpenAI connection needs a production gateway, which is not configured.",
+  },
+  {
+    key: "anthropic",
+    text: "Anthropic",
+    authNote: "Deployment-managed. The gateway holds the credential; the add-in never sees it.",
+    unavailableReason:
+      "Unavailable in this build. Signing in with Anthropic is not enabled, so there is no way to establish this connection.",
   },
 ];
+
+export function isProviderAvailable(provider: ProviderId): boolean {
+  return providerOption(provider).unavailableReason === null;
+}
 
 export function providerOption(provider: ProviderId): ProviderOption {
   return (

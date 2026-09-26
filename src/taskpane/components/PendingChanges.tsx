@@ -5,7 +5,9 @@
 
 import React, { useId, useState } from "react";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
+import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import type { Finding } from "../../core/domain/Finding";
+import ExportChangesButton from "./ExportChangesButton";
 
 export interface PendingChangesProps {
   plan: ChangePlan | null;
@@ -28,6 +30,15 @@ export interface PendingChangesProps {
     unsupported?: readonly string[];
     unprocessed?: readonly string[];
   } | null;
+  /**
+   * The full coverage report, when the caller has one.
+   *
+   * The `coverage` prop above is a deliberately narrow shape used for the
+   * readiness banner, but the export serialiser gates on the whole report. They
+   * are separate props rather than one widened type so the readiness UI cannot
+   * silently start depending on acquisition diagnostics it does not display.
+   */
+  exportCoverage?: CoverageReport | null;
 }
 
 export default function PendingChanges({
@@ -38,6 +49,7 @@ export default function PendingChanges({
   applyDisabledReason = null,
   onOpenSettings,
   coverage = null,
+  exportCoverage = null,
 }: PendingChangesProps): React.ReactNode {
   const [result, setResult] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
@@ -198,6 +210,17 @@ export default function PendingChanges({
         <button type="button" onClick={handleReject} disabled={applying}>
           Reject
         </button>
+        {/*
+          A change list a reviewer can hand to a colleague, without granting them
+          access to the document. Gated on the same coverage report as Apply,
+          because a list drawn from a partial analysis is indistinguishable from a
+          complete one once it is a file on someone's disk.
+        */}
+        <ExportChangesButton
+          changes={plan.changes}
+          findings={findings}
+          coverage={exportCoverage ?? null}
+        />
       </div>
 
       {result && (

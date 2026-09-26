@@ -45,6 +45,16 @@ const EnvSchema = z.object({
   OPENAI_MAX_RETRIES: z.coerce.number().int().default(2),
   TELEMETRY_DISABLED: z.coerce.boolean().default(true),
   ANALYTICS_ENDPOINT: optionalUrl,
+  /**
+   * Whether the Anthropic end-user OAuth flow is enabled.
+   *
+   * Off by default, and deliberately a deployment switch rather than a user
+   * setting. The state machine for it exists and is tested, but there is no
+   * production gateway to complete the exchange against, so offering a sign-in
+   * button that cannot finish would be a connection flow that does not exist
+   * (ADR-0060).
+   */
+  ANTHROPIC_OAUTH_ENABLED: z.coerce.boolean().default(false),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -61,6 +71,7 @@ function loadEnv(): Env {
     OPENAI_MAX_RETRIES: process.env.OPENAI_MAX_RETRIES,
     TELEMETRY_DISABLED: process.env.TELEMETRY_DISABLED,
     ANALYTICS_ENDPOINT: process.env.ANALYTICS_ENDPOINT,
+    ANTHROPIC_OAUTH_ENABLED: process.env.ANTHROPIC_OAUTH_ENABLED,
   });
   if (!parsed.success) {
     // Surface a single, actionable error instead of a wall of Zod noise.

@@ -769,6 +769,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             plan={pendingPlan?.plan ?? null}
             findings={reformatResult?.report.findings ?? currentGovernanceFindings}
             coverage={pendingPlan?.coverage ?? null}
+            exportCoverage={reformatResult?.report.coverage ?? null}
             applyDisabledReason={readiness.reason}
             onOpenSettings={() => setPage("settings")}
             onApply={() => applyPendingPlan(pendingPlan)}

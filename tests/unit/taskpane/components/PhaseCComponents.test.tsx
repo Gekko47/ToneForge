@@ -9,8 +9,6 @@ import FindingsList from "../../../../src/taskpane/components/FindingsList";
 import PendingChanges from "../../../../src/taskpane/components/PendingChanges";
 import CoverageBanner from "../../../../src/taskpane/components/CoverageBanner";
 import StaleBanner from "../../../../src/taskpane/components/StaleBanner";
-import AiUnavailable from "../../../../src/taskpane/components/AiUnavailable";
-import AiReviewEntry from "../../../../src/taskpane/components/AiReviewEntry";
 import { navigateToFinding } from "../../../../src/word/sourceLocator";
 
 vi.mock("../../../../src/word/sourceLocator", () => ({
@@ -260,28 +258,5 @@ describe("Phase C task-pane components", () => {
 
     rerender(<StaleBanner stale lastScan={null} onRescan={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Findings are stale" })).toBeInTheDocument();
-
-    rerender(<AiUnavailable action="Review selection" />);
-    expect(screen.getByText(/deterministic checks remain available/i)).toBeInTheDocument();
-  });
-
-  it("disables AI entry points until provider, consent, and capability are present", () => {
-    render(
-      <AiReviewEntry
-        supportsSelection={false}
-        supportsParagraphResolution={false}
-        hasSelection={false}
-        providerConfigured={false}
-        hasConsent={false}
-        hasFullDocumentConsent={false}
-        onReviewSelection={vi.fn()}
-        onReviewParagraph={vi.fn()}
-        onReviewDocument={vi.fn()}
-        onOpenSettings={vi.fn()}
-      />,
-    );
-    expect(screen.getByRole("button", { name: "Review selection" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Review paragraph" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Review eligible document content" })).toBeDisabled();
   });
 });

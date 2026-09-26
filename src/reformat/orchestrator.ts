@@ -28,12 +28,8 @@ import { createGovernanceProfile, type GovernanceProfile } from "../core/domain/
 import { resolveResolvedPolicy } from "../core/domain/ResolvedPolicy";
 import type { Change } from "../core/domain/Change";
 import type { ChangePlan } from "../core/domain/ChangePlan";
-import type { LlmProvider, LlmSemanticProvider } from "../ai/providers/LlmProvider";
+import type { LlmSemanticProvider } from "../ai/providers/LlmProvider";
 import type { DocumentSnapshot as StructuredDocumentSnapshot } from "../core/domain/DocumentSnapshot";
-import {
-  reviewEntireDocument as runDocumentEditorialReview,
-  type FullReviewResult,
-} from "../ai/review/documentEditorialReview";
 import { prepareTrackedEditing } from "./trackedEditing";
 
 export interface ReformatOptions {
@@ -635,42 +631,4 @@ export async function applyReviewedPlan(
     verified: readback.verified,
     ...(readback.error === undefined ? {} : { verificationError: readback.error }),
   };
-}
-
-export interface FullDocumentReviewOptions {
-  profile: GovernanceProfile;
-  includeRawText: true;
-  consent: { fullDocumentReview: true };
-  registry: LlmProvider;
-  snapshot?: StructuredDocumentSnapshot;
-  currentDocumentVersion?: string;
-  signal?: AbortSignal;
-  getCurrentDocumentHash?: () => Promise<string>;
-  onProgress?: (completed: number, total: number) => void;
-}
-
-/** Run the coverage-first, bounded full-document review without mutating Word. */
-export async function reviewEntireDocument(
-  options: FullDocumentReviewOptions,
-): Promise<FullReviewResult> {
-  const snapshot = options.snapshot ?? (await getStructuredSnapshot());
-  return runDocumentEditorialReview({
-    snapshot,
-    profile: options.profile,
-    includeRawText: options.includeRawText,
-    consent: options.consent,
-    registry: options.registry,
-    ...(options.currentDocumentVersion !== undefined
-      ? { currentDocumentVersion: options.currentDocumentVersion }
-      : {}),
-    getCurrentDocumentHash:
-      options.getCurrentDocumentHash ??
-      (async () => {
-        const current = await getDocumentSnapshot();
-        const fullText = current.fullText ?? current.text;
-        return current.fullDocumentHash ?? hashDocument(fullText);
-      }),
-    ...(options.signal ? { signal: options.signal } : {}),
-    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-  });
 }

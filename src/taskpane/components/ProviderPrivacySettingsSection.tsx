@@ -126,15 +126,31 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
         setStatus(INITIAL_SECTION_STATUS);
       }}
     >
+      {/*
+        A provider the runtime cannot reach stays visible with its reason. Hiding
+        it would leave a user who has heard of it unable to find out why; offering
+        it enabled would repeat the defect of an Apply button that refuses on click
+        (ADR-0060).
+      */}
       <Dropdown
         label="Provider"
         selectedKey={draft.llmProvider}
-        options={PROVIDER_OPTIONS.map((option) => ({ key: option.key, text: option.text }))}
+        options={PROVIDER_OPTIONS.map((option) => ({
+          key: option.key,
+          text: option.unavailableReason === null ? option.text : `${option.text} (unavailable)`,
+          disabled: option.unavailableReason !== null,
+        }))}
         onChange={(_event, option) => changeProvider(option?.key)}
       />
-      <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
-        {providerOption(draft.llmProvider).authNote}
-      </MessageBar>
+      {providerOption(draft.llmProvider).unavailableReason === null ? (
+        <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
+          {providerOption(draft.llmProvider).authNote}
+        </MessageBar>
+      ) : (
+        <MessageBar messageBarType={MessageBarType.warning} delayedRender={false}>
+          {providerOption(draft.llmProvider).unavailableReason}
+        </MessageBar>
+      )}
       {providerAcceptsUserApiKey(draft.llmProvider) ? (
         <OpenRouterConnectionSettings
           gatewayOrigin={env.LLM_BROKER_URL ?? ""}
