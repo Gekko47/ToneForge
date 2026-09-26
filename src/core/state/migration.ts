@@ -16,15 +16,12 @@ import {
 import { ProviderConnectionSchema, type ProviderConnection } from "../domain/ProviderConnection";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 9;
+export const CURRENT_STATE_VERSION = 10;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
   openAiCredentialMode: "broker",
-  spotReviewConsent: false,
-  fullDocumentReviewConsent: false,
   consistencyReviewConsent: false,
-  telemetryDisabled: true,
   semanticOptIn: false,
 };
 
@@ -81,6 +78,8 @@ export function migrate(raw: unknown): PersistedState {
       return migrateV7ToV8(obj);
     case 8:
       return migrateV8ToV9(obj);
+    case 9:
+      return migrateV9ToV10(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -99,6 +98,30 @@ function defaultState(): PersistedState {
     settings: { ...DEFAULT_SETTINGS },
     providerConnections: {},
   };
+}
+
+/**
+ * v9 -> v10: drop three settings that changed nothing.
+ *
+ * `spotReviewConsent` and `fullDocumentReviewConsent` gated the Phase D and
+ * Phase E review engines, which no longer exist (ADR-0059). `telemetryDisabled`
+ * gated an analytics endpoint that is not configured in this release. All three
+ * were persisted and, for the two consents, carried in the settings draft, so a
+ * user could see a permission that gated nothing.
+ *
+ * `consistencyReviewConsent` is carried across **exactly**, never derived from
+ * either removed consent: a user who agreed to the consistency engine agreed to
+ * that specifically, and inheriting a decision from a permission that is being
+ * deleted would be inventing consent (ADR-0052).
+ */
+function migrateV9ToV10(obj: Record<string, unknown>): PersistedState {
+  // `readCurrentState` reads the current shape, and `normalizeSettings` rebuilds
+  // settings from an explicit field list rather than spreading the stored
+  // object, so the three dropped fields simply do not survive the read. Nothing
+  // else changes: every setting v9 carried that still means something is
+  // preserved, and `consistencyReviewConsent` is re-derived from the stored
+  // strict boolean rather than from either removed consent.
+  return readCurrentState(obj);
 }
 
 /**
@@ -436,25 +459,45 @@ function normalizeActiveProfileId(
   return Object.prototype.hasOwnProperty.call(records, raw) ? raw : null;
 }
 
+/**
+ * Rebuild settings from an explicit field list rather than spreading the stored
+ * object.
+ *
+ * A spread is what kept the retired v9 fields alive: every key the user had ever
+ * stored rode through every later migration untouched, so removing a field from
+ * the schema did not remove it from anybody's data (ADR-0059, ADR-0060). Naming
+ * each surviving key is the only version of this function where a schema change
+ * actually takes effect, and it drops the legacy `openAiApiKey` for free.
+ */
 function normalizeSettings(raw: unknown): PersistedState["settings"] {
   const parsed = z.record(z.string(), z.unknown()).safeParse(raw);
   if (!parsed.success) return { ...DEFAULT_SETTINGS };
-  const { openAiApiKey: _removedCredential, ...safeSettings } = parsed.data;
-  return {
+  const stored = parsed.data;
+  const settings: PersistedState["settings"] = {
     ...DEFAULT_SETTINGS,
-    ...safeSettings,
     openAiCredentialMode: "broker",
+    // An unrecognised provider must fail closed to the offline stub rather
+    // than be described as though it were a usable remote one.
+    llmProvider: isProviderId(stored.llmProvider) ? stored.llmProvider : DEFAULT_SETTINGS.llmProvider,
     // Consent flags are re-derived from strict booleans rather than spread
     // through. Everything else here is a preference and a wrong value is merely
     // wrong; a consent flag gates whether raw document text leaves the add-in, so
     // a stored `"yes"` or `1` must read as a refusal rather than as permission.
     // Anything that is not literally `true` becomes `false`.
-    spotReviewConsent: safeSettings.spotReviewConsent === true,
-    fullDocumentReviewConsent: safeSettings.fullDocumentReviewConsent === true,
-    consistencyReviewConsent: safeSettings.consistencyReviewConsent === true,
-    telemetryDisabled: safeSettings.telemetryDisabled !== false,
-    semanticOptIn: safeSettings.semanticOptIn === true,
-  } as PersistedState["settings"];
+    consistencyReviewConsent: stored.consistencyReviewConsent === true,
+    semanticOptIn: stored.semanticOptIn === true,
+  };
+  if (typeof stored.openAiBaseUrl === "string" && stored.openAiBaseUrl.length > 0) {
+    settings.openAiBaseUrl = stored.openAiBaseUrl;
+  }
+  if (typeof stored.openAiModel === "string" && stored.openAiModel.length > 0) {
+    settings.openAiModel = stored.openAiModel;
+  }
+  return settings;
+}
+
+function isProviderId(value: unknown): value is PersistedState["settings"]["llmProvider"] {
+  return value === "openai" || value === "anthropic" || value === "openrouter" || value === "mock";
 }
 
 function normalizeProfileHistory(

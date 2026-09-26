@@ -22,9 +22,6 @@ function v8(settings: Record<string, unknown> = {}): Record<string, unknown> {
     settings: {
       llmProvider: "mock",
       openAiCredentialMode: "broker",
-      spotReviewConsent: false,
-      fullDocumentReviewConsent: false,
-      telemetryDisabled: true,
       semanticOptIn: false,
       ...settings,
     },
@@ -45,7 +42,9 @@ describe("migration v8 to v9", () => {
     // document style review has not agreed to a whole document pairwise
     // self-comparison by a non-deterministic engine.
     const result = migrate(v8({ fullDocumentReviewConsent: true }));
-    expect(result.settings.fullDocumentReviewConsent).toBe(true);
+    // The removed consent is not revived on the way through, and it never
+    // implies the consistency consent that replaces it.
+    expect(result.settings).not.toHaveProperty("fullDocumentReviewConsent");
     expect(result.settings.consistencyReviewConsent).toBe(false);
   });
 
@@ -77,18 +76,12 @@ describe("migration v8 to v9", () => {
     const result = migrate(
       v8({
         llmProvider: "openai",
-        spotReviewConsent: true,
-        fullDocumentReviewConsent: true,
         semanticOptIn: true,
-        telemetryDisabled: false,
         openAiModel: "gpt-4o",
       }),
     );
     expect(result.settings.llmProvider).toBe("openai");
-    expect(result.settings.spotReviewConsent).toBe(true);
-    expect(result.settings.fullDocumentReviewConsent).toBe(true);
     expect(result.settings.semanticOptIn).toBe(true);
-    expect(result.settings.telemetryDisabled).toBe(false);
     expect(result.settings.openAiModel).toBe("gpt-4o");
   });
 

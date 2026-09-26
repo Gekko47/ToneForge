@@ -16,7 +16,7 @@ describe("migration", () => {
     expect(result.profileRecords).toEqual({});
     expect(result.governanceHistory).toEqual({});
     expect(result.activeProfileId).toBeNull();
-    expect(result.settings.telemetryDisabled).toBe(true);
+    expect(result.settings.consistencyReviewConsent).toBe(false);
   });
 
   it("returns default state for undefined input", () => {
@@ -47,7 +47,8 @@ describe("migration", () => {
     const result = migrate(v1);
     expect(result.version).toBe(CURRENT_STATE_VERSION);
     expect(result.profileRecords).toEqual({});
-    expect(result.settings.telemetryDisabled).toBe(false);
+    // A v1 store carried the no-op telemetry flag; the v10 shape must not revive it.
+    expect(result.settings).not.toHaveProperty("telemetryDisabled");
   });
 
   it("migrates v0 (no version field)", () => {
@@ -58,8 +59,8 @@ describe("migration", () => {
     };
     const result = migrate(v0);
     expect(result.version).toBe(CURRENT_STATE_VERSION);
-    expect(result.profileRecords).toEqual({});
-    expect(result.settings.telemetryDisabled).toBe(true);
+    expect(result.settings).not.toHaveProperty("telemetryDisabled");
+    expect(result.settings.semanticOptIn).toBe(false);
   });
 
   it("migrates v0 with existing settings", () => {
@@ -71,7 +72,7 @@ describe("migration", () => {
     const result = migrate(v0);
     expect(result.version).toBe(CURRENT_STATE_VERSION);
     expect(result.settings.openAiModel).toBe("gpt-4o");
-    expect(result.settings.telemetryDisabled).toBe(true);
+    expect(result.settings).not.toHaveProperty("telemetryDisabled");
   });
 
   it("folds a v1 profile into a record with a created revision", () => {
@@ -147,8 +148,6 @@ describe("migration", () => {
       settings: {
         openAiApiKey: "sk-legacy-secret-value",
         llmProvider: "openai",
-        spotReviewConsent: true,
-        fullDocumentReviewConsent: true,
         semanticOptIn: true,
       },
     });
@@ -156,8 +155,8 @@ describe("migration", () => {
     expect(result.version).toBe(CURRENT_STATE_VERSION);
     expect(result.settings).not.toHaveProperty("openAiApiKey");
     expect(result.settings.openAiCredentialMode).toBe("broker");
-    expect(result.settings.spotReviewConsent).toBe(true);
-    expect(result.settings.fullDocumentReviewConsent).toBe(true);
+    expect(result.settings).not.toHaveProperty("spotReviewConsent");
+    expect(result.settings).not.toHaveProperty("fullDocumentReviewConsent");
     expect(result.settings.semanticOptIn).toBe(true);
   });
 

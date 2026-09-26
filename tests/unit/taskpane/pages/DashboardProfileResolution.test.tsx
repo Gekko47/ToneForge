@@ -76,10 +76,7 @@ function emptyState() {
     settings: {
       llmProvider: "mock" as const,
       openAiCredentialMode: "broker" as const,
-      spotReviewConsent: false,
-      fullDocumentReviewConsent: false,
       semanticOptIn: false,
-      telemetryDisabled: true,
     },
   };
 }

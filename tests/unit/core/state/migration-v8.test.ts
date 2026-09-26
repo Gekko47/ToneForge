@@ -98,16 +98,13 @@ describe("migration v7 to v8", () => {
         llmProvider: "openai",
         openAiBaseUrl: "http://127.0.0.1:8787",
         semanticOptIn: true,
-        fullDocumentReviewConsent: true,
-        spotReviewConsent: true,
-        telemetryDisabled: false,
       }),
     );
 
     expect(result.settings.semanticOptIn).toBe(true);
-    expect(result.settings.fullDocumentReviewConsent).toBe(true);
-    expect(result.settings.spotReviewConsent).toBe(true);
-    expect(result.settings.telemetryDisabled).toBe(false);
+    expect(result.settings).not.toHaveProperty("fullDocumentReviewConsent");
+    expect(result.settings).not.toHaveProperty("spotReviewConsent");
+    expect(result.settings).not.toHaveProperty("telemetryDisabled");
   });
 
   it("keeps the provider selection when the broker URL is refused", () => {

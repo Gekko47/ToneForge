@@ -48,18 +48,15 @@ describe("persistence", () => {
       settings: {
         llmProvider: "mock",
         openAiCredentialMode: "broker",
-        spotReviewConsent: false,
-        fullDocumentReviewConsent: false,
         consistencyReviewConsent: false,
         semanticOptIn: false,
-        telemetryDisabled: false,
       },
       governanceProfiles: {},
       governanceHistory: {},
       activeGovernanceProfileId: null,
     });
 
-    expect(loadState().settings.telemetryDisabled).toBe(false);
+    expect(loadState().settings.consistencyReviewConsent).toBe(false);
     expect(getItem).toHaveBeenCalled();
     expect(setItem).toHaveBeenCalled();
   });

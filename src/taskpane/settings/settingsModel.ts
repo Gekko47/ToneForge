@@ -99,8 +99,6 @@ export const LlmSettingsDraftSchema = z.object({
   openAiBaseUrl: z.string(),
   openAiModel: z.string(),
   llmProvider: z.enum(["openai", "anthropic", "openrouter", "mock"]),
-  spotReviewConsent: z.boolean(),
-  fullDocumentReviewConsent: z.boolean(),
   consistencyReviewConsent: z.boolean(),
   semanticOptIn: z.boolean(),
 });
@@ -124,8 +122,6 @@ export function toLlmDraft(settings: PersistedState["settings"]): LlmSettingsDra
     openAiBaseUrl: settings.openAiBaseUrl ?? "",
     openAiModel: settings.openAiModel ?? "",
     llmProvider: settings.llmProvider,
-    spotReviewConsent: settings.spotReviewConsent,
-    fullDocumentReviewConsent: settings.fullDocumentReviewConsent,
     consistencyReviewConsent: settings.consistencyReviewConsent,
     semanticOptIn: settings.semanticOptIn,
   };
@@ -269,8 +265,6 @@ export function applyLlmDraft(
   const next: PersistedState["settings"] = {
     ...current,
     llmProvider: normalized.llmProvider,
-    spotReviewConsent: normalized.spotReviewConsent,
-    fullDocumentReviewConsent: normalized.fullDocumentReviewConsent,
     consistencyReviewConsent: normalized.consistencyReviewConsent,
     semanticOptIn: normalized.semanticOptIn,
   };

@@ -13,10 +13,7 @@ vi.mock("../../../../src/core/state/persistence", () => ({
     settings: {
       llmProvider: "mock",
       openAiCredentialMode: "broker",
-      spotReviewConsent: false,
-      fullDocumentReviewConsent: false,
       semanticOptIn: false,
-      telemetryDisabled: true,
     },
   })),
 }));

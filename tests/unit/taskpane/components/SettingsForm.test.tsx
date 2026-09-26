@@ -32,10 +32,7 @@ const baseState = {
     openAiModel: "gpt-4o-mini",
     llmProvider: "openai" as const,
     openAiCredentialMode: "broker" as const,
-    spotReviewConsent: false,
-    fullDocumentReviewConsent: false,
     semanticOptIn: false,
-    telemetryDisabled: true,
   },
 };
 
@@ -156,17 +153,11 @@ describe("SettingsForm", () => {
     expect(mocks.saveState).not.toHaveBeenCalled();
   });
 
-  it("persists telemetry independently", async () => {
-    const user = userEvent.setup();
+  it("offers no control that does not change behaviour", () => {
+    // ADR-0060. Telemetry is a build-time switch in `env`, not a user setting,
+    // so a toggle here would have persisted a value nothing ever read.
     const { container } = render(<SettingsForm />);
-    const telemetrySection = within(container).getByRole("region", { name: "Telemetry" });
-    await user.click(within(telemetrySection).getByRole("switch", { name: "Disable telemetry" }));
-    await user.click(within(telemetrySection).getByRole("button", { name: "Save telemetry" }));
-
-    await waitFor(() => expect(mocks.saveState).toHaveBeenCalledOnce());
-    const saved = mocks.saveState.mock.calls[0]?.[0] as {
-      settings: { telemetryDisabled: boolean };
-    };
-    expect(saved.settings.telemetryDisabled).toBe(false);
+    expect(within(container).queryByRole("region", { name: "Telemetry" })).toBeNull();
+    expect(within(container).queryByRole("switch", { name: "Disable telemetry" })).toBeNull();
   });
 });

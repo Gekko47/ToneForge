@@ -45,10 +45,10 @@ describe("persistence without browser storage", () => {
         ...state,
         settings: {
           ...state.settings,
-          telemetryDisabled: false,
+          consistencyReviewConsent: true,
         },
       });
-      expect(loadState().settings.telemetryDisabled).toBe(false);
+      expect(loadState().settings.consistencyReviewConsent).toBe(true);
     } finally {
       if (originalDescriptor) {
         Object.defineProperty(globalThis, "localStorage", originalDescriptor);

@@ -14,10 +14,7 @@ import type { PersistedState } from "../../../../src/core/state/index";
 const SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
   openAiCredentialMode: "broker",
-  spotReviewConsent: false,
-  fullDocumentReviewConsent: false,
   consistencyReviewConsent: false,
-  telemetryDisabled: true,
   semanticOptIn: false,
 };
 
@@ -25,8 +22,6 @@ const DRAFT: LlmSettingsDraft = {
   openAiBaseUrl: "",
   openAiModel: "",
   llmProvider: "openai",
-  spotReviewConsent: true,
-  fullDocumentReviewConsent: false,
   consistencyReviewConsent: false,
   semanticOptIn: true,
 };
@@ -37,8 +32,6 @@ describe("settings model", () => {
       openAiBaseUrl: "",
       openAiModel: "",
       llmProvider: "mock",
-      spotReviewConsent: false,
-      fullDocumentReviewConsent: false,
       consistencyReviewConsent: false,
       semanticOptIn: false,
     });
@@ -49,7 +42,7 @@ describe("settings model", () => {
     expect(saved).not.toHaveProperty("openAiBaseUrl");
     expect(saved).not.toHaveProperty("openAiModel");
     expect(saved.llmProvider).toBe("openai");
-    expect(saved.spotReviewConsent).toBe(true);
+    expect(saved.consistencyReviewConsent).toBe(false);
     expect(saved.semanticOptIn).toBe(true);
   });
 

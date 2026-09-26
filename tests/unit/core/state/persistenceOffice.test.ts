@@ -62,7 +62,7 @@ describe("persistence with Office roamingSettings", () => {
     const state = loadState();
     expect(state.profileRecords).toEqual({});
     expect(state.activeProfileId).toBeNull();
-    expect(state.settings.telemetryDisabled).toBe(true);
+    expect(state.settings.consistencyReviewConsent).toBe(false);
   });
 
   it("falls back to defaults on schema-incompatible payload", () => {
@@ -94,11 +94,8 @@ describe("persistence with Office roamingSettings", () => {
       settings: {
         llmProvider: "mock",
         openAiCredentialMode: "broker" as const,
-        spotReviewConsent: false,
-        fullDocumentReviewConsent: false,
         consistencyReviewConsent: false,
         semanticOptIn: false,
-        telemetryDisabled: true,
       },
     });
 
@@ -122,7 +119,7 @@ describe("persistence with Office roamingSettings", () => {
     const state = loadState();
     expect(state.version).toBe(CURRENT_STATE_VERSION);
     expect(state.profileRecords).toEqual({});
-    expect(state.settings.telemetryDisabled).toBe(false);
+    expect(state.settings).not.toHaveProperty("telemetryDisabled");
   });
 
   it("fills missing settings with defaults during v0 migration", () => {
@@ -135,7 +132,7 @@ describe("persistence with Office roamingSettings", () => {
       });
     const state = loadState();
     expect(state.version).toBe(CURRENT_STATE_VERSION);
-    expect(state.settings.telemetryDisabled).toBe(true);
+    expect(state.settings.semanticOptIn).toBe(false);
   });
 
   it("preserves v1 state by upgrading it to the current version", () => {
@@ -150,13 +147,13 @@ describe("persistence with Office roamingSettings", () => {
     const state = loadState();
     expect(state.version).toBe(CURRENT_STATE_VERSION);
     expect(state.profileRecords).toEqual({});
-    expect(state.settings.telemetryDisabled).toBe(true);
+    expect(state.settings).not.toHaveProperty("telemetryDisabled");
   });
 
   it("falls back to a legacy storage key when the current key is absent", () => {
     if (!officeRuntime?.roamingSettings) throw new Error("setup");
     officeRuntime.roamingSettings.get = (key: string) =>
-      key === "ToneForge.State.v7"
+      key === "ToneForge.State.v9"
         ? null
         : JSON.stringify({
             version: 1,
@@ -183,7 +180,6 @@ describe("persistence with Office roamingSettings", () => {
         settings: {
           openAiApiKey: "sk-legacy-secret-value",
           llmProvider: "openai",
-          spotReviewConsent: true,
         },
       }),
     );
@@ -198,11 +194,11 @@ describe("persistence with Office roamingSettings", () => {
 
     const state = loadState();
     expect(state.settings).not.toHaveProperty("openAiApiKey");
-    expect(state.settings.spotReviewConsent).toBe(true);
+    expect(state.settings).not.toHaveProperty("spotReviewConsent");
     expect(values.has("ToneForge.State.v3")).toBe(false);
     expect(window.localStorage.getItem("ToneForge.State.v3")).toBeNull();
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(String(values.get("ToneForge.State.v7"))).not.toContain("openAiApiKey");
+    expect(String(values.get("ToneForge.State.v10"))).not.toContain("openAiApiKey");
   });
 
   it("clear-secret selects mock without changing consent", () => {
@@ -214,8 +210,6 @@ describe("persistence with Office roamingSettings", () => {
         settings: {
           openAiApiKey: "sk-legacy-secret-value",
           llmProvider: "openai",
-          spotReviewConsent: true,
-          fullDocumentReviewConsent: true,
         },
       }),
     );
@@ -223,8 +217,8 @@ describe("persistence with Office roamingSettings", () => {
     const state = clearPersistedCredentials();
     expect(state.settings.llmProvider).toBe("mock");
     expect(state.settings.openAiCredentialMode).toBe("broker");
-    expect(state.settings.spotReviewConsent).toBe(true);
-    expect(state.settings.fullDocumentReviewConsent).toBe(true);
+    expect(state.settings).not.toHaveProperty("spotReviewConsent");
+    expect(state.settings).not.toHaveProperty("fullDocumentReviewConsent");
     expect(JSON.stringify(state)).not.toContain("openAiApiKey");
   });
 });
