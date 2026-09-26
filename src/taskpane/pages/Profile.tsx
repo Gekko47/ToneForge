@@ -43,7 +43,8 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
       // Semantic learning needs a configured remote provider, not a specific
       // one — every remote adapter speaks the same gateway contract.
       const includeSemantic =
-        state.settings.semanticOptIn && isRemoteProviderConfigured(state.settings);
+        state.settings.semanticOptIn &&
+        isRemoteProviderConfigured(state.settings, state.providerConnections);
       const result = await learnStyleDraft(sample, {
         name: "Learned style profile",
         includeSemantic,

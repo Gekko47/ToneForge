@@ -91,6 +91,17 @@ export function validateProductionOrigin(value) {
   if (hostname.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
     problems.push("Production origin must not be a private-network address.");
   }
+  // Link-local (169.254/16) reaches only the local segment, and the IPv6 forms
+  // below are the same addresses written so that a naive IPv4 prefix test would
+  // miss them: ULA fc00::/7, link-local fe80::/10, and IPv4-mapped ::ffff:a.b.c.d.
+  if (
+    /^169\.254\./.test(hostname) ||
+    /^\[f[cd][0-9a-f]{2}:/.test(hostname) ||
+    /^\[fe[89ab][0-9a-f]:/.test(hostname) ||
+    /^\[::ffff:[0-9a-f]{1,4}:[0-9a-f]{1,4}\]$/.test(hostname)
+  ) {
+    problems.push("Production origin must not be a private-network address.");
+  }
   if (url.port !== "" && url.port !== "443") {
     problems.push(`Production origin must not pin a non-standard port (${url.port}).`);
   }

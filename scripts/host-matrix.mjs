@@ -64,7 +64,12 @@ function normalizeStatus(raw) {
 export function hasObservation(raw) {
   const value = (raw ?? "").trim().toLowerCase();
   if (value.length === 0) return false;
-  return !["-", "--", "—", "–", "n/a", "na", "tbd", "tbc", "?", "unknown"].includes(value);
+  // "Not recorded" is listed in the module docs as a placeholder meaning nobody
+  // observed this. `normalizeStatus` already reports it as unknown; leaving it
+  // out here would let the same cell count as an observation and as silence.
+  return !["-", "--", "—", "–", "n/a", "na", "tbd", "tbc", "?", "unknown", "not recorded"].includes(
+    value,
+  );
 }
 
 function splitRow(line) {

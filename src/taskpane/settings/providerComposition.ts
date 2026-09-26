@@ -51,9 +51,14 @@ export function connectionFromSettings(
 
   // A stored connection is authoritative: it was issued by the gateway, and
   // re-deriving one from the OpenAI-shaped settings fields would discard the
-  // connection id the service actually issued.
+  // connection id the service actually issued. The user's model choice lives in
+  // settings rather than in the issued record, so it is merged in — otherwise a
+  // gateway-issued connection would silently ignore the model the user picked.
   const stored = providerConnections?.[settings.llmProvider];
-  if (stored) return stored;
+  if (stored) {
+    if (!settings.openAiModel) return stored;
+    return ProviderConnectionSchema.parse({ ...stored, selectedModel: settings.openAiModel });
+  }
 
   const rawOrigin = settings.openAiBaseUrl ?? env.LLM_BROKER_URL ?? "";
   const classified = classifyOrigin(rawOrigin);
@@ -76,6 +81,25 @@ export function connectionFromSettings(
 }
 
 /**
+ * The gateway origin the adapters must be pointed at.
+ *
+ * This is deployment configuration — the same `LLM_BROKER_URL` the OpenRouter
+ * connection settings submit keys to — and never `connection.baseOrigin.origin`,
+ * which for a gateway-issued connection is the *upstream provider's* base URL.
+ * Using that as the gateway address would send every request straight to the
+ * provider instead of through the gateway that holds the credential. A stored
+ * broker URL is accepted only as a fallback, and only after the same
+ * `normalizeGatewayOrigin` check, so it cannot introduce an arbitrary host.
+ */
+function gatewayOriginFromSettings(settings: Settings): string {
+  return (
+    normalizeGatewayOrigin(env.LLM_BROKER_URL) ??
+    classifyOrigin(settings.openAiBaseUrl ?? "")?.origin ??
+    ""
+  );
+}
+
+/**
  * Build a registry from persisted settings.
  *
  * A remote provider is only registered when a usable connection exists, so an
@@ -88,7 +112,7 @@ export function createRegistryFromSettings(
   fetchImpl?: typeof fetch,
 ): ReturnType<typeof createLlmRegistry> {
   const connection = connectionFromSettings(settings, providerConnections);
-  const gatewayBaseUrl = connection?.baseOrigin?.origin ?? "";
+  const gatewayBaseUrl = gatewayOriginFromSettings(settings);
   return createLlmRegistry({
     provider: connection ? settings.llmProvider : "mock",
     gatewayBaseUrl,

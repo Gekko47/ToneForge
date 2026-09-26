@@ -94,7 +94,31 @@ function expectedXml(sourceXml, sourceManifest, productionOrigin) {
   if (typeof source !== "string" || source.length === 0) {
     throw new Error("Development manifest has no validDomains[0] to substitute.");
   }
-  return sourceXml.split(source).join(new URL(productionOrigin.trim()).origin);
+  const expected = sourceXml.split(source).join(new URL(productionOrigin.trim()).origin);
+  // The substitution is textual, so the result is only trustworthy once it has
+  // been checked. A development value the source string did not match — a second
+  // loopback host, a plaintext-HTTP origin — would otherwise be blessed as
+  // "expected" here and shipped, and nothing downstream re-reads the XML.
+  const remaining = findXmlDevelopmentArtifacts(expected);
+  if (remaining.length > 0) {
+    const detail = remaining.map((item) => item.reason).join(", ");
+    throw new Error(`Expected manifest.xml contains development values: ${detail}`);
+  }
+  return expected;
+}
+
+/**
+ * Development-shaped values still present in a rewritten `manifest.xml`.
+ *
+ * XML namespace declarations are `http://` by specification and are not origins,
+ * so they are removed before the scan. A blanket plaintext-HTTP check would
+ * reject every well-formed manifest, including the one production build.
+ */
+function findXmlDevelopmentArtifacts(xml) {
+  const scannable = xml.replace(/\sxmlns(:[\w.-]+)?="[^"]*"/g, "");
+  const found = findDevelopmentArtifacts(scannable);
+  if (!/http:\/\//i.test(scannable)) return found;
+  return [{ path: "manifest.xml", value: "http://…", reason: "plaintext HTTP origin" }, ...found];
 }
 
 function validateXml(staging, expected) {

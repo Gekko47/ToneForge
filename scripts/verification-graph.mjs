@@ -140,15 +140,23 @@ export function runVerificationGraph(stages = VERIFICATION_GRAPH) {
       results[stage.name] = false;
     }
   }
-  const failed = stages.filter((stage) => results[stage.name] === false).map((s) => s.name);
   const summary = buildVerificationSummary({
     results,
     startedAt,
     finishedAt: new Date().toISOString(),
   });
   writeSummary(summary);
-  if (failed.length > 0) {
-    throw new Error(`${VERIFICATION_GRAPH_NAME} failed: ${failed.join(", ")}`);
+  // The gate is the summary, not this run's local failure list. `ok` is also
+  // false when an automated stage never ran, and a run that skipped local
+  // verification must not report success just because nothing it ran failed.
+  if (!summary.ok) {
+    const failed = summary.stages
+      .filter((stage) => stage.status === "failed")
+      .map((stage) => stage.name);
+    const notRun = summary.stages
+      .filter((stage) => stage.status === "pending" && stage.owner !== "external-evidence")
+      .map((stage) => `${stage.name} (did not run)`);
+    throw new Error(`${VERIFICATION_GRAPH_NAME} failed: ${[...failed, ...notRun].join(", ")}`);
   }
   console.log(`[${VERIFICATION_GRAPH_NAME}] all stages passed.`);
   console.log(

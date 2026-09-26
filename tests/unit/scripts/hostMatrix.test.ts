@@ -289,7 +289,9 @@ describe("renderHostMatrixDashboard", () => {
 
 describe("the real docs/manual-verification.md", () => {
   const markdown = readFileSync(join("docs", "manual-verification.md"), "utf8");
-  const dashboard = buildHostMatrixDashboard(markdown);
+  // A fixed clock keeps the staleness verdict — and therefore this suite — from
+  // changing with the day it runs.
+  const dashboard = buildHostMatrixDashboard(markdown, { now: TODAY });
 
   it("parses without throwing", () => {
     expect(dashboard.rows.length).toBeGreaterThan(0);

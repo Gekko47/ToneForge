@@ -19,6 +19,7 @@
  */
 
 import { LlmError, type LlmProvider, type LlmRequest, type LlmResponse } from "./LlmProvider";
+import { normalizeGatewayOrigin } from "../gateway/gatewayClient";
 import { withRetry, type RetryOptions } from "./retry";
 import { logger } from "../../shared/utils/logger";
 import { redactSensitiveText } from "../../shared/utils/redaction";
@@ -88,7 +89,11 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
   private readonly maxRetries: number;
 
   constructor(opts: GatewayAdapterOptions) {
-    this.gatewayBaseUrl = opts.gatewayBaseUrl.replace(/\/$/, "");
+    // An origin the gateway policy does not accept is treated as no origin at
+    // all rather than passed to `fetch`: the adapter then reports itself
+    // unconfigured and refuses the request instead of contacting a host no
+    // deployment rule approved.
+    this.gatewayBaseUrl = normalizeGatewayOrigin(opts.gatewayBaseUrl) ?? "";
     this.connection = opts.connection;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
