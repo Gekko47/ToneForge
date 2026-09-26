@@ -165,6 +165,31 @@ describe("the checker registry", () => {
   });
 });
 
+describe("quantity extraction", () => {
+  it("reads a minus sign as a negative sign", () => {
+    const [quantity] = extractQuantities("Revenue fell by -5 million.");
+    expect(quantity?.value).toBe(-5);
+  });
+
+  it("does not read a hyphen inside an identifier as a negative sign", () => {
+    // "COVID-19" is a name, not a claim of -19. Reading the hyphen as a minus
+    // made identifiers look like negative quantities, and two documents naming
+    // different identifiers contradicted each other on figures nobody wrote.
+    const found = extractQuantities("The variant is COVID-19.");
+    expect(found.map((quantity) => quantity.value)).toEqual([19]);
+  });
+
+  it("excludes the digits inside a date rather than reading them as quantities", () => {
+    // The digits of a date belong to that date. Read as quantities they became
+    // "2026" and "-03" and "-04", and C2 then compared one statement's date
+    // against another statement's date and called the difference a figure
+    // conflict the author never wrote.
+    expect(extractQuantities("The migration completed on 2026-03-04.")).toHaveLength(0);
+    expect(extractQuantities("The migration completed in March 2026.")).toHaveLength(0);
+    expect(extractQuantities("The migration completed on 4 March 2026.")).toHaveLength(0);
+  });
+});
+
 describe("C1 terminology drift", () => {
   it("finds the same subject called by different names across sections", () => {
     reset();
@@ -215,6 +240,21 @@ describe("C1 terminology drift", () => {
     ]);
     expect(found).toHaveLength(0);
   });
+
+  it("sends a one-for-one swap that is not a spelling variant to adjudication", () => {
+    // "north" and "south" have the same shape as "programme" and "program" —
+    // one unique word each side, shared subject, different sections — but they
+    // are two places, not two spellings of one. Reporting that as a decided
+    // naming conflict is a wrong answer rather than a question, so it stays
+    // ambiguous and the model weighs it.
+    reset();
+    const found = checkTerminologyDrift([
+      statement("The northern office reports to the regional director each week.", "Intro"),
+      statement("The southern office reports to the regional director each week.", "Detail"),
+    ]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.certainty).toBe("ambiguous");
+  });
 });
 
 describe("C2 numeric contradiction", () => {
@@ -242,6 +282,19 @@ describe("C2 numeric contradiction", () => {
     const found = checkNumericContradiction([
       statement("The headcount target is 5000 people.", "Intro"),
       statement("The headcount target is 5k people.", "Detail"),
+    ]);
+    expect(found).toHaveLength(0);
+  });
+
+  it("does not raise a candidate from the dates alone", () => {
+    // These are C3's fixtures. C2 saw their digits as quantities and reported a
+    // figure contradiction between two statements that differ only in when the
+    // same event happened — a duplicate of the temporal finding, arrived at by
+    // treating a date as a set of numbers.
+    reset();
+    const found = checkNumericContradiction([
+      statement("The migration completed on 2026-03-04.", "Intro"),
+      statement("The migration completed on 2026-05-09.", "Detail"),
     ]);
     expect(found).toHaveLength(0);
   });

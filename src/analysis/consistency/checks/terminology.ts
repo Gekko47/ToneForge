@@ -1,11 +1,13 @@
 /**
  * C1 — terminology drift.
  *
- * The same concept named by different terms in different sections. Resolved
- * deterministically when the two statements share a subject and differ only in
- * one content word, because that is a comparison of tokens rather than an
- * interpretation. Left ambiguous when they share a subject and differ in
- * several places, because that is a genuine judgment call.
+ * The same concept named by different terms in different sections. Decided
+ * deterministically only when the two statements share a subject, differ in one
+ * content word each, and those two words are spelling variants of one another,
+ * because "organisation" against "organization" is a comparison of characters
+ * rather than an interpretation. Every other one-for-one swap is ambiguous: two
+ * different words can be two names for one thing or two genuinely different
+ * things, and only the model can weigh which.
  */
 
 import type { ConsistencyCandidate } from "../contracts";
@@ -36,17 +38,72 @@ function sharedWords(a: string[], b: string[]): Set<string> {
 const MIN_SHARED_SUBJECT_WORDS = 3;
 
 /**
- * Whether a one-for-one word difference is a naming difference rather than a
- * difference of figure or of state.
+ * Orthographic variations that make two spellings the same word, applied in the
+ * order listed.
+ *
+ * Folding is deliberately narrow. It covers the spellings documents genuinely
+ * mix — `-isation`/`-ization`, `-ise`/`-ize`, `-our`/`-or`, `-re`/`-er`,
+ * `-ce`/`-se`, `-yse`/`-yze`, and the British doubling of a final or medial
+ * consonant — and nothing else. A looser fold would start calling unrelated
+ * words the same word, and this check's "certain" findings are reported as
+ * decided rather than adjudicated, so a wrong fold is a wrong answer rather than
+ * a question.
+ *
+ * Order matters twice: the plural and `-ise` rules precede the singular `-ise`
+ * so "organisations" folds once, and the doubling rule comes last so a word
+ * simplified above ("programme" to "program") is not re-simplified.
+ */
+const SPELLING_FOLDS: readonly (readonly [RegExp, string])[] = Object.freeze([
+  [/isations$/, "izations"],
+  [/isation$/, "ization"],
+  [/ising$/, "izing"],
+  [/ised$/, "ized"],
+  [/ises$/, "izes"],
+  [/ise$/, "ize"],
+  [/ours$/, "ors"],
+  [/our$/, "or"],
+  [/res$/, "ers"],
+  [/re$/, "er"],
+  [/ces$/, "ses"],
+  [/ce$/, "se"],
+  [/yse$/, "yze"],
+  [/mme$/, "m"],
+  [/ae/g, "a"],
+  [/oe/g, "e"],
+  // British doubling, and only the doubling: "modelling" against "modeling",
+  // "programme" against "program". Applied last so it folds whatever the rules
+  // above have already reduced to its shared form.
+  [/([^aeiou])\1/g, "$1"],
+]);
+
+/**
+ * The word reduced to the spelling its variants share.
+ *
+ * "programme" and "program" both fold to "program"; "north" and "south" fold to
+ * themselves, which is the point — they are two different words, not two
+ * spellings of one.
+ */
+function spellingKey(word: string): string {
+  return SPELLING_FOLDS.reduce(
+    (current, [pattern, replacement]) => current.replace(pattern, replacement),
+    word,
+  );
+}
+
+/**
+ * Whether two words are two spellings of one term, rather than two terms.
  *
  * Numbers are C2's question and exclusive-state pairs are C7's, so a swap
  * involving either is not decided here even though the shape looks like a
- * substitution.
+ * substitution. Nor is "north" against "south": that shape is identical to
+ * "programme" against "program", and only the words themselves distinguish a
+ * misspelling from a rename.
  */
 function isNameSubstitution(left: string | undefined, right: string | undefined): boolean {
   if (left === undefined || right === undefined) return false;
   if (isNumericWord(left) || isNumericWord(right)) return false;
-  return !isExclusiveStatePair(left, right);
+  if (isExclusiveStatePair(left, right)) return false;
+  return spellingKey(left) === spellingKey(right);
 }
 
 export function checkTerminologyDrift(statements: IndexedStatement[]): ConsistencyCandidate[] {
@@ -70,18 +127,21 @@ export function checkTerminologyDrift(statements: IndexedStatement[]): Consisten
       continue;
     }
 
-    // Certain only when each side contributes exactly one term of its own. One
-    // unique word in total is not enough: a pair where one statement merely adds
-    // a word the other omits is not terminology drift, it is one statement saying
-    // more, and calling that a decided naming conflict reports a difference the
-    // author never made.
+    // Certain only when each side contributes exactly one term of its own AND
+    // those two terms are spelling variants of one another. One unique word in
+    // total is not enough: a pair where one statement merely adds a word the
+    // other omits is not terminology drift, it is one statement saying more, and
+    // calling that a decided naming conflict reports a difference the author
+    // never made.
     //
-    // A one-for-one swap is still not certain when the swapped words are figures
-    // or a mutually exclusive pair. "5 days" against "10 days" is C2's question,
-    // not a naming one, and "enabled" against "disabled" is C7's: reporting either
-    // as a decided terminology difference would report a conflict the author did
-    // not make while naming anything. Both belong to the ambiguous residue, where
-    // the model can weigh the pair as a whole.
+    // A one-for-one swap is still not certain when the swapped words are figures,
+    // a mutually exclusive pair, or two unrelated terms. "5 days" against "10
+    // days" is C2's question, not a naming one; "enabled" against "disabled" is
+    // C7's; and "north" against "south" is two places, not two spellings of one
+    // place. Reporting any of those as a decided terminology difference would
+    // report a conflict the author did not make while naming anything. They all
+    // belong in the ambiguous residue, where the model can weigh the pair as a
+    // whole.
     const substitution =
       onlyLeft.length === 1 &&
       onlyRight.length === 1 &&
@@ -92,9 +152,10 @@ export function checkTerminologyDrift(statements: IndexedStatement[]): Consisten
         left,
         right,
         suspicion: `These two sections use different terms for what appears to be the same subject (${[...onlyLeft, ...onlyRight].slice(0, 4).join(", ")}).`,
-        // A one-for-one swap on a shared subject is a naming difference. Anything
-        // else is more likely two genuinely different statements, which is a
-        // judgment the model should make rather than this function.
+        // A one-for-one swap of two spellings of one term, on a shared subject,
+        // is a naming difference. Anything else is more likely two genuinely
+        // different statements, which is a judgment the model should make rather
+        // than this function.
         certainty: substitution ? "certain" : "ambiguous",
         evidence: {
           shared: [...shared].slice(0, 6).join(", "),

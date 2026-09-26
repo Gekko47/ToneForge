@@ -208,6 +208,8 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     wordCount: number;
     statementCount: number;
     text: string;
+    /** Section headings, so the engine can attribute statements to sections. */
+    sections: string[];
     revision: string;
   } | null>(null);
   const [consistencyProgress, setConsistencyProgress] = useState<ConsistencyProgress | null>(null);
@@ -481,12 +483,29 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       return;
     }
     const snapshot = await getStructuredSnapshot();
-    const text = snapshot.nodes.map((node) => node.text ?? "").join("\n\n");
+    // Headings are carried into the run text as Markdown headings rather than
+    // flattened into the body. `segmentDocument` reads section identity from
+    // those markers, so flattening them leaves every statement unattributed:
+    // C1 would no longer be able to tell two sections apart, and C9 and the other
+    // cross-section checks would have no section to reason about. The `heading`
+    // node type is the snapshot's own discriminator, not a guess at a style
+    // name.
+    const sections: string[] = [];
+    const blocks = snapshot.nodes.map((node) => {
+      const body = node.text ?? "";
+      if (node.type !== "heading") return body;
+      const title = body.trim();
+      if (title.length === 0) return "";
+      sections.push(title);
+      return `## ${title}`;
+    });
+    const text = blocks.join("\n\n");
     const wordCount = text.split(/\s+/).filter((word) => word.length > 0).length;
     setConsistencyPreflight({
       wordCount,
       statementCount: previewStatements(text).length,
       text,
+      sections,
       // The document's content hash is the run's identity, not its length: an
       // edit that replaces a word with another of the same length leaves the
       // length identical, and a guard keyed on length would report such a run
@@ -514,13 +533,13 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       }
       // The preflight's text, not a fresh read: the disclosure counted this
       // document, so this is the document that was agreed to.
-      const { text, revision } = consistencyPreflight;
+      const { text, sections, revision } = consistencyPreflight;
       const registry = createRegistryFromSettings(state.settings, state.providerConnections);
       const active = registry.activeProvider;
       const report = await runConsistencyReview(
         {
           consistencyConsent: true,
-          document: { revision, text, sections: [] },
+          document: { revision, text, sections },
           model: state.settings.openAiModel ?? "",
         },
         {

@@ -184,7 +184,15 @@ export interface QuantityMatch {
   readonly end: number;
 }
 
-const NUMBER_PATTERN = /(-?\d[\d,]*\.?\d*)\s*([a-zA-Z%€£]{0,8})/g;
+/**
+ * A minus sign is a negative sign only where it can be one.
+ *
+ * The lookbehind is what separates "-5%" from "COVID-19" and from the "-03" of
+ * "2026-03-04". Without it every hyphenated token whose right-hand side is
+ * numeric contributes a negative quantity, and a document's identifiers and
+ * dates start contradicting each other on figures nobody wrote as figures.
+ */
+const NUMBER_PATTERN = /(?<!\w)-?\d[\d,]*\.?\d*/g;
 
 /**
  * Extract every quantity in a statement with its unit resolved.
@@ -192,29 +200,47 @@ const NUMBER_PATTERN = /(-?\d[\d,]*\.?\d*)\s*([a-zA-Z%€£]{0,8})/g;
  * A multiplier is applied only when the word is a recognized one. An unknown
  * suffix is kept as the unit rather than guessed at, so `5 apples` stays
  * `5 apples` and does not silently become `5` to compare against a bare `5`.
+ *
+ * Spans `extractDates` has already consumed are excluded. The digits in a date
+ * are part of that date, not quantities the document asserted: "2026-03-04" is
+ * not a claim that the figure is -3 or 2026, and C2 comparing those against the
+ * digits of another date reports a numeric contradiction the author never made.
  */
 export function extractQuantities(text: string): QuantityMatch[] {
   const matches: QuantityMatch[] = [];
+  const dateSpans = scanDates(text).spans;
   NUMBER_PATTERN.lastIndex = 0;
   let match = NUMBER_PATTERN.exec(text);
   while (match !== null) {
-    const raw = match[1] ?? "";
-    const unit = (match[2] ?? "").toLowerCase();
+    const raw = match[0];
+    const start = match.index;
+    const end = start + raw.length;
+    // The unit is read off the text rather than captured by the pattern, so the
+    // number itself stays a single group and the lookbehind has nothing to step
+    // over.
+    const unit = unitAfter(text, end);
     const parsed = Number(raw.replace(/,/g, ""));
-    if (Number.isFinite(parsed)) {
+    const insideDate = dateSpans.some(([from, to]) => start < to && from < end);
+    if (Number.isFinite(parsed) && !insideDate) {
       const multiplier = UNIT_MULTIPLIERS[unit] ?? 1;
       matches.push({
         raw,
         value: parsed,
         unit,
         normalized: parsed * multiplier,
-        start: match.index,
-        end: match.index + match[0].length,
+        start,
+        end: end + unit.length,
       });
     }
     match = NUMBER_PATTERN.exec(text);
   }
   return matches;
+}
+
+/** The unit word or symbol immediately after a quantity, if there is one. */
+function unitAfter(text: string, end: number): string {
+  const trailing = /^\s*([a-zA-Z%€£]{1,8})/.exec(text.slice(end));
+  return (trailing?.[1] ?? "").toLowerCase();
 }
 
 export interface DateMatch {
@@ -261,15 +287,20 @@ const MONTH_YEAR =
  * comparisons and the number of candidates C3 raises.
  */
 export function extractDates(text: string): DateMatch[] {
+  return scanDates(text).found;
+}
+
+/** The character ranges a date occupies, so other extractors can skip them. */
+function scanDates(text: string): { found: DateMatch[]; spans: [number, number][] } {
   const found: DateMatch[] = [];
-  const consumed: [number, number][] = [];
+  const spans: [number, number][] = [];
   const overlapsConsumed = (start: number, end: number): boolean =>
-    consumed.some(([from, to]) => start < to && from < end);
+    spans.some(([from, to]) => start < to && from < end);
 
   ISO_DATE.lastIndex = 0;
   let match = ISO_DATE.exec(text);
   while (match !== null) {
-    consumed.push([match.index, match.index + match[0].length]);
+    spans.push([match.index, match.index + match[0].length]);
     found.push({
       iso: match[0],
       raw: match[0],
@@ -283,7 +314,7 @@ export function extractDates(text: string): DateMatch[] {
   match = LONG_DATE.exec(text);
   while (match !== null) {
     const month = MONTHS[(match[2] ?? "").toLowerCase()] ?? 0;
-    consumed.push([match.index, match.index + match[0].length]);
+    spans.push([match.index, match.index + match[0].length]);
     found.push({
       iso: `${match[3]}-${String(month).padStart(2, "0")}-${String(Number(match[1])).padStart(2, "0")}`,
       raw: match[0],
@@ -301,7 +332,7 @@ export function extractDates(text: string): DateMatch[] {
     if (!overlapsConsumed(start, end)) {
       const month = MONTHS[(match[1] ?? "").toLowerCase()] ?? 0;
       const year = Number(match[2]);
-      consumed.push([start, end]);
+      spans.push([start, end]);
       found.push({
         iso: `${year}-${String(month).padStart(2, "0")}-00`,
         raw: match[0],
@@ -312,7 +343,7 @@ export function extractDates(text: string): DateMatch[] {
     }
     match = MONTH_YEAR.exec(text);
   }
-  return found;
+  return { found, spans };
 }
 
 /**
