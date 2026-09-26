@@ -14,10 +14,17 @@ const mocks = vi.hoisted(() => ({
   })),
   startParagraphEvents: vi.fn(async () => undefined),
   prepareReformatHost: vi.fn(async () => null),
+  isTrackedEditingEnabled: vi.fn(() => true),
 }));
 
 vi.mock("../../../../src/core/state/persistence", () => ({
   loadState: () => mocks.loadState(),
+  saveState: vi.fn(),
+}));
+
+vi.mock("../../../../src/core/state", () => ({
+  loadState: () => mocks.loadState(),
+  saveState: vi.fn(),
 }));
 
 vi.mock("../../../../src/word/documentObserver", () => ({
@@ -41,7 +48,7 @@ vi.mock("../../../../src/word/wordParagraphEvents", () => ({
 vi.mock("../../../../src/reformat", () => ({
   prepareReformatHost: mocks.prepareReformatHost,
   applyReviewedPlan: vi.fn(),
-  reviewEntireDocument: vi.fn(),
+  isTrackedEditingEnabled: mocks.isTrackedEditingEnabled,
 }));
 
 // The first-run editor only needs to report that the user navigated back; the

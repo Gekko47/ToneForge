@@ -1141,3 +1141,176 @@ need this function revisited; `tests/unit/taskpane/fluentTheme.test.ts` pins the
   [`theme.tsx`](../src/taskpane/theme.tsx),
   [`taskpane.css`](../src/taskpane/taskpane.css), and
   `tests/unit/taskpane/fluentTheme.test.ts`.
+
+## ADR-0058 — The Stage 18 smoke path is removed, and readiness is decided once
+
+- Status: Accepted
+- Date: 2026-09-26
+- Affects: `word/`, `reformat/`, `taskpane/`, and the Stage 18 and Phase F documentation
+- Amends: ADR-0038 (per-Apply tracked-editing preparation)
+
+### Context
+
+`word/smokeApply.ts` exported `enableSmokeMutations()`, which called
+`setStage01Passed(true, capabilities)` directly, bypassing
+`prepareTrackedEditing`. Nothing in `src/` imported the component that called it,
+so the path was dead — but shipping it meant the user-facing statement "Track
+Changes can never be bypassed", made in two places in the UI, was a claim about
+the bundle rather than about the running add-in.
+
+Separately, apply readiness was computed in two places that did not agree.
+`PendingChanges` computed `canApply` from plan-level gates only and was never
+given its own `applyDisabledReason`, so a user on a host without revision support
+saw an enabled Apply and only learned otherwise from the refusal message. The
+tracked-editing preference also reported "Enabled" before any probe had run: the
+flag defaults to on, while `STAGE_01_PASSED` stays false until
+`prepareTrackedEditing` probes the real host.
+
+### Decision
+
+1. `SmokePanel`, `smokePlan`, and `smokeApply` are deleted. `setStage01Passed` is
+   called from `prepareTrackedEditing` only. The Stage 18 live evidence in
+   `docs/manual-verification.md` is retained as a record, not as a tool.
+2. Apply readiness is computed once, in the pure `applyReadiness` helper, from
+   the same facts the apply gate checks: the preference, the probe result, and
+   the change types in the plan. One call feeds both the disabled reason on the
+   Apply button and the host-readiness verdict on the governance page.
+3. The preference and the readiness are separate concepts. A host that has not
+   been probed is `probePending`, not "ready" and not "blocked": Apply still
+   works, because it re-probes at the gate, but nothing may be claimed about
+   that host yet.
+
+### Consequences
+
+A disabled Apply always carries its reason, computed from the same inputs that
+will refuse it. The user learns their host's capability before planning rather
+than after clicking. The smoke path can no longer be revived without adding a new
+production caller for `setStage01Passed`, which is now a single obvious call site.
+
+- Evidence: [`applyReadiness.ts`](../src/taskpane/settings/applyReadiness.ts),
+  [`trackedEditing.ts`](../src/reformat/trackedEditing.ts),
+  [`PendingChanges.tsx`](../src/taskpane/components/PendingChanges.tsx),
+  `tests/unit/taskpane/settings/applyReadiness.test.ts`.
+
+## ADR-0059 — The retired review surfaces are removed, and the batcher is salvaged
+
+- Status: Accepted
+- Date: 2026-09-26
+- Affects: `ai/review/`, `taskpane/components/`, `taskpane/pages/Dashboard.tsx`
+- Implements: the decision recorded in ADR-0055
+
+### Context
+
+ADR-0055 removed the Phase D and Phase E task-pane entry points, and did so
+deliberately: there is one review surface running one engine. What remained was
+the engines, their orphaned components (`FullReviewPreflight`, `FullReviewProgress`,
+`FullReviewResults`, `AiReviewEntry`, `AiReviewResult`, `AiUnavailable`,
+`ConsistencyReviewEntry`), `buildRewritePrompt`, and `navigationController` — all
+imported only by their own tests.
+
+`Dashboard.resolvePendingPlan` also still accepted a full-document result and a
+spot result, and the call site passed `null` for both. Two of its three branches
+were unreachable while reading as live capability.
+
+### Decision
+
+The orphaned components and the two dead `resolvePendingPlan` parameters are
+deleted, and the components are deleted rather than kept warm on the theory that
+a future review surface will want them.
+
+`ai/review/batcher.ts` is the exception: `partitionReviewBatches` is a working
+partitioning primitive that the consistency engine needs for long documents. Its
+logic is moved into `analysis/consistency/` rather than imported, because that
+module may not reach `ai/` by ADR-0052.
+
+### Consequences
+
+`src/` no longer contains a symbol whose only caller is a test, so coverage
+reflects reachable behaviour. A maintainer reading `ai/review/` no longer finds
+what looks like a second live review path. The review pipeline that wrapped the
+batcher is gone; nothing in the product runs it.
+
+- Evidence: [`Dashboard.tsx`](../src/taskpane/pages/Dashboard.tsx),
+  `tests/unit/taskpane/pages/Dashboard.test.ts`.
+
+## ADR-0060 — Provider availability is stated from what the runtime can reach
+
+- Status: Accepted
+- Date: 2026-09-26
+- Affects: `ai/gateway/`, `taskpane/settings/`, `core/config/`
+- Amends: ADR-0049 and ADR-0050 (credential custody)
+
+### Context
+
+Two sources of truth contradicted each other. `ai/gateway/oauthState.ts` resolves
+Anthropic to `"oauth"` and OpenAI to `"featureGated"`, while the Provider dropdown
+in Settings told the user both were "Deployment-managed. The gateway holds the
+credential; the add-in never sees it."
+
+Only one is true, and a user acting on the wrong one is told to expect a
+connection flow that does not exist.
+
+### Decision
+
+Provider availability is derived from what the runtime can actually reach, and
+the dropdown renders every provider in that set with its reason. A provider that
+is not reachable is shown disabled with a sentence explaining why, rather than
+offered and failing at request time.
+
+The OAuth state machine stays, but ships behind an explicit deployment flag
+rather than sitting next to a UI that contradicts it. Whether Anthropic OAuth can
+be turned on is a credential-custody decision, not a UI decision.
+
+### Consequences
+
+Every option the dropdown offers is one the add-in can use. A user selecting an
+unavailable provider learns why in one sentence instead of after a failed
+request. Enabling provider OAuth later is a one-flag change plus a connect
+surface, not a rewrite.
+
+- Evidence: [`providerComposition.ts`](../src/taskpane/settings/providerComposition.ts),
+  [`settingsModel.ts`](../src/taskpane/settings/settingsModel.ts),
+  [`oauthState.ts`](../src/ai/gateway/oauthState.ts).
+
+## ADR-0061 — Governance policy is authorable, and takes precedence over learned evidence
+
+- Status: Accepted
+- Date: 2026-09-26
+- Affects: `core/state/`, `core/domain/`, `changes/`, `taskpane/pages/Profile.tsx`
+- Implements: Phase 3 of [`implementation-plan.md`](../plans/implementation-plan.md)
+
+### Context
+
+`GovernanceProfile` models `rules`, `terminology`, `scope`, `protection`, and
+`editorial`, and `resolveResolvedPolicy` gives them precedence over learned
+evidence. But `saveProfileRecord` overwrites only `style`, and no UI could author
+any of the rest — so the entire normative half of the policy contract was
+permanently at its schema defaults, and "Mandatory / Advisory" in the governance
+dashboard was a label derived from a finding's severity rather than a policy a
+user had set.
+
+`VersionDiff` already had a governance-diff branch that had never been rendered
+with both arguments.
+
+### Decision
+
+Governance policy becomes authorable: rules bind to finding categories so
+`autoFix` and `severity` mean something at plan time; scope and protection become
+explicit controls; terminology reuses the existing `term: replacement` parser.
+Every policy change bumps the version and appends to history, so a `ChangePlan`
+cites the exact policy revision it was built under and an older one is refused.
+
+Protection defaults that are safety properties — quoted text, captions, tracked
+deletions — require an explicit confirmation to disable, because a protection
+preference is a safety downgrade and must read as one.
+
+### Consequences
+
+A governance author can state intent rather than thresholds, and the dashboard
+counts reflect authored policy. Making scope editable means a user could narrow
+analysis to nothing, so the coverage banner names the excluded set and a test
+refuses a scope policy that excludes all body content.
+
+- Evidence: [`GovernanceProfile.ts`](../src/core/domain/GovernanceProfile.ts),
+  [`persistence.ts`](../src/core/state/persistence.ts),
+  [`ResolvedPolicy.ts`](../src/core/domain/ResolvedPolicy.ts).

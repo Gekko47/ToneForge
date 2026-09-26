@@ -1,7 +1,7 @@
 import { setTaskpaneTarget, type TaskpaneTarget } from "../shared/office/taskpaneNavigation";
 
-async function showTaskpane(target: TaskpaneTarget): Promise<void> {
-  setTaskpaneTarget(target);
+async function showTaskpane(target: TaskpaneTarget, action?: "scan"): Promise<void> {
+  setTaskpaneTarget(target, action);
   const office = (
     globalThis as {
       Office?: { addin?: { showAsTaskpane?: () => Promise<void> } };
@@ -27,18 +27,13 @@ export async function openFindings(): Promise<void> {
 }
 
 /**
- * Both review commands open the single AI Review page.
+ * Open AI Review and wait.
  *
- * They used to probe the host, read the selection, and route to one of three
- * different targets, which meant a ribbon click could open the pane part-way
- * into a review whose disclosure the user had not seen. The pane now always
- * shows the disclosure first and starts nothing until the user chooses to.
+ * There is one review surface and it starts nothing on arrival. The pane shows
+ * the disclosure — scope, provider, and what a model may get wrong — and the
+ * user chooses to run it.
  */
-export async function reviewSelection(): Promise<void> {
-  await showTaskpane("ai-review");
-}
-
-export async function reviewDocument(): Promise<void> {
+export async function reviewForConsistency(): Promise<void> {
   await showTaskpane("ai-review");
 }
 
@@ -46,14 +41,21 @@ export async function openProfile(): Promise<void> {
   await showTaskpane("profile");
 }
 
-export async function editProfile(): Promise<void> {
-  await showTaskpane("profile");
-}
-
 export async function openPendingChanges(): Promise<void> {
   await showTaskpane("pending-changes");
 }
 
+/**
+ * Open the governance page and actually scan.
+ *
+ * This command previously only opened the pane, so a user who pressed a button
+ * labelled "Scan Now" got a page and had to press Scan a second time. The
+ * request travels with the navigation, and the pane runs it on arrival.
+ */
 export async function scanNow(): Promise<void> {
-  await showTaskpane("governance");
+  await showTaskpane("governance", "scan");
+}
+
+export async function openTroubleshooting(): Promise<void> {
+  await showTaskpane("debugging");
 }

@@ -2,7 +2,6 @@ import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { type WordCapabilities } from "../../word/capabilityProbe";
 import { getStructuredSnapshot } from "../../word/documentReader";
 import { createRegistryFromSettings } from "../settings/providerComposition";
-import type { SpotReviewResult } from "../../ai/review/spotReview";
 import {
   createGovernanceProfile,
   type GovernanceProfile,
@@ -11,8 +10,8 @@ import { createDocumentObserver, type DocumentObserverStatus } from "../../word/
 import { createWordParagraphEventAdapter } from "../../word/wordParagraphEvents";
 import {
   applyReviewedPlan,
+  isTrackedEditingEnabled,
   prepareReformatHost,
-  type FullReviewResult,
   type ReformatResult,
 } from "../../reformat";
 import { consumeTaskpaneTarget } from "../../shared/office/taskpaneNavigation";
@@ -43,6 +42,8 @@ import {
 } from "../workflow/workflowState";
 import { loadState } from "../../core/state/persistence";
 import { selectActiveProfile } from "../../core/state/profileSelectors";
+import { usePersistedState } from "../state/usePersistedState";
+import { applyReadiness, hostReadinessMessage } from "../settings/applyReadiness";
 import { StyleProfileSchema, type StyleProfile } from "../../core/domain/StyleProfile";
 import type { Finding } from "../../core/domain/Finding";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
@@ -52,8 +53,15 @@ const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
 
 const IGNORED_FINDINGS_KEY = "ToneForge.IgnoredFindingFingerprints.v1";
+const REVIEWED_FINDINGS_KEY = "ToneForge.ReviewedFindingFingerprints.v1";
+
+/** Lets the findings toolbar's `aria-controls` point at the rendered list. */
+const FINDINGS_LIST_ID = "tf-findings-list";
 
 type DashboardPage = "home" | "ai-review" | "profile" | "settings" | "troubleshooting";
+
+/** Destinations reachable before a profile exists. */
+type SetupDestination = "home" | "settings" | "troubleshooting";
 
 function resolveActiveProfile(): StyleProfile | null {
   const profile = selectActiveProfile(loadState());
@@ -81,47 +89,35 @@ type PendingPlan = {
     unsupported?: readonly string[];
     unprocessed?: readonly string[];
   } | null;
-  /** Which review produced this plan. `reformat` is the only one the pane runs today. */
-  source: "reformat" | "full" | "spot";
 };
 
-function spotPlanCoverage(plan: ChangePlan): {
-  complete: boolean;
-  unprocessed: string[];
-} {
-  const unprocessed = plan.changes
-    .filter((change) => {
-      const finding = plan.findings?.find((item) => item.id === change.findingId);
-      return finding === undefined || finding.nodeIds.length === 0;
-    })
-    .map((change) => change.id);
-  return { complete: unprocessed.length === 0, unprocessed };
+/**
+ * The single plan Pending Changes may offer.
+ *
+ * Safe reformat is the only review the pane runs, so this takes exactly one
+ * result. It previously accepted a full-document result and a spot result that
+ * no caller ever passed — both were always `null` at the call site, so two of
+ * its three branches were unreachable while still reading as live capability
+ * (ADR-0059).
+ */
+export function resolvePendingPlan(reformatResult: ReformatResult | null): PendingPlan | null {
+  if (!reformatResult?.plan) return null;
+  return {
+    plan: reformatResult.plan,
+    coverage: reformatResult.report.coverage ?? null,
+  };
 }
 
-export function resolvePendingPlan(
-  reformatResult: ReformatResult | null,
-  fullResult: FullReviewResult | null,
-  aiReview: SpotReviewResult | null,
-): PendingPlan | null {
-  if (reformatResult?.plan) {
-    return {
-      plan: reformatResult.plan,
-      coverage: reformatResult.report.coverage ?? null,
-      source: "reformat",
-    };
-  }
-  if (fullResult?.plan) {
-    return { plan: fullResult.plan, coverage: fullResult.coverage, source: "full" };
-  }
-  if (aiReview?.plan) {
-    return { plan: aiReview.plan, coverage: spotPlanCoverage(aiReview.plan), source: "spot" };
-  }
-  return null;
-}
-
-function readIgnoredFindingIds(): Set<string> {
+/**
+ * Read a versioned set of finding fingerprints from storage.
+ *
+ * One reader for both the ignore set and the reviewed set: the parsing and the
+ * failure behaviour are identical, and duplicating them is how the two lists end
+ * up disagreeing about what a corrupt value means.
+ */
+function readFingerprintSet(key: string): Set<string> {
   try {
-    const value = window.localStorage.getItem(IGNORED_FINDINGS_KEY);
+    const value = window.localStorage.getItem(key);
     const parsed: unknown = value ? JSON.parse(value) : [];
     return new Set(
       Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [],
@@ -129,6 +125,26 @@ function readIgnoredFindingIds(): Set<string> {
   } catch {
     return new Set();
   }
+}
+
+function persistFingerprintSet(key: string, ids: ReadonlySet<string>): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(Array.from(ids)));
+  } catch {
+    // Storage may be unavailable; the set still applies for this session.
+  }
+}
+
+function readIgnoredFindingIds(): Set<string> {
+  return readFingerprintSet(IGNORED_FINDINGS_KEY);
+}
+
+function persistIgnoredFindingIds(ids: ReadonlySet<string>): void {
+  persistFingerprintSet(IGNORED_FINDINGS_KEY, ids);
+}
+
+function persistReviewedFindingIds(ids: ReadonlySet<string>): void {
+  persistFingerprintSet(REVIEWED_FINDINGS_KEY, ids);
 }
 
 export default function Dashboard(): React.ReactNode {
@@ -139,30 +155,108 @@ export default function Dashboard(): React.ReactNode {
   const [activeProfile, setActiveProfile] = useState<StyleProfile | null>(resolveActiveProfile);
 
   if (!activeProfile) {
-    return (
-      <main className="tf-card">
-        <h1 className="tf-title">Create a style profile</h1>
-        <p className="tf-sub">
-          ToneForge needs a style profile before it can analyse or safely reformat this document.
-        </p>
-        <Suspense fallback={<div role="status">Loading profile editor…</div>}>
-          <Profile onBack={() => setActiveProfile(resolveActiveProfile())} />
-        </Suspense>
-      </main>
-    );
+    return <NoProfileSetup onProfileCreated={() => setActiveProfile(resolveActiveProfile())} />;
   }
 
   return <DashboardWithProfile key={activeProfile.id} activeProfile={activeProfile} />;
 }
 
+/**
+ * The first-run state, which still has the app frame.
+ *
+ * This used to render a bare `<main>` with no header, so a user with no profile
+ * could not reach Settings, the theme control, or Troubleshooting. That is a
+ * real lockout: the AI Review consent lives in Settings, and a user who wants to
+ * understand what they are agreeing to before creating a profile had no way to
+ * read it. Navigation is available; only the governance actions are not.
+ */
+function NoProfileSetup({ onProfileCreated }: { onProfileCreated: () => void }): React.ReactNode {
+  const [page, setPage] = useState<SetupDestination>("home");
+
+  /*
+   * The header offers every destination, so this accepts them all and narrows
+   * them. Profile and AI Review need the profile this gate is asking for, so
+   * they resolve to home rather than rendering a page that cannot work — the
+   * click still does something explainable instead of appearing to do nothing.
+   */
+  function navigate(destination: TaskPaneDestination): void {
+    if (destination === "settings" || destination === "troubleshooting" || destination === "home") {
+      setPage(destination);
+      return;
+    }
+    setPage("home");
+  }
+
+  if (page === "settings") {
+    return (
+      <main className="tf-card" tabIndex={0}>
+        <TaskPaneHeader
+          activePage="settings"
+          profileName="None yet"
+          profileRevision={0}
+          onNavigate={navigate}
+        />
+        <Suspense fallback={<div role="status">Loading…</div>}>
+          <Settings onBack={() => navigate("home")} />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (page === "troubleshooting") {
+    return (
+      <main className="tf-card" tabIndex={0}>
+        <TaskPaneHeader
+          activePage="troubleshooting"
+          profileName="None yet"
+          profileRevision={0}
+          onNavigate={navigate}
+        />
+        <Suspense fallback={<div role="status">Loading…</div>}>
+          <DebuggingPanel onBack={() => navigate("home")} coverage={null} />
+        </Suspense>
+      </main>
+    );
+  }
+
+  return (
+    <main className="tf-card" tabIndex={0}>
+      <TaskPaneHeader
+        activePage="home"
+        profileName="None yet"
+        profileRevision={0}
+        onNavigate={navigate}
+      />
+      <h1 className="tf-title">Create a style profile</h1>
+      <p className="tf-sub">
+        ToneForge needs a style profile before it can analyse or safely reformat this document. You
+        can still change Settings and review AI permissions before you create one.
+      </p>
+      <p className="tf-sub">
+        Scanning and applying changes stay unavailable until a profile exists.
+      </p>
+      <Suspense fallback={<div role="status">Loading profile editor…</div>}>
+        <Profile onBack={onProfileCreated} />
+      </Suspense>
+    </main>
+  );
+}
+
 function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }): React.ReactNode {
   const [caps, setCaps] = useState<WordCapabilities | null>(null);
+  // Persisted state is read through the store, not `loadState()`, so a consent
+  // toggle or provider connection saved in Settings is visible here in the same
+  // render pass rather than after the user navigates away and back.
+  const persisted = usePersistedState();
   const [page, setPage] = useState<DashboardPage>("home");
   const [findingsOpen, setFindingsOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [reformatResult, setReformatResult] = useState<ReformatResult | null>(null);
   const [status, setStatus] = useState<DocumentObserverStatus | null>(null);
   const [ignoredFindingIds, setIgnoredFindingIds] = useState<Set<string>>(readIgnoredFindingIds);
+  const [reviewedFindingIds, setReviewedFindingIds] = useState<Set<string>>(() =>
+    readFingerprintSet(REVIEWED_FINDINGS_KEY),
+  );
   const observerRef = useRef<ReturnType<typeof createDocumentObserver> | null>(null);
   // Cross-report consistency review is the only AI review this pane offers. It
   // keeps its own state, its own trigger, and its own consent: collapsing the
@@ -245,43 +339,76 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   }, [activeProfileKey, caps]);
 
   useEffect(() => {
-    const target = consumeTaskpaneTarget();
-    if (!target) return;
-    if (target === "debugging") {
+    const request = consumeTaskpaneTarget();
+    if (!request) return;
+    if (request.target === "debugging") {
       setPage("troubleshooting");
       return;
     }
-    if (target === "profile") {
+    if (request.target === "profile") {
       setPage("profile");
       return;
     }
-    if (target === "ai-review") {
+    if (request.target === "ai-review") {
       setPage("ai-review");
       return;
     }
-    if (target === "findings") {
+    if (request.target === "findings") {
       setPage("home");
       setFindingsOpen(true);
     }
-    if (target === "pending-changes") {
+    if (request.target === "pending-changes") {
       setPage("home");
       setPendingOpen(true);
+    }
+    /*
+     * "Scan Now" carries its action with it. Opening the governance page and
+     * stopping there meant a user who pressed a button labelled "Scan Now" got
+     * a page and had to press Scan a second time.
+     */
+    if (request.action === "scan") {
+      observerRef.current?.onDocumentChanged();
     }
   }, []);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        IGNORED_FINDINGS_KEY,
-        JSON.stringify(Array.from(ignoredFindingIds)),
-      );
-    } catch {
-      // A finding remains ignored for this session when storage is unavailable.
-    }
+    persistIgnoredFindingIds(ignoredFindingIds);
   }, [ignoredFindingIds]);
 
+  useEffect(() => {
+    persistFingerprintSet(REVIEWED_FINDINGS_KEY, reviewedFindingIds);
+  }, [reviewedFindingIds]);
+
+  /**
+   * Reapply the reviewed set to freshly emitted findings.
+   *
+   * Without this a reviewed finding reverts to `new` on the next scan, because
+   * the observer owns `status` and knows nothing about the user's review marks.
+   * Applying the set here keeps the two owners in agreement without the observer
+   * needing to know anything about task-pane storage.
+   */
+  useEffect(() => {
+    if (reviewedFindingIds.size === 0) return;
+    setStatus((previous) => {
+      if (!previous || previous.findings.length === 0) return previous;
+      let changed = false;
+      const findings = previous.findings.map((item) => {
+        if (reviewedFindingIds.has(findingFingerprint(item)) && item.status !== "reviewed") {
+          changed = true;
+          return { ...item, status: "reviewed" as const };
+        }
+        return item;
+      });
+      return changed ? { ...previous, findings } : previous;
+    });
+  }, [reviewedFindingIds, status]);
+
   function ignoreFinding(finding: Finding): void {
-    setIgnoredFindingIds((previous) => new Set(previous).add(findingFingerprint(finding)));
+    setIgnoredFindingIds((previous) => {
+      const next = new Set(previous).add(findingFingerprint(finding));
+      persistIgnoredFindingIds(next);
+      return next;
+    });
   }
 
   function navigate(destination: TaskPaneDestination): void {
@@ -433,7 +560,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         setApplyMessage(
           `Applied and verified ${result.results.filter((item) => item.applied).length} change(s).`,
         );
-        if (pendingPlan.source === "reformat") setReformatResult(null);
+        setReformatResult(null);
         setPendingOpen(false);
         observerRef.current?.onDocumentChanged();
         return true;
@@ -451,19 +578,21 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     }
   }
 
+  /**
+   * Mark a finding as seen, durably.
+   *
+   * This used to set `status` on a React copy, which the next observer emission
+   * overwrote: a reviewed finding reverted to `new` on the next scan, so the
+   * control did nothing. The fingerprint is persisted under the same kind of
+   * versioned key the ignore path already uses, and reapplied on every emission
+   * so a reviewed finding stays reviewed across rescans.
+   */
   function markForReview(finding: Finding): void {
-    // Phase C provides the entry point. The orchestrator preview owns the
-    // actual change-plan and apply flow in the Safe reformat panel below.
-    setStatus((previous) =>
-      previous
-        ? {
-            ...previous,
-            findings: previous.findings.map((item) =>
-              item.id === finding.id ? { ...item, status: "reviewed" } : item,
-            ),
-          }
-        : previous,
-    );
+    setReviewedFindingIds((previous) => {
+      const next = new Set(previous).add(findingFingerprint(finding));
+      persistReviewedFindingIds(next);
+      return next;
+    });
   }
 
   // The consistency report crosses into the ordinary finding model through the
@@ -517,11 +646,28 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   // and full-document surfaces are retired from the pane. The selector keeps
   // understanding their plans so either could return behind the single section
   // without changing the pending-changes contract.
-  const pendingPlan = resolvePendingPlan(reformatResult, null, null);
-  const aiSettings = loadState().settings;
+  const pendingPlan = resolvePendingPlan(reformatResult);
+  // Read through the store, not `loadState()`: a consent toggle saved in Settings
+  // must be reflected here in the same render pass, not after a navigation.
+  const aiSettings = persisted.settings;
   const aiProviderConfigured =
     Boolean(aiSettings.openAiBaseUrl) || aiSettings.llmProvider === "mock";
   const aiReviewConsent = aiSettings.consistencyReviewConsent;
+  /**
+   * One readiness decision, shared by the Apply button and the host banner.
+   *
+   * Computing it once is the point: two surfaces that each decided readiness
+   * separately is how a disabled control and a refusing gate end up disagreeing.
+   */
+  const readiness = applyReadiness({
+    trackedEditingEnabled: isTrackedEditingEnabled(),
+    capabilities: caps,
+    changes: pendingPlan?.plan.changes ?? [],
+  });
+  const hostReadiness = hostReadinessMessage({
+    trackedEditingEnabled: isTrackedEditingEnabled(),
+    capabilities: caps,
+  });
   // Derived rather than stored, so the displayed stage cannot disagree with the
   // state that produced it.
   const aiReviewStage: AiReviewStage =
@@ -562,6 +708,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                 nextAction={currentTask.nextAction}
                 total={findings.length}
                 selectedIndex={workflow.planReview.selectedFindingIndex}
+                listId={FINDINGS_LIST_ID}
                 onPrevious={() =>
                   dispatchWorkflow({
                     type: "plan/selectFinding",
@@ -576,7 +723,9 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                 }
               />
               <FindingsList
+                id={FINDINGS_LIST_ID}
                 findings={findings}
+                selectedIndex={workflow.planReview.selectedFindingIndex}
                 onReview={markForReview}
                 onIgnore={(findingId) => {
                   const finding = findings.find((item) => item.id === findingId);
@@ -620,6 +769,8 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             plan={pendingPlan?.plan ?? null}
             findings={reformatResult?.report.findings ?? currentGovernanceFindings}
             coverage={pendingPlan?.coverage ?? null}
+            applyDisabledReason={readiness.reason}
+            onOpenSettings={() => setPage("settings")}
             onApply={() => applyPendingPlan(pendingPlan)}
             onReject={() => {
               setReformatResult(null);
@@ -635,7 +786,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           stage={aiReviewStage}
           providerConfigured={aiProviderConfigured}
           hasConsent={aiReviewConsent}
-          providerName={loadState().settings.llmProvider}
+          providerName={aiSettings.llmProvider}
           preflight={
             consistencyPreflight === null
               ? null
@@ -685,23 +836,46 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             onViewFindings={() => setFindingsOpen(true)}
             onRescan={() => observerRef.current?.onDocumentChanged()}
           />
+          {/*
+            The host verdict, stated before any preview exists. It used to be a
+            footnote saying readiness would be checked later, which told the user
+            nothing until after they had clicked Apply.
+          */}
+          {hostReadiness.verdict !== "ready" && (
+            <p
+              className={
+                hostReadiness.verdict === "blocked"
+                  ? "tf-readiness tf-readiness-blocked"
+                  : "tf-readiness"
+              }
+              role="status"
+              aria-live="polite"
+            >
+              {hostReadiness.message}{" "}
+              {hostReadiness.verdict === "blocked" && (
+                <button type="button" onClick={() => setPage("settings")}>
+                  Open Settings
+                </button>
+              )}
+            </p>
+          )}
           <StaleBanner
             stale={status?.stale ?? false}
+            hostUnavailable={status?.hostUnavailable ?? false}
             lastScan={status?.lastScan ?? null}
             onRescan={() => observerRef.current?.onDocumentChanged()}
           />
           <CoverageBanner coverage={status?.coverage ?? null} />
+          {/*
+            Safe reformat sits above the findings and pending-changes sections:
+            it is the cause of a plan, and the sections it feeds were previously
+            rendered above the control that produced them.
+          */}
           <ReformatPanel
             profile={activeProfile}
             onPreview={(result) => setReformatResult(result)}
           />
         </section>
-      )}
-
-      {caps === null && (
-        <p className="tf-sub">
-          Host readiness is checked when a review or safe reformat is attempted.
-        </p>
       )}
     </main>
   );

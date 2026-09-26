@@ -12,8 +12,17 @@ export interface PendingChangesProps {
   findings: Finding[];
   onApply?: () => boolean | Promise<boolean>;
   onReject?: () => void;
-  /** Optional current host-readiness state supplied by the parent workflow. */
+  /**
+   * Why the host cannot accept these changes, supplied by the parent workflow.
+   *
+   * Computed by the pure `applyReadiness` helper from the same facts the apply
+   * gate checks, so a disabled button and a refusing gate cannot disagree. The
+   * reason is rendered as the button's accessible description, because a control
+   * the user cannot press must always say why.
+   */
   applyDisabledReason?: string | null;
+  /** Offered beside the reason when the blocker is resolved in Settings. */
+  onOpenSettings?: () => void;
   coverage?: {
     complete: boolean;
     unsupported?: readonly string[];
@@ -27,6 +36,7 @@ export default function PendingChanges({
   onApply,
   onReject,
   applyDisabledReason = null,
+  onOpenSettings,
   coverage = null,
 }: PendingChangesProps): React.ReactNode {
   const [result, setResult] = useState<string | null>(null);
@@ -98,7 +108,7 @@ export default function PendingChanges({
       <h3>Pending Changes ({plan.changes.length})</h3>
 
       {(plan.conflicts ?? []).length > 0 && (
-        <div style={{ color: "#a4262c", marginBottom: "0.5rem" }}>
+        <div className="tf-conflict-list">
           <p>{(plan.conflicts ?? []).length} conflict(s) block application.</p>
           <ul aria-live="polite">
             {(plan.conflicts ?? []).map((conflict, index) => {
@@ -114,9 +124,14 @@ export default function PendingChanges({
         </p>
       )}
       {applyDisabledReason !== null && (
-        <p id="pending-apply-readiness" role="status" aria-live="polite" className="tf-sub">
-          {applyDisabledReason}
-        </p>
+        <div id="pending-apply-readiness" role="status" aria-live="polite" className="tf-sub">
+          <p>{applyDisabledReason}</p>
+          {onOpenSettings && (
+            <button type="button" onClick={onOpenSettings}>
+              Open Settings
+            </button>
+          )}
+        </div>
       )}
       {coverage && !coverage.complete && (
         <p role="status" aria-live="polite" className="tf-sub">
@@ -126,60 +141,52 @@ export default function PendingChanges({
         </p>
       )}
 
-      <table
-        aria-label="Pending change previews"
-        style={{ width: "100%", borderCollapse: "collapse", marginBottom: "1rem" }}
-      >
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>
-              Change
-            </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>
-              Risk
-            </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>
-              Source
-            </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>
-              Approval
-            </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>
-              Precondition
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {plan.changes.map((change) => {
-            const finding = findings.find((item) => item.id === change.findingId);
-            const preconditionAvailable = change.precondition !== undefined;
-            return (
-              <tr key={change.id}>
-                <td style={{ padding: "0.5rem", borderBottom: "1px solid #eee" }}>
-                  <div>{change.type}</div>
-                  <div>Before: {finding?.actual ?? "Unavailable (not supplied)"}</div>
-                  <div>After: {finding?.expected ?? "Unavailable (not supplied)"}</div>
-                </td>
-                <td style={{ padding: "0.5rem", borderBottom: "1px solid #eee" }}>
-                  {change.risk ?? "unavailable"}
-                </td>
-                <td style={{ padding: "0.5rem", borderBottom: "1px solid #eee" }}>
-                  {change.source ?? "unavailable"}
-                </td>
-                <td style={{ padding: "0.5rem", borderBottom: "1px solid #eee" }}>
-                  {change.approvalState ?? "unavailable"}
-                  {change.approvalRequired ? " (approval required)" : ""}
-                </td>
-                <td style={{ padding: "0.5rem", borderBottom: "1px solid #eee" }}>
-                  {preconditionAvailable ? change.precondition?.kind : "Unavailable"}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {/*
+        The table scrolls rather than squeezing. Five columns in a 320px pane
+        left every cell one word wide; the scroll container keeps the columns
+        readable and the caption plus `scope` keep it navigable.
+      */}
+      <div className="tf-pending-table-scroll">
+        <table className="tf-pending-table">
+          <caption className="sr-only">
+            Proposed Word changes: before and after text, risk, originating rule, approval state,
+            and precondition.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Change</th>
+              <th scope="col">Risk</th>
+              <th scope="col">Source</th>
+              <th scope="col">Approval</th>
+              <th scope="col">Precondition</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plan.changes.map((change) => {
+              const finding = findings.find((item) => item.id === change.findingId);
+              const preconditionAvailable = change.precondition !== undefined;
+              return (
+                <tr key={change.id}>
+                  <td>
+                    <div>{change.type}</div>
+                    <div>Before: {finding?.actual ?? "Unavailable (not supplied)"}</div>
+                    <div>After: {finding?.expected ?? "Unavailable (not supplied)"}</div>
+                  </td>
+                  <td>{change.risk ?? "unavailable"}</td>
+                  <td>{change.source ?? "unavailable"}</td>
+                  <td>
+                    {change.approvalState ?? "unavailable"}
+                    {change.approvalRequired ? " (approval required)" : ""}
+                  </td>
+                  <td>{preconditionAvailable ? change.precondition?.kind : "Unavailable"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
-      <div style={{ display: "flex", gap: "0.5rem" }}>
+      <div className="tf-pending-actions">
         <button
           type="button"
           onClick={handleApply}

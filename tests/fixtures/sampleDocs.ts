@@ -1,3 +1,27 @@
+import { FindingSchema, type Finding } from "../../src/core/domain/Finding";
+
+/**
+ * Build a valid `Finding` for a component or integration test.
+ *
+ * Tests that render finding cards need a schema-valid finding, and hand-writing
+ * one in every file is how a test ends up asserting against a shape the domain
+ * no longer accepts. Defaults cover the fields a card displays.
+ */
+export function sampleFinding(overrides: Partial<Finding> = {}): Finding {
+  return FindingSchema.parse({
+    id: "22222222-2222-2222-2222-222222222222",
+    kind: "deterministic",
+    category: "typography.emDash",
+    message: "An em dash is used where the profile calls for a spaced en dash.",
+    status: "new",
+    severity: "warning",
+    range: { start: 0, end: 12, unit: "character" },
+    nodeIds: ["33333333-3333-3333-3333-333333333333"],
+    source: "deterministic",
+    ...overrides,
+  });
+}
+
 export const SAMPLE_PARAGRAPHS = [
   "The quick brown fox jumps over the lazy dog. This sentence has exactly twelve words.",
   "Second paragraph here. It introduces a new idea and ends with a question?",

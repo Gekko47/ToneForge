@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   associateCommandActions,
   COMMAND_REGISTRY,
+  duplicateNavigationTargets,
   openFindings,
   openPendingChanges,
-  reviewDocument,
-  reviewSelection,
+  openProfile,
+  openTroubleshooting,
+  reviewForConsistency,
   scanNow,
 } from "../../../src/commands/commands";
 import { consumeTaskpaneTarget } from "../../../src/shared/office/taskpaneNavigation";
@@ -63,29 +65,15 @@ describe("command entry points", () => {
         navigationTarget: "findings",
       },
       {
-        id: "ToneForgeReviewSelection",
-        label: "Review Selection",
+        id: "ToneForgeReview",
+        label: "Review for Consistency",
         jsonAction: "executeFunction",
         xmlAction: "ShowTaskpane",
         navigationTarget: "ai-review",
       },
       {
-        id: "ToneForgeReviewDocument",
-        label: "Review Document",
-        jsonAction: "executeFunction",
-        xmlAction: "ShowTaskpane",
-        navigationTarget: "ai-review",
-      },
-      {
-        id: "ToneForgeActiveProfile",
-        label: "Active Profile",
-        jsonAction: "executeFunction",
-        xmlAction: "ShowTaskpane",
-        navigationTarget: "profile",
-      },
-      {
-        id: "ToneForgeEditProfile",
-        label: "Edit Profile",
+        id: "ToneForgeProfile",
+        label: "Style Profile",
         jsonAction: "executeFunction",
         xmlAction: "ShowTaskpane",
         navigationTarget: "profile",
@@ -97,37 +85,58 @@ describe("command entry points", () => {
         xmlAction: "ShowTaskpane",
         navigationTarget: "pending-changes",
       },
+      {
+        id: "ToneForgeTroubleshooting",
+        label: "Troubleshooting",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "debugging",
+      },
     ]);
+  });
+
+  /**
+   * Two ribbon buttons that open the same page are indistinguishable and
+   * misleading about what the add-in can do. "Active Profile" and "Edit
+   * Profile" both opened the profile page; "Review Selection" and "Review
+   * Document" both opened a whole-document review that ignores the selection.
+   */
+  it("gives every command a distinct destination", () => {
+    expect(duplicateNavigationTargets()).toEqual([]);
   });
 
   it("opens the requested task-pane destinations", async () => {
     const showAsTaskpane = vi.fn().mockResolvedValue(undefined);
     setOffice({ addin: { showAsTaskpane } });
-    await scanNow();
-    expect(consumeTaskpaneTarget()).toBe("governance");
     await openFindings();
-    expect(consumeTaskpaneTarget()).toBe("findings");
-    await reviewDocument();
-    expect(consumeTaskpaneTarget()).toBe("ai-review");
+    expect(consumeTaskpaneTarget()).toEqual({ target: "findings" });
+    await reviewForConsistency();
+    expect(consumeTaskpaneTarget()).toEqual({ target: "ai-review" });
+    await openProfile();
+    expect(consumeTaskpaneTarget()).toEqual({ target: "profile" });
     await openPendingChanges();
-    expect(consumeTaskpaneTarget()).toBe("pending-changes");
-    expect(showAsTaskpane).toHaveBeenCalledTimes(4);
+    expect(consumeTaskpaneTarget()).toEqual({ target: "pending-changes" });
+    await openTroubleshooting();
+    expect(consumeTaskpaneTarget()).toEqual({ target: "debugging" });
+    expect(showAsTaskpane).toHaveBeenCalledTimes(5);
   });
 
-  it("sends both review commands to the same AI Review page", async () => {
+  /**
+   * "Scan Now" used to open the governance page and stop, so pressing a button
+   * with that label got a page and required a second press to actually scan.
+   */
+  it("asks the pane to scan, not merely to open, for Scan Now", async () => {
     setOffice({ addin: { showAsTaskpane: vi.fn().mockResolvedValue(undefined) } });
-    await reviewSelection();
-    expect(consumeTaskpaneTarget()).toBe("ai-review");
-    await reviewDocument();
-    expect(consumeTaskpaneTarget()).toBe("ai-review");
+    await scanNow();
+    expect(consumeTaskpaneTarget()).toEqual({ target: "governance", action: "scan" });
   });
 
   it("falls back safely when Office is unavailable", async () => {
     setOffice(undefined);
-    await reviewSelection();
+    await reviewForConsistency();
     // The destination is still recorded, so the pane opens on AI Review when the
     // host eventually provides it rather than losing the user's intent.
-    expect(consumeTaskpaneTarget()).toBe("ai-review");
+    expect(consumeTaskpaneTarget()).toEqual({ target: "ai-review" });
   });
 
   it("registers the command actions when Office becomes ready", async () => {

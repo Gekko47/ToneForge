@@ -82,5 +82,7 @@ model and deployed credential boundary.
 - [`docs/privacy-security.md`](docs/privacy-security.md) documents consent,
   minimization, redaction, and storage limitations.
 - [`docs/decision-log.md`](docs/decision-log.md) records architectural decisions.
-- `src/analysis/consistency/README.md` reserves the future Content Consistency
-  Review seam; no Phase H engine is implemented.
+- [`src/analysis/consistency/README.md`](src/analysis/consistency/README.md)
+  documents the cross-report consistency engine that Phase 5 delivered in place
+  of the reserved Phase H seam. It is opt-in, has its own consent, and is the only
+  sanctioned exception to deterministic-first (ADR-0052).

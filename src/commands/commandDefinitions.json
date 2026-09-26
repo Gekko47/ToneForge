@@ -16,32 +16,16 @@
     "xmlNavigationTarget": "default"
   },
   {
-    "id": "ToneForgeReviewSelection",
-    "label": "Review Selection",
+    "id": "ToneForgeReview",
+    "label": "Review for Consistency",
     "jsonAction": "executeFunction",
     "xmlAction": "ShowTaskpane",
     "navigationTarget": "ai-review",
     "xmlNavigationTarget": "default"
   },
   {
-    "id": "ToneForgeReviewDocument",
-    "label": "Review Document",
-    "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
-    "navigationTarget": "ai-review",
-    "xmlNavigationTarget": "default"
-  },
-  {
-    "id": "ToneForgeActiveProfile",
-    "label": "Active Profile",
-    "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
-    "navigationTarget": "profile",
-    "xmlNavigationTarget": "default"
-  },
-  {
-    "id": "ToneForgeEditProfile",
-    "label": "Edit Profile",
+    "id": "ToneForgeProfile",
+    "label": "Style Profile",
     "jsonAction": "executeFunction",
     "xmlAction": "ShowTaskpane",
     "navigationTarget": "profile",
@@ -53,6 +37,14 @@
     "jsonAction": "executeFunction",
     "xmlAction": "ShowTaskpane",
     "navigationTarget": "pending-changes",
+    "xmlNavigationTarget": "default"
+  },
+  {
+    "id": "ToneForgeTroubleshooting",
+    "label": "Troubleshooting",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "debugging",
     "xmlNavigationTarget": "default"
   }
 ]

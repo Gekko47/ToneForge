@@ -2,12 +2,11 @@ import { z } from "zod";
 import type { TaskpaneTarget } from "../shared/office/taskpaneNavigation";
 import commandDefinitionData from "./commandDefinitions.json";
 import {
-  editProfile,
   openFindings,
   openPendingChanges,
   openProfile,
-  reviewDocument,
-  reviewSelection,
+  openTroubleshooting,
+  reviewForConsistency,
   scanNow,
 } from "./commandHandlers";
 
@@ -34,18 +33,24 @@ const CommandDefinitionSchema = z.object({
   jsonAction: z.literal("executeFunction"),
   xmlAction: z.literal("ShowTaskpane"),
   xmlNavigationTarget: z.literal("default"),
-  navigationTarget: z.enum(["governance", "findings", "ai-review", "profile", "pending-changes"]),
+  navigationTarget: z.enum([
+    "governance",
+    "findings",
+    "ai-review",
+    "profile",
+    "pending-changes",
+    "debugging",
+  ]),
 });
 
 const commandDefinitions = z.array(CommandDefinitionSchema).parse(commandDefinitionData);
 const handlers: Readonly<Record<(typeof commandDefinitions)[number]["id"], CommandHandler>> = {
   ToneForgeScan: scanNow,
   ToneForgeFindings: openFindings,
-  ToneForgeReviewSelection: reviewSelection,
-  ToneForgeReviewDocument: reviewDocument,
-  ToneForgeActiveProfile: openProfile,
-  ToneForgeEditProfile: editProfile,
+  ToneForgeReview: reviewForConsistency,
+  ToneForgeProfile: openProfile,
   ToneForgePendingChanges: openPendingChanges,
+  ToneForgeTroubleshooting: openTroubleshooting,
 };
 
 export const COMMAND_REGISTRY = commandDefinitions.map((definition): CommandDefinition => {
@@ -55,3 +60,23 @@ export const COMMAND_REGISTRY = commandDefinitions.map((definition): CommandDefi
   }
   return { ...definition, handler };
 });
+
+/**
+ * Navigation targets claimed by more than one command.
+ *
+ * Two ribbon buttons that open the same page are indistinguishable to the user
+ * and misleading about what the add-in can do: "Active Profile" and "Edit
+ * Profile" both opened the profile page, and "Review Selection" and "Review
+ * Document" both opened a whole-document review that ignores the selection. This
+ * is the machine-checked form of that defect, so the duplication cannot return
+ * silently with a new pair of buttons.
+ */
+export function duplicateNavigationTargets(): string[][] {
+  const byTarget = new Map<TaskpaneTarget, string[]>();
+  commandDefinitions.forEach((definition) => {
+    const ids = byTarget.get(definition.navigationTarget) ?? [];
+    ids.push(definition.id);
+    byTarget.set(definition.navigationTarget, ids);
+  });
+  return [...byTarget.values()].filter((ids) => ids.length > 1);
+}

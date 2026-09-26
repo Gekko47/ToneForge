@@ -91,6 +91,13 @@ body {
   background: var(--tf-surface);
 }
 
+/* The toolbar's selected position has to be visible somewhere. `aria-current`
+   alone leaves a sighted user with an announced number and no highlighted card. */
+.tf-finding-card.is-selected {
+  border-color: var(--tf-accent);
+  box-shadow: inset 3px 0 0 var(--tf-accent);
+}
+
 .tf-finding-card-header,
 .tf-finding-actions {
   display: flex;
@@ -197,7 +204,7 @@ button:disabled {
 
 .tf-button {
   background: var(--tf-accent);
-  color: #fff;
+  color: var(--tf-surface);
   border: none;
   border-radius: 2px;
   padding: 6px 12px;
@@ -206,7 +213,8 @@ button:disabled {
 }
 
 .tf-button:disabled {
-  background: #ccc;
+  background: var(--tf-border);
+  color: var(--tf-muted);
   cursor: not-allowed;
 }
 
@@ -222,9 +230,86 @@ button:disabled {
 }
 
 .tf-error {
-  color: #d13438;
+  color: var(--tf-danger);
   font-size: 12px;
   margin: 4px 0;
+}
+
+/* Host-readiness verdict on the governance page. Muted when the host is simply
+   unprobed, warning-toned when it cannot apply tracked changes. The tone is
+   supplementary; the sentence carries the meaning. */
+.tf-readiness {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+  background: var(--tf-surface);
+  color: var(--tf-muted);
+  font-size: 0.85rem;
+}
+
+.tf-readiness-blocked {
+  border-color: var(--tf-warning-border);
+  background: var(--tf-warning-bg);
+  color: var(--tf-text);
+}
+
+/* Shared banner surface. Previously each banner inlined its own hex values,
+   which meant none of them responded to the dark theme. */
+.tf-banner {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+  background: var(--tf-surface);
+}
+
+.tf-banner-warning {
+  border-color: var(--tf-warning-border);
+  background: var(--tf-warning-bg);
+}
+
+.tf-banner-heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.tf-empty {
+  color: var(--tf-success);
+}
+
+.tf-pending-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* The pending-changes table is five columns wide in a pane that can be 320px
+   across. Scrolling beats squeezing every cell to one unreadable word. */
+.tf-pending-table-scroll {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.tf-pending-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tf-pending-table th,
+.tf-pending-table td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--tf-border);
+  vertical-align: top;
+}
+
+.tf-pending-table th {
+  border-bottom-width: 2px;
+}
+
+.tf-conflict-list {
+  margin-bottom: 0.5rem;
+  color: var(--tf-danger);
 }
 
 .tf-app-header {

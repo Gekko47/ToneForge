@@ -49,8 +49,10 @@ does not replace the existing profile contract.
 
 All proposed changes flow through `ChangePlan` and the
 [`revisionAdapter`](src/word/revisionAdapter.ts). UI, rules, analysis, and
-orchestration code do not mutate Word directly. The deprecated smoke helpers
-remain only for reproducible historical verification.
+orchestration code do not mutate Word directly. The Stage 18 smoke helpers
+were removed; the live evidence they produced is retained in
+[`docs/manual-verification.md`](docs/manual-verification.md) as a record, not as
+a tool (ADR-0058).
 
 ### Coverage is measurable
 
@@ -261,8 +263,10 @@ paths remain available for compatibility.
 - `ChangePlan.conflicts` accepts legacy strings and structured conflict entries.
 - `Finding`, `Change`, and `ChangePlan` use defaults/additive fields to preserve
   existing fixtures.
-- [`smokeApply`](src/word/smokeApply.ts) and the Stage 18 smoke panel are
-  deprecated compatibility/reproduction paths, not competing production paths.
+- The Stage 18 smoke panel and `smokeApply` were removed in Phase 1. They
+  exported `enableSmokeMutations()`, which armed the Stage 01 gate without going
+  through `prepareTrackedEditing`, so shipping them made "Track Changes can never
+  be bypassed" untrue as a statement about the bundle (ADR-0058).
 - The [`consistency`](src/analysis/consistency/README.md) directory is the Phase 5
   engine. It may be imported by the task pane, and must not be imported by
   `word/`, the observer, or any incremental path.
@@ -361,8 +365,6 @@ provider, performance, and release evidence remain unresolved.
 - Whether Phase G's proposed consistency `types.ts` stub and CI grep guard are
   required before release, or whether the current documentation-only seam is
   sufficient.
-- Whether to retain the deprecated smoke panel in the release candidate UI or
-  remove it after the final live verification record is complete.
 
 ## Documentation policy
 

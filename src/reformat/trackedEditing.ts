@@ -19,6 +19,15 @@ function readEnabled(): boolean {
   }
 }
 
+/**
+ * Set once `prepareTrackedEditing` has probed this host at least once.
+ *
+ * Module-scoped rather than persisted: readiness is a property of the running
+ * host, not of the user, and a persisted "ready" would be a lie about a host that
+ * has not been seen since the last session.
+ */
+let trackedEditingPrepared = false;
+
 export function isTrackedEditingEnabled(): boolean {
   return readEnabled();
 }
@@ -30,6 +39,19 @@ export function setTrackedEditingEnabled(enabled: boolean): void {
     // The in-memory gate is still updated when storage is unavailable.
   }
   if (!enabled) setStage01Passed(false);
+}
+
+/**
+ * Whether a persisted capability probe has been taken on this host.
+ *
+ * The preference defaults to enabled, so the *intent* is on before anything has
+ * been probed. The *readiness* is not: `STAGE_01_PASSED` in the revision adapter
+ * stays false until `prepareTrackedEditing` has probed the real host. Reporting
+ * the preference as if it were readiness would tell the user their host is ready
+ * before anything has checked, so the two are kept separate (ADR-0058).
+ */
+export function isTrackedEditingReadinessKnown(): boolean {
+  return trackedEditingPrepared;
 }
 
 function requiredCapability(
@@ -85,9 +107,12 @@ export async function prepareTrackedEditing(
       enabled: false,
       capabilities: null,
       unsupportedChangeIds: [],
-      error: "Tracked editing is disabled. Enable it in Troubleshooting before applying.",
+      error: "Tracked editing is disabled. Enable it in Settings before applying.",
     };
   }
+
+  // From here the host has been, or is about to be, probed for real.
+  trackedEditingPrepared = true;
 
   const capabilities = await probeWordCapabilities();
   if (!capabilities.supportsRevisions) {

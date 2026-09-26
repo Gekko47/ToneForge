@@ -26,6 +26,14 @@ export interface DocumentObserverStatus {
   lastScan: string | null;
   dirtyCount: number;
   stale: boolean;
+  /**
+   * True when the last failure was the host going away, not the document moving.
+   *
+   * These are different facts with different remedies — waiting for Word versus
+   * re-scanning — and reporting a host outage as stale findings told the user to
+   * re-scan a document that had not changed (ADR-0058).
+   */
+  hostUnavailable: boolean;
   findings: Finding[];
   coverage: CoverageReport | null;
   currentRunId: string | null;
@@ -61,6 +69,7 @@ interface ObserverState {
   stale: boolean;
   coverage: CoverageReport | null;
   error: string | null;
+  hostUnavailable: boolean;
   debouncedScan: (() => void) | null;
 }
 
@@ -105,6 +114,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     lastScan: null,
     dirtyCount: 0,
     stale: false,
+    hostUnavailable: false,
     coverage: null,
     error: null,
     debouncedScan: null,
@@ -165,6 +175,10 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       state.lastAcceptedRunId = runId;
       state.dirtyCount = examinedNodeIds.length;
       state.stale = false;
+      // A successful scan clears an earlier host outage: the two are not
+      // concurrent, and leaving the outage set would keep reporting a host that
+      // is demonstrably answering again.
+      state.hostUnavailable = false;
       state.error = null;
       state.phase =
         coverage?.complete === false
@@ -177,20 +191,22 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       if (!isCurrent()) return;
       // A host rejection after the text-only retry means the runtime itself is
       // gone, not that the document is unreadable. Those two are reported
-      // differently: one is recoverable by waiting, the other is not, and
-      // collapsing them makes a re-scan look futile when it is not.
+      // separately now: the document did not change, so claiming stale findings
+      // sent the user to re-scan a document that had not moved.
       const detail = describeError(err);
       logger.warn("Document observer scan failed during processing", detail);
       if (err instanceof Error && err.message.includes("Office")) {
         logger.warn("Office unavailable during document scan", detail);
         state.phase = "failed";
-        state.stale = true;
-        state.error = "Office is unavailable. Re-scan when Word is ready.";
+        state.stale = false;
+        state.hostUnavailable = true;
+        state.error = "Office is unavailable. Scan again when Word is ready.";
         emitStatus();
         return;
       }
       state.phase = "failed";
       state.stale = true;
+      state.hostUnavailable = false;
       state.error = err instanceof Error ? err.message : String(err);
       emitStatus();
     } finally {
@@ -217,6 +233,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
         lastAcceptedRunId: state.lastAcceptedRunId,
         documentVersion: state.documentVersion,
         supersededRuns: state.supersededRuns,
+        hostUnavailable: state.hostUnavailable,
         error: state.error,
       });
     }

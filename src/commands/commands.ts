@@ -9,7 +9,7 @@
 import { COMMAND_REGISTRY, type CommandEvent } from "./commandRegistry";
 
 export * from "./commandHandlers";
-export { COMMAND_REGISTRY } from "./commandRegistry";
+export { COMMAND_REGISTRY, duplicateNavigationTargets } from "./commandRegistry";
 export type { CommandDefinition, CommandEvent, CommandHandler } from "./commandRegistry";
 
 /** Associate every JSON executeFunction action with its registered handler. */

@@ -123,8 +123,10 @@ const FALLBACK_CAPABILITIES = {
  *
  * Empty text short-circuits to an empty report and plan with no apply step.
  * Provider failures are logged and skipped inside the checker; caller abort
- * is propagated. The Stage 01 capability gate is enforced by the orchestrator
- * pre-entry; the adapter check remains defense-in-depth.
+ * is propagated. The capability gate is enforced by the orchestrator pre-entry
+ * and, at apply time, by `prepareTrackedEditing`; the adapter check remains
+ * defense-in-depth. That preparation is the only caller of `setStage01Passed`
+ * (ADR-0058).
  */
 export async function reformatDocument(options: ReformatOptions): Promise<ReformatResult> {
   const {

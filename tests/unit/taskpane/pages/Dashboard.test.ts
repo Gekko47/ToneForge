@@ -32,21 +32,23 @@ function makePlan(id: string): ChangePlan {
 }
 
 describe("resolvePendingPlan", () => {
-  it("keeps the selected plan paired with its own coverage", () => {
+  it("keeps the plan paired with the coverage from its own run", () => {
     const reformatPlan = makePlan("reformat");
-    const fullPlan = makePlan("full");
-    const pending = resolvePendingPlan(
-      {
-        plan: reformatPlan,
-        report: { coverage: { complete: true, unprocessed: [] } },
-      } as never,
-      { plan: fullPlan, coverage: { complete: false, unprocessed: ["full"] } } as never,
-      null,
-    );
+    const pending = resolvePendingPlan({
+      plan: reformatPlan,
+      report: { coverage: { complete: true, unprocessed: [] } },
+    } as never);
 
-    expect(pending?.source).toBe("reformat");
     expect(pending?.plan).toBe(reformatPlan);
     expect(pending?.coverage).toEqual({ complete: true, unprocessed: [] });
+  });
+
+  it("has no plan when nothing has been previewed", () => {
+    expect(resolvePendingPlan(null)).toBeNull();
+  });
+
+  it("has no plan when a preview produced no change plan", () => {
+    expect(resolvePendingPlan({ report: { coverage: null } } as never)).toBeNull();
   });
 });
 

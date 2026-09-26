@@ -121,27 +121,11 @@
                   <bt:Image size="32" resid="Icon.32x32" />
                   <bt:Image size="80" resid="Icon.80x80" />
                 </Icon>
-                <Control xsi:type="Button" id="ToneForgeReviewSelection">
-                  <Label resid="ToneForge.ReviewSelectionLabel" />
+                <Control xsi:type="Button" id="ToneForgeReview">
+                  <Label resid="ToneForge.ReviewLabel" />
                   <Supertip>
-                    <Title resid="ToneForge.ReviewSelectionLabel" />
-                    <Description resid="ToneForge.ReviewSelDesc" />
-                  </Supertip>
-                  <Icon>
-                    <bt:Image size="16" resid="Icon.16x16" />
-                    <bt:Image size="32" resid="Icon.32x32" />
-                    <bt:Image size="80" resid="Icon.80x80" />
-                  </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
-                </Control>
-                <Control xsi:type="Button" id="ToneForgeReviewDocument">
-                  <Label resid="ToneForge.ReviewDocumentLabel" />
-                  <Supertip>
-                    <Title resid="ToneForge.ReviewDocumentLabel" />
-                    <Description resid="ToneForge.ReviewDocDesc" />
+                    <Title resid="ToneForge.ReviewLabel" />
+                    <Description resid="ToneForge.ReviewDesc" />
                   </Supertip>
                   <Icon>
                     <bt:Image size="16" resid="Icon.16x16" />
@@ -161,27 +145,11 @@
                   <bt:Image size="32" resid="Icon.32x32" />
                   <bt:Image size="80" resid="Icon.80x80" />
                 </Icon>
-                <Control xsi:type="Button" id="ToneForgeActiveProfile">
-                  <Label resid="ToneForge.ActiveProfileLabel" />
+                <Control xsi:type="Button" id="ToneForgeProfile">
+                  <Label resid="ToneForge.ProfileLabel" />
                   <Supertip>
-                    <Title resid="ToneForge.ActiveProfileLabel" />
-                    <Description resid="ToneForge.ActiveProfileDesc" />
-                  </Supertip>
-                  <Icon>
-                    <bt:Image size="16" resid="Icon.16x16" />
-                    <bt:Image size="32" resid="Icon.32x32" />
-                    <bt:Image size="80" resid="Icon.80x80" />
-                  </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
-                </Control>
-                <Control xsi:type="Button" id="ToneForgeEditProfile">
-                  <Label resid="ToneForge.EditProfileLabel" />
-                  <Supertip>
-                    <Title resid="ToneForge.EditProfileLabel" />
-                    <Description resid="ToneForge.EditProfileDesc" />
+                    <Title resid="ToneForge.ProfileLabel" />
+                    <Description resid="ToneForge.ProfileDesc" />
                   </Supertip>
                   <Icon>
                     <bt:Image size="16" resid="Icon.16x16" />
@@ -206,6 +174,22 @@
                   <Supertip>
                     <Title resid="ToneForge.PendingChangesLabel" />
                     <Description resid="ToneForge.PendingChangesDesc" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+                <Control xsi:type="Button" id="ToneForgeTroubleshooting">
+                  <Label resid="ToneForge.TroubleshootingLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.TroubleshootingLabel" />
+                    <Description resid="ToneForge.TroubleshootingDesc" />
                   </Supertip>
                   <Icon>
                     <bt:Image size="16" resid="Icon.16x16" />
@@ -243,21 +227,19 @@
         <bt:String id="ToneForge.ChangesGroupLabel" DefaultValue="Changes" />
         <bt:String id="ToneForge.ScanLabel" DefaultValue="Scan Now" />
         <bt:String id="ToneForge.FindingsLabel" DefaultValue="Findings" />
-        <bt:String id="ToneForge.ReviewSelectionLabel" DefaultValue="Review Selection" />
-        <bt:String id="ToneForge.ReviewDocumentLabel" DefaultValue="Review Document" />
-        <bt:String id="ToneForge.ActiveProfileLabel" DefaultValue="Active Profile" />
-        <bt:String id="ToneForge.EditProfileLabel" DefaultValue="Edit Profile" />
+        <bt:String id="ToneForge.ReviewLabel" DefaultValue="Review for Consistency" />
+        <bt:String id="ToneForge.ProfileLabel" DefaultValue="Style Profile" />
         <bt:String id="ToneForge.PendingChangesLabel" DefaultValue="Pending Changes" />
+        <bt:String id="ToneForge.TroubleshootingLabel" DefaultValue="Troubleshooting" />
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="ToneForge.TaskpaneDescription" DefaultValue="Learn a style from samples and check consistency across Word documents." />
-        <bt:String id="ToneForge.ScanDescription" DefaultValue="Scan the document for style issues." />
-        <bt:String id="ToneForge.FindingsDescription" DefaultValue="View detected findings." />
-        <bt:String id="ToneForge.ReviewSelDesc" DefaultValue="Review the selected text with AI." />
-        <bt:String id="ToneForge.ReviewDocDesc" DefaultValue="Review the entire document with AI." />
-        <bt:String id="ToneForge.ActiveProfileDesc" DefaultValue="View the active style profile." />
-        <bt:String id="ToneForge.EditProfileDesc" DefaultValue="Edit the active style profile." />
-        <bt:String id="ToneForge.PendingChangesDesc" DefaultValue="View pending changes." />
+        <bt:String id="ToneForge.ScanDescription" DefaultValue="Run the deterministic style checks against this document now and show the results." />
+        <bt:String id="ToneForge.FindingsDescription" DefaultValue="Open the findings already recorded for this document." />
+        <bt:String id="ToneForge.ReviewDesc" DefaultValue="Check whether different parts of this document disagree with each other. You choose when to run it, after seeing exactly what would be sent." />
+        <bt:String id="ToneForge.ProfileDesc" DefaultValue="Open the style profile this document is checked against: view it, edit its draft, and manage its published versions." />
+        <bt:String id="ToneForge.PendingChangesDesc" DefaultValue="Open the proposed Word revisions waiting for your approval." />
+        <bt:String id="ToneForge.TroubleshootingDesc" DefaultValue="Inspect this Word host's capabilities and the coverage of the last scan. These checks never change the document." />
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

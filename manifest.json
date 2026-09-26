@@ -60,7 +60,7 @@
                       ],
                       "supertip": {
                         "title": "Scan Now",
-                        "description": "Run the deterministic style checks against this document and open the results."
+                        "description": "Run the deterministic style checks against this document now and show the results."
                       }
                     },
                     {
@@ -85,33 +85,18 @@
                   "label": "AI Review",
                   "controls": [
                     {
-                      "id": "ToneForgeReviewSelectionControl",
+                      "id": "ToneForgeReviewControl",
                       "type": "button",
-                      "label": "Review Selection",
-                      "actionId": "ToneForgeReviewSelection",
+                      "label": "Review for Consistency",
+                      "actionId": "ToneForgeReview",
                       "icons": [
                         { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
                         { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
                         { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
                       ],
                       "supertip": {
-                        "title": "Review Selection",
-                        "description": "Start a spot review of the text you have selected in Word."
-                      }
-                    },
-                    {
-                      "id": "ToneForgeReviewDocumentControl",
-                      "type": "button",
-                      "label": "Review Document",
-                      "actionId": "ToneForgeReviewDocument",
-                      "icons": [
-                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
-                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
-                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
-                      ],
-                      "supertip": {
-                        "title": "Review Document",
-                        "description": "Start a whole-document review after you confirm what leaves the add-in."
+                        "title": "Review for Consistency",
+                        "description": "Check whether different parts of this document disagree with each other. You choose when to run it, after seeing exactly what would be sent."
                       }
                     }
                   ]
@@ -121,33 +106,18 @@
                   "label": "Profile",
                   "controls": [
                     {
-                      "id": "ToneForgeActiveProfileControl",
+                      "id": "ToneForgeProfileControl",
                       "type": "button",
-                      "label": "Active Profile",
-                      "actionId": "ToneForgeActiveProfile",
+                      "label": "Style Profile",
+                      "actionId": "ToneForgeProfile",
                       "icons": [
                         { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
                         { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
                         { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
                       ],
                       "supertip": {
-                        "title": "Active Profile",
-                        "description": "Open the style profile this document is currently checked against."
-                      }
-                    },
-                    {
-                      "id": "ToneForgeEditProfileControl",
-                      "type": "button",
-                      "label": "Edit Profile",
-                      "actionId": "ToneForgeEditProfile",
-                      "icons": [
-                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
-                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
-                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
-                      ],
-                      "supertip": {
-                        "title": "Edit Profile",
-                        "description": "Open the style profile settings to adjust what the add-in enforces."
+                        "title": "Style Profile",
+                        "description": "Open the style profile this document is checked against: view it, edit its draft, and manage its published versions."
                       }
                     }
                   ]
@@ -169,6 +139,21 @@
                       "supertip": {
                         "title": "Pending Changes",
                         "description": "Open the proposed Word revisions waiting for your approval."
+                      }
+                    },
+                    {
+                      "id": "ToneForgeTroubleshootingControl",
+                      "type": "button",
+                      "label": "Troubleshooting",
+                      "actionId": "ToneForgeTroubleshooting",
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Troubleshooting",
+                        "description": "Inspect this Word host's capabilities and the coverage of the last scan. These checks never change the document."
                       }
                     }
                   ]
@@ -204,11 +189,10 @@
           "actions": [
             { "id": "ToneForgeScan", "type": "executeFunction" },
             { "id": "ToneForgeFindings", "type": "executeFunction" },
-            { "id": "ToneForgeReviewSelection", "type": "executeFunction" },
-            { "id": "ToneForgeReviewDocument", "type": "executeFunction" },
-            { "id": "ToneForgeActiveProfile", "type": "executeFunction" },
-            { "id": "ToneForgeEditProfile", "type": "executeFunction" },
-            { "id": "ToneForgePendingChanges", "type": "executeFunction" }
+            { "id": "ToneForgeReview", "type": "executeFunction" },
+            { "id": "ToneForgeProfile", "type": "executeFunction" },
+            { "id": "ToneForgePendingChanges", "type": "executeFunction" },
+            { "id": "ToneForgeTroubleshooting", "type": "executeFunction" }
           ]
         }
       ]

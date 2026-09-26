@@ -1,26 +1,35 @@
 /**
  * FindingCard — displays a single finding with category, source,
  * severity, explanation, actual vs expected, location, and actions.
+ *
+ * The card is an `option` inside the findings listbox, so it carries
+ * `aria-selected` and `aria-current` rather than inventing a second selection
+ * vocabulary. `selected` is driven by the findings toolbar; before that existed
+ * the toolbar advanced a counter with nothing on screen to match it.
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { Finding } from "../../core/domain/Finding";
 import { navigateToFinding } from "../../word/sourceLocator";
 
 export interface FindingCardProps {
   finding: Finding;
+  /** True when the findings toolbar currently points at this card. */
+  selected?: boolean;
   onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
 }
 
 export default function FindingCard({
   finding,
+  selected = false,
   onReview,
   onIgnore,
 }: FindingCardProps): React.ReactNode {
   const [navigationState, setNavigationState] = useState<
     { status: "idle" } | { status: "working" } | { status: "message"; message: string }
   >({ status: "idle" });
+  const cardRef = useRef<HTMLElement | null>(null);
   // Each card owns its status element; a shared id would collapse every card's
   // message onto the first rendered status node for assistive technology.
   const navigationStatusId = `finding-navigation-status-${finding.id}`;
@@ -34,6 +43,26 @@ export default function FindingCard({
   const riskLabel = finding.risk
     ? finding.risk.charAt(0).toUpperCase() + finding.risk.slice(1)
     : "None";
+  const statusLabel =
+    finding.status === "reviewed"
+      ? "Reviewed"
+      : finding.status.charAt(0).toUpperCase() + finding.status.slice(1);
+
+  /*
+   * Scroll only when this card becomes the selected one.
+   *
+   * `scrollIntoView` is feature-detected because the add-in runs in an Office
+   * WebView whose API surface is not guaranteed to match a browser's, and an
+   * undefined method here would take down the whole findings list rather than
+   * just this convenience.
+   */
+  useEffect(() => {
+    if (!selected) return;
+    const element = cardRef.current;
+    if (typeof element?.scrollIntoView === "function") {
+      element.scrollIntoView({ block: "nearest" });
+    }
+  }, [selected]);
 
   async function handleGoToText(): Promise<void> {
     setNavigationState({ status: "working" });
@@ -58,12 +87,19 @@ export default function FindingCard({
   }
 
   return (
-    <article aria-label={`Finding: ${finding.category}`} className="tf-finding-card">
+    <article
+      ref={cardRef}
+      role="option"
+      aria-selected={selected}
+      aria-current={selected ? "true" : undefined}
+      aria-label={`Finding: ${finding.category}`}
+      className={selected ? "tf-finding-card is-selected" : "tf-finding-card"}
+    >
       <header className="tf-finding-card-header">
         <strong className="tf-finding-category">{finding.category}</strong>
         <span className="tf-finding-meta">
           {sourceLabel} · {finding.source === "ai" ? "Current AI review" : "Document scan"} ·{" "}
-          {severityLabel} · Risk: {riskLabel}
+          {severityLabel} · Risk: {riskLabel} · {statusLabel}
         </span>
       </header>
 
@@ -99,8 +135,8 @@ export default function FindingCard({
           {navigationState.status === "working" ? "Going to text…" : "Go to text"}
         </button>
         {onReview && (
-          <button type="button" onClick={handleReview}>
-            Review
+          <button type="button" onClick={handleReview} disabled={finding.status === "reviewed"}>
+            {finding.status === "reviewed" ? "Reviewed" : "Review"}
           </button>
         )}
         {onIgnore && (
