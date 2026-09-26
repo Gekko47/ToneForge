@@ -935,3 +935,209 @@ merely forgotten.
 - `node_modules/office-addin-debugging/lib/start.js` — desktop-and-Windows-only debugging
 - `node_modules/office-addin-dev-settings/lib/sideload.js` — `generateSideloadUrl` and the
   `open()` call that opens the default browser
+
+## ADR-0055 — AI Review is one surface running one engine
+
+- Status: Accepted
+- Date: 2026-09-26
+- Amends: ADR-0052 (the consistency engine is a separate, opt-in, non-deterministic engine)
+- Affects: Phase D (spot review) and Phase E (full-document review) task-pane surfaces
+
+### Context
+
+The AI Review page presented two independent things as if they were peers: a
+selection/paragraph/full-document style review, and the cross-report consistency
+check. Each carried its own disclosure, its own consent story, and its own set of
+buttons. A user opening the page had to read two descriptions of what the feature
+would do with their document before choosing anything, and the two descriptions
+disagreed about scope — one promised a minimized selection, the other the whole
+document.
+
+The duplication was visible in the rendered output. A single missing consent was
+announced three times, once per disabled control, because each control carried its
+own copy of the same prerequisite sentence. Nothing had changed for the user: they
+still had to work out which of four consents applied.
+
+Both review engines remain implemented and tested. What was wrong was the
+presentation, and the navigation around it: three ribbon targets
+(`ai-review-selection`, `ai-review-paragraph`, `ai-review-document`) each opened the
+pane part-way into a flow, so a ribbon click could begin a review whose disclosure
+the user had not yet seen.
+
+### Decision
+
+The task pane offers **one** AI Review, and it is the cross-report consistency
+check. [`AiReviewSection`](../src/taskpane/components/AiReviewSection.tsx) owns the
+whole ladder — disclosure, one consent-gated action, preflight, progress, results —
+and renders exactly one prerequisite hint.
+
+- The three `ai-review-*` navigation targets collapse to `ai-review`. Navigation now
+  shows the disclosure and starts nothing until the user chooses to. Command IDs and
+  labels are unchanged, so both manifests stay valid.
+- `spotReviewConsent` and `fullDocumentReviewConsent` lose their Settings toggles.
+  The persisted fields, the Zod schema, and the migrations are **kept**, so no state
+  version bump is required and existing state loads unchanged.
+- The engines are untouched: [`spotReview`](../src/ai/review/spotReview.ts) and
+  [`reviewEntireDocument`](../src/reformat/orchestrator.ts) remain, as do their
+  consents.
+
+### Consequences
+
+Positive:
+
+- One page, one description, one action, one prerequisite. A missing consent is
+  stated once.
+- A ribbon button can no longer open the pane mid-flow.
+- The remaining AI Review consent is unambiguous: exactly one feature depends on it.
+
+Negative, and deliberately accepted:
+
+- **This is a product change, not a bug fix.** Phase D and Phase E lose their
+  user-facing entry points. They are no longer reachable from the add-in. The
+  ROADMAP rows for those phases are updated to say so rather than left claiming a
+  shipped surface.
+- The `AiReviewEntry`, `AiReviewResult`, `FullReview*`, and `ConsistencyReviewEntry`
+  components remain in the tree, covered by tests, but are no longer mounted. They
+  are retained as library surfaces so a future decision to reintroduce a review mode
+  does not require rebuilding them. They are not dead code in the sense that matters
+  — nothing imports them, and a reviewer should treat re-mounting any of them as
+  reopening this ADR.
+
+### What this ADR explicitly does not change
+
+ADR-0052 still holds in full. Consolidating the surface merges nothing about
+consent: `consistencyReviewConsent` is still stored separately, still defaults to
+`false`, and is still not implied by `semanticOptIn` or anything else. A future
+change that lets one consent enable another would contradict ADR-0052, not this ADR.
+
+- Evidence: [`AiReviewSection.tsx`](../src/taskpane/components/AiReviewSection.tsx),
+  [`Dashboard.tsx`](../src/taskpane/pages/Dashboard.tsx),
+  [`taskpaneNavigation.ts`](../src/shared/office/taskpaneNavigation.ts),
+  [`commandDefinitions.json`](../src/commands/commandDefinitions.json),
+  [`ProviderPrivacySettingsSection.tsx`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx),
+  and `tests/unit/taskpane/components/AiReviewSection.test.tsx`.
+
+## ADR-0056 — Analysis acquisition is gated on probed capabilities and degrades to text
+
+- Status: Accepted
+- Date: 2026-09-26
+- Relates to: ADR-0038 (fresh capability probing before every mutation)
+
+### Context
+
+[`acquireAnalysisContext()`](../src/word/analysisAcquisition.ts) accepted an
+`AnalysisCapabilities` record and then ignored it. It unconditionally loaded
+`document.styles`, every style's `font`, and per-paragraph `style`,
+`styleBuiltIn`, `uniqueLocalId`, `isListItem`, `alignment`, `lineSpacing`,
+`spaceAfter`, `spaceBefore`, and `font` — regardless of what the probe had found.
+
+On live Desktop Word the probe reports `supportsStyles: false`,
+`supportsParagraphFormat: false`, and `supportsInsertBreak: false`. The acquisition
+asked for those families anyway. Word does not decline the one unsupported property;
+it rejects the entire request with a generic `GeneralException`. The cost was the
+whole scan, not the one property: the observer latched `phase: "failed"`, Findings
+stayed permanently stale, and safe reformat reported the same failure.
+
+The failure was also undiagnosable. `redactDiagnosticContext` treats any key
+matching `/error/i` as potential document content and replaces it wholesale, so
+every host failure was logged as `[REDACTED_CONTENT]`. Redacting a message that
+might quote a paragraph is right; redacting a Word error code is not.
+
+### Decision
+
+Two changes, both in the Word boundary.
+
+1. **Ask only for what the probe says exists.** `planAcquisitionLoads()` builds the
+   request from the probe result. Each optional property family is bound to one
+   capability; `document.styles` is not touched at all when `supportsStyles` is
+   false. Every property deliberately not requested is named in
+   `AcquisitionDiagnostics.unsupported`, so a text-only result is never reported as
+   a formatting-aware one.
+
+2. **Degrade rather than fail.** The probe can be wrong — a requirement set can be
+   added by the host after the probe ran. On a host rejection, the acquisition
+   retries once with a text-only scope and records the degradation, rather than
+   losing every scan to one property. A second failure propagates: that is the
+   runtime being gone, not the document being unreadable, and
+   [`performScan()`](../src/word/documentObserver.ts) reports the two differently.
+
+Separately, [`describeError()`](../src/shared/utils/logger.ts) builds a diagnostic
+context from a thrown value using the allowlisted keys `errorName`, `errorCode`, and
+`errorMessage`. Those three bypass the content rule but still pass through
+credential redaction and a 200-character cap, so an exception message that happens
+to embed a paragraph is truncated rather than logged in full. The blanket `error`
+key is still fully redacted.
+
+### Consequences
+
+Positive:
+
+- A host that cannot serve styles or paragraph format still gets deterministic
+  findings over the whole document, with an honest coverage report.
+- A Word host failure is diagnosable from the console again, including its error code.
+- The skip list is data, so a coverage claim is derived from what was actually read.
+
+Negative:
+
+- Acquisition results now depend on the probe. A stale probe yields a narrower
+  scope than before. The degraded retry exists precisely because that is preferable
+  to a rejected request, and the skip list makes the narrowing visible rather than
+  silent.
+- Three diagnostic fields now reach the log where a blanket `error` key previously
+  suppressed them. They are capped and credential-redacted, but the exemption is a
+  real change to the redaction contract and is covered by tests in
+  `tests/unit/shared/utils/errorDiagnostics.test.ts`.
+
+- Evidence: [`analysisAcquisition.ts`](../src/word/analysisAcquisition.ts),
+  [`documentObserver.ts`](../src/word/documentObserver.ts),
+  [`redaction.ts`](../src/shared/utils/redaction.ts),
+  [`logger.ts`](../src/shared/utils/logger.ts),
+  `tests/unit/word/analysisAcquisitionLoads.test.ts`, and
+  `tests/unit/taskpane/fluentTheme.test.ts`.
+
+## ADR-0057 — A Fluent theme is inverted, and the token scope is the document element
+
+- Status: Accepted
+- Date: 2026-09-26
+
+### Context
+
+Two independent defects made the task pane look broken in dark mode.
+
+First, [`createDefaultTheme()`](../src/taskpane/fluentTheme.ts) set only a
+`palette`. Fluent v8 decides whether a component paints itself against light or dark
+neutrals from `theme.isInverted`; the palette only supplies the values it paints
+_with_. A dark palette on a non-inverted theme therefore produces light-bodied
+`Dropdown`, `TextField`, `Toggle`, and `MessageBar` controls sitting on a dark page.
+
+Second, the theme class was applied to an inner wrapper `<div>`, while the CSS custom
+properties are consumed by `html` and `body`. A wrapper cannot supply variables to its
+own ancestors, so `background: var(--tf-bg)` on `body` resolved to nothing and fell
+through to the user-agent default of white — the white frame around the content card.
+Native `<input>`, `<select>`, and `<textarea>` elements are not Fluent components and
+are never painted by the theme object at all.
+
+### Decision
+
+- `createDefaultTheme(dark)` sets `isInverted: dark` and writes the dark palette the
+  way Fluent expects an inverted theme to be written: light foregrounds, a
+  dark-to-light surface ramp. The page canvas is owned by CSS, not by the palette —
+  `IPalette` has no `backgroundColor`, and a shell that paints its own background is
+  the only way the area around the card stops falling back to UA white.
+- `ThemeProvider` applies the theme class to `document.documentElement`, so `html`
+  and `body` resolve the custom properties.
+- `color-scheme` is declared per theme, and native form controls are given explicit
+  `background-color` and `color`.
+
+### Consequences
+
+Fluent controls and native controls now follow the same theme as the rest of the
+page, and the canvas is owned in one place. The dark palette is coupled to Fluent's
+inverted-theme conventions, so a future Fluent upgrade that changes the ramp will
+need this function revisited; `tests/unit/taskpane/fluentTheme.test.ts` pins the
+`isInverted` contract so a regression there is caught immediately.
+
+- Evidence: [`fluentTheme.ts`](../src/taskpane/fluentTheme.ts),
+  [`theme.tsx`](../src/taskpane/theme.tsx),
+  [`taskpane.css`](../src/taskpane/taskpane.css), and
+  `tests/unit/taskpane/fluentTheme.test.ts`.

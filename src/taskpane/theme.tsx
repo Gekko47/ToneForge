@@ -58,6 +58,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }): Reac
   }, []);
 
   const isDark = themePreference === "dark" || (themePreference === "system" && systemDark);
+
+  // The theme class is applied to the document element, not to an inner
+  // wrapper, because the CSS custom properties are consumed by `html` and
+  // `body`. A wrapper cannot supply variables to its own ancestors: the page
+  // canvas would fall through to the user-agent default of white and the
+  // content card would appear to float inside a white frame.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("tf-theme-dark", isDark);
+    root.classList.toggle("tf-theme-light", !isDark);
+  }, [isDark]);
+
   return (
     <ThemeContext.Provider value={{ reducedMotion, themePreference, setThemePreference }}>
       <FluentThemeProvider theme={createDefaultTheme(isDark)}>

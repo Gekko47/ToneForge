@@ -36,6 +36,7 @@ import {
   type LlmSettingsDraft,
   type SectionStatus,
 } from "../settings/settingsModel";
+import ModelPicker from "./ModelPicker";
 import OpenRouterConnectionSettings from "./OpenRouterConnectionSettings";
 import SettingsSectionCard from "./SettingsSectionCard";
 
@@ -160,15 +161,13 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
           description="Use the development broker URL. Do not enter an API key here."
         />
       )}
-      {connectedConnection !== undefined && modelOptions.length > 0 ? null : (
-        <TextField
-          label="Model"
-          value={draft.openAiModel}
-          onChange={(_event, value) => patch({ openAiModel: value ?? "" })}
-          placeholder="gpt-4o-mini"
-          description="Leave blank to use the provider's default model."
-        />
-      )}
+      <ModelPicker
+        provider={draft.llmProvider}
+        value={draft.openAiModel}
+        onChange={(modelId) => patch({ openAiModel: modelId })}
+        catalog={catalog}
+        onCatalogChange={setCatalog}
+      />
       <Toggle
         label="Allow semantic analysis"
         checked={draft.semanticOptIn}
@@ -176,26 +175,17 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
         onText="Enabled"
         offText="Disabled"
       />
-      <Toggle
-        label="Allow review of selected or paragraph text"
-        checked={draft.spotReviewConsent}
-        onChange={(_event, value) => patch({ spotReviewConsent: value ?? false })}
-        onText="Enabled"
-        offText="Disabled"
-      />
-      <Toggle
-        label="Allow full-document review"
-        checked={draft.fullDocumentReviewConsent}
-        onChange={(_event, value) => patch({ fullDocumentReviewConsent: value ?? false })}
-        onText="Enabled"
-        offText="Disabled"
-      />
-      {/* The third consent, in its own block with its own explanation. Grouping it
+      {/* The AI Review consent, in its own block with its own explanation. Grouping it
           visually with the two above it would imply it is covered by them, which is
           the one thing it must never be. */}
       <div className="tf-consent-block">
+        <p className="tf-sub">
+          AI Review is the only review that can send document text to a provider. It checks the
+          whole document for internal consistency, and it is the only feature gated on this
+          permission.
+        </p>
         <Toggle
-          label="Allow cross-report consistency review"
+          label="Allow AI Review to send this document for consistency checking"
           checked={draft.consistencyReviewConsent}
           onChange={(_event, value) => patch({ consistencyReviewConsent: value ?? false })}
           onText="Enabled"

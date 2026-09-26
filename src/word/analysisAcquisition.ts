@@ -16,6 +16,7 @@ import {
 } from "../core/domain/DocumentSnapshot";
 import type { StyleProfile } from "../core/domain/StyleProfile";
 import { hashText } from "../shared/utils/text";
+import { describeError, logger } from "../shared/utils/logger";
 import { runInWord } from "../shared/office/officeHelpers";
 import { hashDocument } from "./documentReader";
 import { normalizeAlignment } from "./formattingReader";
@@ -67,15 +68,84 @@ interface StyleView {
 
 const DEFAULT_MAX_CHARS = 500_000;
 
-/** Acquire the complete analysis scope in one Word request transaction. */
-export async function acquireAnalysisContext(
-  options: AnalysisAcquisitionOptions,
-): Promise<AnalysisContext> {
-  const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
-  const acquired = await runInWord(async (context) => {
+/** Properties requested on every host. Text alone is the floor of any scope. */
+const BASE_PARAGRAPH_PROPERTIES: readonly string[] = ["text", "uniqueLocalId"];
+
+/** Optional property groups, each bound to one probed capability. */
+const CAPABILITY_PROPERTY_GROUPS: readonly {
+  capability: keyof AnalysisCapabilities;
+  properties: readonly string[];
+}[] = [
+  { capability: "supportsStyles", properties: ["style", "styleBuiltIn"] },
+  { capability: "supportsListLevel", properties: ["isListItem", "listItem"] },
+  {
+    capability: "supportsParagraphFormat",
+    properties: ["alignment", "lineSpacing", "spaceAfter", "spaceBefore"],
+  },
+  { capability: "supportsCharacterFormat", properties: ["font"] },
+];
+
+export interface AcquisitionLoadPlan {
+  /** Whether `document.styles` may be loaded at all. */
+  styleCollection: boolean;
+  /** Paragraph properties to request, base properties included. */
+  paragraphProperties: readonly string[];
+  /** Properties deliberately not requested, for honest coverage reporting. */
+  skipped: readonly string[];
+}
+
+/**
+ * Decide what may be asked of this host before asking for it.
+ *
+ * Loading a property the host does not expose does not degrade quietly: Word
+ * rejects the whole request with a generic `GeneralException`, which costs the
+ * entire scan rather than the one property. The capability probe already knows
+ * which families are missing, so the request is built from the probe result
+ * instead of from the shape of the API we wish existed.
+ */
+export function planAcquisitionLoads(
+  capabilities: AnalysisCapabilities,
+  degraded = false,
+): AcquisitionLoadPlan {
+  if (degraded) {
+    return {
+      styleCollection: false,
+      paragraphProperties: BASE_PARAGRAPH_PROPERTIES,
+      skipped: ["styles", ...CAPABILITY_PROPERTY_GROUPS.flatMap((group) => [...group.properties])],
+    };
+  }
+
+  const skipped: string[] = [];
+  const optional: string[] = [];
+  CAPABILITY_PROPERTY_GROUPS.forEach((group) => {
+    if (capabilities[group.capability] === true) {
+      optional.push(...group.properties);
+      return;
+    }
+    skipped.push(...group.properties);
+  });
+
+  return {
+    styleCollection: capabilities.supportsStyles,
+    paragraphProperties: [...BASE_PARAGRAPH_PROPERTIES, ...optional],
+    skipped: capabilities.supportsStyles ? skipped : ["styles", ...skipped],
+  };
+}
+
+interface AcquiredScope {
+  context: Office.Context;
+  fullText: string;
+  analysisText: string;
+  paragraphItems: ParagraphView[];
+  styleItems: StyleView[];
+}
+
+/** Run one Word request transaction for a given load plan. */
+async function acquireScope(plan: AcquisitionLoadPlan, maxChars: number): Promise<AcquiredScope> {
+  return runInWord(async (context) => {
     const body = context.document.body;
     const paragraphs = body.paragraphs;
-    const styles = context.document.styles;
+    const styles = plan.styleCollection ? context.document.styles : undefined;
     body.load("text");
     paragraphs?.load("items");
     styles?.load("items");
@@ -88,23 +158,32 @@ export async function acquireAnalysisContext(
       : [];
     const styleItems = Array.isArray(styles?.items) ? (styles.items as StyleView[]) : [];
     paragraphItems.forEach((paragraph) => {
-      paragraph.load?.([
-        "text",
-        "style",
-        "styleBuiltIn",
-        "uniqueLocalId",
-        "isListItem",
-        "alignment",
-        "lineSpacing",
-        "spaceAfter",
-        "spaceBefore",
-        "font",
-      ]);
+      paragraph.load?.([...plan.paragraphProperties]);
     });
     styleItems.forEach((style) => style.load?.(["name", "nameLocal", "font"]));
     await context.sync();
     return { context, fullText, analysisText, paragraphItems, styleItems };
   });
+}
+
+/** Acquire the complete analysis scope in one Word request transaction. */
+export async function acquireAnalysisContext(
+  options: AnalysisAcquisitionOptions,
+): Promise<AnalysisContext> {
+  const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
+  let plan = planAcquisitionLoads(options.capabilities);
+  let acquired: AcquiredScope;
+  try {
+    acquired = await acquireScope(plan, maxChars);
+  } catch (error: unknown) {
+    // The probe can be wrong: a requirement set can be added by the host after
+    // the probe ran, and a property family we believed was safe can still be
+    // refused. Retrying text-only keeps the deterministic rules running over the
+    // whole document instead of losing every scan to one rejected property.
+    logger.warn("Analysis acquisition fell back to a text-only scope", describeError(error));
+    plan = planAcquisitionLoads(options.capabilities, true);
+    acquired = await acquireScope(plan, maxChars);
+  }
 
   const snapshot = buildSnapshot(acquired, maxChars);
   const formatting = buildFormatting(acquired, maxChars);
@@ -135,10 +214,14 @@ export async function acquireAnalysisContext(
     fullBodyReadCount: 1,
     paragraphCollectionRead: acquired.paragraphItems.length > 0,
     structuralCoverage: acquired.paragraphItems.length > 0 ? "partial" : "unsupported",
-    unsupported:
-      acquired.paragraphItems.length > 0
+    // Properties this host would not serve are named here, so a text-only
+    // result is never reported as though it were a formatting-aware one.
+    unsupported: [
+      ...(acquired.paragraphItems.length > 0
         ? ["tables", "headers", "footers", "sections", "fields", "controls", "shapes"]
-        : ["wordParagraphCollection"],
+        : ["wordParagraphCollection"]),
+      ...plan.skipped,
+    ],
     incremental: false,
     incrementalReason:
       "No verified Word changed-range event; conservative full rescan is supported.",

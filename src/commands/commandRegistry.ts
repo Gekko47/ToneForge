@@ -34,15 +34,7 @@ const CommandDefinitionSchema = z.object({
   jsonAction: z.literal("executeFunction"),
   xmlAction: z.literal("ShowTaskpane"),
   xmlNavigationTarget: z.literal("default"),
-  navigationTarget: z.enum([
-    "governance",
-    "findings",
-    "ai-review-selection",
-    "ai-review-paragraph",
-    "ai-review-document",
-    "profile",
-    "pending-changes",
-  ]),
+  navigationTarget: z.enum(["governance", "findings", "ai-review", "profile", "pending-changes"]),
 });
 
 const commandDefinitions = z.array(CommandDefinitionSchema).parse(commandDefinitionData);

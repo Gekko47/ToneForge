@@ -1,14 +1,8 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { type WordCapabilities } from "../../word/capabilityProbe";
-import {
-  getDocumentSnapshot,
-  getSelectedParagraphText,
-  getSelectionText,
-  getLiveSelection,
-  getStructuredSnapshot,
-} from "../../word/documentReader";
+import { getStructuredSnapshot } from "../../word/documentReader";
 import { createRegistryFromSettings } from "../settings/providerComposition";
-import { reviewSpot, type SpotReviewResult } from "../../ai/review/spotReview";
+import type { SpotReviewResult } from "../../ai/review/spotReview";
 import {
   createGovernanceProfile,
   type GovernanceProfile,
@@ -18,7 +12,6 @@ import { createWordParagraphEventAdapter } from "../../word/wordParagraphEvents"
 import {
   applyReviewedPlan,
   prepareReformatHost,
-  reviewEntireDocument,
   type FullReviewResult,
   type ReformatResult,
 } from "../../reformat";
@@ -31,18 +24,9 @@ import FindingsList from "../components/FindingsList";
 import FindingsToolbar from "../components/FindingsToolbar";
 import CoverageBanner from "../components/CoverageBanner";
 import StaleBanner from "../components/StaleBanner";
-import AiReviewEntry from "../components/AiReviewEntry";
 import PendingChanges from "../components/PendingChanges";
-import AiReviewResult from "../components/AiReviewResult";
-import FullReviewPreflight from "../components/FullReviewPreflight";
-import FullReviewProgress from "../components/FullReviewProgress";
-import FullReviewResults from "../components/FullReviewResults";
-import ConsistencyReviewEntry from "../components/ConsistencyReviewEntry";
-import ConsistencyReviewPreflight from "../components/ConsistencyReviewPreflight";
-import ConsistencyReviewProgress from "../components/ConsistencyReviewProgress";
-import ConsistencyReviewResults from "../components/ConsistencyReviewResults";
+import AiReviewSection, { type AiReviewStage } from "../components/AiReviewSection";
 import {
-  CONSISTENCY_DEFAULT_MAX_STATEMENTS,
   previewStatements,
   runConsistencyReview,
   toFindings,
@@ -97,6 +81,7 @@ type PendingPlan = {
     unsupported?: readonly string[];
     unprocessed?: readonly string[];
   } | null;
+  /** Which review produced this plan. `reformat` is the only one the pane runs today. */
   source: "reformat" | "full" | "spot";
 };
 
@@ -178,29 +163,10 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const [reformatResult, setReformatResult] = useState<ReformatResult | null>(null);
   const [status, setStatus] = useState<DocumentObserverStatus | null>(null);
   const [ignoredFindingIds, setIgnoredFindingIds] = useState<Set<string>>(readIgnoredFindingIds);
-  const [activeTarget, setActiveTarget] = useState<string>("governance");
   const observerRef = useRef<ReturnType<typeof createDocumentObserver> | null>(null);
-  const [aiReview, setAiReview] = useState<SpotReviewResult | null>(null);
-  const [aiReviewBusy, setAiReviewBusy] = useState(false);
-  const [aiReviewMessage, setAiReviewMessage] = useState<string | null>(null);
-  const [hasSelection, setHasSelection] = useState(false);
-  const [fullPreflight, setFullPreflight] = useState<{
-    nodeCount: number;
-    wordCount: number;
-    protectedCount: number;
-  } | null>(null);
-  const [fullProgress, setFullProgress] = useState<{
-    completed: number;
-    total: number;
-    partial: boolean;
-  } | null>(null);
-  const [fullResult, setFullResult] = useState<FullReviewResult | null>(null);
-  const fullAbortRef = useRef<AbortController | null>(null);
-  const [fullReviewMessage, setFullReviewMessage] = useState<string | null>(null);
-  // Cross-report consistency review (Phase 5). Its own state, its own trigger,
-  // and its own result. It is deliberately not folded into the spot or
-  // full-document review state above: those are different engines with different
-  // consents, and sharing state would invite one to stand in for the other.
+  // Cross-report consistency review is the only AI review this pane offers. It
+  // keeps its own state, its own trigger, and its own consent: collapsing the
+  // surface into one section must not let one permission stand in for another.
   // The preflight holds the text it counted, not just the counts. The run sends
   // exactly what the disclosure described, so a second read here would mean the
   // user agreed to send a document that is no longer the one on screen.
@@ -280,37 +246,27 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
 
   useEffect(() => {
     const target = consumeTaskpaneTarget();
-    if (target) {
-      if (target === "debugging") {
-        setPage("troubleshooting");
-        return;
-      }
-      if (target === "profile") {
-        setPage("profile");
-        return;
-      }
-      if (target.startsWith("ai-review-")) {
-        setPage("ai-review");
-      }
-      if (target === "findings") {
-        setPage("home");
-        setFindingsOpen(true);
-      }
-      if (target === "pending-changes") {
-        setPage("home");
-        setPendingOpen(true);
-      }
-      setActiveTarget(target);
-      if (target === "ai-review-selection") void runSpotReview("spot_selection");
-      if (target === "ai-review-paragraph") void runSpotReview("spot_paragraph");
-      if (target === "ai-review-document") void openFullReviewPreflight();
+    if (!target) return;
+    if (target === "debugging") {
+      setPage("troubleshooting");
+      return;
     }
-  }, []);
-
-  useEffect(() => {
-    getSelectionText()
-      .then((text) => setHasSelection(text.trim().length > 0))
-      .catch(() => setHasSelection(false));
+    if (target === "profile") {
+      setPage("profile");
+      return;
+    }
+    if (target === "ai-review") {
+      setPage("ai-review");
+      return;
+    }
+    if (target === "findings") {
+      setPage("home");
+      setFindingsOpen(true);
+    }
+    if (target === "pending-changes") {
+      setPage("home");
+      setPendingOpen(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -330,137 +286,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
 
   function navigate(destination: TaskPaneDestination): void {
     setPage(destination);
-    setActiveTarget(
-      destination === "home"
-        ? "governance"
-        : destination === "ai-review"
-          ? "ai-review-selection"
-          : destination,
-    );
-  }
-
-  async function runSpotReview(operation: "spot_selection" | "spot_paragraph"): Promise<void> {
-    setAiReviewBusy(true);
-    setAiReviewMessage(null);
-    try {
-      const state = loadState();
-      if (!state.settings.spotReviewConsent)
-        throw new Error("Spot review consent is required in Settings.");
-      const selected = await getSelectionText();
-      const text =
-        operation === "spot_paragraph" && !selected.trim()
-          ? await getSelectedParagraphText()
-          : selected;
-      if (!text?.trim()) throw new Error("Select text or place the cursor in a paragraph first.");
-      const profile = activeProfile;
-      const governance = resolveGovernanceProfile(state, profile);
-      const snapshot = await getDocumentSnapshot();
-      const structured = await getStructuredSnapshot();
-      const liveSelection = operation === "spot_selection" ? await getLiveSelection() : null;
-      if (operation === "spot_selection" && liveSelection === null) {
-        throw new Error("Live selection start/end identity is unavailable; review was refused.");
-      }
-      const startOffset =
-        liveSelection?.start ?? (snapshot.fullText ?? snapshot.text).indexOf(text);
-      if (startOffset < 0 || (liveSelection !== null && liveSelection.text !== text)) {
-        throw new Error("The selected text is no longer present in the document.");
-      }
-      const targetNodes = structured.nodes.filter(
-        (node) =>
-          node.text?.includes(text) &&
-          (node.sourceRange?.startOffset ?? startOffset) <= startOffset &&
-          startOffset + text.length <=
-            (node.sourceRange?.endOffset ??
-              (node.sourceRange?.startOffset ?? startOffset) + text.length),
-      );
-      if (targetNodes.length !== 1)
-        throw new Error("The selected text must resolve to one in-scope review target.");
-      const targetNodeIds = targetNodes.map((node) => node.nodeId);
-      const registry = createRegistryFromSettings(state.settings, state.providerConnections);
-      const result = await reviewSpot({
-        request: {
-          id: crypto.randomUUID(),
-          operation,
-          documentId: snapshot.id,
-          documentVersion: snapshot.documentVersion ?? snapshot.fullDocumentHash ?? snapshot.id,
-          targetNodeIds,
-          text,
-          profileId: profile.id,
-          profileRevision: profile.revision,
-          privacyPolicyId: "spot-minimal-v1",
-        },
-        profile: governance,
-        nodes: structured.nodes,
-        includeRawText: true,
-        consent: { spotReview: true },
-        registry,
-        rangeOffset: startOffset,
-        contentHash: snapshot.fullDocumentHash ?? snapshot.hash ?? snapshot.id,
-      });
-      setAiReview(result);
-      setAiReviewMessage(null);
-    } catch (error: unknown) {
-      setAiReviewMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setAiReviewBusy(false);
-    }
-  }
-
-  async function openFullReviewPreflight(): Promise<void> {
-    setFullReviewMessage(null);
-    const snapshot = await getStructuredSnapshot();
-    const wordCount = snapshot.nodes.reduce(
-      (sum, node) => sum + (node.text?.trim().split(/\s+/).filter(Boolean).length ?? 0),
-      0,
-    );
-    setFullPreflight({
-      nodeCount: snapshot.nodes.filter((node) => node.editable && !node.protectionReason).length,
-      wordCount,
-      protectedCount: snapshot.nodes.filter(
-        (node) => !node.editable || Boolean(node.protectionReason),
-      ).length,
-    });
-    setPage("ai-review");
-    setActiveTarget("ai-review-document");
-  }
-
-  async function startFullReview(): Promise<void> {
-    if (!fullPreflight) return;
-    setFullResult(null);
-    setFullProgress({ completed: 0, total: 1, partial: false });
-    const controller = new AbortController();
-    fullAbortRef.current = controller;
-    try {
-      const snapshot = await getStructuredSnapshot();
-      const state = loadState();
-      if (!state.settings.fullDocumentReviewConsent) {
-        throw new Error("Full-document review consent is required in Settings.");
-      }
-      const profile = activeProfile;
-      const governance = resolveGovernanceProfile(state, profile);
-      const result = await reviewEntireDocument({
-        snapshot,
-        profile: governance,
-        includeRawText: true,
-        consent: { fullDocumentReview: true },
-        registry: createRegistryFromSettings(state.settings, state.providerConnections),
-        signal: controller.signal,
-        onProgress: (completed, total) => setFullProgress({ completed, total, partial: false }),
-      });
-      setFullResult(result);
-      setFullProgress(null);
-      if (result.status === "failed_coverage")
-        setFullReviewMessage("Review blocked: required document content is not covered.");
-    } catch (error: unknown) {
-      setFullReviewMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      fullAbortRef.current = null;
-    }
-  }
-
-  function cancelFullReview(): void {
-    fullAbortRef.current?.abort();
-    setFullProgress((previous) => (previous ? { ...previous, partial: true } : previous));
   }
 
   /**
@@ -609,8 +434,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           `Applied and verified ${result.results.filter((item) => item.applied).length} change(s).`,
         );
         if (pendingPlan.source === "reformat") setReformatResult(null);
-        if (pendingPlan.source === "full") setFullResult(null);
-        if (pendingPlan.source === "spot") setAiReview(null);
         setPendingOpen(false);
         observerRef.current?.onDocumentChanged();
         return true;
@@ -690,12 +513,33 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const currentStatus = status;
   const scanPhase = currentStatus?.phase ?? "notStarted";
   const canReviewFindings = scanPhase === "fresh" || scanPhase === "clean";
-  const pendingPlan = resolvePendingPlan(reformatResult, fullResult, aiReview);
+  // Safe reformat is the only review that can still leave a plan here; the spot
+  // and full-document surfaces are retired from the pane. The selector keeps
+  // understanding their plans so either could return behind the single section
+  // without changing the pending-changes contract.
+  const pendingPlan = resolvePendingPlan(reformatResult, null, null);
+  const aiSettings = loadState().settings;
+  const aiProviderConfigured =
+    Boolean(aiSettings.openAiBaseUrl) || aiSettings.llmProvider === "mock";
+  const aiReviewConsent = aiSettings.consistencyReviewConsent;
+  // Derived rather than stored, so the displayed stage cannot disagree with the
+  // state that produced it.
+  const aiReviewStage: AiReviewStage =
+    consistencyProgress !== null
+      ? "running"
+      : consistencyResult !== null
+        ? "results"
+        : consistencyPreflight !== null
+          ? "preflight"
+          : "idle";
 
   return (
     <main className="tf-card" tabIndex={0}>
+      {/* `page`, not a literal: the header reports the destination the user is
+          actually on. Hardcoding "home" here left "Document Governance"
+          highlighted while the AI Review page was open. */}
       <TaskPaneHeader
-        activePage="home"
+        activePage={page}
         profileName={activeProfile.name}
         profileRevision={activeProfile.revision}
         onNavigate={navigate}
@@ -753,46 +597,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           Findings <span>{findings.length}</span>
         </button>
       )}
-      {page === "ai-review" &&
-        activeTarget === "ai-review-document" &&
-        fullPreflight &&
-        !fullResult &&
-        !fullProgress && (
-          <FullReviewPreflight
-            nodeCount={fullPreflight.nodeCount}
-            approximateWords={fullPreflight.wordCount}
-            protectedCount={fullPreflight.protectedCount}
-            providerName={loadState().settings.llmProvider}
-            onStart={() => void startFullReview()}
-            onCancel={() => {
-              setPage("home");
-              setActiveTarget("governance");
-            }}
-          />
-        )}
-      {page === "ai-review" && activeTarget === "ai-review-document" && fullProgress && (
-        <FullReviewProgress
-          completed={fullProgress.completed}
-          total={fullProgress.total}
-          partial={fullProgress.partial}
-          onCancel={cancelFullReview}
-        />
-      )}
-      {page === "ai-review" && activeTarget === "ai-review-document" && fullResult && (
-        <FullReviewResults
-          findings={fullResult.findings}
-          plan={fullResult.plan}
-          onReviewFindings={() => {
-            setPage("home");
-            setFindingsOpen(true);
-          }}
-          onCreatePlan={() => {
-            setPage("home");
-            setPendingOpen(true);
-          }}
-        />
-      )}
-      {page === "ai-review" && fullReviewMessage && <p role="alert">{fullReviewMessage}</p>}
       {page === "home" && !pendingOpen ? (
         <button
           type="button"
@@ -814,21 +618,11 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           </button>
           <PendingChanges
             plan={pendingPlan?.plan ?? null}
-            findings={
-              pendingPlan?.source === "reformat"
-                ? (reformatResult?.report.findings ?? currentGovernanceFindings)
-                : pendingPlan?.source === "full"
-                  ? (fullResult?.findings ?? currentGovernanceFindings)
-                  : pendingPlan?.source === "spot"
-                    ? (aiReview?.findings ?? currentGovernanceFindings)
-                    : currentGovernanceFindings
-            }
+            findings={reformatResult?.report.findings ?? currentGovernanceFindings}
             coverage={pendingPlan?.coverage ?? null}
             onApply={() => applyPendingPlan(pendingPlan)}
             onReject={() => {
-              if (pendingPlan?.source === "reformat") setReformatResult(null);
-              if (pendingPlan?.source === "full") setFullResult(null);
-              if (pendingPlan?.source === "spot") setAiReview(null);
+              setReformatResult(null);
               setPendingOpen(false);
               setApplyMessage("Changes rejected. Nothing was applied to the document.");
             }}
@@ -836,73 +630,37 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           {applyMessage && <p role="status">{applyMessage}</p>}
         </section>
       )}
-      {page === "ai-review" && aiReviewBusy && (
-        <p role="status" aria-live="polite">
-          Reviewing selected context with AI…
-        </p>
-      )}
-      {page === "ai-review" && aiReview && (
-        <AiReviewResult
-          findings={aiReview.findings}
-          plan={aiReview.plan}
-          provider={aiReview.provider}
-          onPreview={() => {
-            setPage("home");
-            setPendingOpen(true);
-          }}
-          onDismiss={() => setAiReview(null)}
-        />
-      )}
-      {page === "ai-review" && aiReviewMessage && <p role="alert">{aiReviewMessage}</p>}
       {page === "ai-review" && (
-        <AiReviewEntry
-          supportsSelection={caps?.supportsSelection ?? false}
-          supportsParagraphResolution={caps?.supportsParagraphResolution ?? false}
-          hasSelection={hasSelection}
-          providerConfigured={
-            Boolean(loadState().settings.openAiBaseUrl) ||
-            loadState().settings.llmProvider === "mock"
+        <AiReviewSection
+          stage={aiReviewStage}
+          providerConfigured={aiProviderConfigured}
+          hasConsent={aiReviewConsent}
+          providerName={loadState().settings.llmProvider}
+          preflight={
+            consistencyPreflight === null
+              ? null
+              : {
+                  wordCount: consistencyPreflight.wordCount,
+                  statementCount: consistencyPreflight.statementCount,
+                }
           }
-          hasConsent={loadState().settings.spotReviewConsent}
-          hasFullDocumentConsent={loadState().settings.fullDocumentReviewConsent}
-          onReviewSelection={() => void runSpotReview("spot_selection")}
-          onReviewParagraph={() => void runSpotReview("spot_paragraph")}
-          onReviewDocument={() => void openFullReviewPreflight()}
-          onOpenSettings={() => setPage("settings")}
-        />
-      )}
-      {page === "ai-review" && consistencyMessage && <p role="alert">{consistencyMessage}</p>}
-      {page === "ai-review" &&
-        consistencyPreflight &&
-        !consistencyProgress &&
-        !consistencyResult && (
-          <ConsistencyReviewPreflight
-            approximateWords={consistencyPreflight.wordCount}
-            statementCount={consistencyPreflight.statementCount}
-            maxStatements={CONSISTENCY_DEFAULT_MAX_STATEMENTS}
-            providerName={loadState().settings.llmProvider}
-            onStart={() => void startConsistencyReview()}
-            onCancel={() => {
-              setConsistencyPreflight(null);
-              setPage("home");
-            }}
-          />
-        )}
-      {page === "ai-review" && consistencyProgress && (
-        <ConsistencyReviewProgress
           progress={consistencyProgress}
           cancelled={consistencyCancelled}
-          onCancel={cancelConsistencyReview}
-        />
-      )}
-      {page === "ai-review" && consistencyResult && !consistencyProgress && (
-        <ConsistencyReviewResults
-          report={consistencyResult}
+          result={consistencyResult}
+          message={consistencyMessage}
+          onOpenSettings={() => setPage("settings")}
+          onStart={() => void openConsistencyPreflight()}
+          onConfirm={() => void startConsistencyReview()}
+          onCancel={() => {
+            setConsistencyPreflight(null);
+            setConsistencyMessage(null);
+          }}
+          onCancelRun={cancelConsistencyReview}
           onReviewFindings={() => {
-            // Only navigates when the consistency findings are actually part of
-            // the displayed list below. Opening a Findings section that does not
-            // contain them would show the user their governance findings and read
-            // as though the review had been handed over.
+            // Only navigates when the review findings are actually part of the
+            // displayed list. Opening a Findings section that does not contain
+            // them would show the user their governance findings and read as
+            // though the review had been handed over.
             if (consistencyFindings.length === 0) return;
             setPage("home");
             setFindingsOpen(true);
@@ -913,20 +671,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           }}
         />
       )}
-      {page === "ai-review" &&
-      !consistencyPreflight &&
-      !consistencyProgress &&
-      !consistencyResult ? (
-        <ConsistencyReviewEntry
-          providerConfigured={
-            Boolean(loadState().settings.openAiBaseUrl) ||
-            loadState().settings.llmProvider === "mock"
-          }
-          hasConsent={loadState().settings.consistencyReviewConsent}
-          onStart={() => void openConsistencyPreflight()}
-          onOpenSettings={() => setPage("settings")}
-        />
-      ) : null}
       {page === "home" && (
         <section
           className="tf-governance-reformat"

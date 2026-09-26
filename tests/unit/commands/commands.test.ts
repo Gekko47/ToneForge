@@ -67,14 +67,14 @@ describe("command entry points", () => {
         label: "Review Selection",
         jsonAction: "executeFunction",
         xmlAction: "ShowTaskpane",
-        navigationTarget: "ai-review-selection",
+        navigationTarget: "ai-review",
       },
       {
         id: "ToneForgeReviewDocument",
         label: "Review Document",
         jsonAction: "executeFunction",
         xmlAction: "ShowTaskpane",
-        navigationTarget: "ai-review-document",
+        navigationTarget: "ai-review",
       },
       {
         id: "ToneForgeActiveProfile",
@@ -108,16 +108,26 @@ describe("command entry points", () => {
     await openFindings();
     expect(consumeTaskpaneTarget()).toBe("findings");
     await reviewDocument();
-    expect(consumeTaskpaneTarget()).toBe("ai-review-document");
+    expect(consumeTaskpaneTarget()).toBe("ai-review");
     await openPendingChanges();
     expect(consumeTaskpaneTarget()).toBe("pending-changes");
     expect(showAsTaskpane).toHaveBeenCalledTimes(4);
   });
 
+  it("sends both review commands to the same AI Review page", async () => {
+    setOffice({ addin: { showAsTaskpane: vi.fn().mockResolvedValue(undefined) } });
+    await reviewSelection();
+    expect(consumeTaskpaneTarget()).toBe("ai-review");
+    await reviewDocument();
+    expect(consumeTaskpaneTarget()).toBe("ai-review");
+  });
+
   it("falls back safely when Office is unavailable", async () => {
     setOffice(undefined);
     await reviewSelection();
-    expect(consumeTaskpaneTarget()).toBe("governance");
+    // The destination is still recorded, so the pane opens on AI Review when the
+    // host eventually provides it rather than losing the user's intent.
+    expect(consumeTaskpaneTarget()).toBe("ai-review");
   });
 
   it("registers the command actions when Office becomes ready", async () => {

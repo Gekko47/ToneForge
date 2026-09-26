@@ -239,6 +239,43 @@ export function restoreAsDraft(
   };
 }
 
+/**
+ * Clone any audited revision into a new editable draft.
+ *
+ * `restoreAsDraft` can only reach published versions, so a profile that has
+ * never been published — the normal state of a freshly created record — has no
+ * way back to its own earlier content. Every entry in `revisions` already holds
+ * a full snapshot, so recall reads from there instead of inventing a second
+ * history.
+ *
+ * It creates a draft and nothing else. It does not activate anything: documents
+ * are checked against the active published revision, and a recall that silently
+ * promoted an old snapshot would change what the user was measured against
+ * without their having published it. Publishing stays an explicit second step.
+ */
+export function recallRevisionAsDraft(
+  record: ProfileRecord,
+  revision: number,
+  now: string,
+): RecordTransition {
+  const source = findRevision(record, revision);
+  if (!source) throw new Error(`Revision ${revision} is not in this record's audit trail`);
+
+  const next = record.nextRevision;
+  const profile = StyleProfileSchema.parse({ ...source.profile, revision: next, updatedAt: now });
+  const entry: ProfileRevision = {
+    revision: next,
+    at: now,
+    action: "restored",
+    detail: `Revision ${revision} recalled as a draft.`,
+    profile,
+  };
+  return {
+    record: append({ ...record, draft: profile }, entry),
+    revision: entry,
+  };
+}
+
 /** Discard the draft. The revision is still recorded so the trail stays complete. */
 export function discardDraft(record: ProfileRecord, now: string): RecordTransition {
   const draft = record.draft;

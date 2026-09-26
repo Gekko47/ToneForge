@@ -8,7 +8,7 @@
  */
 
 import { debounce } from "../shared/utils/debounce";
-import { logger } from "../shared/utils/logger";
+import { describeError, logger } from "../shared/utils/logger";
 import { createRunId } from "../analysis/incrementalCoordinator";
 import { checkConsistency } from "../analysis/consistencyChecker";
 import { acquireAnalysisContext } from "./analysisAcquisition";
@@ -112,7 +112,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
 
   const debouncedScan = debounce(() => {
     performScan().catch((err: unknown) => {
-      logger.warn("Document observer scan failed", { error: String(err) });
+      logger.warn("Document observer scan failed", describeError(err));
     });
   }, debounceMs);
 
@@ -175,9 +175,14 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       emitStatus();
     } catch (err) {
       if (!isCurrent()) return;
-      logger.warn("Document observer scan failed during processing", { error: String(err) });
+      // A host rejection after the text-only retry means the runtime itself is
+      // gone, not that the document is unreadable. Those two are reported
+      // differently: one is recoverable by waiting, the other is not, and
+      // collapsing them makes a re-scan look futile when it is not.
+      const detail = describeError(err);
+      logger.warn("Document observer scan failed during processing", detail);
       if (err instanceof Error && err.message.includes("Office")) {
-        logger.warn("Office unavailable during document scan", { error: err.message });
+        logger.warn("Office unavailable during document scan", detail);
         state.phase = "failed";
         state.stale = true;
         state.error = "Office is unavailable. Re-scan when Word is ready.";

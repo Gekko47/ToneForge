@@ -20,7 +20,7 @@
     "label": "Review Selection",
     "jsonAction": "executeFunction",
     "xmlAction": "ShowTaskpane",
-    "navigationTarget": "ai-review-selection",
+    "navigationTarget": "ai-review",
     "xmlNavigationTarget": "default"
   },
   {
@@ -28,7 +28,7 @@
     "label": "Review Document",
     "jsonAction": "executeFunction",
     "xmlAction": "ShowTaskpane",
-    "navigationTarget": "ai-review-document",
+    "navigationTarget": "ai-review",
     "xmlNavigationTarget": "default"
   },
   {

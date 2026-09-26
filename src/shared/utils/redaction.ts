@@ -23,9 +23,33 @@ const SENSITIVE_FIELD = /key|token|secret|password|auth|credential|cookie|header
 const PROMPT_OR_TEXT_FIELD =
   /prompt|instruction|document|content|text|message|evidence|actual|expected|error|reason/i;
 
+/**
+ * Diagnostic fields that carry a failure reason rather than document content.
+ *
+ * A blanket `/error/i` rule turned every thrown host failure into
+ * `[REDACTED_CONTENT]`, which is correct for a message that might quote
+ * document text and useless for a message that is a Word error code — the
+ * observer could report a scan failure while telling nobody why. These keys are
+ * therefore exempt from the content rule, but not from credential redaction:
+ * they still pass through `redactSensitiveText()` and are length-capped, so an
+ * exception message that happens to embed a paragraph is truncated rather than
+ * logged in full.
+ */
+const DIAGNOSTIC_REASON_FIELD = /^(errorName|errorCode|errorMessage|errorNameLabel)$/;
+const DIAGNOSTIC_REASON_MAX_LENGTH = 200;
+
+function truncateReason(value: string): string {
+  return value.length > DIAGNOSTIC_REASON_MAX_LENGTH
+    ? `${value.slice(0, DIAGNOSTIC_REASON_MAX_LENGTH)}…`
+    : value;
+}
+
 function redactValue(key: string, value: unknown, seen: WeakSet<object>): unknown {
   if (SENSITIVE_FIELD.test(key)) return "[REDACTED]";
   if (typeof value === "string") {
+    if (DIAGNOSTIC_REASON_FIELD.test(key)) {
+      return truncateReason(redactSensitiveText(value));
+    }
     return PROMPT_OR_TEXT_FIELD.test(key) ? "[REDACTED_CONTENT]" : redactSensitiveText(value);
   }
   if (Array.isArray(value)) return value.map((item) => redactValue(key, item, seen));

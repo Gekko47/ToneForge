@@ -1,12 +1,6 @@
 import React, { useState } from "react";
-import { Toggle } from "@fluentui/react";
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
-import {
-  isTrackedEditingEnabled,
-  prepareReformatHost,
-  prepareTrackedEditing,
-  setTrackedEditingEnabled,
-} from "../../reformat";
+import { isTrackedEditingEnabled, prepareReformatHost } from "../../reformat";
 import { formatDiagnostics, probeOfficeRuntime } from "../../shared/office/diagnostics";
 
 interface DebuggingPanelProps {
@@ -14,7 +8,15 @@ interface DebuggingPanelProps {
   coverage?: CoverageReport | null;
 }
 
-/** Technical troubleshooting surface, intentionally separate from the normal workflow. */
+/**
+ * Technical troubleshooting surface, intentionally separate from the normal workflow.
+ *
+ * This panel inspects; it does not configure. The tracked-editing control used to
+ * live here, which put an ordinary user decision behind a diagnostics page and —
+ * because its enable path never persisted the flag before probing — made the
+ * toggle impossible to arm. It is now a Settings section; this panel reports the
+ * current armed state so the two surfaces cannot disagree.
+ */
 export default function DebuggingPanel({
   onBack,
   coverage = null,
@@ -23,8 +25,7 @@ export default function DebuggingPanel({
     ReturnType<typeof prepareReformatHost>
   > | null>(null);
   const [diagnostics, setDiagnostics] = useState<string | null>(null);
-  const [editingEnabled, setEditingEnabled] = useState(isTrackedEditingEnabled);
-  const [editingMessage, setEditingMessage] = useState<string | null>(null);
+  const [trackedEditing, setTrackedEditing] = useState(isTrackedEditingEnabled);
   const [busy, setBusy] = useState(false);
 
   async function probeCapabilities(): Promise<void> {
@@ -38,42 +39,10 @@ export default function DebuggingPanel({
         "Capability probe did not complete. Confirm the add-in is running inside a supported Word host.",
       );
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function changeEditingEnabled(_event: unknown, checked: boolean): Promise<void> {
-    setEditingEnabled(checked);
-    setEditingMessage(null);
-    if (!checked) {
-      setTrackedEditingEnabled(false);
-      setCapabilities(null);
-      setEditingMessage(
-        "Tracked editing is disabled. Preview remains available, but Apply is blocked.",
-      );
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const preparation = await prepareTrackedEditing([]);
-      setCapabilities(preparation.capabilities);
-      if (preparation.error) {
-        setTrackedEditingEnabled(false);
-        setEditingEnabled(false);
-        setEditingMessage(preparation.error);
-      } else {
-        setEditingMessage(
-          "Tracked editing is enabled and the Word host passed its capability probe.",
-        );
-      }
-    } catch {
-      setTrackedEditingEnabled(false);
-      setEditingEnabled(false);
-      setEditingMessage(
-        "Tracked editing could not be prepared. Review host diagnostics and retry.",
-      );
-    } finally {
+      // Re-read rather than assuming: the flag may have changed on the Settings
+      // page, and a diagnostics panel that reports a stale value is worse than
+      // one that reports none.
+      setTrackedEditing(isTrackedEditingEnabled());
       setBusy(false);
     }
   }
@@ -136,24 +105,14 @@ export default function DebuggingPanel({
       </section>
       <section aria-label="Mutation readiness" className="tf-debug-section">
         <h2>Mutation readiness</h2>
-        <Toggle
-          label="Enable tracked editing"
-          checked={editingEnabled}
-          disabled={busy}
-          onChange={(_event, checked) => void changeEditingEnabled(_event, checked ?? false)}
-          onText="Enabled"
-          offText="Disabled"
-        />
         <p>
-          Apply automatically performs a fresh host probe and checks every operation in the plan.
-          Turning this off immediately disarms mutation while keeping preview and review available.
-          Track Changes can never be bypassed.
+          Tracked editing is currently <strong>{trackedEditing ? "enabled" : "disabled"}</strong>.
+          Change it in Settings, where the host probe runs as part of the change.
         </p>
-        {editingMessage && (
-          <p className={editingEnabled ? "tf-debug-warning" : "tf-sub"} role="status">
-            {editingMessage}
-          </p>
-        )}
+        <p>
+          Apply performs a fresh host probe and checks every operation in the plan. Track Changes
+          can never be bypassed.
+        </p>
       </section>
     </div>
   );

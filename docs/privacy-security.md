@@ -89,6 +89,24 @@ boolean so a persisted `"yes"` or `1` reads as a refusal rather than as
 permission. A user who agreed to send a selection has not agreed to send a whole
 document to be compared against itself.
 
+**One consent governs the one feature that needs it.** Per ADR-0055 the task pane
+now presents a single AI Review, the cross-report consistency check, so
+`consistencyReviewConsent` is the only consent it depends on. `spotReviewConsent` and
+`fullDocumentReviewConsent` no longer have a Settings toggle: their entry points are
+retired, so nothing in the shipped pane can read them. Both fields are **kept** in the
+state schema, the defaults, and the migrations, so existing state loads unchanged and
+no state version bump is required. Their removal from the UI relaxes nothing — a
+consent that no control can read cannot be granted by it, and the flags remain
+`false` by default for any consumer that is reintroduced.
+
+**Diagnostics are no longer fully redacted, and this is deliberate.** `errorName`,
+`errorCode`, and `errorMessage` are exempt from the content-redaction rule so a Word
+host failure is diagnosable; a blanket `/error/i` rule previously turned every
+failure into `[REDACTED_CONTENT]`. Those three fields still pass through credential
+redaction and are capped at 200 characters, so a message that embeds a paragraph is
+truncated rather than logged. Every other key — including the bare `error` key, and
+every document, prompt, evidence, and text field — is unchanged. See ADR-0056.
+
 **What leaves the add-in.** The whole document's text, and nothing else. Not the
 profile, not the governance policy, not the model catalog, not a credential. The
 engine reuses the already-configured provider and model and has no provider

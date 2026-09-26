@@ -38,7 +38,12 @@ describe("ProfileRecordSection", () => {
 
     expect(screen.getByTestId("record-summary")).toHaveTextContent("Draft: revision 1");
     expect(screen.getByTestId("record-summary")).toHaveTextContent("Published versions: 0");
-    expect(screen.getByText("No published versions yet.")).toBeInTheDocument();
+    // The empty state must say what the user can actually do about it, and the
+    // audit trail must offer the way back that publishing alone could not.
+    expect(screen.getByText(/No published versions yet\./)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /recall revision 1 as a new draft/i }),
+    ).toBeInTheDocument();
     // The creation is already revision 1, so the trail is not empty.
     expect(screen.queryByText("No revisions recorded yet.")).not.toBeInTheDocument();
   });

@@ -5,6 +5,7 @@ import {
   discardDraft,
   effectiveProfile,
   publishDraft,
+  recallRevisionAsDraft,
   restoreAsDraft,
   type ProfileRecord,
 } from "../../core/domain/ProfileRecord";
@@ -86,6 +87,17 @@ export default function ProfileRecordSection({
     }
   }
 
+  function handleRecall(revision: number): void {
+    try {
+      commit(
+        recallRevisionAsDraft(record, revision, new Date().toISOString()).record,
+        `Revision ${revision} recalled as a draft. Publish it to check documents against it.`,
+      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return (
     <section aria-labelledby="profile-record-heading" className="tf-collapsible">
       <h2 id="profile-record-heading">Profile revisions</h2>
@@ -116,7 +128,11 @@ export default function ProfileRecordSection({
       </p>
 
       {total === 0 ? (
-        <p className="tf-sub">No published versions yet.</p>
+        <p className="tf-sub">
+          No published versions yet. Until you publish a draft, documents are checked against the
+          draft, and there is no published version to restore from — use <strong>Recall</strong> in
+          the revision audit trail below to bring any earlier revision back as a new draft.
+        </p>
       ) : (
         <ul aria-label="Published versions" className="tf-published-list">
           {published.map((entry, index) => {
@@ -152,15 +168,37 @@ export default function ProfileRecordSection({
 
       <section aria-labelledby="revision-trail-heading">
         <h3 id="revision-trail-heading">Revision audit trail</h3>
+        <p className="tf-sub">
+          Every recorded revision keeps a full copy of the profile. Recall copies one back into a
+          new draft; it does not activate anything, so publishing stays an explicit second step.
+        </p>
         {revisions.length === 0 ? (
           <p className="tf-sub">No revisions recorded yet.</p>
         ) : (
           <ol aria-label="Revision audit trail" className="tf-revision-list">
-            {revisions.map((entry) => (
-              <li key={entry.revision}>
-                Revision {entry.revision} · {dateLabel(entry.at)} · {entry.detail}
-              </li>
-            ))}
+            {revisions.map((entry) => {
+              const isCurrentDraft = record.draft?.revision === entry.revision;
+              return (
+                <li key={entry.revision} className="tf-published-item">
+                  <span>
+                    Revision {entry.revision} · {dateLabel(entry.at)} · {entry.detail}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRecall(entry.revision)}
+                    disabled={isCurrentDraft}
+                    aria-label={`Recall revision ${entry.revision} as a new draft`}
+                    title={
+                      isCurrentDraft
+                        ? "This revision is already the current draft."
+                        : "Copy this revision into a new editable draft."
+                    }
+                  >
+                    Recall
+                  </button>
+                </li>
+              );
+            })}
           </ol>
         )}
       </section>

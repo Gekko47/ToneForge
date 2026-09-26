@@ -1,5 +1,48 @@
 # ToneForge — Changelog
 
+## 0.3.0 — Task-pane UX and host-compatibility remediation
+
+- **AI Review is one surface running one engine.** The page presents a single
+  cross-report consistency review with one disclosure, one consent-gated action, and
+  one prerequisite hint. The three `ai-review-*` navigation targets collapse to
+  `ai-review`, and navigation no longer auto-starts a review. The spot and
+  full-document engines, their persisted consents, and their tests are unchanged; only
+  their task-pane entry points are retired. See ADR-0055.
+- **The missing-consent message is stated once.** It was previously rendered three
+  times, once per disabled control, because each control carried its own copy of the
+  same sentence.
+- **Settings shows one AI Review consent.** The `spotReviewConsent` and
+  `fullDocumentReviewConsent` toggles are no longer rendered. Both fields remain in
+  the state schema and migrations, so existing state loads unchanged and no state
+  version bump is required.
+- **Analysis acquisition is capability-gated and degrades.** It previously loaded
+  `document.styles` and per-paragraph formatting regardless of what the probe found,
+  and live Desktop Word rejected the whole request with a generic
+  `GeneralException` — losing every scan. Optional properties are now requested only
+  when the probe found them, skipped properties are named in the coverage report, and
+  a host rejection retries once with a text-only scope. See ADR-0056.
+- **Host errors are diagnosable again.** A blanket `/error/i` redaction rule replaced
+  every failure with `[REDACTED_CONTENT]`. `errorName`, `errorCode`, and `errorMessage`
+  are now allowlisted for diagnostics, still credential-redacted and length-capped.
+- **Dark mode applies to controls and the page canvas.** Fluent themes are now
+  inverted, which is the field that makes Fluent paint its own components dark; the
+  theme class is applied to the document element so `html` and `body` resolve the CSS
+  custom properties, removing the white frame around the content card. See ADR-0057.
+- **The header reports the page that is actually open.** The main render passed a
+  literal `"home"`, so "Document Governance" stayed highlighted on every page.
+- **Profile revisions can be recalled.** `recallRevisionAsDraft()` clones any audited
+  revision into a new draft, and every audit-trail entry now has a Recall action. A
+  profile that has never been published previously had no way back at all. Recall
+  creates a draft only; publishing stays an explicit second step, so "documents are
+  checked against the active published revision" still holds.
+- **Model selection is a provider-supplied list.** The model field is a searchable
+  combo box populated from the gateway's catalog for any connected provider, with a
+  refresh action and a manual-entry fallback, rather than free text only on OpenRouter.
+- **Tracked editing moved to Settings and can be armed.** The enable path never
+  persisted the flag before probing, so the preparation read `false` back, refused,
+  and the toggle snapped straight off. It now persists first, and the control lives in
+  Settings where Troubleshooting only reports its state.
+
 ## 0.2.0 — Refactor candidate (unreleased)
 
 - Added additive domain contracts for structured document nodes, governance
