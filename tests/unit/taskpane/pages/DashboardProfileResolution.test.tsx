@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
 import { createRecord } from "../../../../src/core/domain/ProfileRecord";
+import { sampleFinding } from "../../../fixtures/sampleDocs";
 
 const mocks = vi.hoisted(() => ({
   loadState: vi.fn(),
@@ -128,5 +129,59 @@ describe("Dashboard profile resolution", () => {
 
     expect(screen.getByRole("heading", { name: "Create a style profile" })).toBeInTheDocument();
     expect(mocks.reload).not.toHaveBeenCalled();
+  });
+
+  /**
+   * One live region, and it is the only one.
+   *
+   * The observer, the apply path, and the host banner each used to render their
+   * own `role="status"` element, so two of them could speak in the same tick and
+   * a screen reader read them in DOM order rather than in the order they
+   * happened. The priority that decides which one wins now lives in
+   * `deriveAnnouncement`; this asserts the structural half — that the surfaces
+   * are visible text and the region is singular.
+   */
+  it("announces a settled scan through a single live region", async () => {
+    // The observer only exists once a profile does, so this needs a real record
+    // rather than the empty state the surrounding cases use.
+    const profile = StyleProfileSchema.parse(createEmptyProfile("Announced"));
+    const record = createRecord(profile.id, profile.name, profile.createdAt, profile);
+    mocks.loadState.mockReturnValue({
+      ...emptyState(),
+      profileRecords: { [record.id]: record },
+      activeProfileId: record.id,
+    });
+
+    render(<Dashboard />);
+    await waitFor(() => expect(mocks.createDocumentObserver).toHaveBeenCalled());
+
+    const options = mocks.createDocumentObserver.mock.calls[0]?.[0] as {
+      onStatus: (status: unknown) => void;
+    };
+    act(() => {
+      options.onStatus({
+        phase: "fresh",
+        findings: [sampleFinding()],
+        coverage: null,
+        stale: false,
+        hostUnavailable: false,
+        lastScan: new Date().toISOString(),
+        error: null,
+      });
+    });
+
+    // Re-queried each time: the announcement settles on a timer, so a snapshot
+    // taken before the delay would read the region as empty and pass vacuously.
+    // The observer's own `role="status"` used to be one of these.
+    await waitFor(
+      () =>
+        expect(
+          screen.getAllByRole("status").some((node) => /Scan complete/.test(node.textContent ?? "")),
+        ).toBe(true),
+      { timeout: 3000 },
+    );
+    expect(
+      screen.getAllByRole("status").filter((node) => node.getAttribute("aria-live") === "polite"),
+    ).toHaveLength(1);
   });
 });

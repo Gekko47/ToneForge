@@ -43,6 +43,8 @@ import {
 import { loadState } from "../../core/state/persistence";
 import { selectActiveProfile } from "../../core/state/profileSelectors";
 import { usePersistedState } from "../state/usePersistedState";
+import { useAnnouncement } from "../settings/useAnnouncement";
+import { deriveAnnouncement } from "../state/announcement";
 import { applyReadiness, hostReadinessMessage } from "../settings/applyReadiness";
 import { StyleProfileSchema, type StyleProfile } from "../../core/domain/StyleProfile";
 import type { Finding } from "../../core/domain/Finding";
@@ -278,6 +280,17 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const [consistencyMessage, setConsistencyMessage] = useState<string | null>(null);
   const consistencyAbortRef = useRef<AbortController | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
+  /**
+   * One live region for the whole pane.
+   *
+   * The observer, the apply path, and the consistency review each have their own
+   * message, and each of them used to render its own `role="status"` element, so
+   * two of them could speak in the same tick. The visible messages stay visible;
+   * only the announcement is consolidated here, and the priority order that
+   * decides which sentence wins lives in `deriveAnnouncement` where it is
+   * testable on its own.
+   */
+  const announcement = useAnnouncement();
   const [workflow, dispatchWorkflow] = React.useReducer(
     workflowReducer,
     undefined,
@@ -285,6 +298,20 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   );
   const currentTask = selectCurrentTask(workflow);
   const activeProfileKey = `${activeProfile.id}:${activeProfile.revision}`;
+  /**
+   * One host verdict, computed once and read by the banner, the announcement,
+   * and the Apply gate alike.
+   *
+   * Declared here rather than beside the render that shows it, because the
+   * announcement effect below needs it and cannot be placed after a conditional
+   * return. Three surfaces that each decided readiness separately is how a
+   * disabled control and a refusing gate end up disagreeing.
+   */
+  const hostReadiness = hostReadinessMessage({
+    trackedEditingEnabled: isTrackedEditingEnabled(),
+    capabilities: caps,
+  });
+  const hostBlocker = hostReadiness.verdict === "blocked" ? hostReadiness.message : null;
 
   useEffect(() => {
     const phase = status?.phase ?? "notStarted";
@@ -402,6 +429,33 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       return changed ? { ...previous, findings } : previous;
     });
   }, [reviewedFindingIds, status]);
+
+  /**
+   * Announce the settled state, and only when it actually changed.
+   *
+   * The observer re-emits on every scan, so without the ref guard the same
+   * "Scan complete" sentence would be re-announced on each emission and a
+   * screen reader would repeat it for a document nobody changed. Declared above
+   * the early return with the rest of the hooks, for the reason the other
+   * pre-return declarations give.
+   */
+  const lastAnnounced = useRef<string | null>(null);
+  useEffect(() => {
+    const sentence = deriveAnnouncement({
+      scanPhase: status?.phase ?? "notStarted",
+      findingCount: status?.findings.length ?? 0,
+      error: status?.error ?? null,
+      applyMessage,
+      // A blocked host is announced through the same region. It is a state, not
+      // a burst, so it is only spoken when it actually changes.
+      reviewMessage: consistencyMessage ?? hostBlocker,
+      hostUnavailable: status?.hostUnavailable ?? false,
+    });
+    if (sentence === lastAnnounced.current) return;
+    lastAnnounced.current = sentence;
+    if (sentence === null) announcement.clear();
+    else announcement.announce(sentence);
+  }, [status, applyMessage, consistencyMessage, announcement]);
 
   function ignoreFinding(finding: Finding): void {
     setIgnoredFindingIds((previous) => {
@@ -664,10 +718,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     capabilities: caps,
     changes: pendingPlan?.plan.changes ?? [],
   });
-  const hostReadiness = hostReadinessMessage({
-    trackedEditingEnabled: isTrackedEditingEnabled(),
-    capabilities: caps,
-  });
   // Derived rather than stored, so the displayed stage cannot disagree with the
   // state that produced it.
   const aiReviewStage: AiReviewStage =
@@ -690,6 +740,16 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         profileRevision={activeProfile.revision}
         onNavigate={navigate}
       />
+
+      {/*
+        The pane's only live region. Every message the Dashboard shows elsewhere
+        is also spoken from here, so the visible surfaces below are plain text:
+        two live regions updating in one tick is how a screen reader ends up
+        reading a scan result and an apply refusal in the wrong order.
+      */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement.message}
+      </p>
 
       {page === "home" && findingsOpen && (
         <section className="tf-collapsible" aria-label="Findings section">
@@ -779,7 +839,9 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
               setApplyMessage("Changes rejected. Nothing was applied to the document.");
             }}
           />
-          {applyMessage && <p role="status">{applyMessage}</p>}
+          {/* Visible but not live: the pane speaks this from the single region
+              above, and a second one here would say it twice. */}
+          {applyMessage && <p className="tf-readiness">{applyMessage}</p>}
         </section>
       )}
       {page === "ai-review" && (
@@ -849,8 +911,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                   ? "tf-readiness tf-readiness-blocked"
                   : "tf-readiness"
               }
-              role="status"
-              aria-live="polite"
             >
               {hostReadiness.message}{" "}
               {hostReadiness.verdict === "blocked" && (

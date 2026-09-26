@@ -37,6 +37,24 @@
 - Navigation retains initial focus, traps Tab while the modal drawer is open,
   closes on Escape, and restores focus to the navigation trigger.
 
+## One live region per pane
+
+The Dashboard's document observer, apply path, and consistency review each have
+their own message, and each of them used to render its own polite live region.
+A scan completing while an apply refusal was still on screen updated two
+regions in the same tick, and a screen reader read them in DOM order rather than
+in the order the events happened.
+
+The pane now has one live region. Which of the three messages speaks is decided
+by `deriveAnnouncement` in `src/taskpane/state/announcement.ts`, in priority
+order: unreachable host, scan error, review blocker, apply result, scan phase.
+The surfaces themselves stay visible as ordinary text, and the announcement is
+debounced by `useAnnouncement` so a burst of updates collapses into one
+sentence rather than interrupting repeatedly.
+
+Re-announcement is suppressed until the sentence actually changes, so a
+rescan of an unchanged document does not repeat itself.
+
 ## Verification
 
 Run `npm run lint` — the `jsx-a11y` plugin flags violations automatically. The

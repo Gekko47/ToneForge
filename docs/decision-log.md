@@ -1314,3 +1314,40 @@ refuses a scope policy that excludes all body content.
 - Evidence: [`GovernanceProfile.ts`](../src/core/domain/GovernanceProfile.ts),
   [`persistence.ts`](../src/core/state/persistence.ts),
   [`ResolvedPolicy.ts`](../src/core/domain/ResolvedPolicy.ts).
+
+## ADR-0062: One live region per pane, with an explicit announcement priority
+
+**Status:** Accepted
+
+**Context.** The Dashboard has three independent message sources: the document
+observer reports scan phase and failures, the apply path reports results and
+refusals, and the consistency review reports blockers and outcomes. Each rendered
+its own `role="status"` element. A scan that completed while an apply refusal
+was still on screen updated two live regions in the same tick, and a screen
+reader read them in DOM order rather than in the order the events happened. The
+plan also found `useAnnouncement` written and unit-tested but never adopted by
+any component.
+
+**Decision.** The pane owns exactly one polite live region. Which of the three
+messages speaks is decided by `deriveAnnouncement`
+(`src/taskpane/state/announcement.ts`), a pure function with a fixed priority:
+unreachable host, then scan error, then review blocker, then apply result, then
+scan phase. The visible surfaces stay visible as ordinary text. The region is
+fed through `useAnnouncement`, so a burst collapses into one sentence, and
+re-announcement is suppressed until the sentence actually changes.
+
+**Consequences.**
+
+- The priority order is now testable without rendering anything, which is why it
+  lives in a pure module rather than inside the effect.
+- A new message source must be added to the priority list rather than given its
+  own live region, or the singular-region test fails.
+- The review blocker outranks the apply result. The two are not simultaneous in
+  practice, and when they are, the thing blocking the current view is the one
+  worth speaking.
+- `useAnnouncement` is no longer dead code, and its existing tests cover the
+  debounce half of the behaviour this ADR describes.
+
+**Rejected.** Leaving the regions per surface and relying on debounce alone. It
+fixes the interruption count but not the ordering, and three regions still means
+three places for a future change to add a fourth.

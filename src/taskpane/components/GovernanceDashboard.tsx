@@ -68,7 +68,13 @@ export default function GovernanceDashboard({
   return (
     <section aria-label="Document Governance" style={{ marginTop: "1rem" }}>
       <h2>Document Governance</h2>
-      <p role="status" aria-live="polite">
+      {/*
+        Visible but not live. The Dashboard speaks the scan phase from its single
+        live region, and this used to be a second one: a scan completing updated
+        both in the same tick, so a screen reader read them in DOM order rather
+        than in the order the events happened.
+      */}
+      <p>
         {phase === "notStarted" && "Scan the document to assess governance."}
         {phase === "scanning" &&
           "Scanning the document. Current findings will appear when complete."}
