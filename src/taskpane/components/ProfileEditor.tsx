@@ -154,7 +154,6 @@ function parseLines(value: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-
 function numberOrNaN(value: string): number {
   return value.trim().length === 0 ? Number.NaN : Number(value.trim());
 }

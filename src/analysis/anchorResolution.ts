@@ -24,8 +24,7 @@ import { type DocumentNode } from "../core/domain/DocumentSnapshot";
  */
 
 export type AnchorResolution =
-  | { ok: true; nodeId: string; start: number; end: number }
-  | { ok: false; reason: string };
+  { ok: true; nodeId: string; start: number; end: number } | { ok: false; reason: string };
 
 /** The minimum a node needs before it can carry a character range. */
 interface RangeableNode {

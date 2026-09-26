@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { v4 as uuidv4 } from "uuid";
 import { planChanges } from "../../../src/changes/planner";
-import { GovernanceRuleSchema, type GovernanceRule } from "../../../src/core/domain/GovernanceProfile";
+import {
+  GovernanceRuleSchema,
+  type GovernanceRule,
+} from "../../../src/core/domain/GovernanceProfile";
 import { FindingSchema, type Finding } from "../../../src/core/domain/Finding";
 
 /**

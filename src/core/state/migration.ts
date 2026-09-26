@@ -478,7 +478,9 @@ function normalizeSettings(raw: unknown): PersistedState["settings"] {
     openAiCredentialMode: "broker",
     // An unrecognised provider must fail closed to the offline stub rather
     // than be described as though it were a usable remote one.
-    llmProvider: isProviderId(stored.llmProvider) ? stored.llmProvider : DEFAULT_SETTINGS.llmProvider,
+    llmProvider: isProviderId(stored.llmProvider)
+      ? stored.llmProvider
+      : DEFAULT_SETTINGS.llmProvider,
     // Consent flags are re-derived from strict booleans rather than spread
     // through. Everything else here is a preference and a wrong value is merely
     // wrong; a consent flag gates whether raw document text leaves the add-in, so

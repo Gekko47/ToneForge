@@ -362,7 +362,9 @@ export default function GovernancePolicySection({
               options={GOVERNANCE_RULE_SOURCES.map((source) => ({
                 key: source,
                 text: SOURCE_LABEL[source],
-                disabled: draft.rules.some((other) => other.id !== rule.id && other.source === source),
+                disabled: draft.rules.some(
+                  (other) => other.id !== rule.id && other.source === source,
+                ),
               }))}
               onChange={(_event, option) => {
                 if (option) {
@@ -398,7 +400,10 @@ export default function GovernancePolicySection({
             <DefaultButton onClick={() => removeRule(rule.id)}>Remove rule</DefaultButton>
           </div>
         ))}
-        <DefaultButton onClick={addRule} disabled={draft.rules.length >= GOVERNANCE_RULE_SOURCES.length}>
+        <DefaultButton
+          onClick={addRule}
+          disabled={draft.rules.length >= GOVERNANCE_RULE_SOURCES.length}
+        >
           Add rule
         </DefaultButton>
       </section>
@@ -454,7 +459,9 @@ export default function GovernancePolicySection({
               applied plan.
             </MessageBar>
             <PrimaryButton onClick={confirmProtection}>Yes, turn it off</PrimaryButton>
-            <DefaultButton onClick={() => setPendingProtection(null)}>Keep it protected</DefaultButton>
+            <DefaultButton onClick={() => setPendingProtection(null)}>
+              Keep it protected
+            </DefaultButton>
           </div>
         )}
       </section>

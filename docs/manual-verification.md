@@ -187,7 +187,7 @@ For each host:
 ## Open gate — incremental scan scope (ADR-0063)
 
 The observer narrows a scan to the paragraphs Word reports as changed when the
-host supplies a complete set of local ids. The *decision* is unit tested
+host supplies a complete set of local ids. The _decision_ is unit tested
 exhaustively; whether Word actually supplies them is not, and cannot be.
 
 Record for each host build:
@@ -205,3 +205,58 @@ Record for each host build:
 Until this is recorded, describe the behaviour as "incremental where the host
 reports complete local ids, conservative full rescan otherwise" and do not
 claim a measured speedup.
+
+## Open gate — live accessibility evidence
+
+The accessibility claims in `docs/accessibility.md` are covered by jsx-a11y lint
+and by component tests that assert roles, names, and state. They are **not**
+screen-reader evidence, and unit tests cannot produce any: axe and Testing Library
+check the markup contract, not whether a user can hear it work.
+
+Nothing below may be marked passed from a unit test run.
+
+### 1. Task-pane keyboard traversal
+
+With the task pane open and no host interaction:
+
+1. Tab from the browser chrome into the pane. Confirm the first stop is the
+   navigation trigger, not the document.
+2. Tab through every control. Confirm no stop is invisible or zero-size.
+3. Open the navigation drawer, confirm Tab is contained inside it, confirm
+   Escape closes it, and confirm focus returns to the trigger.
+4. Reach Findings, expand it, and confirm the list, the toolbar, and each card
+   are all reachable and that the position readout updates.
+5. Repeat on a 320px-wide pane. Confirm nothing is clipped horizontally.
+
+### 2. One live region
+
+With a screen reader running, open the task pane and run a scan.
+
+1. Confirm a scan result is spoken **once**. Three sources write to one region,
+   so a burst must collapse into a single sentence rather than three.
+2. Confirm an apply refusal and a scan completion in quick succession are spoken
+   in the order they happened, not in DOM order.
+3. Confirm a rescan of an unchanged document does not repeat the same sentence.
+
+### 3. Disabled controls and their reasons
+
+1. Turn tracked editing off, then attempt to apply. Confirm the disabled reason
+   is reachable by keyboard and the Open Settings button is reachable from it.
+2. With tracked editing on and an incomplete coverage report, confirm the apply
+   refusal names what was not processed.
+
+### 4. Dark theme contrast
+
+1. Switch to dark theme. Confirm no component falls back to a hardcoded light
+   palette — Phase 5 replaced the inline hex values with tokens for exactly this.
+2. Confirm focus indicators remain visible in both themes.
+
+### 5. Reduced motion
+
+With the OS reduced-motion preference set, confirm no non-essential animation
+runs. The theme module derives `reducedMotion` from the media query; confirm it
+also suppresses the announcement debounce visual behaviour if any is added.
+
+Record host product, version, browser, screen reader and version, build, and
+date for each. Until this is recorded, `docs/accessibility.md` claims markup
+conformance only.

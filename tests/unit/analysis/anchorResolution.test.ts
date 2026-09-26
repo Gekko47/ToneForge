@@ -38,7 +38,9 @@ function node(
 
 describe("resolveAnchor", () => {
   it("resolves a unique quote to a node and an offset within it", () => {
-    const result = resolveAnchor("must be reviewed", [node("n1", "Every change must be reviewed first.")]);
+    const result = resolveAnchor("must be reviewed", [
+      node("n1", "Every change must be reviewed first."),
+    ]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.nodeId).toBe("n1");
@@ -47,7 +49,10 @@ describe("resolveAnchor", () => {
   });
 
   it("resolves the same quote in whichever node holds it", () => {
-    const result = resolveAnchor("see below", [node("n1", "As shown, see below."), node("n2", "Nothing here.")]);
+    const result = resolveAnchor("see below", [
+      node("n1", "As shown, see below."),
+      node("n2", "Nothing here."),
+    ]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.nodeId).toBe("n1");
@@ -67,7 +72,9 @@ describe("resolveAnchor", () => {
   it("refuses a quote that appears twice in the same node", () => {
     // Two hits in one node are still two candidates, and refusing is the safe
     // answer. Editing the wrong one is a silent corruption.
-    const result = resolveAnchor("the data", [node("n1", "the data is stored, and the data is lost")]);
+    const result = resolveAnchor("the data", [
+      node("n1", "the data is stored, and the data is lost"),
+    ]);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/appears 2 times/i);

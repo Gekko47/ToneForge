@@ -460,7 +460,8 @@ export async function runConsistencyReview(
       const checkCount = Math.max(activeCheckers.length, 1);
       report({
         phase: "comparing",
-        fraction: 0.1 + (0.5 * (checkerIndex * windowCount + windowIndex + 1)) / (checkCount * windowCount),
+        fraction:
+          0.1 + (0.5 * (checkerIndex * windowCount + windowIndex + 1)) / (checkCount * windowCount),
         message:
           windows.length === 1
             ? `Checking ${checker.id} — ${CONSISTENCY_CHECKS[checker.id].title}…`

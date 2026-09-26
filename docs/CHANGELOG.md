@@ -1,5 +1,70 @@
 # ToneForge — Changelog
 
+## 0.4.0 — Honest capabilities
+
+Every control now changes behaviour, and every surface says what it did not do.
+The organising theme is that a setting which changes nothing is a defect, not a
+placeholder.
+
+- **The scan → preview → apply loop is reachable and honest.** Apply is enabled only
+  when the host is ready, and its disabled reason is shown in place with a link to the
+  setting that fixes it. The ribbon dropped from seven commands to six real ones, and
+  "Scan Now" now actually scans rather than only navigating. Findings are a listbox
+  with a real selection, and marking one reviewed persists across rescans instead of
+  reverting. See ADR-0058, ADR-0061.
+- **A host outage is not a stale document.** A Word runtime failure and a changed
+  document are reported separately, so a user is no longer sent to re-scan a document
+  that had not moved.
+- **Retired code is gone.** The Stage 18 smoke-mutation path, the spot and
+  full-document review engines and their orphaned task-pane components, the
+  navigation controller, the OAuth state reducer, and the unreachable `useAnnouncement`
+  are removed. Nothing referenced them. See ADR-0059.
+- **The revisions CSV export works.** `toRevisionsCsv` was written and never called;
+  it now has one call site, in `PendingChanges`, and refuses to export a plan whose
+  coverage is incomplete.
+- **Settings contains only controls that change behaviour.** The telemetry toggle
+  gated a build-time env flag with no analytics endpoint; the two retired review
+  consents gated engines that no longer exist. All three are removed in state
+  **v10**, and a v9 user keeps their provider connection and their AI Review consent.
+  `normalizeSettings` was spreading the stored object, which meant every key a user
+  had ever stored rode through every migration untouched — it now rebuilds from an
+  explicit field list, so a schema change actually takes effect. See ADR-0060.
+- **Providers say whether this build can reach them.** Unavailable providers are
+  marked with a reason and cannot be selected, rather than being offered and failing
+  on connect.
+- **One live region, with an explicit priority.** The observer, the apply path, and the
+  review each rendered their own polite live region, so two could speak in the same
+  tick and be read in DOM order rather than event order. The pane now has one, fed by a
+  pure `deriveAnnouncement`. See ADR-0062.
+- **Governance policy is authorable, versioned, and takes precedence.** `rules`,
+  terminology, scope, protection, and editorial were modelled, given precedence by
+  `resolveResolvedPolicy`, and written by nobody — permanently the schema defaults,
+  while `ChangePlan` cited a `governancePolicyRevision` for a policy that could not
+  differ from any other. A rule is now bound to a finding category and can withhold a
+  change, raise its approval requirement, and be cited in Pending Changes. Protection
+  flags are read by the apply-time check, and `userLockedRanges` holds node ids rather
+  than UUIDs it could never match. See ADR-0061.
+- **The consistency engine handles long documents.** Statements were truncated past the
+  bound, so a contradiction in the second half of a long report did not exist. Every
+  statement is now examined; what is bounded is the number of _pairs_ compared, and
+  the exact count of comparisons that fell between windows is reported. See ADR-0052.
+- **Scans examine only what changed, and say so.** The paragraph event payload was
+  wired and discarded. It is now forwarded, and a local event with complete ids
+  narrows the examined scope, with five cases forcing a conservative full rescan. No
+  cross-run retention: growing one paragraph shifts every offset after it, so a
+  retained finding can point at the wrong sentence while looking normal. See ADR-0063.
+- **Semantic findings carry a verified span or none.** Each carried a whole-document
+  range and `actionable: false`, so the planner could never produce a change from one.
+  The model must now quote the text it is describing; a unique match yields a
+  plannable finding with an exact precondition, and an absent, ambiguous, or
+  unaddressable quote yields a stated refusal. See ADR-0064.
+
+### Open gates
+
+Two items are host-dependent and are recorded as procedures, not results, in
+[`manual-verification.md`](manual-verification.md): the incremental scan scope (ADR-0063)
+and live accessibility evidence. Neither is claimed as verified.
+
 ## 0.3.0 — Task-pane UX and host-compatibility remediation
 
 - **AI Review is one surface running one engine.** The page presents a single

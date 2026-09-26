@@ -977,7 +977,7 @@ and renders exactly one prerequisite hint.
 - `spotReviewConsent` and `fullDocumentReviewConsent` lose their Settings toggles.
   The persisted fields, the Zod schema, and the migrations are **kept**, so no state
   version bump is required and existing state loads unchanged.
-- The engines are untouched: [`spotReview`](../src/ai/review/spotReview.ts) and
+- The engines are untouched: `spotReview` and
   [`reviewEntireDocument`](../src/reformat/orchestrator.ts) remain, as do their
   consents.
 
@@ -1388,7 +1388,7 @@ fix, not retention, and re-anchoring is not available here.
 - A narrowed run is visibly partial, which is a behaviour change for anyone who
   reads the coverage banner. That is the point.
 - The performance claim is host-dependent and remains ungated by these tests.
-  The scope *decision* is unit tested exhaustively; whether Word actually reports
+  The scope _decision_ is unit tested exhaustively; whether Word actually reports
   complete local ids is a live-host question recorded in
   `docs/manual-verification.md`.
 
@@ -1437,7 +1437,7 @@ A refused finding still appears, with the specific reason as its
   out of the message prose for semantic findings. The suggestion has already been
   verified against a real offset; re-deriving it from prose would discard that
   verification and would fail on any suggestion not phrased as `Use "x" instead
-  of "y"`. The prose parser remains for unanchored findings.
+of "y"`. The prose parser remains for unanchored findings.
 - `detectSemanticDeviations` now takes the acquired nodes. With none, every finding
   stays advisory, which is the correct answer rather than a crash.
 - The prompt states the quoting rule explicitly, including that a deviation the

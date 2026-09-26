@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { deriveAnnouncement, type AnnouncementInput } from "../../../../src/taskpane/state/announcement";
+import {
+  deriveAnnouncement,
+  type AnnouncementInput,
+} from "../../../../src/taskpane/state/announcement";
 
 /**
  * The priority order is the whole point of this module.
@@ -65,7 +68,11 @@ describe("deriveAnnouncement", () => {
 
   it("puts an apply result ahead of a background scan", () => {
     const sentence = deriveAnnouncement(
-      state({ applyMessage: "Applied and verified 2 change(s).", scanPhase: "fresh", findingCount: 2 }),
+      state({
+        applyMessage: "Applied and verified 2 change(s).",
+        scanPhase: "fresh",
+        findingCount: 2,
+      }),
     );
     expect(sentence).toBe("Applied and verified 2 change(s).");
   });
@@ -97,9 +104,9 @@ describe("deriveAnnouncement", () => {
   it("treats an empty message as no message rather than announcing nothing", () => {
     // An empty string is a real failure mode of a message prop, and reading it
     // as a settled state would clear the queue mid-run.
-    expect(deriveAnnouncement(state({ applyMessage: "", scanPhase: "fresh", findingCount: 1 }))).toBe(
-      "Scan complete. 1 finding.",
-    );
+    expect(
+      deriveAnnouncement(state({ applyMessage: "", scanPhase: "fresh", findingCount: 1 })),
+    ).toBe("Scan complete. 1 finding.");
   });
 
   it("returns null once a scan is no longer running and nothing else has said anything", () => {

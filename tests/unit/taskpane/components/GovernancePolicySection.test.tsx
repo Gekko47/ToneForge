@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { v4 as uuidv4 } from "uuid";
-import { SCOPE_FLAGS, policyProblem, type PolicyDraft } from "../../../../src/taskpane/components/GovernancePolicySection";
+import {
+  SCOPE_FLAGS,
+  policyProblem,
+  type PolicyDraft,
+} from "../../../../src/taskpane/components/GovernancePolicySection";
 import {
   ProtectionPolicySchema,
   ScopePolicySchema,
@@ -9,7 +13,10 @@ import { isProtectedNode } from "../../../../src/rules/protection";
 import { updateGovernancePolicy } from "../../../../src/core/state/persistence";
 import { createRecord, newProfileId } from "../../../../src/core/domain/ProfileRecord";
 import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
-import { selectGovernanceHistory, selectGovernancePolicy } from "../../../../src/core/state/profileSelectors";
+import {
+  selectGovernanceHistory,
+  selectGovernancePolicy,
+} from "../../../../src/core/state/profileSelectors";
 import { loadState, saveProfileRecord } from "../../../../src/core/state/persistence";
 import { DocumentNodeSchema } from "../../../../src/core/domain/DocumentSnapshot";
 
@@ -74,7 +81,13 @@ describe("policyProblem", () => {
     const problem = policyProblem(
       draft({
         rules: [
-          { id: uuidv4(), source: "typography", description: "  ", severity: "advisory", autoFix: true },
+          {
+            id: uuidv4(),
+            source: "typography",
+            description: "  ",
+            severity: "advisory",
+            autoFix: true,
+          },
         ],
       }),
     );
@@ -87,8 +100,20 @@ describe("policyProblem", () => {
     const problem = policyProblem(
       draft({
         rules: [
-          { id: uuidv4(), source: "typography", description: "First", severity: "advisory", autoFix: true },
-          { id: uuidv4(), source: "typography", description: "Second", severity: "mandatory", autoFix: false },
+          {
+            id: uuidv4(),
+            source: "typography",
+            description: "First",
+            severity: "advisory",
+            autoFix: true,
+          },
+          {
+            id: uuidv4(),
+            source: "typography",
+            description: "Second",
+            severity: "mandatory",
+            autoFix: false,
+          },
         ],
       }),
     );

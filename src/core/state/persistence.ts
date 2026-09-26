@@ -371,9 +371,7 @@ export function updateGovernancePolicy(
     version: previous.version + 1,
   });
   if (policy.style.id !== previous.style.id) {
-    throw new Error(
-      "updateGovernancePolicy: a policy cannot change the style profile it governs",
-    );
+    throw new Error("updateGovernancePolicy: a policy cannot change the style profile it governs");
   }
   state.governanceProfiles[id] = next;
   const history = state.governanceHistory[id] ?? [];

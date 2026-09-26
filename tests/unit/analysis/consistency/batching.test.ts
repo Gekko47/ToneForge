@@ -34,9 +34,7 @@ describe("partitionStatementWindows", () => {
     const windows = partitionStatementWindows(all, { windowSize: 10 });
     const examined = windows.flatMap((window) => window.statements);
     expect(examined).toHaveLength(25);
-    expect(examined.map((item) => item.statement.id)).toEqual(
-      all.map((item) => item.statement.id),
-    );
+    expect(examined.map((item) => item.statement.id)).toEqual(all.map((item) => item.statement.id));
   });
 
   it("never repeats a statement across windows", () => {

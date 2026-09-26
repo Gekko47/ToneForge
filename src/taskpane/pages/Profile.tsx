@@ -135,9 +135,7 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
         exists: `saveProfileRecord` is what seeds a policy, so there is nothing
         to author before then.
       */}
-      {record && policy && (
-        <GovernancePolicySection policy={policy} onPolicySaved={setPolicy} />
-      )}
+      {record && policy && <GovernancePolicySection policy={policy} onPolicySaved={setPolicy} />}
       <ProfileEditor onRecordSaved={refreshRecord} />
     </div>
   );

@@ -176,7 +176,9 @@ describe("Dashboard profile resolution", () => {
     await waitFor(
       () =>
         expect(
-          screen.getAllByRole("status").some((node) => /Scan complete/.test(node.textContent ?? "")),
+          screen
+            .getAllByRole("status")
+            .some((node) => /Scan complete/.test(node.textContent ?? "")),
         ).toBe(true),
       { timeout: 3000 },
     );

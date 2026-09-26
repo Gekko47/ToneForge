@@ -219,7 +219,8 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       const scope = state.scope;
       state.scope = null;
       const inScope = (nodeId: string): boolean => scope === null || scope.nodeIds.has(nodeId);
-      const examinedNodes = scope === null ? full.nodes : full.nodes.filter((node) => inScope(node.nodeId));
+      const examinedNodes =
+        scope === null ? full.nodes : full.nodes.filter((node) => inScope(node.nodeId));
       // An event naming ids the host no longer has names nothing we can read;
       // treating that as a narrowing would silently examine less than asked.
       const narrowed =

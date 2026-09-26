@@ -51,7 +51,12 @@ describe("detectSemanticDeviations", () => {
   it("anchors a finding to a verified span and makes it plannable", async () => {
     const { registry } = mockRegistryWith(
       JSON.stringify([
-        { deviation: "Too casual", severity: "medium", suggestion: "Use formal tone", anchor: "target text" },
+        {
+          deviation: "Too casual",
+          severity: "medium",
+          suggestion: "Use formal tone",
+          anchor: "target text",
+        },
         {
           deviation: "Passive voice",
           severity: "high",
@@ -82,9 +87,7 @@ describe("detectSemanticDeviations", () => {
     // A node-relative offset would point into whatever text happens to sit there
     // in a different document.
     const { registry } = mockRegistryWith(
-      JSON.stringify([
-        { deviation: "D", severity: "low", suggestion: "S", anchor: "target" },
-      ]),
+      JSON.stringify([{ deviation: "D", severity: "low", suggestion: "S", anchor: "target" }]),
     );
 
     const finding = (await detect(registry))[0];
@@ -169,7 +172,9 @@ describe("detectSemanticDeviations", () => {
 
   it("maps severity low to info", async () => {
     const { registry } = mockRegistryWith(
-      JSON.stringify([{ deviation: "Minor", severity: "low", suggestion: "Tweak", anchor: "target" }]),
+      JSON.stringify([
+        { deviation: "Minor", severity: "low", suggestion: "Tweak", anchor: "target" },
+      ]),
     );
 
     const findings = await detect(registry);
@@ -285,7 +290,12 @@ describe("detectSemanticDeviations", () => {
     const { planChanges } = await import("../../../src/changes/planner");
     const { registry } = mockRegistryWith(
       JSON.stringify([
-        { deviation: "D", severity: "high", suggestion: "Use a fixed wording here.", anchor: "target" },
+        {
+          deviation: "D",
+          severity: "high",
+          suggestion: "Use a fixed wording here.",
+          anchor: "target",
+        },
       ]),
     );
     const semantic = await detect(registry);

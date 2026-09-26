@@ -208,7 +208,11 @@ describe("incremental scan scope", () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
     observer.stopObserver();
 
-    expect(lastCheck().context.nodes.map((node) => node.nodeId).sort()).toEqual(["n1", "n3"]);
+    expect(
+      lastCheck()
+        .context.nodes.map((node) => node.nodeId)
+        .sort(),
+    ).toEqual(["n1", "n3"]);
   });
 
   it("widens to a full rescan when an imprecise event follows a precise one", async () => {

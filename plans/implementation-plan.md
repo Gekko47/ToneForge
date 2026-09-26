@@ -27,19 +27,19 @@ Canonical status remains [`ROADMAP.md`](../ROADMAP.md); this plan does not repla
 ## Constraints that apply to every item
 
 - `src/core/domain/**` may import only `zod` and `shared/utils`
-  ([`eslint.config.mjs`](../eslint.config.mjs:60)).
+  ([`eslint.config.mjs`](../eslint.config.mjs)).
 - `src/rules/**` may import only `core/domain` and `shared/utils`
-  ([`eslint.config.mjs`](../eslint.config.mjs:108)).
+  ([`eslint.config.mjs`](../eslint.config.mjs)).
 - `src/changes/**` may import only `core/domain` and `shared/utils`
-  ([`eslint.config.mjs`](../eslint.config.mjs:228)).
+  ([`eslint.config.mjs`](../eslint.config.mjs)).
 - `src/reformat/**` must not import `taskpane` or `commands`
-  ([`eslint.config.mjs`](../eslint.config.mjs:258)).
+  ([`eslint.config.mjs`](../eslint.config.mjs)).
 - `src/analysis/consistency/**` must not import `word`, `taskpane`, `commands`,
   `reformat`, or `changes` — ADR-0052's single exception
-  ([`eslint.config.mjs`](../eslint.config.mjs:194)).
+  ([`eslint.config.mjs`](../eslint.config.mjs)).
 - No `any`. `import type` for type-only imports. No `for` statements. No
   `console.log`. Coverage gate is 80% lines/statements/functions/branches across
-  the `include` list in [`vitest.config.ts`](../vitest.config.ts:16) — note that
+  the `include` list in [`vitest.config.ts`](../vitest.config.ts) — note that
   `src/taskpane/**` is **not** in that list, so taskpane changes are gated by
   component tests, not by the coverage number.
 - Tests mirror `src/`: `src/word/x.ts` → `tests/unit/word/x.test.ts`.
@@ -56,11 +56,11 @@ capability reachable, and removes statements the runtime cannot back.
 **Goal.** Remove the only code path that can arm the mutation gate without going
 through `prepareTrackedEditing`.
 
-**Why first.** [`src/word/smokeApply.ts:35`](../src/word/smokeApply.ts:35)
+**Why first.** `src/word/smokeApply.ts:35`
 exports `enableSmokeMutations()`, which calls `setStage01Passed(true, caps)`
 directly. The user-visible invariant "Track Changes can never be bypassed" is
-stated at [`DebuggingPanel.tsx:114`](../src/taskpane/components/DebuggingPanel.tsx:114)
-and [`TrackedEditingSettingsSection.tsx:90`](../src/taskpane/components/TrackedEditingSettingsSection.tsx:90).
+stated at [`DebuggingPanel.tsx:114`](../src/taskpane/components/DebuggingPanel.tsx)
+and [`TrackedEditingSettingsSection.tsx:90`](../src/taskpane/components/TrackedEditingSettingsSection.tsx).
 As long as that function ships, neither statement is true.
 
 **Files to delete.**
@@ -104,9 +104,9 @@ reachable only through `prepareTrackedEditing`. ADR-0058 recorded.
 
 **Goal.** Make Apply fail-closed in the UI rather than at click time.
 
-**Current defect.** [`PendingChanges.tsx:16`](../src/taskpane/components/PendingChanges.tsx:16)
+**Current defect.** [`PendingChanges.tsx:16`](../src/taskpane/components/PendingChanges.tsx)
 declares `applyDisabledReason`, and lines 58-65 already gate `canApply` and wire
-`aria-describedby` on it. [`Dashboard.tsx:619-629`](../src/taskpane/pages/Dashboard.tsx:619)
+`aria-describedby` on it. [`Dashboard.tsx:619-629`](../src/taskpane/pages/Dashboard.tsx)
 never passes it. A user on a host without revision support sees an enabled
 Apply, clicks, and only then reads "This Word host does not expose the revision
 capability."
@@ -120,7 +120,7 @@ capability."
 - `src/taskpane/components/PendingChanges.tsx` — add an optional
   `onOpenSettings?: () => void` so a readiness reason can offer the resolving
   action, matching the pattern already used in
-  [`AiReviewSection.tsx:119`](../src/taskpane/components/AiReviewSection.tsx:119).
+  [`AiReviewSection.tsx:119`](../src/taskpane/components/AiReviewSection.tsx).
 
 **New pure helper.** `src/taskpane/settings/applyReadiness.ts`
 
@@ -135,8 +135,8 @@ export function applyReadinessReason(input: {
 
 It must stay free of Office, LLM, and React imports so it is unit-testable
 directly, matching the pattern in
-[`src/taskpane/settings/settingsModel.ts`](../src/taskpane/settings/settingsModel.ts:1).
-Reuse [`getUnsupportedChangeIds`](../src/reformat/trackedEditing.ts:69) rather
+[`src/taskpane/settings/settingsModel.ts`](../src/taskpane/settings/settingsModel.ts).
+Reuse [`getUnsupportedChangeIds`](../src/reformat/trackedEditing.ts) rather
 than reimplementing the capability map — but note `getUnsupportedChangeIds`
 takes `Change[]`, so pass the plan's changes straight through.
 
@@ -173,7 +173,7 @@ operation. With a ready host, Apply is enabled and unchanged.
 **Goal.** The user learns what their host can do before planning, not after
 applying.
 
-**Current defect.** [`Dashboard.tsx:701`](../src/taskpane/pages/Dashboard.tsx:701)
+**Current defect.** [`Dashboard.tsx:701`](../src/taskpane/pages/Dashboard.tsx)
 renders "Host readiness is checked when a review or safe reformat is attempted"
 whenever `caps === null` — and never renders the verdict when it is not null.
 The probe result from line 205 is used for the observer and nothing else.
@@ -207,13 +207,13 @@ preview exists. The Troubleshooting panel and the main page use one wording.
 
 **Defects to fix, each with evidence.**
 
-| Button                                                                                                        | Current behaviour                                                     | Required behaviour                                                      |
-| ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Scan Now ([`commandHandlers.ts:57`](../src/commands/commandHandlers.ts:57))                                   | opens the pane, no scan                                               | open the pane **and** trigger `observerRef.current.onDocumentChanged()` |
-| Review Selection ([`commandHandlers.ts:37`](../src/commands/commandHandlers.ts:37))                           | routes to whole-document consistency review; the selection is ignored | remove; the capability does not exist                                   |
-| Review Document ([`commandHandlers.ts:41`](../src/commands/commandHandlers.ts:41))                            | same target                                                           | rename to **Review for consistency**, single control                    |
-| Active Profile / Edit Profile ([`commandDefinitions.json:35,43`](../src/commands/commandDefinitions.json:35)) | identical destination                                                 | collapse to one **Style profile** control                               |
-| Findings / Pending Changes                                                                                    | open a section that may be empty                                      | report the current count, or say there is nothing yet                   |
+| Button                                                                                                     | Current behaviour                                                     | Required behaviour                                                      |
+| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Scan Now ([`commandHandlers.ts:57`](../src/commands/commandHandlers.ts))                                   | opens the pane, no scan                                               | open the pane **and** trigger `observerRef.current.onDocumentChanged()` |
+| Review Selection ([`commandHandlers.ts:37`](../src/commands/commandHandlers.ts))                           | routes to whole-document consistency review; the selection is ignored | remove; the capability does not exist                                   |
+| Review Document ([`commandHandlers.ts:41`](../src/commands/commandHandlers.ts))                            | same target                                                           | rename to **Review for consistency**, single control                    |
+| Active Profile / Edit Profile ([`commandDefinitions.json:35,43`](../src/commands/commandDefinitions.json)) | identical destination                                                 | collapse to one **Style profile** control                               |
+| Findings / Pending Changes                                                                                 | open a section that may be empty                                      | report the current count, or say there is nothing yet                   |
 
 **Files to edit.**
 
@@ -257,14 +257,14 @@ a bug to fix here.
 
 **Goal.** Two controls produce no visible or durable effect today.
 
-**Defect A — navigation.** [`FindingsToolbar.tsx:33`](../src/taskpane/components/FindingsToolbar.tsx:33)
-dispatches `plan/selectFinding`; [`FindingsList.tsx:16`](../src/taskpane/components/FindingsList.tsx:16)
+**Defect A — navigation.** [`FindingsToolbar.tsx:33`](../src/taskpane/components/FindingsToolbar.tsx)
+dispatches `plan/selectFinding`; [`FindingsList.tsx:16`](../src/taskpane/components/FindingsList.tsx)
 never receives `selectedFindingIndex`. The toolbar announces "Finding 4 of 12"
 and nothing is highlighted, scrolled to, or announced as selected.
 
-**Defect B — Review.** [`Dashboard.tsx:454`](../src/taskpane/pages/Dashboard.tsx:454)
+**Defect B — Review.** [`Dashboard.tsx:454`](../src/taskpane/pages/Dashboard.tsx)
 `markForReview` mutates a React copy of `status.findings`. The next observer
-emission overwrites it. Worse, [`GovernanceDashboard.tsx:58`](../src/taskpane/components/GovernanceDashboard.tsx:58)
+emission overwrites it. Worse, [`GovernanceDashboard.tsx:58`](../src/taskpane/components/GovernanceDashboard.tsx)
 counts `reviewed` as **open**, so a reviewed finding still inflates the
 mandatory count.
 
@@ -290,7 +290,7 @@ mandatory count.
 - `src/taskpane/findingFingerprint.ts` — reuse; the ignore path already persists
   fingerprints to `localStorage` under
   `ToneForge.IgnoredFindingFingerprints.v1`
-  ([`Dashboard.tsx:54`](../src/taskpane/pages/Dashboard.tsx:54)). Add a parallel
+  ([`Dashboard.tsx:54`](../src/taskpane/pages/Dashboard.tsx)). Add a parallel
   reviewed store rather than a new persistence mechanism, so a reviewed finding
   survives a rescan without a state-schema change.
 - `src/taskpane/components/GovernanceDashboard.tsx` — decide and document
@@ -301,7 +301,7 @@ mandatory count.
 **Boundary note.** `word/` must not import `taskpane/`, and `findingFingerprint`
 lives in `taskpane/`. The observer therefore takes a plain string fingerprint,
 not the helper — the Dashboard computes it and passes it in. Check
-[`eslint.config.mjs`](../eslint.config.mjs:258) before adding any import.
+[`eslint.config.mjs`](../eslint.config.mjs) before adding any import.
 
 **Tests.**
 
@@ -331,13 +331,13 @@ reviewed separately.
 during render.
 
 **Current defect.** `loadState()` is called in three render bodies:
-[`Dashboard.tsx:521`](../src/taskpane/pages/Dashboard.tsx:521),
-[`Dashboard.tsx:638`](../src/taskpane/pages/Dashboard.tsx:638), and
-[`ReformatPanel.tsx:52`](../src/taskpane/components/ReformatPanel.tsx:52).
+[`Dashboard.tsx:521`](../src/taskpane/pages/Dashboard.tsx),
+[`Dashboard.tsx:638`](../src/taskpane/pages/Dashboard.tsx), and
+[`ReformatPanel.tsx:52`](../src/taskpane/components/ReformatPanel.tsx).
 Nothing re-renders when a Settings section saves, so a consent or provider change
 made in Settings is not visible until the user navigates away and back. The
 OpenRouter component already documents the same trap it hit
-([`OpenRouterConnectionSettings.tsx:38`](../src/taskpane/components/OpenRouterConnectionSettings.tsx:38)).
+([`OpenRouterConnectionSettings.tsx:38`](../src/taskpane/components/OpenRouterConnectionSettings.tsx)).
 
 **New file.** `src/taskpane/state/usePersistedState.ts`
 
@@ -383,7 +383,7 @@ observable policy state).
 
 **Goal.** A user with no profile is not locked out of Settings.
 
-**Current defect.** [`Dashboard.tsx:141-153`](../src/taskpane/pages/Dashboard.tsx:141)
+**Current defect.** [`Dashboard.tsx:141-153`](../src/taskpane/pages/Dashboard.tsx)
 returns a bare `<main className="tf-card">` with no `TaskPaneHeader`. Settings,
 Troubleshooting, and the theme control are unreachable until a profile exists —
 including the consent toggle the user may need before trusting any AI feature.
@@ -413,36 +413,36 @@ the correct active page. No governance action is enabled without a profile.
 **Four fixes, each with evidence.**
 
 1. **Wrong location in an error string.**
-   [`trackedEditing.ts:88`](../src/reformat/trackedEditing.ts:88) returns
+   [`trackedEditing.ts:88`](../src/reformat/trackedEditing.ts) returns
    "Enable it in Troubleshooting before applying." ADR-0055 moved the toggle to
    Settings ([`TrackedEditingSettingsSection.tsx`](../src/taskpane/components/TrackedEditingSettingsSection.tsx)).
    Fix the string. Add a test asserting the message names Settings.
 
 2. **A host outage reported as document staleness.**
-   [`documentObserver.ts:184-190`](../src/word/documentObserver.ts:184) sets
+   [`documentObserver.ts:184-190`](../src/word/documentObserver.ts) sets
    `phase: "failed"` **and** `stale: true` when the error mentions Office. The
    banner at
-   [`StaleBanner.tsx:40`](../src/taskpane/components/StaleBanner.tsx:40) then
+   [`StaleBanner.tsx:40`](../src/taskpane/components/StaleBanner.tsx) then
    says "The document has changed since the last scan", which is false.
    Add a `hostUnavailable: boolean` to `DocumentObserverStatus`; when true,
    render a host-outage message with the Re-scan action and do not render the
    stale banner. `stale` keeps its meaning.
 
 3. **A mislabelled destructive action.**
-   [`ProviderPrivacySettingsSection.tsx:154`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx:154)
+   [`ProviderPrivacySettingsSection.tsx:154`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx)
    is labelled "Clear legacy stored credential", but
-   [`persistence.ts:280`](../src/core/state/persistence.ts:280) also resets the
+   [`persistence.ts:280`](../src/core/state/persistence.ts) also resets the
    provider to `mock` and empties every connection. Either rename to "Reset
    provider to offline stub" or split into two buttons. Recommend the rename,
    with a confirmation `MessageBar` stating the consequence.
 
 4. **Documentation that contradicts the code.**
-   - [`docs/ux-state-matrix.md:42-44`](../docs/ux-state-matrix.md:42) lists
+   - [`docs/ux-state-matrix.md:42-44`](../docs/ux-state-matrix.md) lists
      selection/paragraph/context-menu states that no component implements.
-   - [`docs/ux-state-matrix.md:126`](../docs/ux-state-matrix.md:126) says the
+   - [`docs/ux-state-matrix.md:126`](../docs/ux-state-matrix.md) says the
      tracked-editing toggle lives in Troubleshooting.
-   - [`README.md:85`](../README.md:85) says no Phase H engine is implemented;
-     [`project-state.md:37`](../docs/project-state.md:37) records Phase 5 as
+   - [`README.md:85`](../README.md) says no Phase H engine is implemented;
+     [`project-state.md:37`](../docs/project-state.md) records Phase 5 as
      delivered.
 
 **Tests.** One component test per user-visible string that names a capability
@@ -507,13 +507,13 @@ maintainer and inflate coverage with unreachable code.
   useful to 4.3.
 
 **Clean up the re-export that made the dead path reachable.**
-[`src/reformat/index.ts:13`](../src/reformat/index.ts:13) exports
+[`src/reformat/index.ts:13`](../src/reformat/index.ts) exports
 `reviewEntireDocument` and line 1 exports `FullReviewResult`, and
-[`Dashboard.tsx:520`](../src/taskpane/pages/Dashboard.tsx:520) passes `null` for
+[`Dashboard.tsx:520`](../src/taskpane/pages/Dashboard.tsx) passes `null` for
 both the full and spot arguments to `resolvePendingPlan` while line 5 imports
 `SpotReviewResult`. Collapse `resolvePendingPlan` to take the reformat result
 only, and delete the two dead parameters. Its test is
-[`Dashboard.test.ts:34`](../tests/unit/taskpane/pages/Dashboard.test.ts:34).
+[`Dashboard.test.ts:34`](../tests/unit/taskpane/pages/Dashboard.test.ts).
 
 **ADR.** 0059: "Phase D/E review surfaces are removed; their engines are
 retained or deleted per item, and the deterministic-first rule is unchanged."
@@ -530,7 +530,7 @@ dated ADR as deliberately reserved. `npm run verify` green and
 
 **Goal.** Give the user a durable answer to "what will change in this document".
 
-**Why worth wiring.** [`toRevisionsCsv`](../src/changes/exportAdapter.ts:14) is
+**Why worth wiring.** [`toRevisionsCsv`](../src/changes/exportAdapter.ts) is
 implemented, tested, coverage-gated, and unreachable. It is the natural companion
 to tracked edits: a reviewer receiving a tracked-changes document needs the
 list, and most reviewers will not open the add-in.
@@ -541,7 +541,7 @@ list, and most reviewers will not open the add-in.
   `toAuditJson`**: a generic `JSON.stringify` wrapper over an unknown value is
   not an audit format, and nothing calls it.
 - `src/changes/index.ts` — export `toRevisionsCsv`. Note the boundary at
-  [`eslint.config.mjs:228`](../eslint.config.mjs:228): `changes/` may import only
+  [`eslint.config.mjs:228`](../eslint.config.mjs): `changes/` may import only
   `core/domain` and `shared/utils`. The download plumbing must therefore live in
   the UI, not here.
 - New `src/taskpane/components/ExportChangesButton.tsx` — the only place that
@@ -574,10 +574,10 @@ between the pure serialiser and the download is load-bearing, not stylistic.
 
 **Goal.** Stop shipping two sources of truth about provider authentication.
 
-**The contradiction.** [`oauthState.ts:80`](../src/ai/gateway/oauthState.ts:80)
+**The contradiction.** [`oauthState.ts:80`](../src/ai/gateway/oauthState.ts)
 `resolveAuthMode("anthropic") === "oauth"` and OpenAI is `"featureGated"`. The
 Provider dropdown at
-[`ProviderPrivacySettingsSection.tsx:37`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx:37)
+[`ProviderPrivacySettingsSection.tsx:37`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx)
 tells the user both are "Deployment-managed. The gateway holds the credential;
 the add-in never sees it." One is wrong.
 
@@ -616,13 +616,13 @@ explains why in one sentence.
 
 **Goal.** One live-region strategy, not three.
 
-[`useAnnouncement`](../src/taskpane/settings/useAnnouncement.ts:20) was written
+[`useAnnouncement`](../src/taskpane/settings/useAnnouncement.ts) was written
 to collapse bursts of status updates into one announcement after a quiet period.
 It is not used. Meanwhile
-[`GovernanceDashboard.tsx:71`](../src/taskpane/components/GovernanceDashboard.tsx:71),
-[`PendingChanges.tsx:112`](../src/taskpane/components/PendingChanges.tsx:112),
-[`FindingCard.tsx:112`](../src/taskpane/components/FindingCard.tsx:112),
-[`ProfileRecordSection.tsx:215`](../src/taskpane/components/ProfileRecordSection.tsx:215),
+[`GovernanceDashboard.tsx:71`](../src/taskpane/components/GovernanceDashboard.tsx),
+[`PendingChanges.tsx:112`](../src/taskpane/components/PendingChanges.tsx),
+[`FindingCard.tsx:112`](../src/taskpane/components/FindingCard.tsx),
+[`ProfileRecordSection.tsx:215`](../src/taskpane/components/ProfileRecordSection.tsx),
 and the Dashboard's apply message all declare their own live regions.
 
 **Decision.** Adopt it in the Dashboard for the observer/apply message stream,
@@ -650,13 +650,13 @@ same content.
 **Targets.**
 
 - `settings.spotReviewConsent` and `settings.fullDocumentReviewConsent` —
-  persisted at [`persistence.ts:48`](../src/core/state/persistence.ts:48), carried
+  persisted at [`persistence.ts:48`](../src/core/state/persistence.ts), carried
   in the draft at
-  [`settingsModel.ts:84`](../src/taskpane/settings/settingsModel.ts:84),
-  normalised at [`migration.ts:452`](../src/core/state/migration.ts:452). No UI
+  [`settingsModel.ts:84`](../src/taskpane/settings/settingsModel.ts),
+  normalised at [`migration.ts:452`](../src/core/state/migration.ts). No UI
   control, no engine reads them. Only `consistencyReviewConsent` is exposed.
 - `telemetryDisabled` — a full section with save/cancel at
-  [`TelemetrySettingsSection.tsx`](../src/taskpane/components/TelemetrySettingsSection.tsx);
+  `TelemetrySettingsSection.tsx`;
   the MessageBar at line 47 admits no endpoint exists.
 
 **Files.** `src/core/state/persistence.ts`, `src/core/config/env.ts` if it is
@@ -699,11 +699,11 @@ only controls that change behaviour.
 
 The one genuinely missing capability, and the largest single item.
 
-**The gap.** [`GovernanceProfileSchema`](../src/core/domain/GovernanceProfile.ts:108)
+**The gap.** [`GovernanceProfileSchema`](../src/core/domain/GovernanceProfile.ts)
 models `rules`, `terminology`, `scope`, `protection`, and `editorial`, and
-[`resolveResolvedPolicy`](../src/core/domain/ResolvedPolicy.ts:131) gives them
+[`resolveResolvedPolicy`](../src/core/domain/ResolvedPolicy.ts) gives them
 precedence over learned evidence. But
-[`saveProfileRecord`](../src/core/state/persistence.ts:325) overwrites only
+[`saveProfileRecord`](../src/core/state/persistence.ts) overwrites only
 `style` (lines 331-338). No UI can author a `GovernanceRule`, set a protection
 override, or change scope. The entire normative half of the policy contract is
 written by nobody, so it is always the schema defaults.
@@ -730,20 +730,20 @@ governance dashboard a real policy rather than a label derived from
   per-rule severity, auto-fix, and protected-behaviour controls; protection
   checkbox groups; scope checkbox groups; terminology editor reusing the
   `term: replacement` parser already proven in
-  [`ProfileEditor.tsx:159`](../src/taskpane/components/ProfileEditor.tsx:159).
+  [`ProfileEditor.tsx:159`](../src/taskpane/components/ProfileEditor.tsx).
 - `src/taskpane/pages/Profile.tsx` — render it alongside
   `ProfileRecordSection`.
 - `src/taskpane/components/ProfileEditor.tsx:33` — pass a current governance
   profile to `VersionDiff`, whose governance branch at
-  [`VersionDiff.tsx:32`](../src/taskpane/components/VersionDiff.tsx:32) already
+  [`VersionDiff.tsx:32`](../src/taskpane/components/VersionDiff.tsx) already
   exists and has never been rendered with both arguments.
 
 **Planner work.** A rule with `autoFix: true` and `severity: "mandatory"` must
-actually drive [`changes/planner.ts:73`](../src/changes/planner.ts:73), which
+actually drive [`changes/planner.ts:73`](../src/changes/planner.ts), which
 currently derives the policy from the finding alone via
 `approvalPolicyForFinding`. Bind the governance rule first, then the finding.
 `changes/` may import only `core/domain` and `shared/utils`
-([`eslint.config.mjs:228`](../eslint.config.mjs:228)), and `GovernanceProfile`
+([`eslint.config.mjs:228`](../eslint.config.mjs)), and `GovernanceProfile`
 is in `core/domain`, so this is allowed.
 
 **Risks and mitigations.**
@@ -751,7 +751,7 @@ is in `core/domain`, so this is allowed.
 - _Widening exclusions could game the coverage gate._ Mitigation: a test that
   refuses a scope policy with `includeBody: false` **and** all content categories
   false. The coverage banner must name the excluded set (it already does, at
-  [`CoverageBanner.tsx:54`](../src/taskpane/components/CoverageBanner.tsx:54)).
+  [`CoverageBanner.tsx:54`](../src/taskpane/components/CoverageBanner.tsx)).
 - _Making protection editable turns a safety default into a preference._
   Mitigation: `protectQuotedText`, `protectCaptions`, and
   `protectTrackedDeletions` are shown as on-by-default with an explicit
@@ -759,7 +759,7 @@ is in `core/domain`, so this is allowed.
 - _Every governance change is a policy change._ Mitigation: version bump plus
   history append, and `ChangePlan` already cites
   `governancePolicyRevision`
-  ([`orchestrator.ts:170`](../src/reformat/orchestrator.ts:170)) so a plan built
+  ([`orchestrator.ts:170`](../src/reformat/orchestrator.ts)) so a plan built
   under an older policy is refused.
 
 **Tests.**
@@ -797,7 +797,7 @@ with orphans).
 **Current state.** The engine is quadratic and hard-bounded at
 `CONSISTENCY_DEFAULT_MAX_STATEMENTS`; the preflight already admits that "a clean
 partial result is not a clean document." Meanwhile
-[`src/ai/review/batcher.ts`](../src/ai/review/batcher.ts) contains a working
+`src/ai/review/batcher.ts` contains a working
 partitioning primitive that is about to be deleted in 2.1.
 
 **Files.**
@@ -813,7 +813,7 @@ partitioning primitive that is about to be deleted in 2.1.
 
 **Boundary.** `analysis/consistency/**` may not import `changes`, `reformat`,
 `word`, `taskpane`, or `commands`
-([`eslint.config.mjs:194`](../eslint.config.mjs:194)). The batching primitive
+([`eslint.config.mjs:194`](../eslint.config.mjs)). The batching primitive
 must not drag `ai/review` imports with it — copy the partitioning logic, not the
 module.
 
@@ -829,12 +829,12 @@ before the run.
 
 **Goal.** Stop rescanning the whole document on every keystroke burst.
 
-**Current state.** [`wordParagraphEvents.ts:62`](../src/word/wordParagraphEvents.ts:62)
+**Current state.** [`wordParagraphEvents.ts:62`](../src/word/wordParagraphEvents.ts)
 normalises `uniqueLocalIds` and computes `requiresFullRescan`.
-[`Dashboard.tsx:236`](../src/taskpane/pages/Dashboard.tsx:236) wires the adapter
+[`Dashboard.tsx:236`](../src/taskpane/pages/Dashboard.tsx) wires the adapter
 and line 237 discards the change payload entirely, calling `onDocumentChanged()`.
 The observer then examines every acquired node
-([`documentObserver.ts:144`](../src/word/documentObserver.ts:144)).
+([`documentObserver.ts:144`](../src/word/documentObserver.ts)).
 
 **Files.**
 
@@ -857,7 +857,7 @@ over a fixture document with edits, insertions, and deletions.
 live evidence in [`docs/manual-verification.md`](../docs/manual-verification.md).
 Until then, document it as "incremental where the host reports complete local
 ids, conservative full rescan otherwise" — the same wording discipline already
-used in [`docs/project-state.md:32`](../docs/project-state.md:32).
+used in [`docs/project-state.md:32`](../docs/project-state.md).
 
 **Acceptance.** A paragraph change with complete local ids rescans only those
 nodes; an incomplete id set triggers a full rescan; findings for unchanged nodes
@@ -871,16 +871,16 @@ are retained; coverage reports the examined scope.
 
 **Goal.** Stop shipping a toggle that can only produce unfixable output.
 
-**Current state.** [`deviationEngine.ts:111`](../src/analysis/deviationEngine.ts:111)
+**Current state.** [`deviationEngine.ts:111`](../src/analysis/deviationEngine.ts)
 marks every semantic finding `nodeIds: []`, `actionable: false`,
 `status: "deferred"`, `advisoryReason: "Full-document semantic deviation has no
 locally verified target span"`. The planner therefore cannot produce a change.
 The observer hard-codes `includeRawText: false`
-([`documentObserver.ts:157`](../src/word/documentObserver.ts:157)), and
+([`documentObserver.ts:157`](../src/word/documentObserver.ts)), and
 ReformatPanel sets it from `semanticOptIn` with no registry
-([`ReformatPanel.tsx:53`](../src/taskpane/components/ReformatPanel.tsx:53),
+([`ReformatPanel.tsx:53`](../src/taskpane/components/ReformatPanel.tsx),
 line 74 passes a registry only when injected), so the semantic engine falls back
-to [`MockAdapter`](../src/analysis/deviationEngine.ts:72). Enabling
+to [`MockAdapter`](../src/analysis/deviationEngine.ts). Enabling
 `semanticOptIn` today can only produce mock output.
 
 **Two acceptable outcomes. Pick one explicitly; do not leave it as is.**
@@ -889,10 +889,10 @@ to [`MockAdapter`](../src/analysis/deviationEngine.ts:72). Enabling
 verbatim anchor substring. Search acquired nodes for it; accept only on a unique
 match; refuse when ambiguous and say so. Only an anchored finding may be
 `actionable`. This reuses the range-translation approach already proven in
-[`src/ai/review/responseValidator.ts`](../src/ai/review/responseValidator.ts:25).
+`src/ai/review/responseValidator.ts`.
 
 **Outcome B — withdraw.** Remove the `semanticOptIn` toggle from
-[`ProviderPrivacySettingsSection.tsx:171`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx:171),
+[`ProviderPrivacySettingsSection.tsx:171`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx),
 remove the semantic branch from the checker, and document that ToneForge's
 governance path is deterministic with AI reserved for the opt-in consistency
 review — which is exactly what the product's own positioning says.
@@ -922,16 +922,16 @@ planned, or the toggle is gone and the docs say so.
 ## 5.1 — Replace hardcoded palette literals with tokens
 
 Five components inline Fluent hex values and therefore ignore the dark theme
-defined in [`taskpane.css:24`](../src/taskpane/taskpane.css:24):
+defined in [`taskpane.css:24`](../src/taskpane/taskpane.css):
 
-- [`PendingChanges.tsx:101`](../src/taskpane/components/PendingChanges.tsx:101) —
+- [`PendingChanges.tsx:101`](../src/taskpane/components/PendingChanges.tsx) —
   `#a4262c`, `#ccc`, `#eee`
-- [`StaleBanner.tsx:28`](../src/taskpane/components/StaleBanner.tsx:28) — `#c00`,
+- [`StaleBanner.tsx:28`](../src/taskpane/components/StaleBanner.tsx) — `#c00`,
   `#fff5f5`
-- [`CoverageBanner.tsx:27`](../src/taskpane/components/CoverageBanner.tsx:27) —
+- [`CoverageBanner.tsx:27`](../src/taskpane/components/CoverageBanner.tsx) —
   `#a4262c`, `#0b6a0b`, `#fff5f5`, `#f5fff5`
-- [`ReformatPanel.tsx:39`](../src/taskpane/components/ReformatPanel.tsx:39)
-- [`GovernanceDashboard.tsx:69`](../src/taskpane/components/GovernanceDashboard.tsx:69)
+- [`ReformatPanel.tsx:39`](../src/taskpane/components/ReformatPanel.tsx)
+- [`GovernanceDashboard.tsx:69`](../src/taskpane/components/GovernanceDashboard.tsx)
 
 Replace with `--tf-danger`, `--tf-success`, `--tf-warning-bg`,
 `--tf-warning-border`, `--tf-border` (lines 10-14) and Fluent v8 components
@@ -953,7 +953,7 @@ Findings, and place Pending Changes directly under its trigger.
 
 No `<caption>`, no `scope` on `<th>`, and no horizontal scroll container for a
 five-column table in a pane that can be 320px wide
-([`PendingChanges.tsx:129`](../src/taskpane/components/PendingChanges.tsx:129)).
+([`PendingChanges.tsx:129`](../src/taskpane/components/PendingChanges.tsx)).
 Add all three; move the inline styles to the stylesheet.
 
 **Acceptance.** The table is navigable by screen reader and usable at the
@@ -969,7 +969,7 @@ navigation, and the consistency preflight — in
 
 This item requires a human with a screen reader. It cannot be completed by
 repository automation, exactly as
-[`docs/project-state.md:190`](../docs/project-state.md:190) already states for
+[`docs/project-state.md:190`](../docs/project-state.md) already states for
 the other external gates.
 
 **Commits.** `style(taskpane): adopt design tokens across task pane surfaces`,
@@ -979,13 +979,13 @@ the other external gates.
 
 # Explicitly out of scope
 
-| Item                                                                      | Why                                                                                                                                         |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Production credential custody                                             | Needs a gateway architecture decision and a threat model; a human-authority gate per [`ROADMAP.md:348`](../ROADMAP.md:348), not a code task |
-| Web Chrome / Edge / Mac host matrix                                       | External evidence; unchanged by this plan                                                                                                   |
-| Semantic LLM in the typing path                                           | Prohibited by deterministic-first unless a new ADR is accepted; ADR-0052 is a single named exception for the consistency engine only        |
-| Multiple active profiles, document-scoped profiles, header profile picker | The one-canonical-profile rule at [`ROADMAP.md:40`](../ROADMAP.md:40) forbids it; the picker inside `ProfileEditor` is the supported path   |
-| A public `src/ui/` directory                                              | UI lives in `src/taskpane/`; the scaffold skill's placement guide is explicit                                                               |
+| Item                                                                      | Why                                                                                                                                     |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Production credential custody                                             | Needs a gateway architecture decision and a threat model; a human-authority gate per [`ROADMAP.md:348`](../ROADMAP.md), not a code task |
+| Web Chrome / Edge / Mac host matrix                                       | External evidence; unchanged by this plan                                                                                               |
+| Semantic LLM in the typing path                                           | Prohibited by deterministic-first unless a new ADR is accepted; ADR-0052 is a single named exception for the consistency engine only    |
+| Multiple active profiles, document-scoped profiles, header profile picker | The one-canonical-profile rule at [`ROADMAP.md:40`](../ROADMAP.md) forbids it; the picker inside `ProfileEditor` is the supported path  |
+| A public `src/ui/` directory                                              | UI lives in `src/taskpane/`; the scaffold skill's placement guide is explicit                                                           |
 
 ---
 
@@ -1054,4 +1054,4 @@ flowchart TD
 **Not claimed by this plan:** live provider integration, live accessibility
 evidence, live 50k-word performance, production credential custody, or release
 acceptance. Those remain the human gates already recorded in
-[`docs/project-state.md:190`](../docs/project-state.md:190).
+[`docs/project-state.md:190`](../docs/project-state.md).
