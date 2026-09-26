@@ -340,3 +340,35 @@ export function compareDates(a: DateMatch, b: DateMatch): "same" | "conflict" | 
 
 /** A comparison outcome shared by the checks. */
 export type Comparison = "same" | "differs" | "incomparable" | "unrelated";
+
+/**
+ * Pairs of states that cannot both be true.
+ *
+ * Shared rather than duplicated: C7 decides a status conflict from this list, and
+ * C1 has to know it too, because "enabled" against "disabled" is a contradiction
+ * about a state and not two names for the same thing. Two copies of this list
+ * would drift, and a term that stopped being exclusive for C7 would quietly
+ * become "certain terminology drift" for C1.
+ */
+export const EXCLUSIVE_STATES: readonly (readonly [string, string])[] = Object.freeze([
+  ["enabled", "disabled"],
+  ["active", "inactive"],
+  ["open", "closed"],
+  ["public", "private"],
+  ["visible", "hidden"],
+  ["supported", "unsupported"],
+  ["complete", "incomplete"],
+  ["required", "optional"],
+  ["approved", "rejected"],
+  ["deprecated", "current"],
+]);
+
+/** Whether two words are the two halves of one exclusive pair. */
+export function isExclusiveStatePair(a: string, b: string): boolean {
+  return EXCLUSIVE_STATES.some(([x, y]) => (a === x && b === y) || (a === y && b === x));
+}
+
+/** Whether a content word carries a number, and so is a figure rather than a name. */
+export function isNumericWord(word: string): boolean {
+  return /\d/.test(word);
+}

@@ -69,8 +69,13 @@ export interface ConsistencyRunOptions {
    * The document's current revision, checked again before the report is
    * returned. A run whose document changed underneath it throws rather than
    * reporting findings against text the user is no longer looking at.
+   *
+   * May be async because re-reading the identity of a live document is: the
+   * caller has to go back to the host for it, and a value cached from the start
+   * of the run would report the same string every time and never detect the edit
+   * it exists to detect.
    */
-  readonly currentRevision?: () => string;
+  readonly currentRevision?: () => string | Promise<string>;
   readonly now?: () => Date;
 }
 
@@ -273,7 +278,10 @@ async function adjudicate(
     });
     return readAdjudication(response.text, candidate);
   } catch (error) {
-    if (isAbort(error)) throw new ConsistencyRunCancelled("Review cancelled.", "cancelled");
+    if (error instanceof ConsistencyRunCancelled) throw error;
+    if (isCancellation(options)) {
+      throw new ConsistencyRunCancelled("Review cancelled.", "cancelled");
+    }
     // A provider failure must not abort the run: the deterministic findings are
     // still valid, and losing them because a request timed out would be a worse
     // outcome than reporting fewer.
@@ -294,11 +302,18 @@ async function adjudicate(
   }
 }
 
-function isAbort(error: unknown): boolean {
-  return (
-    error instanceof ConsistencyRunCancelled ||
-    (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))
-  );
+/**
+ * Whether this run was cancelled by the caller.
+ *
+ * Asked of the run's own signal, never of the error. A provider that times out
+ * its own request reports `TimeoutError`, and an HTTP client that gives up on a
+ * cancelled fetch reports `AbortError`; both are failures to review one
+ * candidate, not the user stopping the review. Treating them as cancellation
+ * would throw away the deterministic findings the run has already produced, over
+ * a single failed request, and report it as a normal user action.
+ */
+function isCancellation(options: ConsistencyRunOptions): boolean {
+  return options.signal?.aborted === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +422,7 @@ export async function runConsistencyReview(
 
   report({ phase: "segmenting", fraction: 0.05, message: "Reading the document…" });
   assertNotCancelled(options);
-  assertCurrent(request, options);
+  await assertCurrent(request, options);
 
   const { statements, headings } = segmentDocument(
     request.document.text,
@@ -466,7 +481,7 @@ export async function runConsistencyReview(
   report({ phase: "consolidating", fraction: 0.92, message: "Collecting results…" });
   assertNotCancelled(options);
   const issues = consolidate(candidates, verdicts);
-  assertCurrent(request, options);
+  await assertCurrent(request, options);
 
   // A conflict is unreviewed when it needed the model and no usable answer came
   // back — no provider, a failed request, an unreadable reply, or a candidate
@@ -527,8 +542,11 @@ function assertNotCancelled(options: ConsistencyRunOptions): void {
  * underneath the run, those references point somewhere else, so the run fails
  * rather than reporting a conflict against text the user is not looking at.
  */
-function assertCurrent(request: ConsistencyReviewRequest, options: ConsistencyRunOptions): void {
-  const current = options.currentRevision?.();
+async function assertCurrent(
+  request: ConsistencyReviewRequest,
+  options: ConsistencyRunOptions,
+): Promise<void> {
+  const current = await options.currentRevision?.();
   if (current === undefined) return;
   if (current !== request.document.revision) {
     throw new ConsistencyRunCancelled(

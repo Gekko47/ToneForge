@@ -19,6 +19,8 @@
 import type { ConsistencyCandidate } from "../contracts";
 import {
   contentWords,
+  EXCLUSIVE_STATES,
+  isExclusiveStatePair,
   makeCandidate,
   pairwise,
   subjectWords,
@@ -253,25 +255,12 @@ export function checkDefinitionalConflict(statements: IndexedStatement[]): Consi
 }
 
 /**
- * Pairs of states that cannot both be true.
- *
- * Only genuinely exclusive pairs are listed. A pair is added here rather than
- * inferred, because inference is exactly the interpretation this engine is
+ * Pairs of states that cannot both be true live in `primitives`, because C1 needs
+ * the same list: a state that is exclusive here is not two names for one thing
+ * there. Only genuinely exclusive pairs are listed, and a pair is added rather
+ * than inferred, because inference is exactly the interpretation this engine is
  * supposed to route to the model instead of guessing at.
  */
-const EXCLUSIVE_STATES: readonly (readonly [string, string])[] = Object.freeze([
-  ["enabled", "disabled"],
-  ["active", "inactive"],
-  ["open", "closed"],
-  ["public", "private"],
-  ["visible", "hidden"],
-  ["supported", "unsupported"],
-  ["complete", "incomplete"],
-  ["required", "optional"],
-  ["approved", "rejected"],
-  ["deprecated", "current"],
-]);
-
 function statedStates(text: string): Set<string> {
   const words = subjectWords(text);
   const found = new Set<string>();
@@ -282,10 +271,6 @@ function statedStates(text: string): Set<string> {
     }
   }
   return found;
-}
-
-function isExclusive(a: string, b: string): boolean {
-  return EXCLUSIVE_STATES.some(([x, y]) => (a === x && b === y) || (a === y && b === x));
 }
 
 /**
@@ -301,7 +286,7 @@ export function checkStatusContradiction(statements: IndexedStatement[]): Consis
     const rightStates = statedStates(pair.right.statement.text);
     const conflict = [...leftStates]
       .flatMap((a) => [...rightStates].map((b) => [a, b] as const))
-      .find(([a, b]) => isExclusive(a, b));
+      .find(([a, b]) => isExclusiveStatePair(a, b));
     if (conflict === undefined) continue;
     candidates.push(
       candidateFrom(pair, {

@@ -11,6 +11,8 @@
 import type { ConsistencyCandidate } from "../contracts";
 import {
   contentWords,
+  isExclusiveStatePair,
+  isNumericWord,
   makeCandidate,
   normalizeForComparison,
   pairwise,
@@ -32,6 +34,20 @@ function sharedWords(a: string[], b: string[]): Set<string> {
  * threshold of three keeps the candidate set small enough to be reviewable.
  */
 const MIN_SHARED_SUBJECT_WORDS = 3;
+
+/**
+ * Whether a one-for-one word difference is a naming difference rather than a
+ * difference of figure or of state.
+ *
+ * Numbers are C2's question and exclusive-state pairs are C7's, so a swap
+ * involving either is not decided here even though the shape looks like a
+ * substitution.
+ */
+function isNameSubstitution(left: string | undefined, right: string | undefined): boolean {
+  if (left === undefined || right === undefined) return false;
+  if (isNumericWord(left) || isNumericWord(right)) return false;
+  return !isExclusiveStatePair(left, right);
+}
 
 export function checkTerminologyDrift(statements: IndexedStatement[]): ConsistencyCandidate[] {
   const candidates: ConsistencyCandidate[] = [];
@@ -59,7 +75,17 @@ export function checkTerminologyDrift(statements: IndexedStatement[]): Consisten
     // a word the other omits is not terminology drift, it is one statement saying
     // more, and calling that a decided naming conflict reports a difference the
     // author never made.
-    const substitution = onlyLeft.length === 1 && onlyRight.length === 1;
+    //
+    // A one-for-one swap is still not certain when the swapped words are figures
+    // or a mutually exclusive pair. "5 days" against "10 days" is C2's question,
+    // not a naming one, and "enabled" against "disabled" is C7's: reporting either
+    // as a decided terminology difference would report a conflict the author did
+    // not make while naming anything. Both belong to the ambiguous residue, where
+    // the model can weigh the pair as a whole.
+    const substitution =
+      onlyLeft.length === 1 &&
+      onlyRight.length === 1 &&
+      isNameSubstitution(onlyLeft[0], onlyRight[0]);
     candidates.push(
       makeCandidate({
         checkId: CHECK,

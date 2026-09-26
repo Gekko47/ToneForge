@@ -201,9 +201,14 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   // and its own result. It is deliberately not folded into the spot or
   // full-document review state above: those are different engines with different
   // consents, and sharing state would invite one to stand in for the other.
+  // The preflight holds the text it counted, not just the counts. The run sends
+  // exactly what the disclosure described, so a second read here would mean the
+  // user agreed to send a document that is no longer the one on screen.
   const [consistencyPreflight, setConsistencyPreflight] = useState<{
     wordCount: number;
     statementCount: number;
+    text: string;
+    revision: string;
   } | null>(null);
   const [consistencyProgress, setConsistencyProgress] = useState<ConsistencyProgress | null>(null);
   const [consistencyResult, setConsistencyResult] = useState<ConsistencyReport | null>(null);
@@ -481,6 +486,12 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     setConsistencyPreflight({
       wordCount,
       statementCount: previewStatements(text).length,
+      text,
+      // The document's content hash is the run's identity, not its length: an
+      // edit that replaces a word with another of the same length leaves the
+      // length identical, and a guard keyed on length would report such a run
+      // as still current.
+      revision: snapshot.contentHash,
     });
     setPage("ai-review");
   }
@@ -501,9 +512,9 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       if (!state.settings.consistencyReviewConsent) {
         throw new Error("Cross-report consistency review consent is required in Settings.");
       }
-      const snapshot = await getStructuredSnapshot();
-      const text = snapshot.nodes.map((node) => node.text ?? "").join("\n\n");
-      const revision = `${activeProfile.id}:${activeProfile.revision}:${text.length}`;
+      // The preflight's text, not a fresh read: the disclosure counted this
+      // document, so this is the document that was agreed to.
+      const { text, revision } = consistencyPreflight;
       const registry = createRegistryFromSettings(state.settings, state.providerConnections);
       const active = registry.activeProvider;
       const report = await runConsistencyReview(
@@ -521,8 +532,11 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           signal: controller.signal,
           onProgress: setConsistencyProgress,
           // The engine discards its own report if the document moved underneath
-          // it; this is what tells it the document moved.
-          currentRevision: () => revision,
+          // it; this re-reads the live document's identity to tell it the
+          // document moved. Returning the value captured at the start would make
+          // the guard answer "unchanged" to every edit, including a same-length
+          // one, which is the edit it exists to catch.
+          currentRevision: async () => (await getStructuredSnapshot()).contentHash,
         },
       );
       setConsistencyResult(report);
@@ -610,6 +624,21 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     );
   }
 
+  // The consistency report crosses into the ordinary finding model through the
+  // same bridge every other engine uses, so the review results can hand its
+  // findings to the Findings list rather than to a surface of their own. These
+  // produce no change: the planner has no path for a consistency finding until the
+  // engine supplies a real correction.
+  //
+  // Declared above the early return below, and not merely before the composition
+  // that uses it: a hook after a conditional return runs on some renders and not
+  // others, and React's hook order then differs between them.
+  const consistencyFindings = React.useMemo(
+    () =>
+      consistencyResult === null ? [] : toFindings(consistencyResult, () => crypto.randomUUID()),
+    [consistencyResult],
+  );
+
   if (page === "settings" || page === "profile" || page === "troubleshooting") {
     return (
       <main className="tf-card" tabIndex={0}>
@@ -637,16 +666,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   );
   const currentGovernanceFindings = (reformatResult?.report.findings ?? observerFindings).filter(
     (finding) => !ignoredFindingIds.has(findingFingerprint(finding)),
-  );
-  // The consistency report crosses into the ordinary finding model through the
-  // same bridge every other engine uses, so the review results can hand its
-  // findings to the Findings list rather than to a surface of their own. These
-  // produce no change: the planner has no path for a consistency finding until the
-  // engine supplies a real correction.
-  const consistencyFindings = React.useMemo(
-    () =>
-      consistencyResult === null ? [] : toFindings(consistencyResult, () => crypto.randomUUID()),
-    [consistencyResult],
   );
   const findings = [...currentGovernanceFindings, ...consistencyFindings];
   const currentStatus = status;

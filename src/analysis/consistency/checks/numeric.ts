@@ -97,6 +97,16 @@ interface AlignedPair {
   readonly aligned: boolean;
 }
 
+/** C2's question: do these two positions state the figure differently? */
+function differs(a: LabeledQuantity, b: LabeledQuantity): boolean {
+  return a.normalized !== b.normalized;
+}
+
+/** C6's question: do these two positions state the same figure in two units? */
+function sameValueOtherUnit(a: LabeledQuantity, b: LabeledQuantity): boolean {
+  return a.normalized === b.normalized && a.unit !== b.unit;
+}
+
 /**
  * Align one quantity on each side, so a statement pair yields at most one
  * candidate.
@@ -110,10 +120,15 @@ interface AlignedPair {
  * counts aligned by position, then the best match on surrounding words. Only the
  * last of those can fail to align, and when it does the candidate is ambiguous so
  * it goes to adjudication rather than being reported as decided.
+ *
+ * `relevant` says which positions the calling check is about, so an equal-length
+ * pairing lands on a position that can actually produce this check's finding
+ * rather than always on the first one.
  */
 function align(
   left: readonly LabeledQuantity[],
   right: readonly LabeledQuantity[],
+  relevant: (a: LabeledQuantity, b: LabeledQuantity) => boolean,
 ): AlignedPair | null {
   if (left.length === 0 || right.length === 0) return null;
   const single = left[0];
@@ -123,6 +138,21 @@ function align(
     return { a: single, b: other, aligned: true };
   }
   if (left.length === right.length) {
+    // Equal counts are a positional pairing, but position 0 is not always the
+    // position the caller cares about: a sentence with two figures can agree on
+    // the first and disagree on the second, and reporting the agreeing pair
+    // would answer a question nobody asked. Take the first position this check
+    // is actually about, falling back to the leading pair when the two
+    // statements never line up on it.
+    const index = left.findIndex((a, position) => {
+      const counterpart = right[position];
+      return counterpart !== undefined && relevant(a, counterpart);
+    });
+    if (index > 0) {
+      const a = left[index];
+      const b = right[index];
+      if (a !== undefined && b !== undefined) return { a, b, aligned: true };
+    }
     return { a: single, b: other, aligned: true };
   }
   // Unequal counts. Score every cross-pairing on shared context and keep the
@@ -149,7 +179,7 @@ function align(
 export function checkNumericContradiction(statements: IndexedStatement[]): ConsistencyCandidate[] {
   const candidates: ConsistencyCandidate[] = [];
   for (const [left, right] of pairwise(statements)) {
-    const pair = align(labeled(left.statement.text), labeled(right.statement.text));
+    const pair = align(labeled(left.statement.text), labeled(right.statement.text), differs);
     if (pair === null) continue;
     const { a, b } = pair;
     if (!sameSubject(a, b)) continue;
@@ -182,7 +212,11 @@ export function checkNumericContradiction(statements: IndexedStatement[]): Consi
 export function checkUnitInconsistency(statements: IndexedStatement[]): ConsistencyCandidate[] {
   const candidates: ConsistencyCandidate[] = [];
   for (const [left, right] of pairwise(statements)) {
-    const pair = align(labeled(left.statement.text), labeled(right.statement.text));
+    const pair = align(
+      labeled(left.statement.text),
+      labeled(right.statement.text),
+      sameValueOtherUnit,
+    );
     if (pair === null) continue;
     const { a, b } = pair;
     if (!sameSubject(a, b)) continue;

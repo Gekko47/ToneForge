@@ -86,7 +86,14 @@ export default [
               message: "word/ must not depend on ai or ui (architecture.md).",
             },
             {
-              group: ["**/analysis/consistency/*", "**/analysis/consistency/index"],
+              // The bare form is listed as well as the subpath form: a directory
+              // import such as `../../analysis/consistency` carries no trailing
+              // segment, so `**/analysis/consistency/*` alone would not match it.
+              group: [
+                "**/analysis/consistency",
+                "**/analysis/consistency/*",
+                "**/analysis/consistency/index",
+              ],
               message:
                 "word/ and the observer must not call the consistency engine: it runs on a whole-document snapshot the user chose to review, never on an incremental or typing path (ADR-0052).",
             },
@@ -191,11 +198,20 @@ export default [
         {
           patterns: [
             {
+              // Each bare form is listed alongside its subpath form. `**/word/*`
+              // matches `../../word/revisionAdapter` but not the directory import
+              // `../../word`, which resolves to the same module through its index
+              // and would otherwise pass straight through this restriction.
               group: [
+                "**/word",
                 "**/word/*",
+                "**/taskpane",
                 "**/taskpane/*",
+                "**/commands",
                 "**/commands/*",
+                "**/reformat",
                 "**/reformat/*",
+                "**/changes",
                 "**/changes/*",
               ],
               message:
