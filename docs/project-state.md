@@ -112,17 +112,46 @@ The historical smoke helpers remain controlled tooling and were not removed.
 Live Word host behavior, screen-reader/browser evidence, 50k-word host
 performance, and formal production credential custody remain external gates.
 
+## Phase 4 disposition
+
+Phase 4 is repository-complete. `npm run verify` passes all 13 stages of
+`toneforge-repository-v1` at 100 files / 1109 tests with 93.8% lines, 82.95%
+branches, and 81.29% functions. The four Phase 4 bugs listed in the changelog
+were found and fixed by the new tests.
+
+What Phase 4 does **not** close:
+
+- No live provider request has been made. Every provider path is exercised
+  through the offline mock and injected fetch doubles, so the gateway protocol is
+  a typed contract, not a verified integration.
+- The OpenRouter key path is proven to reach the local dev gateway and stop
+  there. It has not been proven against the live OpenRouter API from inside
+  Word.
+- Production credential custody is still unresolved. The local dev broker is a
+  development stand-in, not a release component.
+- The human Word-host gate is open: `npm run host:matrix` reports 4 hosts and
+  **0 fully passing**.
+
+**Phase 6 is HELD** by release authority pending further testing. Its full scope
+is preserved and resumable.
+
 ## Current open gates
 
 1. Complete manual host verification in the matrix in
-   [`manual-verification.md`](manual-verification.md).
+   [`manual-verification.md`](manual-verification.md). Current generated
+   position: 4 hosts, 0 fully passing.
 2. Approve the production credential broker/authentication architecture, complete
-   the formal threat model, and record live browser credential-flow evidence.
+   the formal threat model, and record live browser credential-flow evidence. The
+   local dev gateway is not a production substitute.
 3. Record live 50k-word performance, observer event-range, and accessibility
    evidence.
 4. Complete release acceptance in Word Windows plus web Chrome/Edge; Mac is
    conditional on the supported-host decision.
-5. Consider the reserved Phase H consistency expansion only after release
+5. Take the deferred dependency-upgrade decision recorded in
+   [`privacy-security.md`](privacy-security.md) before resuming Phase 6. `uuid`
+   ships and carries a moderate advisory; its vulnerable code path is not
+   reachable today, but the version is still in the bundle.
+6. Consider the reserved Phase H consistency expansion only after release
    acceptance.
 
 The deterministic repository chain and 80% exercised-core coverage gate are

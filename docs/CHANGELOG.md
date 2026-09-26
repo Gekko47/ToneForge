@@ -31,12 +31,61 @@
 - Added safe-apply preservation/dependency/protection checks, post-apply hash
   verification, command-action registration, absolute AI ranges, bounded review
   batches with freshness re-checks, release staging, and release gates.
+- Phase 4 adds the provider-neutral connection contract. The add-in persists only
+  an opaque connection reference; the live session token is held in memory for
+  the pane's lifetime and `SessionTokenStore` has no serialization method at all.
+  `ProviderConnectionSchema` has no field capable of holding a secret, and a test
+  reflects over the schema to keep it that way.
+- **Breaking:** the `apiKey` credential mode is removed. Every remote provider is
+  routed through `GatewayRoutedAdapter`; OpenAI, Anthropic, and OpenRouter now
+  share one connection contract and differ only in request/response shape.
+- The gateway client accepts only a same-origin path or a loopback HTTP(S)
+  origin, so no Settings field can name an arbitrary host. A production origin is
+  build-time configuration.
+- Added an OAuth state machine with single-use attempts and per-attempt state,
+  nonce, origin, and expiry validation. OpenAI user OAuth is feature-gated rather
+  than presented as generally available, because it is not.
+- State schema v8 adds a provider-neutral `providerConnections` map and widens the
+  persisted provider enum to all four providers. The v7 migration derives
+  loopback-only connections, preserves every consent decision, and drops a
+  connection filed under the wrong provider.
+- Added a dynamic model catalog normalizer that prefers the _enforced_
+  `top_provider` context limit over the advertised one, derives capability flags
+  from `supported_parameters`, and distinguishes empty, stale, failed, and
+  offline catalogs.
+- Added OpenRouter as a provider option. The API key is held in component state
+  only, submitted once to the local gateway over the existing loopback
+  nonce-protected channel, and dropped when the request settles; the base URL is
+  prefilled with `https://openrouter.ai/api/v1` and the model dropdown is
+  populated from the provider's own model list.
+- Automated verification now writes `build/verification/summary.json` on success
+  **and** failure, classifying each stage as `repository-code`,
+  `dependency-install`, `build-package`, or `external-evidence`. The human
+  Word-host gate is recorded as always open and cannot be marked passed by a
+  caller, so an all-green run is never reported as a release.
+- Added `npm run host:matrix`, which generates a release dashboard from the host
+  matrix. It maps an unrecorded cell to `unknown` rather than a pass, flags
+  evidence older than 90 days, and reports 4 hosts with 0 fully passing.
+- Added production manifest generation that refuses non-HTTPS, loopback,
+  private-network, local-hostname, non-standard-port, development-broker, and
+  credential-shaped origins. The checked-in manifest stays on localhost so
+  `npm run sideload` is unaffected.
+- Bundle sentinel builds now cover five credential shapes (OpenAI key, OAuth
+  client secret, PKCE verifier, OpenRouter key, Anthropic key) and prove none of
+  them reach either the development or production bundle.
+- Fixed: a failed disconnect left a usable session credential in memory; the
+  registry silently fell back to the offline mock even when given a valid
+  connection; state migration accepted a connection filed under the wrong
+  provider; and the verification summary would have accepted a caller-supplied
+  pass for the human host gate.
 - Automated verification uses the shared `toneforge-repository-v1` graph for
   typecheck, lint, format, source/artifact secret scans, documentation links,
   skills validation, tests, 80% exercised-core coverage, build, manifest
   validation, staging, and coherent release-package checks. The current run
-  passes 87 files / 767 tests with 93.16% lines, 93.16% statements, 81.05%
-  functions, and 81.83% branches.
+  passes 100 files / 1109 tests with 93.8% lines, 93.8% statements, 81.29%
+  functions, and 82.95% branches.
+- Phase 6 is HELD pending further testing. The dependency-upgrade decision
+  recorded in `docs/privacy-security.md` is a prerequisite for resuming it.
 - Phase 3 adds the organizational profile record: one editable draft, immutable
   published versions, explicit activation, restore-as-draft, and discard, plus
   an append-only revision audit trail that keeps the newest 20 revisions and

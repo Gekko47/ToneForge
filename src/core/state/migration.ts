@@ -13,9 +13,10 @@ import {
   type ProfileRevision,
   type PublishedVersion,
 } from "../domain/ProfileRecord";
+import { ProviderConnectionSchema, type ProviderConnection } from "../domain/ProviderConnection";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 7;
+export const CURRENT_STATE_VERSION = 8;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
@@ -75,6 +76,8 @@ export function migrate(raw: unknown): PersistedState {
     case 5:
     case 6:
       return migrateLegacyToCurrent(obj);
+    case 7:
+      return migrateV7ToV8(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -91,7 +94,88 @@ function defaultState(): PersistedState {
     governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
     settings: { ...DEFAULT_SETTINGS },
+    providerConnections: {},
   };
+}
+
+/**
+ * v7 -> v8: adopt the provider-neutral connection record.
+ *
+ * v7 persisted a provider name plus two OpenAI-shaped fields. v8 keeps those
+ * fields so the local development path is not broken, and additionally derives
+ * a connection from them when one is configured, so an existing OpenAI setup
+ * becomes a first-class connection without re-entering anything. Consent is
+ * carried across untouched: a migration must never revoke a user's decision.
+ */
+function migrateV7ToV8(obj: Record<string, unknown>): PersistedState {
+  const current = readCurrentState(obj);
+  return { ...current, providerConnections: deriveConnectionsFromV7(obj.settings) };
+}
+
+/**
+ * Build a connection from the v7 provider settings when one is configured.
+ *
+ * Returns an empty map when the provider was the offline mock, because there is
+ * no connection to describe. Only a loopback origin is accepted, so a stored
+ * production URL cannot become a trusted connection through migration.
+ */
+function deriveConnectionsFromV7(raw: unknown): PersistedState["providerConnections"] {
+  const parsed = z.record(z.string(), z.unknown()).safeParse(raw);
+  if (!parsed.success) return {};
+  const settings = parsed.data;
+  const provider = settings.llmProvider;
+  if (provider !== "openai" && provider !== "anthropic" && provider !== "openrouter") {
+    return {};
+  }
+  const origin = typeof settings.openAiBaseUrl === "string" ? settings.openAiBaseUrl.trim() : "";
+  if (origin.length === 0) return {};
+  const normalized = normalizeLegacyOrigin(origin);
+  if (!normalized) return {};
+
+  const connection = ProviderConnectionSchema.safeParse({
+    connectionId: `migrated:${provider}:${normalized}`,
+    provider,
+    authMode: provider === "openrouter" ? "brokerApiKey" : "deploymentManaged",
+    status: "connected",
+    baseOrigin: { origin: normalized, classification: "loopbackDevelopment" },
+    ...(typeof settings.openAiModel === "string" && settings.openAiModel.length > 0
+      ? { selectedModel: settings.openAiModel }
+      : {}),
+  });
+  return connection.success ? { [provider]: connection.data } : {};
+}
+
+/** Accept only a loopback origin from legacy settings. */
+function normalizeLegacyOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const loopback =
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "[::1]" ||
+      url.hostname === "::1";
+    if (!loopback || (url.protocol !== "http:" && url.protocol !== "https:")) return null;
+    return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Keep only well-formed connection records, and only those whose key matches
+ * the record's own provider. A record filed under the wrong provider would let
+ * the registry construct an adapter for a provider the user did not select.
+ */
+function normalizeProviderConnections(raw: unknown): PersistedState["providerConnections"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const result: PersistedState["providerConnections"] = {};
+  for (const [provider, connection] of Object.entries(raw as Record<string, unknown>)) {
+    const parsed = ProviderConnectionSchema.safeParse(connection);
+    if (parsed.success && parsed.data.provider === provider) {
+      result[provider as ProviderConnection["provider"]] = parsed.data;
+    }
+  }
+  return result;
 }
 
 function readCurrentState(obj: Record<string, unknown>): PersistedState {
@@ -107,6 +191,7 @@ function readCurrentState(obj: Record<string, unknown>): PersistedState {
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, obj.governanceProfiles),
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
     settings: normalizeSettings(obj.settings),
+    providerConnections: normalizeProviderConnections(obj.providerConnections),
   };
 }
 
@@ -128,6 +213,9 @@ function readLegacyState(obj: Record<string, unknown>): PersistedState {
     activeGovernanceProfileId:
       normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId) ?? activeProfileId,
     settings: normalizeSettings(obj.settings),
+    // Pre-v8 state predates provider connections entirely, so there is nothing
+    // to derive; the settings themselves still migrate through normalizeSettings.
+    providerConnections: {},
   };
 }
 

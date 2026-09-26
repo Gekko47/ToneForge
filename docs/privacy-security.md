@@ -75,6 +75,62 @@ security posture and known limitations.
 - Protected nodes and preservation literals are rejected before application.
 - Coverage gaps block full-document review/export paths.
 
+## Dependency advisory audit — 2026-09-26
+
+`npm audit` reports 25 advisories. The classification below is by **whether the
+package reaches the shipped add-in bundle**, because severity alone does not
+say whether a user is exposed. [`webpack.common.js`](../webpack.common.js)
+bundles only `src/`, so a package that no module under `src/` imports cannot
+appear in `dist/`.
+
+### Reaches the shipped bundle
+
+| Package | Version | Severity | Advisory                                                                            | Assessment                                                                                  |
+| ------- | ------- | -------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `uuid`  | 9.0.1   | moderate | [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) (CVSS 7.5) | Out-of-bounds write in `v3`/`v5`/`v6` **when a `buf` argument is supplied**. Not reachable. |
+
+`uuid` is a direct runtime dependency and is imported at 17 call sites, all of
+the form `import { v4 as uuidv4 } from "uuid"`. Every call is `uuidv4()` with no
+arguments. The advisory requires both a non-`v4` function _and_ a caller-supplied
+`buf`, so the vulnerable path is not reachable from this codebase today. It is
+recorded here rather than dismissed: the version is in the bundle, and "we do
+not call the vulnerable function" is a weaker guarantee than "the version is
+not vulnerable".
+
+### Does not reach the shipped bundle
+
+| Group                         | Packages                                                                                                                                                                                                                                                                                                                                                                                              | Severity            |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| Test runner                   | `vitest`, `@vitest/coverage-v8`, `@vitest/mocker`                                                                                                                                                                                                                                                                                                                                                     | critical, moderate  |
+| Sideload and manifest tooling | `office-addin-debugging`, `office-addin-manifest`, `office-addin-dev-certs` and their transitives (`@azure/msal-node`, `@microsoft/teamsfx-core`, `@microsoft/teamsapp-cli`, `adm-zip`, `tmp`, `inquirer`, `@inquirer/editor`, `@inquirer/prompts`, `external-editor`, `launch-editor`, `office-addin-node-debugger`, `office-addin-project`, `office-addin-usage-data`, `office-addin-dev-settings`) | high, moderate, low |
+| Development server            | `webpack-dev-server`, `sockjs`, `vite`, `vite-node`, `esbuild`                                                                                                                                                                                                                                                                                                                                        | high, moderate      |
+
+These execute on a developer's machine during `npm run sideload`, `npm run dev`,
+or `npm test`. They are not installed on an end user's machine and are not in
+`dist/`. Their residual risk is to the developer and to CI, not to a user of the
+add-in. The `esbuild` and `vite` dev-server advisories in particular describe a
+local development server accepting requests it should not; that server is bound
+to `localhost` and is not part of any shipped artifact.
+
+### Decision
+
+**No version changes were made in this phase.** The reasoning is recorded so it
+can be revisited rather than re-derived:
+
+- The one advisory that ships (`uuid`) is not reachable from any current call
+  site, and its fix is a five-major jump (`9` to `14`). Applying that mid-phase,
+  while Phase 6 is held and the add-in's provider layer is being restructured,
+  would change 17 import sites and the module's ESM/CommonJS surface at the same
+  time — a poor trade for an unreachable path.
+- Every remaining advisory is confined to development tooling, where the
+  exposure is a developer's own machine.
+
+**This is a deferral, not a clearance.** Taking the upgrade decision is a stated
+prerequisite for Phase 6 and is not optional there. Before release, `uuid` should
+be moved to a non-vulnerable major (or replaced with the platform
+`crypto.randomUUID`, which would remove the dependency entirely) and the sideload
+tooling should be re-audited when `office-addin-debugging` ships a fixed line.
+
 ## Open work
 
 - Complete the formal credential-custody threat model and approve the production
@@ -84,3 +140,5 @@ security posture and known limitations.
   browser credential experiment is claimed by this change.
 - Complete the host matrix and release acceptance checklist in
   [`ROADMAP.md`](../ROADMAP.md).
+- Take the deferred dependency-upgrade decision recorded above before any
+  Phase 6 work begins.

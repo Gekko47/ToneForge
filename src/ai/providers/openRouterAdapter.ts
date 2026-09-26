@@ -1,15 +1,15 @@
 /**
- * OpenAI adapter (Phase 4), gateway-routed.
+ * OpenRouter adapter (Phase 4), gateway-routed.
  *
- * The previous implementation accepted a browser-supplied `apiKey` and set an
- * `Authorization` header itself. That mode is removed: a credential in the
- * browser bundle is a credential in every user's browser, and its existence
- * created a standing risk of accidental reintroduction. The production
- * credential now lives in the gateway, and this adapter sends an opaque
- * connection reference instead.
+ * OpenRouter exposes an OpenAI-compatible chat-completions protocol, so this
+ * adapter speaks that shape. The difference that matters is not the protocol
+ * but the credential: the user supplies an OpenRouter API key once, it goes
+ * straight to the gateway, and the add-in retains only the opaque connection
+ * reference. The key is never stored, logged, or placed in a URL.
  *
- * Requests are OpenAI chat-completions shaped; the gateway performs the
- * provider-native call and returns a normalized response.
+ * The configured base URL is recorded on the connection with its policy
+ * classification, and the shared base refuses a `policyRejected` origin, so a
+ * syntactically valid but unapproved self-hosted endpoint cannot be used.
  */
 
 import { GatewayRoutedAdapter, type GatewayAdapterOptions } from "./gatewayAdapter";
@@ -19,12 +19,12 @@ import {
   type ProviderConnection,
 } from "../../core/domain/ProviderConnection";
 
-export type OpenAiAdapterOptions = GatewayAdapterOptions;
+export type OpenRouterAdapterOptions = GatewayAdapterOptions;
 
-export class OpenAiAdapter extends GatewayRoutedAdapter {
-  readonly name = "openai";
+export class OpenRouterAdapter extends GatewayRoutedAdapter {
+  readonly name = "openrouter";
 
-  constructor(opts: OpenAiAdapterOptions) {
+  constructor(opts: OpenRouterAdapterOptions) {
     super(opts);
   }
 
@@ -60,15 +60,15 @@ export class OpenAiAdapter extends GatewayRoutedAdapter {
   }
 }
 
-/** Build an OpenAI connection record for a gateway-issued reference. */
-export function createOpenAiConnection(
+/** Build an OpenRouter connection record for a gateway-issued reference. */
+export function createOpenRouterConnection(
   connectionId: string,
   overrides: Partial<Record<string, unknown>> = {},
 ): ProviderConnection {
   return ProviderConnectionSchema.parse({
     connectionId,
-    provider: "openai",
-    authMode: "deploymentManaged",
+    provider: "openrouter",
+    authMode: "brokerApiKey",
     status: "connected",
     ...overrides,
   });

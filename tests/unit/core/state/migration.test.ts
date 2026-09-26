@@ -4,7 +4,7 @@ import { migrate, CURRENT_STATE_VERSION } from "../../../../src/core/state/migra
 
 describe("migration", () => {
   it("has a current version", () => {
-    expect(CURRENT_STATE_VERSION).toBe(7);
+    expect(CURRENT_STATE_VERSION).toBe(8);
   });
 
   it("returns default state for null input", () => {

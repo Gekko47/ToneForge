@@ -7,6 +7,10 @@ import {
   TextField,
   Toggle,
 } from "@fluentui/react";
+import { env } from "../../core/config/env";
+import type { ModelCatalog } from "../../core/domain/index";
+import { ProviderIdSchema } from "../../core/domain/index";
+import { invalidateCatalogOnProviderChange } from "../../ai/gateway/modelCatalog";
 import {
   clearPersistedCredentials,
   loadState,
@@ -16,17 +20,22 @@ import {
 import { logger } from "../../shared/utils/logger";
 import {
   applyLlmDraft,
+  buildModelOptions,
   INITIAL_SECTION_STATUS,
   isLlmDraftDirty,
   markDirty,
   markError,
   markSaved,
   normalizeLlmDraft,
+  PROVIDER_OPTIONS,
+  providerAcceptsUserApiKey,
+  providerOption,
   toLlmDraft,
   validateBrokerBaseUrl,
   type LlmSettingsDraft,
   type SectionStatus,
 } from "../settings/settingsModel";
+import OpenRouterConnectionSettings from "./OpenRouterConnectionSettings";
 import SettingsSectionCard from "./SettingsSectionCard";
 
 /**
@@ -42,10 +51,28 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
   );
   const [draft, setDraft] = React.useState<LlmSettingsDraft>(baseline);
   const [status, setStatus] = React.useState<SectionStatus>(INITIAL_SECTION_STATUS);
+  // The catalog is session state, not persisted state: it belongs to a
+  // connection that the user may disconnect at any moment.
+  const [catalog, setCatalog] = React.useState<ModelCatalog | null>(null);
+
+  const currentState = loadState();
+  const openRouterConnection = providerAcceptsUserApiKey(draft.llmProvider)
+    ? currentState.providerConnections?.openrouter
+    : undefined;
+  const modelOptions = catalog === null ? [] : buildModelOptions(catalog.models);
 
   function patch(partial: Partial<LlmSettingsDraft>): void {
     setDraft((current) => ({ ...current, ...partial }));
     setStatus(markDirty());
+  }
+
+  function changeProvider(next: unknown): void {
+    const parsed = ProviderIdSchema.safeParse(next);
+    if (!parsed.success) return;
+    // Switching provider invalidates the previous provider's model list, so the
+    // dropdown can never offer a model the new credential cannot serve.
+    setCatalog((current) => invalidateCatalogOnProviderChange(current, parsed.data));
+    patch({ llmProvider: parsed.data });
   }
 
   function save(): void {
@@ -94,34 +121,46 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
       <Dropdown
         label="Provider"
         selectedKey={draft.llmProvider}
-        options={[
-          { key: "mock", text: "Mock (offline)" },
-          { key: "openai", text: "OpenAI" },
-        ]}
-        onChange={(_event, option) => {
-          if (option?.key === "mock" || option?.key === "openai") {
-            patch({ llmProvider: option.key });
-          }
-        }}
+        options={PROVIDER_OPTIONS.map((option) => ({ key: option.key, text: option.text }))}
+        onChange={(_event, option) => changeProvider(option?.key)}
       />
+      <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
+        {providerOption(draft.llmProvider).authNote}
+      </MessageBar>
+      {providerAcceptsUserApiKey(draft.llmProvider) ? (
+        <OpenRouterConnectionSettings
+          gatewayOrigin={env.LLM_BROKER_URL ?? ""}
+          connection={openRouterConnection}
+          catalog={catalog}
+          models={modelOptions}
+          onCatalogChange={setCatalog}
+          selectedModel={draft.openAiModel}
+          onSelectModel={(modelId) => patch({ openAiModel: modelId })}
+        />
+      ) : null}
       <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
         Credentials are never stored in ordinary settings or browser bundles. Local development uses
         the same-origin broker; production credential custody remains an explicit release decision.
       </MessageBar>
       <DefaultButton text="Clear legacy stored credential" onClick={clearLegacyCredential} />
-      <TextField
-        label="Broker base URL"
-        value={draft.openAiBaseUrl}
-        onChange={(_event, value) => patch({ openAiBaseUrl: value ?? "" })}
-        placeholder="https://localhost:3000/__toneforge/llm/v1"
-        description="Use the development broker URL. Do not enter an API key here."
-      />
-      <TextField
-        label="Model"
-        value={draft.openAiModel}
-        onChange={(_event, value) => patch({ openAiModel: value ?? "" })}
-        placeholder="gpt-4o-mini"
-      />
+      {draft.llmProvider === "mock" ? null : (
+        <TextField
+          label="Broker base URL"
+          value={draft.openAiBaseUrl}
+          onChange={(_event, value) => patch({ openAiBaseUrl: value ?? "" })}
+          placeholder="https://localhost:3000/__toneforge/llm/v1"
+          description="Use the development broker URL. Do not enter an API key here."
+        />
+      )}
+      {openRouterConnection !== undefined && modelOptions.length > 0 ? null : (
+        <TextField
+          label="Model"
+          value={draft.openAiModel}
+          onChange={(_event, value) => patch({ openAiModel: value ?? "" })}
+          placeholder="gpt-4o-mini"
+          description="Leave blank to use the provider's default model."
+        />
+      )}
       <Toggle
         label="Allow semantic analysis"
         checked={draft.semanticOptIn}

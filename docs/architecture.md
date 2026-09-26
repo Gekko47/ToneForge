@@ -55,8 +55,28 @@ Deterministic rules/formatting   Optional AI review
 | `changes`                              | `core/domain`, `shared/utils`                                                           | analysis, rules, formatting, style, ai, word, UI, `Office` |
 | `reformat`                             | core, analysis, changes, formatting DTOs, word boundary, AI providers, shared utilities | taskpane, commands, direct `Office.run`                    |
 | `word`                                 | shared Office helpers, core domain, and permitted deterministic readers                 | AI, UI                                                     |
-| `ai/providers`                         | core config, shared utilities                                                           | Word, UI                                                   |
+| `ai/gateway`                           | `core/config`, `core/domain`, `shared/utils`, `ai/providers/retry`                      | Word, UI, `Office`                                         |
+| `ai/providers`                         | core config, shared utilities, `ai/gateway` (types only)                                | Word, UI                                                   |
 | `taskpane` / `commands`                | core, shared, approved service boundaries                                               | direct `word/revisionAdapter` imports and direct mutation  |
+
+### Provider connection boundary (Phase 4)
+
+Two rules carry the credential model, and both are enforced rather than
+documented:
+
+1. **`core/domain/ProviderConnection.ts` has no field capable of holding a
+   secret.** It describes _which_ connection is in use and how it was
+   authenticated, not the credential itself. A test reflects over the schema
+   shape so a future field cannot quietly reintroduce one.
+2. **`ai/gateway` is the only module that talks to a credential service**, and
+   it accepts only a same-origin path or a loopback HTTP(S) origin. A
+   production gateway origin is build-time configuration, so there is no
+   Settings field that can name an arbitrary host.
+
+`ai/providers` extends `GatewayRoutedAdapter` and holds no credential of any
+kind. Every remote provider — OpenAI, Anthropic, OpenRouter — is routed through
+the same connection contract; the only difference between them is the request
+and response shape.
 
 ## Data flow and compatibility
 

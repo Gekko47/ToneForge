@@ -302,6 +302,14 @@ button:disabled {
   overflow: hidden;
 }
 
+/* Supplementary text under a control that cannot carry its own description,
+   such as a Fluent Dropdown. Muted, small, and never the only label. */
+.tf-settings-note {
+  margin: 0 0 8px;
+  color: var(--tf-muted);
+  font-size: 12px;
+}
+
 .tf-collapsible-header {
   width: 100%;
   display: flex;

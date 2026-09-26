@@ -14,6 +14,7 @@
 import { z } from "zod";
 import { logger } from "../../shared/utils/logger";
 import { type StyleProfile } from "../domain/StyleProfile";
+import { ProviderConnectionSchema, ProviderIdSchema } from "../domain/ProviderConnection";
 import {
   createGovernanceProfile,
   GovernanceProfileSchema,
@@ -29,7 +30,7 @@ import {
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(7),
+  version: z.number().int().nonnegative().default(8),
   profileRecords: z.record(z.string().uuid(), ProfileRecordSchema).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
@@ -39,7 +40,10 @@ const StateSchema = z.object({
     .object({
       openAiBaseUrl: z.string().url().optional(),
       openAiModel: z.string().optional(),
-      llmProvider: z.enum(["openai", "mock"]).default("mock"),
+      // v8 widens this from the OpenAI-only pair. `openAiBaseUrl` and
+      // `openAiModel` are retained for the local development path and are
+      // superseded by a stored `providerConnections` entry once one exists.
+      llmProvider: z.enum(["openai", "anthropic", "openrouter", "mock"]).default("mock"),
       openAiCredentialMode: z.literal("broker").default("broker"),
       spotReviewConsent: z.boolean().default(false),
       fullDocumentReviewConsent: z.boolean().default(false),
@@ -47,12 +51,22 @@ const StateSchema = z.object({
       semanticOptIn: z.boolean().default(false),
     })
     .default({}),
+  /**
+   * Provider-neutral, non-secret connection records keyed by provider id.
+   * This is the only provider structure that may be persisted, and it has no
+   * field capable of holding a credential.
+   */
+  // Optional rather than defaulted: a v7 record has no such field, and making it
+  // required in the inferred type would break every existing state fixture.
+  // `migrate()` always populates it, so callers never see `undefined` at runtime.
+  providerConnections: z.record(ProviderIdSchema, ProviderConnectionSchema).optional(),
 });
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v7";
+const STORAGE_KEY = "ToneForge.State.v8";
 const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v7",
   "ToneForge.State.v6",
   "ToneForge.State.v5",
   "ToneForge.State.v4",
@@ -259,6 +273,7 @@ export function clearPersistedCredentials(): PersistedState {
       llmProvider: "mock",
       openAiCredentialMode: "broker",
     },
+    providerConnections: {},
   };
   saveState(cleared);
   return cleared;

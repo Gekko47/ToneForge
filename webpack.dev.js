@@ -1,6 +1,7 @@
 import { merge } from "webpack-merge";
 import common from "./webpack.common.js";
 import { createLocalLlmBroker } from "./scripts/dev-broker.mjs";
+import { createDevGatewayBroker } from "./scripts/dev-gateway.mjs";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -82,7 +83,11 @@ const dev = {
         next();
       };
       const broker = createLocalLlmBroker();
-      devServer?.app?.use(requestLogger, broker);
+      // Development-only OpenRouter stand-in. The production authentication and
+      // broker service is a Phase 6 deliverable; this exists so the provider can
+      // be exercised locally without a user key entering the browser bundle.
+      const gateway = createDevGatewayBroker();
+      devServer?.app?.use(requestLogger, broker, gateway);
       return middlewares;
     },
   },

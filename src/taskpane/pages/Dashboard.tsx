@@ -7,7 +7,7 @@ import {
   getLiveSelection,
   getStructuredSnapshot,
 } from "../../word/documentReader";
-import { createLlmRegistry } from "../../ai/providers/registry";
+import { createRegistryFromSettings } from "../settings/providerComposition";
 import { reviewSpot, type SpotReviewResult } from "../../ai/review/spotReview";
 import {
   createGovernanceProfile,
@@ -344,18 +344,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       if (targetNodes.length !== 1)
         throw new Error("The selected text must resolve to one in-scope review target.");
       const targetNodeIds = targetNodes.map((node) => node.nodeId);
-      const registry = createLlmRegistry({
-        provider: state.settings.llmProvider,
-        ...(state.settings.llmProvider === "openai"
-          ? {
-              openai: {
-                credentialMode: "broker" as const,
-                ...(state.settings.openAiBaseUrl ? { baseUrl: state.settings.openAiBaseUrl } : {}),
-                ...(state.settings.openAiModel ? { model: state.settings.openAiModel } : {}),
-              },
-            }
-          : {}),
-      });
+      const registry = createRegistryFromSettings(state.settings, state.providerConnections);
       const result = await reviewSpot({
         request: {
           id: crypto.randomUUID(),
@@ -422,20 +411,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         profile: governance,
         includeRawText: true,
         consent: { fullDocumentReview: true },
-        registry: createLlmRegistry({
-          provider: state.settings.llmProvider,
-          ...(state.settings.llmProvider === "openai"
-            ? {
-                openai: {
-                  credentialMode: "broker" as const,
-                  ...(state.settings.openAiBaseUrl
-                    ? { baseUrl: state.settings.openAiBaseUrl }
-                    : {}),
-                  ...(state.settings.openAiModel ? { model: state.settings.openAiModel } : {}),
-                },
-              }
-            : {}),
-        }),
+        registry: createRegistryFromSettings(state.settings, state.providerConnections),
         signal: controller.signal,
         onProgress: (completed, total) => setFullProgress({ completed, total, partial: false }),
       });

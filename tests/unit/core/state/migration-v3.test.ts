@@ -3,8 +3,8 @@ import { migrate, CURRENT_STATE_VERSION } from "../../../../src/core/state/migra
 import { createEmptyProfile } from "../../../../src/core/domain/StyleProfile";
 
 describe("migration v3 to v5", () => {
-  it("has current version 7", () => {
-    expect(CURRENT_STATE_VERSION).toBe(7);
+  it("has current version 8", () => {
+    expect(CURRENT_STATE_VERSION).toBe(8);
   });
 
   it("returns default state with governance fields for null input", () => {

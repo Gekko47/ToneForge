@@ -22,6 +22,7 @@
     "stop": "npx office-addin-debugging stop manifest.xml",
     "validate": "node scripts/validate-manifest.mjs",
     "docs:validate": "node scripts/check-docs.mjs",
+    "host:matrix": "node scripts/generate-host-matrix.mjs",
     "secrets:scan": "node scripts/check-secrets.mjs",
     "secrets:verify-build": "node scripts/verify-bundle-secrets.mjs",
     "release:package": "node scripts/package-release.mjs",

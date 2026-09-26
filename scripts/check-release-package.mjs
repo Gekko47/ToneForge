@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { findDevelopmentArtifacts, validateProductionOrigin } from "./production-manifest.mjs";
 
 const allowedExternalScripts = new Set([
   "https://officeapis.public.onecdn.static.microsoft/1/office.js",
@@ -88,6 +89,26 @@ function validateXml(staging, sourceXml) {
   }
 }
 
+/**
+ * Validate a generated production manifest.
+ *
+ * Separate from `checkReleasePackage` because the checked-in manifest must
+ * stay on localhost for `npm run sideload`. This runs only when a deployment
+ * origin is supplied, so the local release path keeps working untouched.
+ */
+export function checkProductionManifest(manifest, productionOrigin) {
+  const problems = validateProductionOrigin(productionOrigin);
+  if (problems.length > 0) {
+    throw new Error(`Production origin is not acceptable: ${problems.join(" ")}`);
+  }
+  const artifacts = findDevelopmentArtifacts(manifest);
+  if (artifacts.length > 0) {
+    const detail = artifacts.map((item) => `${item.path} (${item.reason})`).join(", ");
+    throw new Error(`Production manifest contains development values: ${detail}`);
+  }
+  return { productionOrigin, developmentArtifacts: [] };
+}
+
 export function checkReleasePackage(staging = resolve(root, "build/release")) {
   if (!existsSync(staging)) {
     throw new Error("build/release is missing; run npm run release:package first");
@@ -99,6 +120,14 @@ export function checkReleasePackage(staging = resolve(root, "build/release")) {
   const stagedManifest = readJson(stagedManifestPath, "staged manifest.json");
   if (JSON.stringify(stagedManifest) !== JSON.stringify(sourceManifest)) {
     throw new Error("Staged manifest.json differs from source manifest.json");
+  }
+  // The checked-in manifest is deliberately localhost so `npm run sideload`
+  // works. That is fine for a local package and must never be shipped, so
+  // when a deployment origin is configured the staged manifest is checked
+  // against it rather than silently accepted.
+  const productionOrigin = process.env.TONEFORGE_PRODUCTION_ORIGIN;
+  if (productionOrigin) {
+    checkProductionManifest(stagedManifest, productionOrigin);
   }
   validateManifestReferences(staging, stagedManifest);
   validateXml(staging, readFileSync(resolve(root, "manifest.xml"), "utf8"));

@@ -512,3 +512,176 @@ Negative:
 - `tests/unit/core/domain/ProfileRecord.test.ts`,
   `tests/unit/core/state/profileMigration.test.ts`,
   `tests/unit/core/state/profileStateBudget.test.ts`.
+
+## ADR-0049 — The add-in holds only opaque connection references
+
+- Status: Accepted
+- Date: 2026-09-26
+- Extends: ADR-0039 (brokered credentials)
+
+### Context
+
+ADR-0039 established that credentials are brokered, but the concrete shape of
+the boundary had never been written down. Three questions were open, and each
+one had a wrong answer available that looked reasonable.
+
+1. **What does the add-in persist?** Persisting an access token, a refresh
+   token, or an API key puts a long-lived credential into `roamingSettings` and
+   `localStorage`, both of which are readable by any code sharing the origin and
+   both of which survive a reinstall.
+2. **Where can a request originate from?** If Settings offered a free-text
+   gateway URL, a user could point the add-in at a host they control and receive
+   every request, including document text.
+3. **How many providers?** The previous adapter took an `apiKey` field. Adding
+   Anthropic and OpenRouter to that shape would have multiplied the ways a
+   credential could be held rather than eliminated them.
+
+### Decision
+
+The add-in persists **only an opaque connection reference** — a non-secret
+identifier the gateway issued — and holds the live session token in memory for
+the lifetime of the pane.
+
+- [`ProviderConnection.ts`](../src/core/domain/ProviderConnection.ts) defines the
+  record. It has **no field capable of holding a secret**, and a test reflects
+  over the schema shape to keep that true.
+- [`gatewayClient.ts`](../src/ai/gateway/gatewayClient.ts) accepts only a
+  same-origin path or a loopback HTTP(S) origin. A production origin must be
+  build-time configuration, so there is no field in Settings that can name one.
+- [`SessionTokenStore`](../src/ai/gateway/gatewayClient.ts) has no serialization
+  or persistence method at all. A page reload ends the session, which is the
+  intended behavior rather than a limitation.
+- The provider enum is `openai | anthropic | openrouter | mock`, and every
+  adapter is a `GatewayRoutedAdapter`. The `apiKey` credential mode is removed;
+  it no longer exists anywhere in `src/`.
+
+### Consequences
+
+Positive: a stolen storage blob yields a connection reference that is useless
+without the gateway session that created it. The provider set can grow without
+adding credential shapes. The add-in has no way to be pointed at an arbitrary
+host.
+
+Negative: a user must re-authenticate when the pane reloads. The gateway becomes
+a required component for every remote provider, so the local development broker
+in [`dev-gateway.mjs`](../scripts/dev-gateway.mjs) is not optional tooling — it
+is part of the contract until a production gateway exists. Removing a connection
+is genuinely destructive: it drops the credential on the gateway side, which the
+UI states plainly before the user confirms.
+
+### Evidence
+
+- `src/core/domain/ProviderConnection.ts`, `tests/unit/core/domain/ProviderConnection.test.ts`
+- `src/ai/gateway/gatewayClient.ts`, `tests/unit/ai/gateway/gatewayClient.test.ts`
+- `src/ai/gateway/oauthState.ts`, `tests/unit/ai/gateway/oauthState.test.ts`
+- `tests/unit/scripts/sentinelInjection.test.ts`
+
+## ADR-0050 — A user-supplied API key reaches the provider only through the gateway
+
+- Status: Accepted
+- Date: 2026-09-26
+- Refines: ADR-0049 for the one provider that takes a user-held key
+
+### Context
+
+ADR-0049 removed the browser-held `apiKey` mode. OpenRouter is the one provider
+whose credential genuinely belongs to the end user: they hold an OpenRouter
+account, not a ToneForge account. Refusing to support that would be a real
+functional loss, and re-adding a browser-held key field would undo ADR-0049.
+
+The tension: a key the user pastes into a Word add-in is a key in the pane's
+memory, in the bundle's heap, and on its way to whichever origin the request goes
+to.
+
+### Decision
+
+The key is held in **component state only**, submitted **once** to the local
+gateway over the existing loopback same-origin and nonce-protected channel, and
+dropped the moment that request settles — success or failure. Only the opaque
+connection reference comes back, and only that is persisted.
+
+[`OpenRouterConnectionSettings.tsx`](../src/taskpane/components/OpenRouterConnectionSettings.tsx)
+exists as a separate component precisely so the key cannot leak into the shared
+settings draft: `LlmSettingsDraft` has no field that could hold one, so the
+ordinary save path is incapable of persisting it.
+
+### Consequences
+
+Positive: the key never reaches `roamingSettings`, `localStorage`, a log line, a
+bundle, or a URL. Disconnecting genuinely revokes it, because the gateway drops
+it. `buildProductionManifest` refuses any manifest whose values look
+credential-shaped, so a pasted key cannot reach a shipped manifest either.
+
+Negative: the key is in the pane's memory for as long as the user is typing it,
+and closing the pane without disconnecting leaves the gateway-side credential
+live until it expires. The local development broker becomes a trust boundary —
+which is why it enforces same-origin, nonce, HTTPS upstream, and explicit
+approval for a self-hosted endpoint. This remains a **development** arrangement;
+Phase 6 owns the production equivalent.
+
+### Evidence
+
+- `src/taskpane/components/OpenRouterConnectionSettings.tsx`
+- `tests/unit/taskpane/components/OpenRouterConnectionSettings.test.tsx`
+- `tests/unit/taskpane/settings/openRouterSettings.test.ts`
+- `scripts/dev-gateway.mjs`, `tests/unit/scripts/devGateway.test.ts`
+- `scripts/production-manifest.mjs`, `tests/unit/scripts/productionManifest.test.ts`
+
+## ADR-0051 — An all-green automated run is never reported as a release
+
+- Status: Accepted
+- Date: 2026-09-26
+- Extends: ADR-0033, ADR-0034 (human host evidence blocks release)
+
+### Context
+
+ADR-0033 and ADR-0034 separated deterministic release gates from human Word-host
+evidence, but the machine-readable output did not exist to express that
+separation. `runVerificationGraph()` printed PASS lines to a console and threw
+on failure. Two consequences followed.
+
+1. A consumer of the output — CI, a release job, a dashboard — could not tell a
+   passing repository from a released one, because the human gate was not in the
+   data at all. Its absence read as completion.
+2. A failing run said only _which_ stage failed, not _whose_ problem it was. A
+   registry outage and a type error were indistinguishable.
+
+The same problem existed in the host matrix. `docs/manual-verification.md`
+records what a human observed, but an unrecorded cell — a dash, a blank,
+`TBD` — is not a pass, and a table nobody has updated in a year still looks
+authoritative.
+
+### Decision
+
+Every automated run emits `build/verification/summary.json`, on success **and** on
+failure, and the summary is built to be hard to misread.
+
+- Each stage carries an `owner`: `repository-code`, `dependency-install`,
+  `build-package`, or `external-evidence`. A failure names the class of problem.
+- The `word-host-evidence` gate is recorded in every summary and is **always**
+  `pending`. Its status is not read from the caller's result map at all, so a
+  pass cannot be manufactured for the one gate only a human can satisfy.
+  `openExternalGates` is populated even on a fully green run.
+- The host-matrix dashboard maps every unrecorded cell to `unknown`, never to a
+  pass; a row with two passes and one silence is `partial`; evidence older than
+  ninety days is flagged stale; and `releaseReady` is typed as the literal
+  `false` so no code path can set it.
+
+### Consequences
+
+Positive: a consumer cannot mistake a green run for a released product without
+deliberately ignoring an explicit field. Failures are actionable from the
+summary alone.
+
+Negative: the summary is a contract. Adding, renaming, or removing a stage or an
+ownership class is a breaking change for every consumer, which is the intent —
+these are release-gate semantics, not log formatting. The staleness threshold is
+a judgement call encoded in code; it is a named constant so it can be argued
+with rather than discovered.
+
+### Evidence
+
+- `scripts/verification-graph.mjs`, `tests/unit/scripts/verificationSummary.test.ts`
+- `scripts/host-matrix.mjs`, `scripts/generate-host-matrix.mjs`,
+  `tests/unit/scripts/hostMatrix.test.ts`
+- `npm run host:matrix` — currently reports 4 hosts, 0 fully passing

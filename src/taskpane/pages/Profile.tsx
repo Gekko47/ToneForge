@@ -2,7 +2,10 @@ import React from "react";
 import ProfileEditor from "../components/ProfileEditor";
 import ProfileRecordSection from "../components/ProfileRecordSection";
 import { getDocumentSnapshot, getSelectionText } from "../../word/documentReader";
-import { createLlmRegistry } from "../../ai/providers/registry";
+import {
+  createRegistryFromSettings,
+  isRemoteProviderConfigured,
+} from "../settings/providerComposition";
 import { captureSample } from "../../style/sampleCapture";
 import { learnStyleDraft } from "../../style/learnStyle";
 import {
@@ -37,24 +40,15 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
       const state = loadState();
       const [snapshot, selection] = await Promise.all([getDocumentSnapshot(), getSelectionText()]);
       const sample = captureSample(selection, snapshot);
+      // Semantic learning needs a configured remote provider, not a specific
+      // one — every remote adapter speaks the same gateway contract.
       const includeSemantic =
-        state.settings.semanticOptIn && state.settings.llmProvider === "openai";
+        state.settings.semanticOptIn && isRemoteProviderConfigured(state.settings);
       const result = await learnStyleDraft(sample, {
         name: "Learned style profile",
         includeSemantic,
         ...(includeSemantic
-          ? {
-              registry: createLlmRegistry({
-                provider: "openai",
-                openai: {
-                  credentialMode: "broker" as const,
-                  ...(state.settings.openAiBaseUrl
-                    ? { baseUrl: state.settings.openAiBaseUrl }
-                    : {}),
-                  ...(state.settings.openAiModel ? { model: state.settings.openAiModel } : {}),
-                },
-              }),
-            }
+          ? { registry: createRegistryFromSettings(state.settings, state.providerConnections) }
           : {}),
       });
 

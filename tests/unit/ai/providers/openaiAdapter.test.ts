@@ -1,193 +1,223 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { OpenAiAdapter, LlmError } from "../../../../src/ai/providers/index";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { OpenAiAdapter, createOpenAiConnection } from "../../../../src/ai/providers/openaiAdapter";
+import { LlmError } from "../../../../src/ai/providers/LlmProvider";
+import { ProviderConnectionSchema } from "../../../../src/core/domain/ProviderConnection";
 
-function mockFetch(status: number, body: unknown) {
-  return vi.fn().mockResolvedValue({
-    ok: status >= 200 && status < 300,
-    status,
-    statusText: status === 429 ? "Too Many Requests" : "Server Error",
-    json: async () => body,
+vi.mock("../../../../src/shared/utils/logger", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+const GATEWAY = "https://localhost:3000";
+
+function connection(overrides: Partial<Record<string, unknown>> = {}) {
+  return ProviderConnectionSchema.parse({
+    connectionId: "conn_openai",
+    provider: "openai",
+    authMode: "deploymentManaged",
+    status: "connected",
+    ...overrides,
   });
 }
 
-describe("OpenAiAdapter", () => {
-  const originalFetch = globalThis.fetch;
+function jsonResponse(body: unknown, status = 200, statusText = "OK"): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText,
+    json: async () => body,
+  } as unknown as Response;
+}
 
+function adapter(
+  fetchImpl: typeof fetch,
+  overrides: Partial<Record<string, unknown>> = {},
+  gatewayBaseUrl = GATEWAY,
+) {
+  return new OpenAiAdapter({
+    gatewayBaseUrl,
+    connection: connection(overrides),
+    fetchImpl,
+    maxRetries: 0,
+  });
+}
+
+function mockFetch(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
+  return vi.fn(async (url: string, init: RequestInit) =>
+    handler(url, init),
+  ) as unknown as typeof fetch;
+}
+
+describe("OpenAiAdapter (gateway-routed)", () => {
   beforeEach(() => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
-    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it("is configured for a broker without a browser credential", () => {
-    const adapter = new OpenAiAdapter({
-      credentialMode: "broker",
-      baseUrl: "/__toneforge/llm/v1",
+  it("sends the request to the gateway connection, not to the provider", async () => {
+    let seenUrl = "";
+    const fetchImpl = mockFetch((url) => {
+      seenUrl = url;
+      return jsonResponse({ choices: [{ message: { content: "ok" } }], model: "gpt-4o-mini" });
     });
-    expect(adapter.configured).toBe(true);
+    await adapter(fetchImpl).complete({ prompt: "hi" });
+    expect(seenUrl).toBe(`${GATEWAY}/v1/connections/conn_openai/chat/completions`);
   });
 
-  it("is not configured without a broker URL or explicit user credential", () => {
-    const adapter = new OpenAiAdapter({});
-    expect(adapter.configured).toBe(false);
-  });
-
-  it("throws non-retryable error when unconfigured", async () => {
-    const adapter = new OpenAiAdapter({ credentialMode: "broker", baseUrl: "" });
-    await expect(adapter.complete({ prompt: "hi" })).rejects.toThrow(LlmError);
-    await expect(adapter.complete({ prompt: "hi" })).rejects.toMatchObject({
-      retryable: false,
+  it("never sends an Authorization header", async () => {
+    let seenHeaders: Record<string, string> = {};
+    const fetchImpl = mockFetch((_url, init) => {
+      seenHeaders = init.headers as Record<string, string>;
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     });
+    await adapter(fetchImpl).complete({ prompt: "hi" });
+    // The credential lives in the gateway. If a header ever appeared here it
+    // would mean a browser-held credential had been reintroduced.
+    expect(Object.keys(seenHeaders).map((key) => key.toLowerCase())).not.toContain("authorization");
   });
 
-  it("parses a successful response", async () => {
-    globalThis.fetch = mockFetch(200, {
-      choices: [{ message: { content: "Hello there" } }],
-      model: "gpt-4o-mini",
-      usage: { prompt_tokens: 5, completion_tokens: 2 },
-    }) as unknown as typeof fetch;
-
-    const adapter = new OpenAiAdapter({ apiKey: "sk-test", timeoutMs: 1000 });
-    const res = await adapter.complete({ prompt: "hi" });
-    expect(res.text).toBe("Hello there");
-    expect(res.model).toBe("gpt-4o-mini");
-    expect(res.usage).toEqual({ inputTokens: 5, outputTokens: 2 });
+  it("has no option to accept a user-supplied API key", () => {
+    const adapterInstance = adapter(
+      mockFetch(() => jsonResponse({ choices: [{ message: { content: "ok" } }] })),
+    );
+    expect(adapterInstance.configured).toBe(true);
+    // The removed credential mode must not reappear as a settable field.
+    expect("apiKey" in (adapterInstance as unknown as Record<string, unknown>)).toBe(false);
   });
 
-  it("retries on 429 then succeeds", async () => {
-    const fetchMock = mockFetch(200, {
-      choices: [{ message: { content: "ok" } }],
-      model: "gpt-4o-mini",
+  it("normalizes a chat-completions response", async () => {
+    const fetchImpl = mockFetch(() =>
+      jsonResponse({
+        choices: [{ message: { content: "answer" } }],
+        model: "gpt-4o-mini",
+        usage: { prompt_tokens: 11, completion_tokens: 7 },
+      }),
+    );
+    const result = await adapter(fetchImpl).complete({ prompt: "hi" });
+    expect(result.text).toBe("answer");
+    expect(result.model).toBe("gpt-4o-mini");
+    expect(result.usage).toEqual({ inputTokens: 11, outputTokens: 7 });
+  });
+
+  it("sends the system prompt as a system message and the prompt as a user message", async () => {
+    let body: Record<string, unknown> = {};
+    const fetchImpl = mockFetch((_url, init) => {
+      body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     });
-    // First two calls fail with 429, third succeeds.
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 429,
-        statusText: "Too Many Requests",
-        json: async () => ({}),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 429,
-        statusText: "Too Many Requests",
-        json: async () => ({}),
-      });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const adapter = new OpenAiAdapter({
-      apiKey: "sk-test",
-      timeoutMs: 1000,
-      maxRetries: 3,
+    await adapter(fetchImpl, { selectedModel: "gpt-4o-mini" }).complete({
+      prompt: "user text",
+      systemPrompt: "system rules",
     });
-    const completion = adapter.complete({ prompt: "hi" });
-    await vi.runAllTimersAsync();
-    const res = await completion;
-    expect(res.text).toBe("ok");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(body.model).toBe("gpt-4o-mini");
+    expect(body.messages).toEqual([
+      { role: "system", content: "system rules" },
+      { role: "user", content: "user text" },
+    ]);
   });
 
-  it("does not retry on 400", async () => {
-    globalThis.fetch = mockFetch(400, {
-      error: { message: "bad request" },
-    }) as unknown as typeof fetch;
-    const adapter = new OpenAiAdapter({ apiKey: "sk-test", maxRetries: 3 });
-    await expect(adapter.complete({ prompt: "hi" })).rejects.toThrow(LlmError);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("retries on 500 and eventually fails", async () => {
-    globalThis.fetch = mockFetch(500, { error: { message: "boom" } }) as unknown as typeof fetch;
-    const adapter = new OpenAiAdapter({ apiKey: "sk-test", maxRetries: 2 });
-    const completion = adapter.complete({ prompt: "hi" });
-    const assertion = expect(completion).rejects.toThrow(LlmError);
-    await vi.runAllTimersAsync();
-    await assertion;
-    // maxRetries=2 means 3 attempts total.
-    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
-  });
-
-  it("marks timeout as retryable", async () => {
-    globalThis.fetch = vi.fn().mockImplementation(
-      () =>
-        new Promise((_, reject) => {
-          const err = new DOMException("The operation was aborted", "AbortError");
-          reject(err);
-        }),
-    ) as unknown as typeof fetch;
-
-    const adapter = new OpenAiAdapter({
-      apiKey: "sk-test",
-      timeoutMs: 1000,
-      maxRetries: 0,
+  it("omits max_tokens when the caller did not set one", async () => {
+    let body: Record<string, unknown> = {};
+    const fetchImpl = mockFetch((_url, init) => {
+      body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     });
-    await expect(adapter.complete({ prompt: "hi" })).rejects.toMatchObject({
-      retryable: true,
-      message: "OpenAI request timed out",
-    });
+    await adapter(fetchImpl).complete({ prompt: "hi" });
+    expect("max_tokens" in body).toBe(false);
   });
 
-  it("marks caller abort as non-retryable", async () => {
+  it("refuses when the connection is not ready", async () => {
+    const fetchImpl = mockFetch(() => jsonResponse({}));
+    const error = (await adapter(fetchImpl, { status: "expired" })
+      .complete({ prompt: "hi" })
+      .catch((err: unknown) => err)) as LlmError;
+    expect(error).toBeInstanceOf(LlmError);
+    expect(error.retryable).toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("refuses a connection belonging to a different provider", async () => {
+    const fetchImpl = mockFetch(() => jsonResponse({}));
+    const error = (await new OpenAiAdapter({
+      gatewayBaseUrl: GATEWAY,
+      connection: ProviderConnectionSchema.parse({
+        connectionId: "conn_other",
+        provider: "anthropic",
+        authMode: "oauth",
+        status: "connected",
+      }),
+      fetchImpl,
+    })
+      .complete({ prompt: "hi" })
+      .catch((err: unknown) => err)) as LlmError;
+    expect(error).toBeInstanceOf(LlmError);
+    expect(error.message).toMatch(/anthropic connection/);
+  });
+
+  it("refuses a policy-rejected base origin", async () => {
+    const fetchImpl = mockFetch(() => jsonResponse({}));
+    const error = (await adapter(fetchImpl, {
+      baseOrigin: { origin: "https://not-allowlisted.example", classification: "policyRejected" },
+    })
+      .complete({ prompt: "hi" })
+      .catch((err: unknown) => err)) as LlmError;
+    expect(error).toBeInstanceOf(LlmError);
+    expect(error.message).toMatch(/policy refuses/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("fails fast without a network call when the caller already aborted", async () => {
+    const fetchImpl = mockFetch(() => jsonResponse({}));
     const controller = new AbortController();
     controller.abort();
-    globalThis.fetch = vi.fn() as unknown as typeof fetch;
-
-    const adapter = new OpenAiAdapter({ apiKey: "sk-test", maxRetries: 3 });
-    await expect(
-      adapter.complete({ prompt: "hi", signal: controller.signal }),
-    ).rejects.toMatchObject({
-      retryable: false,
-      message: "OpenAI request aborted by caller",
-    });
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    const error = (await adapter(fetchImpl)
+      .complete({ prompt: "hi", signal: controller.signal })
+      .catch((err: unknown) => err)) as LlmError;
+    expect(error.retryable).toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("supports user-supplied credentials for explicit adapter callers", async () => {
-    const fetchMock = mockFetch(200, {
-      choices: [{ message: { content: "ok" } }],
-      model: "gpt-4o-mini",
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const adapter = new OpenAiAdapter({
-      credentialMode: "apiKey",
-      apiKey: "sk-user-supplied",
-      baseUrl: "https://provider.example/v1",
-      maxRetries: 0,
-    });
-
-    await adapter.complete({ prompt: "private document text" });
-
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer sk-user-supplied");
+  it("treats 401 as non-retryable so a rejected connection is not retried", async () => {
+    const fetchImpl = mockFetch(() => jsonResponse({}, 401, "Unauthorized"));
+    const error = (await adapter(fetchImpl)
+      .complete({ prompt: "hi" })
+      .catch((err: unknown) => err)) as LlmError;
+    expect(error.retryable).toBe(false);
   });
 
-  it("uses a broker without forwarding an Authorization header", async () => {
-    const fetchMock = mockFetch(200, {
-      choices: [{ message: { content: "ok" } }],
-      model: "gpt-4o-mini",
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const adapter = new OpenAiAdapter({
-      credentialMode: "broker",
-      baseUrl: "/__toneforge/llm/v1",
-      maxRetries: 0,
-    });
+  it("treats 429 and 5xx as retryable", async () => {
+    const rateLimited = (await adapter(mockFetch(() => jsonResponse({}, 429, "Too Many")))
+      .complete({ prompt: "hi" })
+      .catch((err: unknown) => err)) as LlmError;
+    expect(rateLimited.retryable).toBe(true);
 
-    await adapter.complete({ prompt: "private document text" });
-
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(init.headers).not.toHaveProperty("Authorization");
+    const serverError = (await adapter(mockFetch(() => jsonResponse({}, 503, "Unavailable")))
+      .complete({ prompt: "hi" })
+      .catch((err: unknown) => err)) as LlmError;
+    expect(serverError.retryable).toBe(true);
   });
 
-  it("redact() strips sensitive patterns", () => {
-    const adapter = new OpenAiAdapter({ apiKey: "sk-test" });
-    const out = adapter.redact("Contact me at alice@example.com or use sk-ABC123XYZ");
-    expect(out).toContain("[REDACTED_EMAIL]");
-    expect(out).toContain("[REDACTED_API_KEY]");
-    expect(out).not.toContain("alice@example.com");
-    expect(out).not.toContain("sk-ABC123XYZ");
+  it("redacts sensitive patterns through the shared redact contract", () => {
+    const instance = adapter(mockFetch(() => jsonResponse({})));
+    expect(instance.redact("mail me at a@b.com or use sk-ABCDEFGHIJKL")).not.toMatch(
+      /sk-ABCDEFGHIJKL/,
+    );
+  });
+});
+
+describe("createOpenAiConnection", () => {
+  it("builds a deployment-managed OpenAI record", () => {
+    const record = createOpenAiConnection("conn_1");
+    expect(record.provider).toBe("openai");
+    expect(record.authMode).toBe("deploymentManaged");
+    expect(record.status).toBe("connected");
+  });
+
+  it("has no field capable of holding a credential", () => {
+    const record = createOpenAiConnection("conn_1");
+    const forbidden = /key|token|secret|password/i;
+    expect(Object.keys(record).filter((field) => forbidden.test(field))).toEqual([]);
   });
 });
