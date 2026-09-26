@@ -118,7 +118,7 @@ describe("checkConsistency", () => {
     const registry = withSemanticHelpers(
       new MockAdapter({
         defaultResponse: JSON.stringify([
-          { deviation: "Too casual", severity: "medium", suggestion: "Use formal tone" },
+          { deviation: "Too casual", severity: "medium", suggestion: "Use formal tone", anchor: "target text" },
         ]),
       }),
     );
@@ -211,7 +211,7 @@ describe("checkConsistency", () => {
     const registry = withSemanticHelpers(
       new MockAdapter({
         defaultResponse: JSON.stringify([
-          { deviation: "Too casual", severity: "medium", suggestion: "Use formal tone" },
+          { deviation: "Too casual", severity: "medium", suggestion: "Use formal tone", anchor: "target text" },
         ]),
       }),
     );
@@ -276,7 +276,7 @@ describe("checkConsistency", () => {
     const registry = withSemanticHelpers(
       new MockAdapter({
         defaultResponse: JSON.stringify([
-          { deviation: "Too casual", severity: "medium", suggestion: "Use formal tone" },
+          { deviation: "Too casual", severity: "medium", suggestion: "Use formal tone", anchor: "target text" },
         ]),
       }),
     );

@@ -297,8 +297,23 @@ function houseStyleReplacement(finding: Finding): string | null {
   }
 }
 
+/**
+ * Turn a semantic finding into a change.
+ *
+ * `expected` is preferred over parsing the message, and the reason is that an
+ * anchored semantic finding has already had its suggestion verified against a
+ * real document offset. Re-deriving the replacement from prose would discard
+ * that verification and reintroduce the guessing the anchor removed — and it
+ * would fail on any suggestion that is not phrased as `Use "x" instead of "y"`.
+ *
+ * The prose parser remains for unanchored findings, which is the only case it
+ * still has to serve.
+ */
 function semanticChanges(finding: Finding): Change[] {
-  const replacement = quotedReplacement(finding.message);
+  const replacement =
+    finding.expected !== undefined && finding.expected.length > 0
+      ? finding.expected
+      : quotedReplacement(finding.message);
   if (replacement === null) return [];
   if (finding.evidence.length === 0 && finding.range.start !== finding.range.end) return [];
   const change = textChange(finding, replacement);

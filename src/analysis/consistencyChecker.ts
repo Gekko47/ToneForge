@@ -291,7 +291,9 @@ export async function checkConsistency(
       ...(registry ? { registry } : {}),
     };
     try {
-      semantic = await detectSemanticDeviations(text, analysisProfile, deviationOpts);
+      // The acquired nodes are what the model's anchor is verified against; without
+      // them every semantic finding would be reported but unaddressable.
+      semantic = await detectSemanticDeviations(text, analysisProfile, deviationOpts, nodes ?? []);
     } catch (err) {
       // Caller cancellation is non-retryable per ADR-0011 and must surface
       // to the caller so Stage 21 and the UI can distinguish cancel from

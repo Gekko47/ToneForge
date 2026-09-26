@@ -1395,3 +1395,50 @@ fix, not retention, and re-anchoring is not available here.
 **Deviation from the implementation plan.** The plan proposed retaining findings
 from unscanned nodes. That is not implemented, for the offset reason above, and
 the deviation is deliberate rather than an omission.
+
+## ADR-0064: Semantic findings are anchored to a verified span, or refused
+
+**Status:** Accepted
+
+**Context.** Every semantic deviation carried `range: { start: 0, end:
+text.length }`, `nodeIds: []`, `actionable: false`, and the reason "full-document
+semantic deviation has no locally verified target span". The planner could
+therefore never produce a change from one, and the `semanticOptIn` toggle could
+only ever produce advisory text. That was honest, and it also made the toggle
+close to pointless.
+
+**Decision.** Outcome A of the implementation plan. The model must return a
+verbatim `anchor` alongside each deviation, and that anchor is resolved against
+the acquired nodes by `resolveAnchor`. A unique match produces a finding that is
+`actionable`, carries the node id, a document-absolute range, and an exact
+`actual`/`expected` pair so the change has a real precondition. The anchor is
+required in the response schema rather than optional, because a deviation that
+cannot be quoted describes nothing the product could act on.
+
+Three refusals, and each is a way a model can be wrong:
+
+- **Absent.** A quote that is not in the document means the model paraphrased.
+  Fuzzy matching is refused, not offered: it produces a finding pointing at a
+  sentence that says something else.
+- **Ambiguous.** A quote appearing more than once has two possible targets and no
+  way to choose, and an edit to the wrong one is a silent corruption.
+- **Unaddressable.** A node with no document offset offers nothing to point at.
+  A node-relative offset would address whatever text happens to sit there in
+  someone else's document.
+
+A refused finding still appears, with the specific reason as its
+`advisoryReason`, so the user sees why it cannot be acted on.
+
+**Consequences.**
+
+- An anchored semantic finding is plannable but still AI-sourced and medium-risk,
+  so the change still requires approval. Being plannable is not being safe.
+- The planner now prefers `finding.expected` over parsing a quoted replacement
+  out of the message prose for semantic findings. The suggestion has already been
+  verified against a real offset; re-deriving it from prose would discard that
+  verification and would fail on any suggestion not phrased as `Use "x" instead
+  of "y"`. The prose parser remains for unanchored findings.
+- `detectSemanticDeviations` now takes the acquired nodes. With none, every finding
+  stays advisory, which is the correct answer rather than a crash.
+- The prompt states the quoting rule explicitly, including that a deviation the
+  model cannot quote is one it should not report.

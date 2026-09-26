@@ -20,6 +20,8 @@ import { LlmError, type LlmSemanticProvider } from "../ai/providers/LlmProvider"
 import { withRetry } from "../ai/providers/retry";
 import { logger } from "../shared/utils/logger";
 import { type Finding, type Severity } from "../core/domain/Finding";
+import { type DocumentNode } from "../core/domain/DocumentSnapshot";
+import { resolveAnchor } from "./anchorResolution";
 import { type StyleProfile } from "../core/domain/StyleProfile";
 
 const DEFAULT_MAX_RETRIES = 2;
@@ -50,16 +52,31 @@ export interface DeviationOptions {
  * request is made. Empty target text short-circuits to an empty array
  * without calling the provider.
  *
- * Each validated deviation maps to an advisory, non-actionable `Finding` with
- * `kind: "semantic"`, `category: "semantic-deviation"`, AI provenance, and a
- * full-text range. Vague model deviations are never mapped to invented precise
- * offsets. Entries that fail schema validation are skipped (logged) rather than
- * fatal.
+ * Each validated deviation is anchored to a real span. The model must quote the
+ * text it is describing, and that quote is resolved against `nodes`: on a unique
+ * match the finding is `actionable`, carries the node id, and a document-absolute
+ * range plus an exact `actual`/`expected` pair, so the planner can produce a
+ * change with a real precondition. A quote that is absent, ambiguous, or in a
+ * node with no document offset yields an advisory finding that states which of
+ * those happened — never an invented offset.
+ *
+ * Being plannable is not being safe: an anchored semantic change is still
+ * AI-sourced and medium-risk, so it still requires approval. Entries that fail
+ * schema validation are skipped (logged) rather than fatal.
  */
 export async function detectSemanticDeviations(
   targetText: string,
   profile: StyleProfile,
   opts: DeviationOptions,
+  /**
+   * The acquired nodes the anchor is verified against.
+   *
+   * Without them an anchor cannot be resolved, so every finding would be
+   * reported but unaddressable — which is the state this engine was in before
+   * anchoring existed, and the reason the `semanticOptIn` toggle could only
+   * ever produce advisory text.
+   */
+  nodes: readonly DocumentNode[] = [],
 ): Promise<Finding[]> {
   if (targetText.trim().length === 0) {
     return [];
@@ -108,22 +125,57 @@ export async function detectSemanticDeviations(
       });
       continue;
     }
+    // Resolve the model's quote against the real document. A finding with a
+    // verified span is addressable and plannable; one without stays advisory and
+    // says why, rather than being emitted against the whole document.
+    const anchor = resolveAnchor(result.data.anchor, nodes);
+    if (!anchor.ok) {
+      findings.push({
+        id: uuidv4(),
+        kind: "semantic",
+        category: "semantic-deviation",
+        range: { start: 0, end: targetText.length, unit: "character" },
+        message: result.data.suggestion,
+        severity: SEVERITY_BY_DEVIATION[result.data.severity] ?? "warning",
+        evidence: result.data.deviation,
+        confidence: SEMANTIC_CONFIDENCE,
+        actionable: false,
+        advisoryReason: anchor.reason,
+        nodeIds: [],
+        source: "ai",
+        risk: "medium",
+        reversible: true,
+        status: "deferred",
+      });
+      continue;
+    }
+
+    const node = nodes.find((item) => item.nodeId === anchor.nodeId);
+    const base = node?.sourceRange?.startOffset ?? 0;
     findings.push({
       id: uuidv4(),
       kind: "semantic",
       category: "semantic-deviation",
-      range: { start: 0, end: targetText.length, unit: "character" },
+      // Document-absolute, not node-relative: a range measured from the node's own
+      // text start points into whatever happens to sit there in someone else's
+      // document.
+      range: { start: base + anchor.start, end: base + anchor.end, unit: "character" },
       message: result.data.suggestion,
       severity: SEVERITY_BY_DEVIATION[result.data.severity] ?? "warning",
       evidence: result.data.deviation,
+      // The anchor is quoted text, so the precondition is exact: if the document
+      // no longer contains it, the plan is refused rather than applied blind.
+      actual: result.data.anchor,
+      expected: result.data.suggestion,
       confidence: SEMANTIC_CONFIDENCE,
-      actionable: false,
-      advisoryReason: "Full-document semantic deviation has no locally verified target span",
-      nodeIds: [],
+      // Semantic output is still interpretive, so the change still requires
+      // approval. Being plannable is not the same as being safe to apply.
+      actionable: true,
+      nodeIds: [anchor.nodeId],
       source: "ai",
       risk: "medium",
       reversible: true,
-      status: "deferred",
+      status: "new",
     });
   }
   return findings;

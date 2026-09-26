@@ -132,6 +132,7 @@ describe("DeviationResponseSchema", () => {
       deviation: "wordy phrasing",
       severity: "medium",
       suggestion: "trim it",
+      anchor: "the wordy sentence",
     });
     expect(result.success).toBe(true);
   });
@@ -141,6 +142,7 @@ describe("DeviationResponseSchema", () => {
       deviation: "x",
       severity: "critical",
       suggestion: "y",
+      anchor: "quoted",
     });
     expect(result.success).toBe(false);
   });
@@ -150,6 +152,7 @@ describe("DeviationResponseSchema", () => {
       deviation: "",
       severity: "low",
       suggestion: "y",
+      anchor: "quoted",
     });
     expect(result.success).toBe(false);
   });
