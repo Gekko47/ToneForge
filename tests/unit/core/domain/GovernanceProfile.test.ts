@@ -7,6 +7,7 @@ import {
   EditorialPolicySchema,
   TerminologyPolicySchema,
   GovernanceRuleSchema,
+  ruleForSource,
 } from "../../../../src/core/domain/GovernanceProfile";
 import { StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
 import { v4 as uuidv4 } from "uuid";
@@ -76,6 +77,7 @@ describe("GovernanceRuleSchema", () => {
       id: uuidv4(),
       description: "Test rule",
       scope: "typography",
+      source: "typography",
       severity: "mandatory",
       autoFix: false,
       protectedBehavior: "flag",
@@ -84,6 +86,54 @@ describe("GovernanceRuleSchema", () => {
     expect(rule.id).toBeTruthy();
     expect(rule.scope).toBe("typography");
     expect(rule.severity).toBe("mandatory");
+  });
+
+  /**
+   * A rule with no `source` matched nothing at plan time: the planner had no way
+   * to know which finding it referred to, so `autoFix` and `severity` were
+   * fields nobody read. Requiring the binding is what makes the rule reachable.
+   */
+  it("refuses a rule that is not bound to a finding category", () => {
+    expect(() =>
+      GovernanceRuleSchema.parse({
+        id: uuidv4(),
+        description: "Unbound rule",
+        scope: "typography",
+        severity: "advisory",
+      }),
+    ).toThrow();
+  });
+
+  it("refuses a source that is not a real finding category", () => {
+    // A closed list, so a typo cannot silently produce a rule that never fires.
+    expect(() =>
+      GovernanceRuleSchema.parse({
+        id: uuidv4(),
+        description: "Misspelled category",
+        scope: "typography",
+        source: "houseStyle.terminologyy",
+        severity: "advisory",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("ruleForSource", () => {
+  const rule = GovernanceRuleSchema.parse({
+    id: uuidv4(),
+    description: "Terminology is mandatory",
+    scope: "houseStyle",
+    source: "houseStyle.terminology",
+    severity: "mandatory",
+    autoFix: true,
+  });
+
+  it("binds a rule to its finding category", () => {
+    expect(ruleForSource([rule], "houseStyle.terminology")?.id).toBe(rule.id);
+  });
+
+  it("returns null for a category no rule governs", () => {
+    expect(ruleForSource([rule], "typography")).toBeNull();
   });
 });
 
@@ -173,6 +223,7 @@ describe("GovernanceProfileSchema", () => {
           id: uuidv4(),
           description: "No em dash",
           scope: "typography",
+          source: "typography",
           severity: "mandatory",
           autoFix: true,
           protectedBehavior: "flag",

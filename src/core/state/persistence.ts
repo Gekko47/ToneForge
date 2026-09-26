@@ -339,6 +339,50 @@ export function saveProfileRecord(record: ProfileRecord): void {
 }
 
 /**
+ * Replace a record's governance policy, versioning and recording the change.
+ *
+ * `saveProfileRecord` is the only other writer of governance data and it
+ * refreshes only the wrapped style, so before this the normative half of the
+ * contract — rules, terminology, scope, protection, editorial — was written by
+ * nobody and was permanently the schema defaults.
+ *
+ * Every save bumps `version` and appends to `governanceHistory`, so the audit
+ * trail is not optional: a policy the author cannot see the history of is a
+ * policy they cannot safely change. `ChangePlan` already cites
+ * `governancePolicyRevision`, so a plan built under an older policy is refused
+ * at apply time.
+ *
+ * Throws rather than writing a policy that would silently protect nothing. The
+ * failure a caller most needs to hear about is "you just excluded every kind of
+ * content from analysis", and a schema with no rule against it would accept it.
+ */
+export function updateGovernancePolicy(
+  id: string,
+  policy: Omit<GovernanceProfile, "version"> & { version?: number },
+): GovernanceProfile {
+  const state = loadState();
+  const previous = state.governanceProfiles[id];
+  if (!previous) {
+    throw new Error(`updateGovernancePolicy: no governance profile for "${id}"`);
+  }
+  const next = GovernanceProfileSchema.parse({
+    ...policy,
+    id,
+    version: previous.version + 1,
+  });
+  if (policy.style.id !== previous.style.id) {
+    throw new Error(
+      "updateGovernancePolicy: a policy cannot change the style profile it governs",
+    );
+  }
+  state.governanceProfiles[id] = next;
+  const history = state.governanceHistory[id] ?? [];
+  state.governanceHistory[id] = appendGovernanceSnapshot(history, next);
+  saveState(state);
+  return next;
+}
+
+/**
  * Read a profile record, or null when the profile does not exist. Callers that
  * need a record for a new profile create one with `createRecord`.
  */

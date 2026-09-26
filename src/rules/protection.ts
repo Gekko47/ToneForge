@@ -65,7 +65,61 @@ export function detectCommentRanges(nodes: DocumentNode[]): ProtectionFinding[] 
     }));
 }
 
-/** Check if a node is protected based on its type and protection policy. */
+/** Node types no author may unprotect, whatever the policy says. */
+const ALWAYS_PROTECTED_TYPES: readonly string[] = [
+  "comment",
+  "textBox",
+  "shape",
+  "smartArt",
+  "contentControl",
+];
+
+/**
+ * Node types the author controls, each bound to the policy flag that governs it.
+ *
+ * `footnote`/`endnote`/`field` are here rather than in the fixed list because
+ * they are genuinely optional in a house style — a legal document that never
+ * uses fields should not have field content silently skipped. `caption` is here
+ * for the same reason. The comment, text-box, shape, smart-art, and
+ * content-control types are not: those are containers whose contents the
+ * formatter cannot address safely, so unprotecting them would mean changing
+ * text the user cannot see changed.
+ */
+const POLICY_CONTROLLED_TYPES: Readonly<Record<string, keyof ProtectionPolicyFlags>> = {
+  caption: "protectCaptions",
+  footnote: "protectFootnotes",
+  endnote: "protectFootnotes",
+  field: "protectFields",
+  header: "protectHeadersFooters",
+  footer: "protectHeadersFooters",
+};
+
+export interface ProtectionPolicyFlags {
+  protectQuotedText: boolean;
+  protectCaptions: boolean;
+  protectTrackedDeletions: boolean;
+  protectComments: boolean;
+  protectTextBoxes: boolean;
+  protectShapes: boolean;
+  protectAltText: boolean;
+  protectHeadersFooters: boolean;
+  protectFields: boolean;
+  protectFootnotes: boolean;
+}
+
+/**
+ * Check if a node is protected under the given policy.
+ *
+ * The policy argument is what makes the protection flags mean anything. It was
+ * previously accepted and consulted only for `userLockedRanges`, so
+ * `protectQuotedText`, `protectCaptions`, and the rest were schema fields that
+ * no code path read — a governance author could turn quoted-text protection
+ * off and observe nothing at all.
+ *
+ * Every flag defaults to protecting, and turning one off is the author's
+ * explicit choice rather than the absence of one, so a policy that omits a
+ * flag is read as the schema default and not as "unprotected".
+ */
 export function isProtectedNode(
   node: DocumentNode,
   protectedReasons: string[] = [],
@@ -73,20 +127,13 @@ export function isProtectedNode(
 ): boolean {
   if (!node.editable) return true;
   if (protectedReasons.includes(node.protectionReason ?? "")) return true;
-  if (policy?.protection.userLockedRanges.includes(node.nodeId)) return true;
-  const protectedTypes = [
-    "caption",
-    "comment",
-    "footnote",
-    "endnote",
-    "textBox",
-    "shape",
-    "smartArt",
-    "contentControl",
-    "field",
-  ];
-  if (protectedTypes.includes(node.type)) return true;
-  return false;
+  const protection = policy?.protection;
+  if (protection?.userLockedRanges.includes(node.nodeId)) return true;
+
+  const flag = POLICY_CONTROLLED_TYPES[node.type];
+  // Absent flag means the schema default, which is to protect.
+  if (flag !== undefined) return (protection?.[flag] ?? true) === true;
+  return ALWAYS_PROTECTED_TYPES.includes(node.type);
 }
 
 /** Check if a range is protected. */

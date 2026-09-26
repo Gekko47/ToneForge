@@ -16,6 +16,7 @@ import { logger } from "../shared/utils/logger";
 import { type WordCapabilities } from "./capabilityProbe";
 import { isProtectedNode } from "../rules/protection";
 import type { DocumentNode } from "../core/domain/DocumentSnapshot";
+import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
 
 /** Set to true only after the Stage 01 probe passes in Word. */
 export let STAGE_01_PASSED = false;
@@ -113,6 +114,7 @@ export async function applyChangePlan(
   allowConflicts = false,
   nodes?: readonly DocumentNode[],
   currentGovernancePolicyRevision?: number,
+  policy?: GovernanceProfile,
 ): Promise<RevisionResult[]> {
   const results: RevisionResult[] = [];
   const parsedPlan = ChangePlanSchema.safeParse(plan);
@@ -125,6 +127,7 @@ export async function applyChangePlan(
     allowConflicts,
     nodes,
     currentGovernancePolicyRevision,
+    policy,
   );
 
   if (!currentDocHash || currentDocHash.trim().length === 0) {
@@ -269,10 +272,11 @@ export async function applyChangePlanWithTracking(
   allowConflicts = false,
   nodes?: readonly DocumentNode[],
   currentGovernancePolicyRevision?: number,
+  policy?: GovernanceProfile,
 ): Promise<ApplyWithTrackingResult> {
   const parsed = ChangePlanSchema.safeParse(plan);
   const refusalProblems = parsed.success
-    ? validatePlanBeforeApply(plan, allowConflicts, nodes, currentGovernancePolicyRevision)
+    ? validatePlanBeforeApply(plan, allowConflicts, nodes, currentGovernancePolicyRevision, policy)
     : ["ChangePlan schema is incompatible"];
   if (refusalProblems.length > 0) {
     return {
@@ -798,6 +802,13 @@ export function validatePlanBeforeApply(
   allowConflicts = false,
   nodes?: readonly DocumentNode[],
   currentGovernancePolicyRevision?: number,
+  /**
+   * The policy the revision check above already confirmed. Supplied so the
+   * protection check below consults the author's overrides rather than a
+   * hardcoded type list — the two must agree, or a plan validated under one
+   * policy could be applied under another.
+   */
+  policy?: GovernanceProfile,
 ): string[] {
   const problems: string[] = [];
   if (
@@ -871,7 +882,8 @@ export function validatePlanBeforeApply(
       const finding = change.findingId ? findingsById.get(change.findingId) : undefined;
       const targetIds = new Set(finding?.nodeIds ?? []);
       const protectedNode = nodes.find(
-        (node) => targetIds.has(node.nodeId) && (!node.editable || isProtectedNode(node)),
+        (node) =>
+          targetIds.has(node.nodeId) && (!node.editable || isProtectedNode(node, [], policy)),
       );
       if (protectedNode) {
         problems.push(

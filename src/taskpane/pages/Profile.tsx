@@ -1,6 +1,9 @@
 import React from "react";
 import ProfileEditor from "../components/ProfileEditor";
 import ProfileRecordSection from "../components/ProfileRecordSection";
+import GovernancePolicySection from "../components/GovernancePolicySection";
+import { selectGovernancePolicy } from "../../core/state/profileSelectors";
+import type { GovernanceProfile } from "../../core/domain/GovernanceProfile";
 import { getDocumentSnapshot, getSelectionText } from "../../word/documentReader";
 import {
   createRegistryFromSettings,
@@ -26,10 +29,19 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
   const [learnError, setLearnError] = React.useState<string | null>(null);
   const [learning, setLearning] = React.useState(false);
   const [record, setRecord] = React.useState<ProfileRecord | null>(null);
+  const [policy, setPolicy] = React.useState<GovernanceProfile | null>(null);
+
+  // Re-read together: the record decides which policy governs it, and reading
+  // them separately could pair a fresh record with a stale policy.
+  function refreshFromStore(): void {
+    const state = loadState();
+    const active = state.activeProfileId ? loadProfileRecord(state.activeProfileId) : null;
+    setRecord(active);
+    setPolicy(active ? selectGovernancePolicy(state, active.id) : null);
+  }
 
   React.useEffect(() => {
-    const state = loadState();
-    setRecord(state.activeProfileId ? loadProfileRecord(state.activeProfileId) : null);
+    refreshFromStore();
   }, []);
 
   async function learnFromCurrentDocument(): Promise<void> {
@@ -72,15 +84,18 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
     }
   }
 
+  // Both writers below re-read rather than patching local state. `saveProfileRecord`
+  // rewrites the governance profile's wrapped style, so a policy held in a React
+  // copy would silently go stale after any record edit.
   function applyRecord(next: ProfileRecord): void {
     saveProfileRecord(next);
-    setRecord(next);
+    refreshFromStore();
   }
 
   // The editor persists the record itself, so the page re-reads it rather than
   // keeping a copy that could overwrite the freshly saved draft later.
-  function refreshRecord(saved: ProfileRecord): void {
-    setRecord(loadProfileRecord(saved.id) ?? saved);
+  function refreshRecord(_saved: ProfileRecord): void {
+    refreshFromStore();
   }
 
   return (
@@ -114,6 +129,15 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
         )}
       </section>
       {record && <ProfileRecordSection record={record} onChange={applyRecord} />}
+      {/*
+        Governance policy sits after the record and before the editor because it
+        governs the profile the editor edits. It appears only once a record
+        exists: `saveProfileRecord` is what seeds a policy, so there is nothing
+        to author before then.
+      */}
+      {record && policy && (
+        <GovernancePolicySection policy={policy} onPolicySaved={setPolicy} />
+      )}
       <ProfileEditor onRecordSaved={refreshRecord} />
     </div>
   );

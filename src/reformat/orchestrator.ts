@@ -160,11 +160,14 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     ...(registry ? { registry } : {}),
   });
 
-  // Step 3: Plan
+  // Step 3: Plan. The author's rules ride along so a rule can withhold a
+  // change, raise its approval requirement, and be cited in Pending Changes —
+  // otherwise `rules` is a field the plan cites a revision for but never reads.
   const plan = planChanges({
     findings: report.findings,
     docHash,
     baseDocId: context.identity.documentId,
+    governanceRules: resolvedPolicy.rules,
     governancePolicyRevision: resolvedPolicy.governance.version,
     currentDocHash: currentDocHash ?? docHash,
     documentId: context.identity.documentId,
@@ -280,6 +283,9 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     false,
     liveStructured.nodes,
     resolvedPolicy.governance.version,
+    // The same policy that planned the changes, so the protection check at
+    // apply time reads the author's overrides rather than a type list.
+    resolvedPolicy.governance,
   );
   const verificationSnapshot = await getDocumentSnapshot({ maxChars: readLimit });
   const verificationHash =
@@ -371,6 +377,17 @@ export interface ApplyReviewedPlanOptions {
   plan: ChangePlan;
   /** Current persisted governance revision, required for governed plans. */
   currentGovernancePolicyRevision?: number;
+  /**
+   * The policy itself, when the caller has it.
+   *
+   * The revision number proves the plan was built under this policy; the policy
+   * is what the protection check actually reads. Without it, apply falls back
+   * to protecting everything by type, which is stricter than the author asked
+   * for rather than looser — the failure direction that is safe, but which
+   * would make a protection override silently stop working once someone routed
+   * a plan through this path.
+   */
+  governanceProfile?: GovernanceProfile;
   coverage?: {
     complete: boolean;
     unsupported?: readonly string[];
@@ -597,6 +614,7 @@ export async function applyReviewedPlan(
     ...(options.currentGovernancePolicyRevision === undefined
       ? []
       : [options.currentGovernancePolicyRevision]),
+    ...(options.governanceProfile === undefined ? [] : [options.governanceProfile]),
   );
   const allApplied = result.results.length > 0 && result.results.every((item) => item.applied);
   if (!result.tracking.managed) {

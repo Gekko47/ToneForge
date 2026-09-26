@@ -18,7 +18,8 @@ import {
   RIGHT_SINGLE_QUOTE,
 } from "../shared/utils/text";
 import { toSentenceCase, toTitleCase } from "../shared/utils/caseConversion";
-import { approvalPolicyForFinding } from "./approvalPolicy";
+import type { GovernanceRule } from "../core/domain/GovernanceProfile";
+import { approvalPolicyForFinding, ruleForFinding } from "./approvalPolicy";
 import { detectConflicts } from "./conflictDetector";
 import { markStale } from "./staleGuard";
 
@@ -26,6 +27,15 @@ export interface PlanOptions {
   findings: Finding[];
   docHash: string;
   baseDocId: string;
+  /**
+   * The author's governance rules, bound to findings by category.
+   *
+   * Optional because a plan can be built without a governance profile at all,
+   * and in that case the finding-derived policy is the whole answer. When
+   * supplied, a rule may raise the approval requirement and may withhold a
+   * change entirely via `autoFix: false`; it can never lower either.
+   */
+  governanceRules?: GovernanceRule[];
   currentDocHash?: string;
   documentId?: string;
   documentVersion?: string;
@@ -47,6 +57,29 @@ interface CreateChangeParams {
   finding: Finding;
   reversible?: boolean;
   precondition: ChangePrecondition;
+}
+
+/**
+ * Re-stamp the changes a finding produced with the policy that governs them.
+ *
+ * Applied once, after the fact, rather than threaded through every change
+ * constructor: a rule changes two things about a change — whether it needs
+ * approval, and whether Pending Changes explains where it came from — and both
+ * are properties of the finished change rather than of the code that made it.
+ * Doing it here also means a new change type cannot forget to consult policy.
+ */
+function applyRule(finding: Finding, changes: Change[], rule: GovernanceRule): Change[] {
+  const approval = approvalPolicyForFinding(finding, rule);
+  return changes.map((change) =>
+    ChangeSchema.parse({
+      ...change,
+      approvalRequired: approval.approvalRequired,
+      approvalState: approval.approvalState,
+      // The policy is named, not just applied. A governance author who set a
+      // rule needs to see it cited, or the rule is an invisible setting again.
+      rationale: `${change.rationale} (policy: ${rule.description})`,
+    }),
+  );
 }
 
 function toChangeRange(range: Range): ChangeRange {
@@ -353,7 +386,17 @@ export function planChanges(options: PlanOptions): ChangePlan {
     const result = FindingSchema.safeParse(raw);
     return result.success ? [result.data] : [];
   });
-  const changes = findings.flatMap(changesForFinding);
+  const changes = findings.flatMap((finding) => {
+    const rule = ruleForFinding(finding, options.governanceRules);
+    // `autoFix: false` is the author's decision that a category is reported but
+    // not corrected. The finding still appears in the plan's report and in the
+    // Findings list; it simply produces no change, so Apply has nothing to write
+    // for it. A rule with no `autoFix` field at all defaults to false, so a rule
+    // that exists is reporting-only until someone opts it into correction.
+    if (rule !== null && !rule.autoFix) return [];
+    const produced = changesForFinding(finding);
+    return rule === null ? produced : applyRule(finding, produced, rule);
+  });
   const basePlan = createChangePlan(options.docHash, options.baseDocId, changes, findings, {
     schemaVersion: 2,
     ...(options.governancePolicyRevision === undefined

@@ -3,6 +3,7 @@ import {
   type ProfileRecord,
   type ProfileRevision,
 } from "../domain/ProfileRecord";
+import type { GovernanceProfile } from "../domain/GovernanceProfile";
 import type { StyleProfile } from "../domain/StyleProfile";
 import type { PersistedState } from "./persistence";
 
@@ -61,4 +62,27 @@ export function selectActiveProfile(state: PersistedState): StyleProfile | null 
 /** The full audit trail for one profile, oldest revision first. */
 export function selectRevisions(state: PersistedState, profileId: string): ProfileRevision[] {
   return state.profileRecords[profileId]?.revisions ?? [];
+}
+
+/**
+ * The governance policy governing a style profile, or null when none is stored.
+ *
+ * Keyed by the same id as the record. `saveProfileRecord` seeds one for every
+ * record, so a null here means the record was never saved rather than that
+ * policy is absent — a caller must handle the null as "no policy yet" and not
+ * as "policy that permits everything".
+ */
+export function selectGovernancePolicy(
+  state: PersistedState,
+  styleProfileId: string,
+): GovernanceProfile | null {
+  return state.governanceProfiles[styleProfileId] ?? null;
+}
+
+/** Every version of a policy, oldest first, for the policy history view. */
+export function selectGovernanceHistory(
+  state: PersistedState,
+  styleProfileId: string,
+): GovernanceProfile[] {
+  return state.governanceHistory[styleProfileId] ?? [];
 }

@@ -31,6 +31,7 @@ import { effectiveProfile, updateDraft, type ProfileRecord } from "../../core/do
 import { selectAllProfiles } from "../../core/state/profileSelectors";
 import { diffProfiles } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
+import { parseTerminology } from "../settings/terminologyText";
 
 interface ProfileFormValues {
   name: string;
@@ -79,11 +80,8 @@ interface ProfileValidation {
   errors: Record<string, string>;
 }
 
-interface TerminologyParse {
-  values: Record<string, string>;
-  error: string | null;
-}
-
+// The `term: replacement` parser lives in `settings/terminologyText` so the
+// governance policy editor cannot ship a second, subtly different one.
 type SemanticProfile = StyleProfile["semantic"];
 
 const sectionStyle: React.CSSProperties = {
@@ -156,39 +154,6 @@ function parseLines(value: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function parseTerminology(value: string): TerminologyParse {
-  const values: Record<string, string> = {};
-  const lines = value.split(/\r?\n/u);
-  for (const [index, rawLine] of lines.entries()) {
-    const line = rawLine.trim();
-    if (line.length === 0) {
-      continue;
-    }
-    const separatorIndex = line.indexOf(":");
-    if (separatorIndex <= 0) {
-      return {
-        values,
-        error: `Terminology line ${index + 1} must use "term: replacement".`,
-      };
-    }
-    const term = line.slice(0, separatorIndex).trim();
-    const replacement = line.slice(separatorIndex + 1).trim();
-    if (term.length === 0 || replacement.length === 0) {
-      return {
-        values,
-        error: `Terminology line ${index + 1} needs both a term and a replacement.`,
-      };
-    }
-    if (Object.prototype.hasOwnProperty.call(values, term)) {
-      return {
-        values,
-        error: `Terminology term "${term}" is listed more than once.`,
-      };
-    }
-    values[term] = replacement;
-  }
-  return { values, error: null };
-}
 
 function numberOrNaN(value: string): number {
   return value.trim().length === 0 ? Number.NaN : Number(value.trim());

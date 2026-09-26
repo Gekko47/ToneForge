@@ -37,7 +37,15 @@ export const ProtectionPolicySchema = z.object({
   protectHeadersFooters: z.boolean().default(false),
   protectFields: z.boolean().default(false),
   protectFootnotes: z.boolean().default(false),
-  userLockedRanges: z.array(z.string().uuid()).default([]),
+  /**
+   * Document node ids the author has locked.
+   *
+   * These are Word node ids, not UUIDs. Typing them as UUIDs meant the field
+   * could never match anything `isProtectedNode` compared it against, so a
+   * locked range was silently unprotected — the same defect as a toggle that
+   * changes nothing, one level down.
+   */
+  userLockedRanges: z.array(z.string().trim().min(1)).default([]),
 });
 
 export type ProtectionPolicy = z.infer<typeof ProtectionPolicySchema>;
@@ -93,15 +101,65 @@ export function withExplicitEditorialFields(
   return EditorialPolicySchema.parse({ ...editorial, explicitFields: [...fields] });
 }
 
+/**
+ * The finding categories a rule can bind to.
+ *
+ * A rule with no `source` matched nothing at plan time: the planner had no way
+ * to know which finding a rule referred to, so `autoFix` and `severity` were
+ * fields nobody read. Binding a rule to a category is what makes the normative
+ * half of the policy contract reachable.
+ *
+ * Kept as a closed list rather than a free string so a typo cannot silently
+ * produce a rule that never fires.
+ */
+export const GOVERNANCE_RULE_SOURCES = [
+  "typography",
+  "houseStyle.terminology",
+  "houseStyle.spellingVariant",
+  "formatting",
+  "semantic",
+  "protection",
+] as const;
+
 export const GovernanceRuleSchema = z.object({
   id: z.string().uuid(),
   description: z.string().trim().min(1),
   scope: z.enum(["typography", "houseStyle", "formatting", "semantic", "protection"]),
+  /**
+   * The finding category this rule governs. Required rather than optional: an
+   * unbound rule cannot affect anything, and a rule the author cannot see take
+   * effect is the same defect as a toggle that changes nothing.
+   */
+  source: z.enum(GOVERNANCE_RULE_SOURCES),
   severity: z.enum(["mandatory", "advisory", "informational"]),
   autoFix: z.boolean().default(false),
   protectedBehavior: z.enum(["skip", "flag", "block"]).default("flag"),
   remediation: z.string().trim().default(""),
 });
+
+/** Find the rule governing a finding category, or null when none does. */
+export function ruleForSource(
+  rules: readonly GovernanceRule[],
+  source: string,
+): GovernanceRule | null {
+  return rules.find((rule) => rule.source === source) ?? null;
+}
+
+/**
+ * The policy scope a rule's source belongs to.
+ *
+ * `source` is the fine-grained finding category and `scope` is the coarse
+ * policy area, so the two are not the same string. Deriving the coarse one here
+ * rather than in the editor means a new source cannot be added without also
+ * saying which area it governs.
+ */
+export function scopeForSource(source: GovernanceRule["source"]): GovernanceRule["scope"] {
+  if (source.startsWith("houseStyle.")) return "houseStyle";
+  if (source === "typography") return "typography";
+  if (source === "formatting") return "formatting";
+  if (source === "semantic") return "semantic";
+  return "protection";
+}
 
 export type GovernanceRule = z.infer<typeof GovernanceRuleSchema>;
 

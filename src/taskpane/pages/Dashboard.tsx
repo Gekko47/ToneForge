@@ -607,6 +607,10 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       const result = await applyReviewedPlan({
         plan,
         currentGovernancePolicyRevision: currentGovernance.version,
+        // The revision number alone only proves the plan was built under this
+        // policy; the policy is what the protection check reads, so an author's
+        // protection override has to travel with it or it stops applying here.
+        governanceProfile: currentGovernance,
         coverage,
         allowConflictingApply: false,
       });
