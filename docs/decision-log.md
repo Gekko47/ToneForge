@@ -774,3 +774,76 @@ the coverage report.
 - `src/analysis/consistency/engine.ts` — the pipeline
 - `eslint.config.mjs` — the documented `ai/providers` exception for this directory
 - `tests/unit/analysis/consistency/`
+
+## ADR-0053 — Manifest validation reads Microsoft's published schema, not the CLI's converter
+
+- Status: Accepted
+- Date: 2026-09-26
+
+### Context
+
+The `manifest` verification stage shells out to
+`office-addin-manifest validate manifest.json`. That CLI first runs the manifest
+through its own generated type guard, `TeamsManifestConverter.jsonToManifest`,
+before any schema check runs. In every published build of
+`@microsoft/app-manifest` — verified against `1.1.2` and the latest
+`1.1.3-beta.2026092303.0` — that guard declares the top-level `extensions` key as
+an optional **object**.
+
+Three published sources agree it is an **array**:
+
+- Microsoft's v1.30 JSON schema, which defines `elementExtensions` as
+  `"type": "array", "maxItems": 1`
+- the package's own `TeamsManifestV1D30.d.ts`, which declares
+  `extensions?: ElementExtension[]`
+- Microsoft's v1.30 manifest documentation, whose syntax block shows
+  `"extensions": [ { ... } ]`
+
+The CLI also indexes the key as an array itself
+(`manifestHandlerJson.js` reads `appManifest.extensions?.[0]`), so the guard and
+its own consumer disagree. The result is a crash — not a validation report — for
+every spec-correct unified manifest, which is why the stage passed on developer
+machines and failed only in CI, where the validator runs on Linux but not on
+Windows.
+
+### Decision
+
+Validate `manifest.json` against Microsoft's published v1.30 JSON schema directly,
+using `AppManifestUtils.validateAgainstSchema` — the same function the CLI itself
+calls once it has converted the manifest. The schema is read from the installed
+`@microsoft/app-manifest` package, which is already a transitive dependency of
+`office-addin-manifest`.
+
+The CLI is not used for the schema check, and the CLI's converter is not
+workaround-ed. Reshaping `manifest.json` to an object to satisfy the broken guard
+would have made the add-in wrong: Word reads the published schema, and an object
+there is a manifest that does not load.
+
+This also made the real defect visible. With the broken guard out of the way, the
+schema check reported that every ribbon control was missing `icons` and
+`supertip`, both required by `extensionCommonCustomGroupControlsItem`. Those were
+added, which is a genuine conformance fix the CLI's crash had been hiding.
+
+### Consequences
+
+- The manifest stage now fails on what is actually wrong with the manifest, on
+  every platform, instead of crashing on what is right with it.
+- `validateManifests` is now async, because `validateAgainstSchema` is. Its five
+  test call sites were updated, and `scripts/validate-manifest.d.mts` now declares
+  a `Promise`.
+- The stage still skips the schema check on Windows, matching the platform split
+  that predates this decision. A test now runs the check with
+  `runOfficialValidator: true` unconditionally, so a manifest cannot lose schema
+  conformance without a Windows developer seeing it.
+- This decision should be revisited when `@microsoft/app-manifest` fixes its
+  type guard. At that point the CLI is usable again and this indirection can be
+  removed.
+
+### Evidence
+
+- `scripts/validate-manifest.mjs` — `readPublishedSchema`, `validatePublishedSchema`
+- `manifest.json` — `icons` and `supertip` on every ribbon control
+- `tests/unit/commands/commandContracts.test.ts` — the schema check runs in the
+  suite, and a dropped `supertip` is rejected
+- `node_modules/@microsoft/app-manifest/build/json-schemas/teams/v1.30/MicrosoftTeams.schema.json`
+- `node_modules/@microsoft/app-manifest/build/generated-types/teams/TeamsManifestV1D30.d.ts`

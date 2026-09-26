@@ -52,13 +52,31 @@
                       "id": "ToneForgeScanControl",
                       "type": "button",
                       "label": "Scan Now",
-                      "actionId": "ToneForgeScan"
+                      "actionId": "ToneForgeScan",
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Scan Now",
+                        "description": "Run the deterministic style checks against this document and open the results."
+                      }
                     },
                     {
                       "id": "ToneForgeFindingsControl",
                       "type": "button",
                       "label": "Findings",
-                      "actionId": "ToneForgeFindings"
+                      "actionId": "ToneForgeFindings",
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Findings",
+                        "description": "Open the findings already recorded for this document."
+                      }
                     }
                   ]
                 },
@@ -70,13 +88,31 @@
                       "id": "ToneForgeReviewSelectionControl",
                       "type": "button",
                       "label": "Review Selection",
-                      "actionId": "ToneForgeReviewSelection"
+                      "actionId": "ToneForgeReviewSelection",
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Review Selection",
+                        "description": "Start a spot review of the text you have selected in Word."
+                      }
                     },
                     {
                       "id": "ToneForgeReviewDocumentControl",
                       "type": "button",
                       "label": "Review Document",
-                      "actionId": "ToneForgeReviewDocument"
+                      "actionId": "ToneForgeReviewDocument",
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Review Document",
+                        "description": "Start a whole-document review after you confirm what leaves the add-in."
+                      }
                     }
                   ]
                 },
@@ -88,13 +124,31 @@
                       "id": "ToneForgeActiveProfileControl",
                       "type": "button",
                       "label": "Active Profile",
-                      "actionId": "ToneForgeActiveProfile"
+                      "actionId": "ToneForgeActiveProfile",
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Active Profile",
+                        "description": "Open the style profile this document is currently checked against."
+                      }
                     },
                     {
                       "id": "ToneForgeEditProfileControl",
                       "type": "button",
                       "label": "Edit Profile",
-                      "actionId": "ToneForgeEditProfile"
+                      "actionId": "ToneForgeEditProfile",
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Edit Profile",
+                        "description": "Open the style profile settings to adjust what the add-in enforces."
+                      }
                     }
                   ]
                 },
@@ -106,7 +160,16 @@
                       "id": "ToneForgePendingChangesControl",
                       "type": "button",
                       "label": "Pending Changes",
-                      "actionId": "ToneForgePendingChanges"
+                      "actionId": "ToneForgePendingChanges",
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Pending Changes",
+                        "description": "Open the proposed Word revisions waiting for your approval."
+                      }
                     }
                   ]
                 }

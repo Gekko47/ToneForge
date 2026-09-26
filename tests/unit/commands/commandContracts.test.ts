@@ -14,7 +14,7 @@ function repositoryPath(relativePath: string): string {
 }
 
 describe("command and manifest contracts", () => {
-  it("records XML as navigation-only with a shared default task-pane destination", () => {
+  it("records XML as navigation-only with a shared default task-pane destination", async () => {
     const definitions = JSON.parse(
       readFileSync(repositoryPath("src/commands/commandDefinitions.json"), "utf8"),
     ) as Array<{
@@ -30,7 +30,7 @@ describe("command and manifest contracts", () => {
     );
     expect(definitions.every((definition) => definition.navigationTarget !== "default")).toBe(true);
     expect(
-      validateManifests({
+      await validateManifests({
         manifestPath: repositoryPath("manifest.json"),
         xmlManifestPath: repositoryPath("manifest.xml"),
         runOfficialValidator: false,
@@ -38,8 +38,8 @@ describe("command and manifest contracts", () => {
     ).toEqual([]);
   });
 
-  it("validates equivalent JSON/XML command identity, labels, and destinations", () => {
-    const errors = validateManifests({
+  it("validates equivalent JSON/XML command identity, labels, and destinations", async () => {
+    const errors = await validateManifests({
       manifestPath: repositoryPath("manifest.json"),
       xmlManifestPath: repositoryPath("manifest.xml"),
       runOfficialValidator: false,
@@ -58,7 +58,7 @@ describe("command and manifest contracts", () => {
     );
     if (action) action.id = "UnexpectedAction";
     expect(
-      validateManifests({
+      await validateManifests({
         manifest: missingAction,
         xml,
         runOfficialValidator: false,
@@ -70,7 +70,7 @@ describe("command and manifest contracts", () => {
       '<SourceLocation resid="Missing.Url" />',
     );
     expect(
-      validateManifests({
+      await validateManifests({
         manifest,
         xml: mismatchedDestination,
         runOfficialValidator: false,
@@ -84,12 +84,42 @@ describe("command and manifest contracts", () => {
       "",
     );
     expect(
-      validateManifests({
+      await validateManifests({
         manifest,
         xml: missingResource,
         runOfficialValidator: false,
       }),
     ).toContain("manifest.xml is missing destination resource Taskpane.Url for ToneForgeScan");
+  });
+
+  it("passes the published v1.30 schema check, which the manifest stage runs in CI", async () => {
+    // The stage is skipped on Windows, where the official validator is not run.
+    // Asserting it here keeps the manifest from silently losing schema
+    // conformance on a platform that only ever verifies it on Linux.
+    const errors = await validateManifests({
+      manifestPath: repositoryPath("manifest.json"),
+      xmlManifestPath: repositoryPath("manifest.xml"),
+      runOfficialValidator: true,
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it("rejects a manifest whose ribbon control drops a schema-required field", async () => {
+    const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as {
+      extensions: Array<{
+        ribbons: Array<{ tabs: Array<{ groups: Array<{ controls: unknown[] }> }> }>;
+      }>;
+    };
+    const withoutSupertip = structuredClone(manifest);
+    const control = withoutSupertip.extensions[0]?.ribbons[0]?.tabs[0]?.groups[0]?.controls[0] as
+      Record<string, unknown> | undefined;
+    if (control) delete control.supertip;
+    const errors = await validateManifests({
+      manifest: withoutSupertip,
+      xml: readFileSync(repositoryPath("manifest.xml"), "utf8"),
+      runOfficialValidator: true,
+    });
+    expect(errors.join("\n")).toContain("must have required property 'supertip'");
   });
 
   it("rejects incoherent dummy release packages", () => {

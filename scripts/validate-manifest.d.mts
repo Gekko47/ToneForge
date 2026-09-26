@@ -6,4 +6,4 @@ export interface ManifestValidationOptions {
   xml?: string;
   runOfficialValidator?: boolean;
 }
-export function validateManifests(options?: ManifestValidationOptions): string[];
+export function validateManifests(options?: ManifestValidationOptions): Promise<string[]>;

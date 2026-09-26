@@ -10,7 +10,7 @@
 
 ## 1. Objectives and approved scope
 
-This plan implements the complete proposal inventory from [`ToneForge_REFACTOR_ALIGNMENT_AND_MODERN_UX_REVIEW.md`](../ToneForge_Refactor_Implementation/ToneForge_REFACTOR_ALIGNMENT_AND_MODERN_UX_REVIEW.md), including items previously classified as optional or deferred. The following are now mandatory:
+This plan implements the complete proposal inventory from `ToneForge_REFACTOR_ALIGNMENT_AND_MODERN_UX_REVIEW.md` (the refactor/alignment and modern-UX review held in the local, untracked `ToneForge_Refactor_Implementation/` folder), including items previously classified as optional or deferred. The following are now mandatory:
 
 - Machine-readable verification summaries.
 - A generated host-matrix dashboard derived from the canonical manual evidence record.
@@ -635,7 +635,7 @@ Phases 0–5 complete; production provider gateway and production origins availa
 
 Before release, reconcile all implementation work against:
 
-- The full numbered proposal inventory in [`ToneForge_REFACTOR_ALIGNMENT_AND_MODERN_UX_REVIEW.md`](../ToneForge_Refactor_Implementation/ToneForge_REFACTOR_ALIGNMENT_AND_MODERN_UX_REVIEW.md).
+- The full numbered proposal inventory in `ToneForge_REFACTOR_ALIGNMENT_AND_MODERN_UX_REVIEW.md` (local, untracked source review — see [Section 1](#1-objectives-and-approved-scope), which records its dispositions in this plan).
 - The mandatory additions in this plan.
 - B23 workflow-projection architecture.
 - OpenAI, Anthropic, and OpenRouter authentication/model-selection requirements.

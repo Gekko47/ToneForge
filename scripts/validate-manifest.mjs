@@ -3,19 +3,50 @@
  * command contract. XML parity means equivalent user-visible command identity,
  * label, and task-pane destination. XML ShowTaskpane actions are intentionally
  * not described as executeFunction parity.
+ *
+ * The JSON manifest is additionally checked against Microsoft's own published
+ * v1.30 schema, bundled in `@microsoft/app-manifest`. That package is a
+ * dependency of `office-addin-manifest`, which is installed for `npm run
+ * sideload`, so the schema is present wherever the add-in can be developed.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
 const defaultManifestPath = resolve(root, "manifest.json");
 const defaultXmlManifestPath = resolve(root, "manifest.xml");
 const commandDefinitionsPath = resolve(root, "src/commands/commandDefinitions.json");
 const JSON_SCHEMA =
   "https://developer.microsoft.com/json-schemas/teams/v1.30/MicrosoftTeams.schema.json";
+
+/**
+ * Microsoft's own v1.30 JSON schema, read from the installed
+ * `@microsoft/app-manifest` package.
+ *
+ * The `office-addin-manifest validate` CLI cannot be used for this. Before
+ * validating, that CLI runs the manifest through its own generated type
+ * guard, and the guard in every published build (through
+ * `@microsoft/app-manifest@1.1.3-beta.2026092303.0`) declares the top-level
+ * `extensions` key as an optional *object*. The published schema, the
+ * package's own `TeamsManifestV1D30.d.ts` (`extensions?: ElementExtension[]`),
+ * and Microsoft's v1.30 documentation all define it as an *array* with at
+ * most one element. The CLI therefore rejects every spec-correct unified
+ * manifest, including this one, and the failure is a crash rather than a
+ * validation report. Reading the schema and validating against it directly
+ * checks the same published contract without the broken intermediate step.
+ */
+function readPublishedSchema(errors) {
+  try {
+    return require("@microsoft/app-manifest/build/json-schemas/teams/v1.30/MicrosoftTeams.schema.json");
+  } catch (error) {
+    errors.push(`Unable to read the published v1.30 schema: ${error.message}`);
+    return null;
+  }
+}
 
 function readJson(path, label, errors) {
   try {
@@ -287,7 +318,28 @@ function validateXmlFallback(xmlPath, jsonId, errors) {
   return xml;
 }
 
-export function validateManifests({
+/**
+ * Validate the manifest against Microsoft's published v1.30 JSON schema.
+ *
+ * Uses the same `AppManifestUtils.validateAgainstSchema` the official CLI uses
+ * once it has converted the manifest, so the contract checked here is the one
+ * Microsoft publishes rather than a local re-implementation of it.
+ */
+async function validatePublishedSchema(manifest, schema, errors) {
+  let failures;
+  try {
+    const { AppManifestUtils } = require("@microsoft/app-manifest");
+    failures = await AppManifestUtils.validateAgainstSchema(manifest, schema);
+  } catch (error) {
+    errors.push(`manifest.json could not be validated against the v1.30 schema: ${error.message}`);
+    return;
+  }
+  for (const failure of failures ?? []) {
+    errors.push(`manifest.json violates the v1.30 schema: ${failure}`);
+  }
+}
+
+export async function validateManifests({
   manifestPath = defaultManifestPath,
   xmlManifestPath = defaultXmlManifestPath,
   commandDefinitionsPath: definitionsPath = commandDefinitionsPath,
@@ -304,17 +356,10 @@ export function validateManifests({
   const xml = suppliedXml ?? validateXmlFallback(xmlManifestPath, manifest.id, errors);
   if (xml) validateCommandParity(manifest, xml, definitions, errors);
 
-  if (
-    runOfficialValidator &&
-    existsSync(resolve(root, "node_modules/.bin/office-addin-manifest"))
-  ) {
-    try {
-      execFileSync("node_modules/.bin/office-addin-manifest", ["validate", manifestPath], {
-        cwd: root,
-        stdio: "pipe",
-      });
-    } catch {
-      errors.push("office-addin-manifest validation failed for manifest.json");
+  if (runOfficialValidator) {
+    const schema = readPublishedSchema(errors);
+    if (schema !== null) {
+      await validatePublishedSchema(manifest, schema, errors);
     }
   }
   return errors;
@@ -332,7 +377,7 @@ function parseArguments() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const errors = validateManifests(parseArguments());
+  const errors = await validateManifests(parseArguments());
   if (errors.length > 0) {
     console.error("Manifest validation failed:");
     errors.forEach((error) => console.error(`  - ${error}`));

@@ -18,11 +18,11 @@ Every `git commit` therefore:
 3. The user hook sourced `.husky/_/husky.sh`, which prints the warning.
 4. In v10 that file is deleted, so `sh -e` aborts and all commits fail.
 
-New v9/v10 architecture confirmed in [`index.js`](node_modules/husky/index.js:8):
+New v9/v10 architecture confirmed in the installed `node_modules/husky/index.js` (line 8):
 
 - `git config core.hooksPath` set to `.husky/_`
 - `_/.gitignore` contains `*`, so `_` is generated and never committed
-- `_` holds dispatcher [`h`](node_modules/husky/husky:1) plus per-hook shims sourcing `h`
+- `_` holds the dispatcher `node_modules/husky/husky` plus per-hook shims sourcing it
 - User hooks in [`.husky/`](.husky/commit-msg:1) must be bare commands with no sourcing
 
 ## 2. Decision: Stay on v9.1.7
@@ -31,13 +31,13 @@ New v9/v10 architecture confirmed in [`index.js`](node_modules/husky/index.js:8)
 
 ## 3. What Will Be Deprecated / Removed at v10
 
-| #   | v9 status (evidence)                                                                                                 | v10 consequence                                                            | Replacement (proposed)                                                                                                                                                                                                        |
-| --- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | User hooks sourcing `_/husky.sh` trigger the stub in the generated `.husky/_/husky.sh`                               | File deleted; `sh -e` aborts every hook, all commits fail                  | Bare user hooks: [`commit-msg`](../.husky/commit-msg:1) contains only `npx --no -- commitlint --edit "$1"`; [`pre-commit`](../.husky/pre-commit:1) contains only `npx lint-staged`; no shebang, no sourcing (already applied) |
-| 2   | `husky install` prints DEPRECATED but still runs (`husky/bin.js`)                                                    | Expected removal; `npm run prepare` would fail if it calls `husky install` | Keep `prepare: husky` (bare command) in [`package.json`](../package.json:32); never use `husky install`                                                                                                                       |
-| 3   | `husky add`, `husky set`, `husky uninstall` already hard-fail with exit 1 ([`bin.js`](node_modules/husky/bin.js:23)) | Remain removed                                                             | Create/edit hook files directly; use `husky init` only for first-time setup                                                                                                                                                   |
-| 4   | `~/.huskyrc` prints DEPRECATED ([`husky`](node_modules/husky/husky:8))                                               | Expected removal                                                           | Per-user init code goes in `~/.config/husky/init.sh` (or `$XDG_CONFIG_HOME/husky/init.sh`)                                                                                                                                    |
-| 5   | `HUSKY=0` skip and `HUSKY=2` debug handling in dispatcher [`h`](node_modules/husky/husky:14)                         | No change announced; keep relying on it                                    | No action; document `HUSKY=0` as the supported bypass                                                                                                                                                                         |
+| #   | v9 status (evidence)                                                                                             | v10 consequence                                                            | Replacement (proposed)                                                                                                                                                                                                        |
+| --- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | User hooks sourcing `_/husky.sh` trigger the stub in the generated `.husky/_/husky.sh`                           | File deleted; `sh -e` aborts every hook, all commits fail                  | Bare user hooks: [`commit-msg`](../.husky/commit-msg:1) contains only `npx --no -- commitlint --edit "$1"`; [`pre-commit`](../.husky/pre-commit:1) contains only `npx lint-staged`; no shebang, no sourcing (already applied) |
+| 2   | `husky install` prints DEPRECATED but still runs (`husky/bin.js`)                                                | Expected removal; `npm run prepare` would fail if it calls `husky install` | Keep `prepare: husky` (bare command) in [`package.json`](../package.json:32); never use `husky install`                                                                                                                       |
+| 3   | `husky add`, `husky set`, `husky uninstall` already hard-fail with exit 1 (`node_modules/husky/bin.js`, line 23) | Remain removed                                                             | Create/edit hook files directly; use `husky init` only for first-time setup                                                                                                                                                   |
+| 4   | `~/.huskyrc` prints DEPRECATED (`node_modules/husky/husky`, line 8)                                              | Expected removal                                                           | Per-user init code goes in `~/.config/husky/init.sh` (or `$XDG_CONFIG_HOME/husky/init.sh`)                                                                                                                                    |
+| 5   | `HUSKY=0` skip and `HUSKY=2` debug handling in the dispatcher (`node_modules/husky/husky`, line 14)              | No change announced; keep relying on it                                    | No action; document `HUSKY=0` as the supported bypass                                                                                                                                                                         |
 
 ## 4. Target State
 
