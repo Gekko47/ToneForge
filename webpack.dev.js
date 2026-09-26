@@ -12,9 +12,37 @@ import dotenv from "dotenv";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const requestLogPath = path.resolve(__dirname, "requests.log");
-fs.appendFileSync(requestLogPath, `\n--- dev server started ${new Date().toISOString()} ---\n`);
 
 const certDir = path.resolve(os.homedir(), ".office-addin-dev-certs");
+
+/**
+ * Whether this process is starting the dev server rather than only compiling.
+ *
+ * `npm run dev` invokes `webpack serve`; every other consumer of this config —
+ * the bundle secret scan in particular — only wants the compiled output. The
+ * two must not be conflated, because serving requires a local HTTPS
+ * certificate and compiling does not.
+ */
+const isServe = process.argv.includes("serve");
+
+/**
+ * Read the local development certificate.
+ *
+ * Only ever called when a server is actually being started, so a plain build of
+ * this config works on a machine that has never run the add-in — which is every
+ * CI runner, and the reason the certificate is not read at module load.
+ */
+function readDevCertificate() {
+  const key = path.resolve(certDir, "localhost.key");
+  const cert = path.resolve(certDir, "localhost.crt");
+  if (!fs.existsSync(key) || !fs.existsSync(cert)) {
+    throw new Error(
+      `Missing development certificate in ${certDir}. Run \`npm run sideload\` once to generate it, ` +
+        "or use `npm run build` for a bundle-only build that needs no certificate.",
+    );
+  }
+  return { key: fs.readFileSync(key), cert: fs.readFileSync(cert) };
+}
 
 // .env is loaded only into the development-server Node process. It is never
 // serialized into browser assets; the broker below may use a server-only key.
@@ -53,13 +81,18 @@ const dev = {
     // `localhost` triggers ERR_CERT_COMMON_NAME_INVALID in Edge WebView2.
     host: "localhost",
     port: 3000,
-    server: {
-      type: "https",
-      options: {
-        key: fs.readFileSync(path.resolve(certDir, "localhost.key")),
-        cert: fs.readFileSync(path.resolve(certDir, "localhost.crt")),
-      },
-    },
+    // The manifest serves the task pane from `https://localhost:3000`, so the
+    // dev server must speak HTTPS with a certificate whose CN is `localhost`.
+    // Binding to 127.0.0.1 instead triggers ERR_CERT_COMMON_NAME_INVALID in
+    // Edge WebView2.
+    ...(isServe
+      ? {
+          server: {
+            type: "https",
+            options: readDevCertificate(),
+          },
+        }
+      : {}),
     hot: true,
     open: false,
     historyApiFallback: true,
@@ -69,6 +102,12 @@ const dev = {
     // Word's embedded Edge WebView2, and the Origin header tells us whether
     // the request is same-origin (host bridge) or cross-origin.
     setupMiddlewares: (middlewares, devServer) => {
+      // Written here rather than at module load: a compile of this config is
+      // not a dev-server start, and must not leave a log behind.
+      fs.appendFileSync(
+        requestLogPath,
+        `\n--- dev server started ${new Date().toISOString()} ---\n`,
+      );
       const requestLogger = (req, res, next) => {
         const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
         const entry = [
