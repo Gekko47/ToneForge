@@ -31,6 +31,17 @@ export interface CoverageOptions {
   appliedChangeCount?: number;
   changedNodeIds?: readonly string[];
   changedCharacterCount?: number;
+  /**
+   * True when this report covers only part of the acquired document, and why.
+   *
+   * The diagnostic used to be hardcoded to `incremental: false` with a reason
+   * saying no verified changed-range event existed. The adapter that normalises
+   * those events existed and its output was discarded, so the claim was accurate
+   * but permanently true. It is now driven by the caller that actually knows
+   * which scope it examined.
+   */
+  incremental?: boolean;
+  incrementalReason?: string;
 }
 
 export function buildCoverage(options: CoverageOptions): CoverageReport {
@@ -121,8 +132,9 @@ export function buildCoverage(options: CoverageOptions): CoverageReport {
         completeDocumentCharacterCount: options.acquisition.completeDocumentCharacterCount,
         fullBodyReadCount: 1,
         paragraphCollectionRead: options.acquisition.structuralCoverage !== "unsupported",
-        incremental: false as const,
+        incremental: options.incremental ?? false,
         incrementalReason:
+          options.incrementalReason ??
           "No verified Word changed-range event; conservative full rescan is supported.",
       }
     : undefined;

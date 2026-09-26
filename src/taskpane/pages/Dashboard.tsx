@@ -354,8 +354,12 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     });
     observerRef.current = observer;
     observer.startObserver();
+    // The change payload is forwarded rather than discarded. It is what lets the
+    // observer examine only the paragraphs Word says changed, and it carries the
+    // evidence the observer needs to refuse that narrowing when the host did not
+    // report a complete set of ids.
     const paragraphEvents = createWordParagraphEventAdapter({
-      onChange: () => observer.onDocumentChanged(),
+      onChange: (change) => observer.onDocumentChanged(change),
     });
     void paragraphEvents.start();
     return () => {

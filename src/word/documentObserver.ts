@@ -17,9 +17,22 @@ import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
 import { type CoverageReport } from "../core/domain/DocumentSnapshot";
 import { type StyleProfile } from "../core/domain/StyleProfile";
 import { type Finding } from "../core/domain/Finding";
+import type { WordParagraphChange } from "./wordParagraphEvents";
 
 export type DocumentScanPhase =
   "notStarted" | "scanning" | "fresh" | "clean" | "stale" | "incomplete" | "failed";
+
+/**
+ * The subset of nodes a scan will examine, or null for the whole document.
+ *
+ * Held as module state rather than threaded through the debounce so a burst of
+ * events collapses into one scope. Events *accumulate* rather than replace:
+ * two paragraphs edited inside one debounce window both need examining, and
+ * keeping only the second would silently skip the first.
+ */
+interface ScanScope {
+  nodeIds: Set<string>;
+}
 
 export interface DocumentObserverStatus {
   phase: DocumentScanPhase;
@@ -71,15 +84,31 @@ interface ObserverState {
   error: string | null;
   hostUnavailable: boolean;
   debouncedScan: (() => void) | null;
+  /** Nodes the next scan will examine, or null for the whole document. */
+  scope: ScanScope | null;
 }
 
 const DEFAULT_DEBOUNCE_MS = 300;
 
-/** Create a document observer that watches for changes and runs one conservative full rescan per debounced event. */
+/**
+ * Create a document observer that rescans on a debounced document change.
+ *
+ * The change payload is optional and its absence is the safe case: a full
+ * rescan. When the host reports a paragraph event with complete local ids, only
+ * those nodes are examined — but *only* the changed nodes, with nothing retained
+ * from the previous run.
+ *
+ * That last part is the whole design. Retaining findings for nodes this run did
+ * not re-derive would mean presenting ranges and text that the edit may have
+ * moved: growing one paragraph shifts every character offset after it, so a
+ * retained finding in an unedited paragraph can point at the wrong sentence
+ * while looking entirely normal. A partial scan that reports a partial scope is
+ * fast and correct; a partial scan that retains is fast and quietly wrong.
+ */
 export function createDocumentObserver(options: DocumentObserverOptions): {
   startObserver: () => void;
   stopObserver: () => void;
-  onDocumentChanged: () => void;
+  onDocumentChanged: (change?: WordParagraphChange) => void;
 } {
   const { debounceMs = DEFAULT_DEBOUNCE_MS, onStatus, profile } = options;
   const capabilities = options.capabilities ?? {
@@ -100,6 +129,28 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     hostName: "unknown" as const,
     hostVersion: null,
   };
+  /**
+   * Decide whether a host event is precise enough to narrow the scan.
+   *
+   * Four cases force a full rescan, and each is a case where narrowing would
+   * produce a confidently wrong report:
+   *
+   * - `requiresFullRescan` — the host dropped or mangled some ids, so the set is
+   *   known to be incomplete.
+   * - a deletion — a removed paragraph shifts every index and range after it, and
+   *   the event names what went, not what moved.
+   * - a remote edit — a collaborator's change may have touched anything.
+   * - no ids at all — an event that names nothing names nothing.
+   */
+  function narrowTo(change: WordParagraphChange | undefined): ScanScope | null {
+    if (change === undefined) return null;
+    if (change.requiresFullRescan) return null;
+    if (change.kind === "deleted") return null;
+    if (change.source !== "local") return null;
+    if (change.uniqueLocalIds.length === 0) return null;
+    return { nodeIds: new Set(change.uniqueLocalIds) };
+  }
+
   const state: ObserverState = {
     running: false,
     documentVersion: "",
@@ -118,6 +169,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     coverage: null,
     error: null,
     debouncedScan: null,
+    scope: null,
   };
 
   const debouncedScan = debounce(() => {
@@ -151,20 +203,43 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     };
 
     try {
-      // Acquire one immutable scope. Word currently exposes no verified
-      // changed-range event, so every triggered scan conservatively examines all
-      // acquired nodes; this is not true incremental analysis.
-      const context = await acquireAnalysisContext({
+      // Acquire one immutable scope. The full document is always read; the scope
+      // only decides which of those nodes are *examined* this run.
+      const full = await acquireAnalysisContext({
         profile,
         capabilities,
         ...(options.policy ? { policy: options.policy } : {}),
       });
       if (isObsolete()) return;
 
-      const examinedNodeIds = context.nodes.map((node) => node.nodeId);
+      // A narrowed scan reports only what it re-derived. Nothing is carried over
+      // from the previous run: growing one paragraph shifts every character
+      // offset after it, so a retained finding in an untouched paragraph can
+      // point at the wrong sentence while looking entirely normal.
+      const scope = state.scope;
+      state.scope = null;
+      const inScope = (nodeId: string): boolean => scope === null || scope.nodeIds.has(nodeId);
+      const examinedNodes = scope === null ? full.nodes : full.nodes.filter((node) => inScope(node.nodeId));
+      // An event naming ids the host no longer has names nothing we can read;
+      // treating that as a narrowing would silently examine less than asked.
+      const narrowed =
+        scope !== null && examinedNodes.length > 0 && examinedNodes.length < full.nodes.length;
+      const examinedNodeIds = (narrowed ? examinedNodes : full.nodes).map((node) => node.nodeId);
+      const skippedCount = full.nodes.length - examinedNodeIds.length;
+      const context = narrowed ? { ...full, nodes: examinedNodes } : full;
       const report = await checkConsistency({
         context,
         includeRawText: false,
+        ...(narrowed
+          ? {
+              examinedNodeIds,
+              incremental: true,
+              incrementalReason:
+                `Word reported ${skippedCount} changed paragraph(s); this run examined ` +
+                `${examinedNodeIds.length} of ${full.nodes.length} acquired nodes. Findings for ` +
+                "the rest are not shown until a full scan.",
+            }
+          : {}),
       });
       if (isObsolete()) return;
 
@@ -280,8 +355,26 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     logger.info("Document observer stopped");
   }
 
-  /** Called when the document changes (e.g., from Word's change events). */
-  function onDocumentChanged(): void {
+  /**
+   * Called when the document changes.
+   *
+   * A host event narrows the next scan when it is precise enough to trust; see
+   * `narrowTo`. Scopes accumulate across a debounce burst rather than replacing
+   * one another: two paragraphs edited inside one window both need examining,
+   * and keeping only the most recent would silently skip the first.
+   *
+   * A full rescan clears any pending narrow scope, so an imprecise event can
+   * never be narrowed by a precise one that arrived earlier in the same burst.
+   */
+  function onDocumentChanged(change?: WordParagraphChange): void {
+    const narrowed = narrowTo(change);
+    if (narrowed === null) {
+      state.scope = null;
+    } else if (state.scope !== null) {
+      state.scope = { nodeIds: new Set([...state.scope.nodeIds, ...narrowed.nodeIds]) };
+    } else {
+      state.scope = narrowed;
+    }
     scheduleScan();
   }
 

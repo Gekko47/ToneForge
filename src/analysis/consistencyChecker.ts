@@ -133,6 +133,18 @@ export interface CheckConsistencyOptions {
   registry?: LlmSemanticProvider;
   nodes?: DocumentNode[];
   context?: AnalysisContext;
+  /**
+   * The node ids this run actually examined, when that is a subset of `nodes`.
+   *
+   * Supplied by the observer when the host reports a complete changed-range
+   * event. The report states the examined scope rather than implying the whole
+   * document was checked.
+   */
+  examinedNodeIds?: readonly string[];
+  /** True when `examinedNodeIds` is a strict subset of the acquired nodes. */
+  incremental?: boolean;
+  /** Why the run was partial, in the user's terms. */
+  incrementalReason?: string;
 }
 
 function emptySummary(): ConsistencySummary {
@@ -247,6 +259,11 @@ export async function checkConsistency(
           nodes,
           text,
           ...(context ? { acquisition: context.acquisition } : {}),
+          // The caller owns the examined scope, so the report states it rather
+          // than implying the whole document was looked at.
+          ...(options.examinedNodeIds ? { examinedNodeIds: options.examinedNodeIds } : {}),
+          ...(options.incremental ? { incremental: true } : {}),
+          ...(options.incrementalReason ? { incrementalReason: options.incrementalReason } : {}),
         })
       : undefined;
   if (text.trim().length === 0) {

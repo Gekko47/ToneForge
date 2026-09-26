@@ -183,3 +183,25 @@ For each host:
   behavior, keyboard/screen-reader behavior, and long-document measurements: no
   live evidence yet. The development broker is not production evidence.
 - The consistency seam is reserved and no C1–C10 engine is present.
+
+## Open gate — incremental scan scope (ADR-0063)
+
+The observer narrows a scan to the paragraphs Word reports as changed when the
+host supplies a complete set of local ids. The *decision* is unit tested
+exhaustively; whether Word actually supplies them is not, and cannot be.
+
+Record for each host build:
+
+1. Whether a single-paragraph edit produces a coverage report whose
+   `examinedNodeIds` is a strict subset of the acquired nodes, or whether it
+   stays whole-document. Record the count in both cases.
+2. Whether `source` is reported as `local` for a local edit.
+3. Whether an event ever arrives with `requiresFullRescan: true` for an ordinary
+   keystroke burst. If it does, the narrowing is inert in practice and the pane
+   is running the conservative path, which is correct but is not a speedup.
+4. Whether deleting a paragraph triggers a full rescan, and whether a remote
+   collaborator edit does. Both are expected to widen to the whole document.
+
+Until this is recorded, describe the behaviour as "incremental where the host
+reports complete local ids, conservative full rescan otherwise" and do not
+claim a measured speedup.

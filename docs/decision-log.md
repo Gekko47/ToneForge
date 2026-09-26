@@ -1351,3 +1351,47 @@ re-announcement is suppressed until the sentence actually changes.
 **Rejected.** Leaving the regions per surface and relying on debounce alone. It
 fixes the interruption count but not the ordering, and three regions still means
 three places for a future change to add a fourth.
+
+## ADR-0063: Incremental scanning narrows the examined scope and retains nothing
+
+**Status:** Accepted
+
+**Context.** `wordParagraphEvents.ts` normalises Word paragraph events,
+computing `uniqueLocalIds` and `requiresFullRescan`, and the Dashboard wired the
+adapter with a callback that discarded the payload and called
+`onDocumentChanged()`. Every triggered scan therefore examined every acquired
+node, and the coverage diagnostic hardcoded `incremental: false` with a reason
+saying no verified changed-range event existed. The event adapter was wired and
+its output thrown away.
+
+**Decision.** Forward the payload. When the host reports a local event with a
+complete set of ids, examine only those nodes and say so in the coverage report
+— including the exact examined count against the acquired count.
+
+Five cases force a conservative full rescan: an event that could not name every
+id, a deletion, a remote edit, an event naming no paragraphs, and an event whose
+ids are not present in the freshly acquired document.
+
+**No cross-run retention.** A narrowed run reports only what it re-derived and
+carries nothing over from the previous run. Growing one paragraph shifts every
+character offset after it, so a finding retained in an untouched paragraph can
+point at the wrong sentence while looking entirely normal. Re-anchoring is the
+fix, not retention, and re-anchoring is not available here.
+
+**Consequences.**
+
+- Scopes accumulate across a debounce burst rather than replacing one another.
+  Two paragraphs edited inside one window both need examining, and keeping only
+  the most recent would silently skip the first. A full rescan clears any
+  pending narrow scope, so an imprecise event is never narrowed by a precise one
+  that arrived earlier in the same burst.
+- A narrowed run is visibly partial, which is a behaviour change for anyone who
+  reads the coverage banner. That is the point.
+- The performance claim is host-dependent and remains ungated by these tests.
+  The scope *decision* is unit tested exhaustively; whether Word actually reports
+  complete local ids is a live-host question recorded in
+  `docs/manual-verification.md`.
+
+**Deviation from the implementation plan.** The plan proposed retaining findings
+from unscanned nodes. That is not implemented, for the offset reason above, and
+the deviation is deliberate rather than an omission.
