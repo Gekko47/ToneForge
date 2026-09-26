@@ -140,6 +140,14 @@ describe("the consent gate", () => {
     expect(parseConsistencyReviewRequest(request()).checks).toEqual([...CONSISTENCY_CHECK_IDS]);
   });
 
+  it("treats an explicitly empty check list as all ten, not as none", () => {
+    // Running zero checks would report a clean document over a document nothing
+    // looked at, and the omitted case already meant "all ten".
+    expect(parseConsistencyReviewRequest(request({ checks: [] })).checks).toEqual([
+      ...CONSISTENCY_CHECK_IDS,
+    ]);
+  });
+
   it("still validates the document when consent is present", () => {
     expect(() =>
       parseConsistencyReviewRequest(request({ document: { revision: "", text: "t" } })),
@@ -174,6 +182,13 @@ describe("the module boundary", () => {
     // The whole point of the exception is that it is deliberate and narrow. An
     // undocumented exception is indistinguishable from a mistake.
     expect(eslintConfig).toMatch(/sanctioned exception/i);
+  });
+
+  it("forbids word/ and the observer from importing the consistency engine", () => {
+    // The engine runs on a whole-document snapshot the user chose to review. An
+    // incremental path calling it gets a different answer each time the text
+    // shifts underneath it.
+    expect(eslintConfig).toMatch(/\*\*\/analysis\/consistency\/\*/);
   });
 
   it("still forbids the consistency engine from reaching word, taskpane, commands, and reformat", () => {

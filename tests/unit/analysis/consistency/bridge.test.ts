@@ -27,13 +27,13 @@ function issue(overrides: Partial<ConsistencyIssue> = {}): ConsistencyIssue {
     confidence: 0.95,
     actionable: true,
     nodeIds: ["s0", "s1"],
+    ranges: { left: { start: 12, end: 54 }, right: { start: 70, end: 112 } },
     evidence: {
       left: "The quarterly revenue target is 4 million.",
       right: "The quarterly revenue target is 5 million.",
       sectionLeft: "Summary",
       sectionRight: "Detail",
     },
-    suggestedText: "The quarterly revenue target is 4 million.",
     suggestedNodeId: "s0",
     ...overrides,
   };
@@ -113,6 +113,31 @@ describe("crossing into the finding model", () => {
     expect(finding.expected).toBeUndefined();
   });
 
+  it("points its range at the statement the engine says is wrong", () => {
+    // Not at the start of the document, and not across both statements: a range
+    // becomes a document edit, so it has to land on the text in dispute.
+    const finding = toFinding(issue(), identity);
+    expect(finding.range).toEqual({ start: 12, end: 54, unit: "character" });
+    expect(finding.actual).toBe("The quarterly revenue target is 4 million.");
+  });
+
+  it("follows the adjudicator to the right-hand statement when that is the faulty side", () => {
+    const finding = toFinding(issue({ suggestedNodeId: "s1" }), identity);
+    expect(finding.range).toEqual({ start: 70, end: 112, unit: "character" });
+    expect(finding.actual).toBe("The quarterly revenue target is 5 million.");
+  });
+
+  it("is not actionable when no statement was identified as wrong", () => {
+    // Nothing to edit and nowhere to edit it, so it is shown and not applied.
+    const finding = toFinding(issue({ suggestedNodeId: undefined }), identity);
+    expect(finding.actionable).toBe(false);
+  });
+
+  it("is not actionable when the engine reported no offsets for its statements", () => {
+    const finding = toFinding(issue({ ranges: undefined }), identity);
+    expect(finding.actionable).toBe(false);
+  });
+
   it("gives every finding a distinct id from the supplied identity", () => {
     const findings = toFindings(
       report({ issues: [issue(), issue({ fingerprint: "C2:s2|s3" })] }),
@@ -146,6 +171,14 @@ describe("planning from consistency findings", () => {
     const planResult = plan(toFindings(report(), identity));
     expect(planResult.schemaVersion).toBe(2);
     expect(planResult.docHash).toBe("hash-1");
+  });
+
+  it("produces no change from a consistency finding, because it names no correction", () => {
+    // The engine reports that two statements disagree; it does not supply the
+    // sentence that should replace either of them. Planning one anyway would
+    // rewrite a statement with the other statement's text.
+    const findings = toFindings(report(), identity);
+    expect(plan(findings).changes).toHaveLength(0);
   });
 });
 

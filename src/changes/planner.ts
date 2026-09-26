@@ -324,22 +324,15 @@ function changesForFinding(finding: Finding): Change[] {
       const change = listLevelChange(finding, 0);
       return change === null ? [] : [change];
     }
-    case "consistency.entityAttribute":
-    case "consistency.scopeContradiction":
-    case "consistency.terminologyDrift": {
-      // A consistency finding carries the statement the engine believes is
-      // wrong in `expected`. Routing it through the same replacement path as a
-      // semantic deviation keeps one remediation path rather than adding a
-      // parallel one, so every existing planner and conflict gate applies.
-      const replacement = finding.expected ?? finding.transformation?.text;
-      if (replacement === undefined) return [];
-      const change = textChange(finding, replacement);
-      return change === null ? [] : [change];
-    }
     default:
-      return finding.kind === "semantic" || finding.kind === "consistency"
-        ? semanticChanges(finding)
-        : [];
+      // `consistency` is deliberately absent. A consistency finding reports that
+      // two statements disagree; it does not yet carry a corrected sentence, and
+      // its `actual`/`expected` pair is the engine quoting the two sides of the
+      // conflict rather than a before-and-after of one piece of text. Replacing
+      // one with the other at the finding's range is an edit nobody specified.
+      // Consistency findings stay in the report until the engine supplies a real
+      // correction and the bridge supplies a range that lands on it.
+      return finding.kind === "semantic" ? semanticChanges(finding) : [];
   }
 }
 

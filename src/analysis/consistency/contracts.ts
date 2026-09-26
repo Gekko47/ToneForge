@@ -288,6 +288,17 @@ export type ConsistencyDocument = z.infer<typeof ConsistencyDocumentSchema>;
 export const CONSISTENCY_DEFAULT_MAX_STATEMENTS = 400;
 
 /**
+ * The default cap on how many candidates one run will send for adjudication.
+ *
+ * The checks are quadratic in statements and produce candidates in proportion,
+ * so a document that trips a loose check can generate far more candidates than a
+ * user could review — let alone pay for. The cap bounds the model's work; the
+ * candidates past it are reported as unreviewed rather than silently dropped,
+ * because a review that stopped early and said nothing reads as a clean one.
+ */
+export const CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS = 60;
+
+/**
  * The request the engine accepts.
  *
  * The three gates are checked in `parseConsistencyReviewRequest` and none of
@@ -300,8 +311,20 @@ export const ConsistencyReviewRequestSchema = z.object({
    * consent in the product.
    */
   consistencyConsent: z.literal(true),
-  /** Which checks to run. Empty means all ten. */
-  checks: z.array(ConsistencyCheckIdSchema).default([...CONSISTENCY_CHECK_IDS]),
+  /**
+   * Which checks to run. Empty means all ten.
+   *
+   * An explicitly empty array is normalized to the full set rather than being
+   * taken literally. A caller that built its list from a filter and got nothing
+   * back has not asked for "no checks" — it has asked for a review and the
+   * filter matched none — and running zero checks would report a clean document
+   * over a document nothing looked at. The omitted case already meant "all ten",
+   * so this makes the two spellings of the same intent agree.
+   */
+  checks: z
+    .array(ConsistencyCheckIdSchema)
+    .default([])
+    .transform((ids) => (ids.length === 0 ? [...CONSISTENCY_CHECK_IDS] : ids)),
   /**
    * The already-configured provider and model are reused, not re-selected.
    *
@@ -320,6 +343,19 @@ export const ConsistencyReviewRequestSchema = z.object({
    * coverage rather than being hidden in the implementation.
    */
   maxStatements: z.number().int().positive().max(2000).default(CONSISTENCY_DEFAULT_MAX_STATEMENTS),
+  /**
+   * How many ambiguous candidates may be sent for adjudication in one run.
+   *
+   * A bound on the model's work rather than on the review itself. Candidates past
+   * the cap are counted as unreviewed in the coverage report, so stopping early
+   * is visible rather than being read as a clean result.
+   */
+  maxAdjudications: z
+    .number()
+    .int()
+    .positive()
+    .max(500)
+    .default(CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS),
 });
 
 export type ConsistencyReviewRequest = z.infer<typeof ConsistencyReviewRequestSchema>;
@@ -392,6 +428,26 @@ export const ConsistencyIssueSchema = z.object({
   actionable: z.boolean(),
   /** The node ids this conflict touches, for navigation and provenance. */
   nodeIds: z.array(z.string().trim().min(1)).default([]),
+  /**
+   * Character offsets of both statements within the snapshot the run was given.
+   *
+   * Carried because a finding has to be able to point at real text. A range
+   * reconstructed from the *lengths* of the two statements is a range into
+   * whatever happens to sit at those offsets in someone else's document, which
+   * is worse than no range at all.
+   */
+  ranges: z
+    .object({
+      left: z.object({
+        start: z.number().int().nonnegative(),
+        end: z.number().int().nonnegative(),
+      }),
+      right: z.object({
+        start: z.number().int().nonnegative(),
+        end: z.number().int().nonnegative(),
+      }),
+    })
+    .optional(),
   /** Both statements, so the user can judge the conflict directly. */
   evidence: z.object({
     left: z.string().trim().min(1),

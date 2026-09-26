@@ -54,17 +54,22 @@ export function checkTerminologyDrift(statements: IndexedStatement[]): Consisten
       continue;
     }
 
-    const differing = onlyLeft.length + onlyRight.length;
+    // Certain only when each side contributes exactly one term of its own. One
+    // unique word in total is not enough: a pair where one statement merely adds
+    // a word the other omits is not terminology drift, it is one statement saying
+    // more, and calling that a decided naming conflict reports a difference the
+    // author never made.
+    const substitution = onlyLeft.length === 1 && onlyRight.length === 1;
     candidates.push(
       makeCandidate({
         checkId: CHECK,
         left,
         right,
         suspicion: `These two sections use different terms for what appears to be the same subject (${[...onlyLeft, ...onlyRight].slice(0, 4).join(", ")}).`,
-        // One differing word on a shared subject is a naming difference. Several
-        // is more likely two genuinely different statements, which is a judgment
-        // the model should make rather than this function.
-        certainty: differing === 1 ? "certain" : "ambiguous",
+        // A one-for-one swap on a shared subject is a naming difference. Anything
+        // else is more likely two genuinely different statements, which is a
+        // judgment the model should make rather than this function.
+        certainty: substitution ? "certain" : "ambiguous",
         evidence: {
           shared: [...shared].slice(0, 6).join(", "),
           onlyLeft: onlyLeft.join(", "),

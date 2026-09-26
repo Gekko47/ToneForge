@@ -38,7 +38,6 @@ import {
   type ConsistencyReport,
   type ConsistencyReviewRequest,
   type ConsistencyStatement,
-  type ConsistencyVerdict,
 } from "./contracts";
 import { CONSISTENCY_CHECKERS, type IndexedStatement } from "./checks";
 import { splitSentences } from "./checks/primitives";
@@ -141,6 +140,19 @@ const AdjudicationPayloadSchema = z.object({
 });
 
 /**
+ * A parsed verdict plus whether a real reviewer actually produced it.
+ *
+ * `answered` is what separates "the model said it could not tell" from "no model
+ * was asked, or the request failed, or the answer was unreadable". The first is a
+ * review that happened; the others are conflicts nobody looked at, and the
+ * coverage report has to be able to tell them apart.
+ */
+interface AdjudicationOutcome {
+  readonly adjudication: ConsistencyAdjudication;
+  readonly answered: boolean;
+}
+
+/**
  * Parse a model's verdict.
  *
  * An unreadable answer is `unclear`, never `contradiction`. A malformed
@@ -148,10 +160,7 @@ const AdjudicationPayloadSchema = z.object({
  * this" is "there is no conclusion", which is the same as the check being
  * unsure.
  */
-export function parseAdjudication(
-  text: string,
-  candidate: ConsistencyCandidate,
-): ConsistencyAdjudication {
+function readAdjudication(text: string, candidate: ConsistencyCandidate): AdjudicationOutcome {
   let payload: string | null = null;
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
   const raw = fenced?.[1] ?? text;
@@ -162,41 +171,60 @@ export function parseAdjudication(
   }
   if (payload === null) {
     return {
-      checkId: candidate.checkId,
-      fingerprint: candidate.fingerprint,
-      verdict: "unclear",
-      confidence: 0,
-      rationale: "The reviewer's answer could not be read, so no conclusion was drawn.",
+      adjudication: {
+        checkId: candidate.checkId,
+        fingerprint: candidate.fingerprint,
+        verdict: "unclear",
+        confidence: 0,
+        rationale: "The reviewer's answer could not be read, so no conclusion was drawn.",
+      },
+      answered: false,
     };
   }
   try {
     const parsed = AdjudicationPayloadSchema.safeParse(JSON.parse(payload));
     if (!parsed.success) {
       return {
+        adjudication: {
+          checkId: candidate.checkId,
+          fingerprint: candidate.fingerprint,
+          verdict: "unclear",
+          confidence: 0,
+          rationale: "The reviewer's answer did not match the expected shape.",
+        },
+        answered: false,
+      };
+    }
+    return {
+      adjudication: {
+        checkId: candidate.checkId,
+        fingerprint: candidate.fingerprint,
+        verdict: parsed.data.verdict,
+        confidence: parsed.data.confidence,
+        rationale: parsed.data.rationale,
+        ...(parsed.data.atFault === undefined ? {} : { atFault: parsed.data.atFault }),
+      },
+      answered: true,
+    };
+  } catch {
+    return {
+      adjudication: {
         checkId: candidate.checkId,
         fingerprint: candidate.fingerprint,
         verdict: "unclear",
         confidence: 0,
-        rationale: "The reviewer's answer did not match the expected shape.",
-      };
-    }
-    return {
-      checkId: candidate.checkId,
-      fingerprint: candidate.fingerprint,
-      verdict: parsed.data.verdict,
-      confidence: parsed.data.confidence,
-      rationale: parsed.data.rationale,
-      ...(parsed.data.atFault === undefined ? {} : { atFault: parsed.data.atFault }),
-    };
-  } catch {
-    return {
-      checkId: candidate.checkId,
-      fingerprint: candidate.fingerprint,
-      verdict: "unclear",
-      confidence: 0,
-      rationale: "The reviewer's answer was not valid JSON, so no conclusion was drawn.",
+        rationale: "The reviewer's answer was not valid JSON, so no conclusion was drawn.",
+      },
+      answered: false,
     };
   }
+}
+
+export function parseAdjudication(
+  text: string,
+  candidate: ConsistencyCandidate,
+): ConsistencyAdjudication {
+  return readAdjudication(text, candidate).adjudication;
 }
 
 /** The prompt sent for one ambiguous candidate. Carries only the two statements. */
@@ -221,14 +249,17 @@ export function buildAdjudicationPrompt(candidate: ConsistencyCandidate): string
 async function adjudicate(
   candidate: ConsistencyCandidate,
   options: ConsistencyRunOptions,
-): Promise<ConsistencyAdjudication> {
+): Promise<AdjudicationOutcome> {
   if (options.provider === undefined) {
     return {
-      checkId: candidate.checkId,
-      fingerprint: candidate.fingerprint,
-      verdict: "unclear",
-      confidence: 0,
-      rationale: "No language model was configured for this review.",
+      adjudication: {
+        checkId: candidate.checkId,
+        fingerprint: candidate.fingerprint,
+        verdict: "unclear",
+        confidence: 0,
+        rationale: "No language model was configured for this review.",
+      },
+      answered: false,
     };
   }
   try {
@@ -240,7 +271,7 @@ async function adjudicate(
       maxTokens: 300,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
-    return parseAdjudication(response.text, candidate);
+    return readAdjudication(response.text, candidate);
   } catch (error) {
     if (isAbort(error)) throw new ConsistencyRunCancelled("Review cancelled.", "cancelled");
     // A provider failure must not abort the run: the deterministic findings are
@@ -251,11 +282,14 @@ async function adjudicate(
       kind: error instanceof Error ? error.name : "unknown",
     });
     return {
-      checkId: candidate.checkId,
-      fingerprint: candidate.fingerprint,
-      verdict: "unclear",
-      confidence: 0,
-      rationale: "The reviewer could not be reached, so no conclusion was drawn.",
+      adjudication: {
+        checkId: candidate.checkId,
+        fingerprint: candidate.fingerprint,
+        verdict: "unclear",
+        confidence: 0,
+        rationale: "The reviewer could not be reached, so no conclusion was drawn.",
+      },
+      answered: false,
     };
   }
 }
@@ -289,25 +323,35 @@ export function consolidate(
   for (const candidate of candidates) {
     const descriptor = CONSISTENCY_CHECKS[candidate.checkId];
     if (candidate.certainty === "certain") {
-      issues.push(toIssue(candidate, "contradiction", 1, descriptor.severity));
+      // A deterministic candidate settled the comparison itself, so there is no
+      // adjudicator to say which side is wrong. Naming a side here would be the
+      // engine guessing at fault, which is the one thing it must not do.
+      issues.push(toIssue(candidate, 1, descriptor.severity));
       continue;
     }
     const verdict = verdicts.get(candidate.fingerprint);
     if (verdict === undefined) continue;
     if (verdict.verdict !== "contradiction") continue;
-    issues.push(toIssue(candidate, verdict.verdict, verdict.confidence, descriptor.severity));
+    issues.push(toIssue(candidate, verdict.confidence, descriptor.severity, verdict));
   }
   return issues;
 }
 
 function toIssue(
   candidate: ConsistencyCandidate,
-  verdict: ConsistencyVerdict,
   confidence: number,
   severity: "warning" | "error",
+  adjudication?: ConsistencyAdjudication,
 ): ConsistencyIssue {
   const descriptor = CONSISTENCY_CHECKS[candidate.checkId];
-  const atFault = candidate.certainty === "certain" ? candidate.right : candidate.left;
+  // Only the adjudicator may name a faulty side. A deterministic candidate has
+  // no adjudicator, so it reports the conflict and points at nothing.
+  const atFault =
+    adjudication?.atFault === "left"
+      ? candidate.left
+      : adjudication?.atFault === "right"
+        ? candidate.right
+        : undefined;
   return {
     checkId: candidate.checkId,
     fingerprint: candidate.fingerprint,
@@ -320,15 +364,20 @@ function toIssue(
     // that asks.
     actionable: confidence >= CONSISTENCY_ACTIONABLE_CONFIDENCE,
     nodeIds: [candidate.left.id, candidate.right.id],
+    ranges: {
+      left: { start: candidate.left.start, end: candidate.left.end },
+      right: { start: candidate.right.start, end: candidate.right.end },
+    },
     evidence: {
       left: candidate.left.text,
       right: candidate.right.text,
       sectionLeft: candidate.left.section,
       sectionRight: candidate.right.section,
     },
-    ...(verdict === "contradiction" && confidence >= CONSISTENCY_ACTIONABLE_CONFIDENCE
-      ? { suggestedText: atFault.text, suggestedNodeId: atFault.id }
-      : {}),
+    // No `suggestedText`: this engine compares statements, it does not write
+    // replacements. A "suggested" value here was the faulty statement's own text,
+    // which reads as a fix and is nothing of the kind.
+    ...(atFault === undefined ? {} : { suggestedNodeId: atFault.id }),
   };
 }
 
@@ -398,16 +447,19 @@ export async function runConsistencyReview(
 
   // --- adjudicate ----------------------------------------------------------
   const ambiguous = candidates.filter((candidate) => candidate.certainty === "ambiguous");
+  const toAdjudicate = ambiguous.slice(0, request.maxAdjudications);
   const verdicts = new Map<string, ConsistencyAdjudication>();
-  for (const [index, candidate] of ambiguous.entries()) {
+  let answeredCount = 0;
+  for (const [index, candidate] of toAdjudicate.entries()) {
     assertNotCancelled(options);
     report({
       phase: "adjudicating",
-      fraction: 0.6 + (0.3 * (index + 1)) / Math.max(ambiguous.length, 1),
-      message: `Reviewing candidate ${index + 1} of ${ambiguous.length}…`,
+      fraction: 0.6 + (0.3 * (index + 1)) / Math.max(toAdjudicate.length, 1),
+      message: `Reviewing candidate ${index + 1} of ${toAdjudicate.length}…`,
     });
-    const adjudication = await adjudicate(candidate, options);
-    verdicts.set(candidate.fingerprint, adjudication);
+    const outcome = await adjudicate(candidate, options);
+    verdicts.set(candidate.fingerprint, outcome.adjudication);
+    if (outcome.answered) answeredCount += 1;
   }
 
   // --- consolidate ---------------------------------------------------------
@@ -416,21 +468,38 @@ export async function runConsistencyReview(
   const issues = consolidate(candidates, verdicts);
   assertCurrent(request, options);
 
-  const usedModel = options.provider !== undefined && ambiguous.length > 0;
-  if (ambiguous.length > 0 && options.provider === undefined) {
+  // A conflict is unreviewed when it needed the model and no usable answer came
+  // back — no provider, a failed request, an unreadable reply, or a candidate
+  // past the cap. Provider presence is not the test: a run where every request
+  // failed reviewed nothing, and reporting that as complete is the failure this
+  // engine exists to avoid.
+  const unreviewed = ambiguous.length - answeredCount;
+  if (unreviewed > 0) {
     limitations.push(
-      `${ambiguous.length} candidate conflicts could not be reviewed because no language model is configured. Only the deterministic findings are reported.`,
+      options.provider === undefined
+        ? `${unreviewed} candidate conflict${unreviewed === 1 ? "" : "s"} could not be reviewed because no language model is configured. Only the deterministic findings are reported.`
+        : `${unreviewed} candidate conflict${unreviewed === 1 ? "" : "s"} could not be reviewed — the reviewer was unavailable, failed, or the run reached its adjudication limit. Only the deterministic findings are reported.`,
+    );
+  }
+  if (ambiguous.length > toAdjudicate.length) {
+    limitations.push(
+      `Reviewed the first ${toAdjudicate.length} of ${ambiguous.length} candidate conflicts. The rest were not sent for review.`,
     );
   }
 
+  const usedModel = answeredCount > 0;
+
   const coverage = ConsistencyCoverageSchema.parse({
-    complete: total <= limited.length && options.provider !== undefined,
+    // Complete means every statement was compared *and* every candidate that
+    // needed a judgement got one. With no ambiguous candidates there was nothing
+    // to judge, so a run without a provider is genuinely complete.
+    complete: total <= limited.length && unreviewed === 0,
     statementsConsidered: limited.length,
     statementsTotal: total,
     comparisonsMade: (limited.length * (limited.length - 1)) / 2,
     perCheck,
     limitations,
-    modelAdjudicated: ambiguous.length,
+    modelAdjudicated: answeredCount,
   });
 
   report({ phase: "done", fraction: 1, message: "Consistency review complete." });

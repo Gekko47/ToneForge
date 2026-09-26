@@ -17,7 +17,13 @@
  */
 
 import type { ConsistencyCandidate } from "../contracts";
-import { makeCandidate, pairwise, subjectWords, type IndexedStatement } from "./primitives";
+import {
+  contentWords,
+  makeCandidate,
+  pairwise,
+  subjectWords,
+  type IndexedStatement,
+} from "./primitives";
 
 /**
  * Shared-vocabulary thresholds for "these two are about the same thing".
@@ -99,16 +105,75 @@ function candidateFrom(
 /**
  * A capitalized multi-letter word, used as an entity anchor.
  *
- * A sentence-initial capital is not excluded, and deliberately so. Excluding it
- * would discard the most common position for a named entity to appear in — a
- * sentence that opens with the subject it is about — and the check only fires on
- * a noun *shared* by both statements, so a shared sentence-initial word is
- * evidence of a shared subject rather than a coincidence.
+ * A sentence-initial capital is not excluded in itself, and deliberately so.
+ * Excluding the first position of a sentence would discard the most common place
+ * for a named entity to appear — a sentence that opens with the subject it is
+ * about — and the check only fires on a word *shared* by both statements, so a
+ * shared sentence-initial word is evidence of a shared subject rather than a
+ * coincidence.
  */
 const PROPER_NOUN = /\b[A-Z][a-zA-Z]{2,}\b/g;
 
+/**
+ * Capitalized words that are never an entity, however they are cased.
+ *
+ * A capital in this language marks a proper noun except at the start of a
+ * sentence, and "The" or "This" at the start of a sentence is a function word
+ * wearing a capital. Without this list, "The" anchors C4 for every pair of
+ * sentences in the document that both begin with an article — which is most of
+ * them, and which is why this list exists rather than a stricter pattern.
+ */
+const FUNCTION_WORDS: ReadonlySet<string> = new Set([
+  "a",
+  "an",
+  "and",
+  "as",
+  "at",
+  "but",
+  "by",
+  "for",
+  "from",
+  "he",
+  "her",
+  "his",
+  "i",
+  "if",
+  "in",
+  "is",
+  "it",
+  "its",
+  "nor",
+  "of",
+  "on",
+  "or",
+  "our",
+  "she",
+  "than",
+  "that",
+  "the",
+  "their",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "was",
+  "we",
+  "were",
+  "which",
+  "who",
+  "whose",
+  "with",
+  "you",
+  "your",
+]);
+
 function properNouns(text: string): Set<string> {
-  return new Set(text.match(PROPER_NOUN) ?? []);
+  return new Set(
+    (text.match(PROPER_NOUN) ?? []).filter((word) => !FUNCTION_WORDS.has(word.toLowerCase())),
+  );
 }
 
 /**
@@ -370,7 +435,10 @@ export function checkReferenceConflict(statements: IndexedStatement[]): Consiste
 const UNIVERSAL = ["always", "never", "all", "every", "none", "cannot", "must", "only"];
 
 function qualifiers(text: string): Set<string> {
-  const words = subjectWords(text);
+  // Content words, not subject words: `subjectWords` folds a trailing "s" off,
+  // which turns "always" into "alway" and silently drops the single most common
+  // universal qualifier in English from the vocabulary this check matches.
+  const words = contentWords(text);
   const found = new Set<string>();
   for (const word of words) {
     if (UNIVERSAL.includes(word)) found.add(word);

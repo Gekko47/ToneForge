@@ -45,6 +45,7 @@ import {
   CONSISTENCY_DEFAULT_MAX_STATEMENTS,
   previewStatements,
   runConsistencyReview,
+  toFindings,
   type ConsistencyProgress,
   type ConsistencyReport,
 } from "../../analysis/consistency";
@@ -637,7 +638,17 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const currentGovernanceFindings = (reformatResult?.report.findings ?? observerFindings).filter(
     (finding) => !ignoredFindingIds.has(findingFingerprint(finding)),
   );
-  const findings = currentGovernanceFindings;
+  // The consistency report crosses into the ordinary finding model through the
+  // same bridge every other engine uses, so the review results can hand its
+  // findings to the Findings list rather than to a surface of their own. These
+  // produce no change: the planner has no path for a consistency finding until the
+  // engine supplies a real correction.
+  const consistencyFindings = React.useMemo(
+    () =>
+      consistencyResult === null ? [] : toFindings(consistencyResult, () => crypto.randomUUID()),
+    [consistencyResult],
+  );
+  const findings = [...currentGovernanceFindings, ...consistencyFindings];
   const currentStatus = status;
   const scanPhase = currentStatus?.phase ?? "notStarted";
   const canReviewFindings = scanPhase === "fresh" || scanPhase === "clean";
@@ -823,19 +834,22 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         />
       )}
       {page === "ai-review" && consistencyMessage && <p role="alert">{consistencyMessage}</p>}
-      {page === "ai-review" && consistencyPreflight && !consistencyProgress && (
-        <ConsistencyReviewPreflight
-          approximateWords={consistencyPreflight.wordCount}
-          statementCount={consistencyPreflight.statementCount}
-          maxStatements={CONSISTENCY_DEFAULT_MAX_STATEMENTS}
-          providerName={loadState().settings.llmProvider}
-          onStart={() => void startConsistencyReview()}
-          onCancel={() => {
-            setConsistencyPreflight(null);
-            setPage("home");
-          }}
-        />
-      )}
+      {page === "ai-review" &&
+        consistencyPreflight &&
+        !consistencyProgress &&
+        !consistencyResult && (
+          <ConsistencyReviewPreflight
+            approximateWords={consistencyPreflight.wordCount}
+            statementCount={consistencyPreflight.statementCount}
+            maxStatements={CONSISTENCY_DEFAULT_MAX_STATEMENTS}
+            providerName={loadState().settings.llmProvider}
+            onStart={() => void startConsistencyReview()}
+            onCancel={() => {
+              setConsistencyPreflight(null);
+              setPage("home");
+            }}
+          />
+        )}
       {page === "ai-review" && consistencyProgress && (
         <ConsistencyReviewProgress
           progress={consistencyProgress}
@@ -847,6 +861,11 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         <ConsistencyReviewResults
           report={consistencyResult}
           onReviewFindings={() => {
+            // Only navigates when the consistency findings are actually part of
+            // the displayed list below. Opening a Findings section that does not
+            // contain them would show the user their governance findings and read
+            // as though the review had been handed over.
+            if (consistencyFindings.length === 0) return;
             setPage("home");
             setFindingsOpen(true);
           }}

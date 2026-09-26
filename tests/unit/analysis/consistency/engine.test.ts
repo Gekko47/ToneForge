@@ -195,14 +195,41 @@ describe("consolidation", () => {
     expect(issues[0]?.suggestedText).toBeUndefined();
   });
 
-  it("suggests a replacement only above the actionable threshold", () => {
+  it("never suggests a replacement, because the engine does not write sentences", () => {
+    // The engine compares two statements. The only text it has is those two
+    // statements, so anything it offered as a "replacement" would be one of them
+    // echoed back — which reads as a fix and is not one.
     const high = parseAdjudication(
       '{"verdict":"contradiction","confidence":0.95,"rationale":"They differ."}',
       candidate(),
     );
     const issues = consolidate([candidate()], new Map([[candidate().fingerprint, high]]));
     expect(issues[0]?.actionable).toBe(true);
-    expect(issues[0]?.suggestedText).toBeDefined();
+    expect(issues[0]?.suggestedText).toBeUndefined();
+  });
+
+  it("names a faulty statement only when the adjudicator names one", () => {
+    const blaming = parseAdjudication(
+      '{"verdict":"contradiction","confidence":0.95,"rationale":"They differ.","atFault":"left"}',
+      candidate(),
+    );
+    const blamingIssues = consolidate([candidate()], new Map([[candidate().fingerprint, blaming]]));
+    expect(blamingIssues[0]?.suggestedNodeId).toBe("s0");
+
+    // A verdict that declines to say which side is wrong must not have a side
+    // invented for it. The check's own certainty is not a judgement about fault.
+    const neutral = parseAdjudication(
+      '{"verdict":"contradiction","confidence":0.95,"rationale":"They differ."}',
+      candidate(),
+    );
+    const neutralIssues = consolidate([candidate()], new Map([[candidate().fingerprint, neutral]]));
+    expect(neutralIssues[0]?.suggestedNodeId).toBeUndefined();
+  });
+
+  it("does not invent a faulty side for a deterministically decided candidate", () => {
+    const issues = consolidate([candidate({ certainty: "certain" })], new Map());
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.suggestedNodeId).toBeUndefined();
   });
 });
 
@@ -258,6 +285,67 @@ describe("running a review", () => {
   it("still reports a deterministic conflict with no provider configured", async () => {
     const report = await runConsistencyReview(request());
     expect(report.issues.length).toBeGreaterThan(0);
+  });
+
+  it("reports a run with nothing ambiguous as complete even with no provider", async () => {
+    // There was nothing for a model to decide, so nothing went undecided. A
+    // provider requirement here would report a fully reviewed document as
+    // partial for the sole reason that no model was configured.
+    const report = await runConsistencyReview(
+      request({
+        document: {
+          revision: "r1",
+          text: "## Summary\nThe migration completed on 2026-03-04.\n",
+          sections: [],
+        },
+        checks: ["C3"],
+      }),
+    );
+    expect(report.coverage.complete).toBe(true);
+    expect(report.usedModel).toBe(false);
+  });
+
+  it("counts a failed review as unreviewed rather than complete", async () => {
+    // A provider that throws every request reviewed nothing. Reporting that as a
+    // complete review is the failure this engine exists to avoid.
+    const provider: LlmProvider = {
+      name: "mock",
+      complete: vi.fn(async () => {
+        throw new Error("network down");
+      }),
+    };
+    const report = await runConsistencyReview(request(), { provider });
+    expect(report.usedModel).toBe(false);
+    expect(report.coverage.complete).toBe(false);
+    expect(report.coverage.modelAdjudicated).toBe(0);
+    expect(report.coverage.limitations.join(" ")).toMatch(/could not be reviewed/i);
+  });
+
+  it("stops adjudicating at the cap and reports how many went unreviewed", async () => {
+    // One term defined three ways leaves three candidates; a cap of one means two
+    // conflicts were never looked at, and the report has to say so.
+    const provider = answering('{"verdict":"unclear","confidence":0,"rationale":"No."}');
+    const report = await runConsistencyReview(
+      request({
+        maxAdjudications: 1,
+        document: {
+          revision: "r1",
+          text: [
+            "## A",
+            "Latency is defined as the delay before a response.",
+            "## B",
+            "Latency is defined as the time the server takes to reply.",
+            "## C",
+            "Latency is defined as the elapsed time for one request.",
+          ].join("\n"),
+          sections: [],
+        },
+      }),
+      { provider },
+    );
+    expect(provider.complete).toHaveBeenCalledTimes(1);
+    expect(report.coverage.complete).toBe(false);
+    expect(report.coverage.limitations.join(" ")).toMatch(/first 1 of/i);
   });
 
   it("marks coverage incomplete and says so when the statement cap bites", async () => {

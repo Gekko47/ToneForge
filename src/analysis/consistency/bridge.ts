@@ -18,7 +18,7 @@
  *    rewrites prose is worse than one that asks.
  */
 
-import { FindingSchema, type Finding } from "../../core/domain/index";
+import { FindingSchema, type Finding, type Range } from "../../core/domain/index";
 import { consistencyCheck, type ConsistencyIssue, type ConsistencyReport } from "./contracts";
 
 /** Category prefix, so a finding's origin is readable in the UI. */
@@ -28,25 +28,55 @@ export function consistencyCategory(issue: ConsistencyIssue): string {
 }
 
 /**
+ * The statement a finding points at, if the engine named one.
+ *
+ * `suggestedNodeId` is the only statement-level identification the engine
+ * produces, and it is deliberately set only when the adjudicator said which side
+ * is wrong. Everything the engine can say about fault comes from that field.
+ */
+function targetedStatement(issue: ConsistencyIssue): { text: string; range: Range } | null {
+  if (issue.suggestedNodeId === undefined || issue.ranges === undefined) return null;
+  const index = issue.nodeIds.indexOf(issue.suggestedNodeId);
+  if (index !== 0 && index !== 1) return null;
+  const range = index === 0 ? issue.ranges.left : issue.ranges.right;
+  const text = index === 0 ? issue.evidence.left : issue.evidence.right;
+  // A statement the engine never located cannot be pointed at. Emitting a range
+  // of zeroes here would put the finding at the very start of the document, which
+  // is a location, and a wrong one is worse than none.
+  if (range.end < range.start) return null;
+  return { text, range: { start: range.start, end: range.end, unit: "character" } };
+}
+
+/**
  * Convert one issue into a Finding.
  *
- * The range spans both statements, because a contradiction has no single
- * location: pointing at only one of them would make the other invisible in the
- * findings list. `nodeIds` carries both so navigation can reach either.
+ * `nodeIds` carries both statements so navigation can reach either, and the
+ * evidence quotes both because a user cannot judge a contradiction without seeing
+ * what it was compared against. The *range* points only at the statement the
+ * engine says is wrong — a range spanning both would select a region of the
+ * document that contains the contradiction rather than the text to change, and
+ * the planner turns a range into a document edit.
+ *
+ * When the engine names no faulty side, there is nothing to point at, so the
+ * finding is marked non-actionable: it is displayed as a report of a conflict
+ * and cannot become a change.
  */
 export function toFinding(issue: ConsistencyIssue, identity: () => string): Finding {
-  const start = Math.min(issue.evidence.left.length, issue.evidence.right.length);
+  const target = targetedStatement(issue);
   return FindingSchema.parse({
     id: identity(),
     kind: "consistency",
     category: consistencyCategory(issue),
-    range: { start: 0, end: Math.max(start, 0), unit: "character" },
+    range: target?.range ?? { start: 0, end: 0, unit: "character" },
     message: issue.detail,
     severity: issue.severity,
     evidence: `${issue.evidence.left}\n\n—\n\n${issue.evidence.right}`,
     ruleId: `consistency:${issue.checkId}`,
     confidence: issue.confidence,
-    actionable: issue.actionable,
+    actionable: issue.actionable && target !== null,
+    ...(target === null
+      ? { advisoryReason: "No statement was identified as wrong, so this cannot be applied." }
+      : {}),
     nodeIds: issue.nodeIds,
     source: "ai",
     // A consistency finding rewrites prose, so it is reversible only in the
@@ -54,7 +84,7 @@ export function toFinding(issue: ConsistencyIssue, identity: () => string): Find
     reversible: true,
     risk: issue.severity === "error" ? "medium" : "low",
     status: "new",
-    actual: issue.evidence.right,
+    actual: target?.text ?? issue.evidence.right,
     ...(issue.suggestedText === undefined
       ? {}
       : { expected: issue.suggestedText, explanation: issue.detail }),

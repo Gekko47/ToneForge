@@ -19,6 +19,7 @@ import {
   compareDates,
   contentWords,
   extractDates,
+  extractQuantities,
   makeCandidate,
   normalizeForComparison,
   pairwise,
@@ -55,7 +56,18 @@ export function promisedContent(heading: string): PromiseKind | null {
   return null;
 }
 
+/**
+ * Whether a body actually contains the kind of content its heading promised.
+ *
+ * `numbers` and `dates` are decided by looking for the thing itself, because a
+ * section promising "Key Figures" states its figures as digits and never says
+ * "figures" in the body. Matching marker words there reports a section full of
+ * numbers as not containing numbers. The remaining kinds have no such extractor
+ * — nothing parses "this section contains steps" — so they keep marker matching.
+ */
 function containsKind(text: string, kind: PromiseKind): boolean {
+  if (kind === "numbers") return extractQuantities(text).length > 0;
+  if (kind === "dates") return extractDates(text).length > 0;
   const words = contentWords(text);
   const markerSet = new Set(PROMISE_MARKERS[kind]);
   return words.some((word) => markerSet.has(word) || markerSet.has(`${word}s`));
@@ -93,13 +105,20 @@ export function checkTemporalConflict(statements: IndexedStatement[]): Consisten
     );
     if (!conflict) continue;
 
+    // Certain only when there is exactly one date per statement, because only
+    // then is the conflicting pair the pair the statements are actually making.
+    // With several dates on one side, "some pair conflicts" says nothing about
+    // which claim is the contradictory one, and reporting that as decided is
+    // how a temporal check ends up confidently wrong about a timeline.
+    const single = leftDates.length === 1 && rightDates.length === 1;
+
     candidates.push(
       makeCandidate({
         checkId: "C3",
         left,
         right,
         suspicion: `The same subject is placed on different dates in two sections.`,
-        certainty: "certain",
+        certainty: single ? "certain" : "ambiguous",
         evidence: {
           left: leftDates.map((d) => d.raw).join(", "),
           right: rightDates.map((d) => d.raw).join(", "),

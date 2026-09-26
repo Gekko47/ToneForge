@@ -85,6 +85,11 @@ export default [
               group: ["**/ai/*", "**/taskpane/*"],
               message: "word/ must not depend on ai or ui (architecture.md).",
             },
+            {
+              group: ["**/analysis/consistency/*", "**/analysis/consistency/index"],
+              message:
+                "word/ and the observer must not call the consistency engine: it runs on a whole-document snapshot the user chose to review, never on an incremental or typing path (ADR-0052).",
+            },
           ],
         },
       ],
@@ -103,36 +108,6 @@ export default [
               group: ["**/ai/*", "**/word/*", "**/taskpane/*", "**/commands/*"],
               message:
                 "rules/ must stay deterministic: allowed imports are core/domain and shared/utils only (architecture.md).",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    // The cross-report consistency engine is the ONE sanctioned exception to
-    // deterministic-first (ADR-0052). It may reach `ai/providers` to reuse the
-    // already-configured model for adjudication; it may NOT reach Word, the
-    // task pane, commands, or the revision adapter. Those four restrictions are
-    // what keep the exception from becoming a general one: the engine consumes
-    // a plain-text snapshot the caller supplies, so it cannot read or mutate a
-    // live document even by accident.
-    files: ["src/analysis/consistency/**/*.ts"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: [
-                "**/word/*",
-                "**/taskpane/*",
-                "**/commands/*",
-                "**/reformat/*",
-                "**/changes/*",
-              ],
-              message:
-                "analysis/consistency/ must not reach Word, the task pane, commands, the orchestrator, or the planner. It consumes a text snapshot and emits findings (ADR-0052).",
             },
           ],
         },
@@ -197,7 +172,18 @@ export default [
     },
   },
   {
-    // Explicit scope for Phase H consistency seam — reserved, no engine.
+    // The cross-report consistency engine is the ONE sanctioned exception to
+    // deterministic-first (ADR-0052). It may reach `ai/providers` to reuse the
+    // already-configured model for adjudication; it may NOT reach Word, the
+    // task pane, commands, the orchestrator, or the planner. Those restrictions
+    // are what keep the exception from becoming a general one: the engine
+    // consumes a plain-text snapshot the caller supplies, so it cannot read or
+    // mutate a live document even by accident.
+    //
+    // This block is deliberately placed after the general `src/analysis/**` block
+    // above. In flat config the last matching block wins, so a narrower rule
+    // declared earlier would be silently replaced by the broader one and the
+    // engine's own exception would stop being enforced at all.
     files: ["src/analysis/consistency/**/*.ts"],
     rules: {
       "no-restricted-imports": [
@@ -205,8 +191,15 @@ export default [
         {
           patterns: [
             {
-              group: ["**/taskpane/*", "**/commands/*", "**/word/revisionAdapter*"],
-              message: "consistency seam must not import ui or word/revisionAdapter.",
+              group: [
+                "**/word/*",
+                "**/taskpane/*",
+                "**/commands/*",
+                "**/reformat/*",
+                "**/changes/*",
+              ],
+              message:
+                "analysis/consistency/ must not reach Word, the task pane, commands, the orchestrator, or the planner. It consumes a text snapshot and emits findings (ADR-0052).",
             },
           ],
         },

@@ -176,6 +176,19 @@ describe("C1 terminology drift", () => {
     expect(found[0]?.checkId).toBe("C1");
   });
 
+  it("treats a one-sided addition as ambiguous rather than a decided naming conflict", () => {
+    // One unique word in total is not a substitution. One statement simply says
+    // more than the other, and calling that terminology drift reports a
+    // difference the author never made.
+    reset();
+    const found = checkTerminologyDrift([
+      statement("The onboarding programme helps new staff learn the system.", "Intro"),
+      statement("The onboarding programme helps new staff learn the system quickly.", "Detail"),
+    ]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.certainty).toBe("ambiguous");
+  });
+
   it("stays silent when two sections use the same wording", () => {
     reset();
     const found = checkTerminologyDrift([
@@ -241,6 +254,18 @@ describe("C2 numeric contradiction", () => {
     ]);
     expect(found).toHaveLength(0);
   });
+
+  it("reports at most one candidate per statement pair however many numbers each has", () => {
+    // A cross-product of quantities produced several candidates for the same two
+    // statements, all with the same fingerprint, so one conflict was reported
+    // repeatedly with no way to tell which pair of figures was in dispute.
+    reset();
+    const found = checkNumericContradiction([
+      statement("Revenue was 4 million in the north and 6 million in the south.", "Intro"),
+      statement("Revenue was 5 million in the north and 7 million in the south.", "Detail"),
+    ]);
+    expect(found).toHaveLength(1);
+  });
 });
 
 describe("C3 temporal conflict", () => {
@@ -273,6 +298,18 @@ describe("C3 temporal conflict", () => {
     expect(found[0]?.certainty).toBe("certain");
   });
 
+  it("leaves a multi-date statement ambiguous rather than certain", () => {
+    // With several dates on each side, "some pair conflicts" does not say which
+    // claim is the contradictory one.
+    reset();
+    const found = checkTemporalConflict([
+      statement("The migration started 2026-01-05 and completed 2026-03-04.", "Intro"),
+      statement("The migration started 2026-01-05 and completed 2026-07-19.", "Detail"),
+    ]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.certainty).toBe("ambiguous");
+  });
+
   it("stays silent for the same date stated twice", () => {
     reset();
     const found = checkTemporalConflict([
@@ -303,6 +340,18 @@ describe("C4 entity attribute conflict", () => {
       statement("Acme is a software company with offices overseas.", "Detail"),
     ]);
     found.forEach((candidate) => expect(candidate.certainty).toBe("ambiguous"));
+  });
+
+  it("does not treat a sentence-initial article as a shared entity", () => {
+    // "The" is capitalized at the start of a sentence and is not a proper noun.
+    // Without the exclusion, every pair of sentences beginning with an article
+    // anchors C4 and the check fires on the whole document.
+    reset();
+    const found = checkEntityAttributeConflict([
+      statement("The budget was approved in March.", "Intro"),
+      statement("The photographs were taken at the summit.", "Detail"),
+    ]);
+    expect(found).toHaveLength(0);
   });
 
   it("stays silent with no shared proper noun", () => {
@@ -414,6 +463,20 @@ describe("C9 section promise mismatch", () => {
     expect(checkSectionPromiseMismatch([body], ["Key Figures"])).toHaveLength(0);
   });
 
+  it("accepts a section that states numbers without repeating the word in its heading", () => {
+    // "Key Figures" is satisfied by the figures themselves. Requiring the marker
+    // word in the body reported a section full of numbers as having none.
+    reset();
+    const body = statement("Revenue reached 4 million across the region.", "Key Figures");
+    expect(checkSectionPromiseMismatch([body], ["Key Figures"])).toHaveLength(0);
+  });
+
+  it("accepts a section that states dates without repeating the word in its heading", () => {
+    reset();
+    const body = statement("The launch happened on 2026-03-04.", "Project Timeline");
+    expect(checkSectionPromiseMismatch([body], ["Project Timeline"])).toHaveLength(0);
+  });
+
   it("ignores a heading that promises nothing recognizable", () => {
     reset();
     const body = statement("Anything at all.", "Miscellaneous");
@@ -433,6 +496,19 @@ describe("C10 scope contradiction", () => {
     const found = checkScopeContradiction([
       statement("All regions are covered by the service.", "Intro"),
       statement("Every region is covered, however three are not yet.", "Detail"),
+    ]);
+    expect(found.length).toBeGreaterThan(0);
+    expect(found[0]?.checkId).toBe("C10");
+  });
+
+  it("detects the universal 'always', which singular folding would have hidden", () => {
+    reset();
+    const found = checkScopeContradiction([
+      statement("The service always encrypts customer records at rest.", "Intro"),
+      statement(
+        "The service encrypts customer records at rest, however some archives are not.",
+        "Detail",
+      ),
     ]);
     expect(found.length).toBeGreaterThan(0);
     expect(found[0]?.checkId).toBe("C10");
