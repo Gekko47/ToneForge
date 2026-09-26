@@ -87,6 +87,76 @@ This configuration is additive: `npm run dev`, `npm run sideload`, and
 `npm run stop` remain the separate terminal workflow and the supported
 recovery path.
 
+### Visual Studio Code debugger (Word on the web, Chrome and Edge)
+
+[`.vscode/launch.json`](../.vscode/launch.json) also provides **Word on the Web
+(Chrome)** and **Word on the Web (Edge)** for testing the add-in in Office on
+the web. Mac and Word for Mac are deliberately out of scope, so there is no
+Safari/WebKit configuration.
+
+#### Why the browser is launched by Visual Studio Code
+
+`office-addin-debugging` v5 cannot drive a web debug session. It exposes no
+`--browser` option and no remote-debugging-port option, it enables the CDP port
+only for the desktop app type on Windows, and for the web app type it opens
+your **default** browser without a debug port. There is therefore nothing to
+attach to.
+
+So these configurations work the other way around: Visual Studio Code launches
+the browser itself with an explicit `--remote-debugging-port`, and the `url` is
+the same Office Online sideload URL that `office-addin-debugging` would have
+opened. That URL is assembled in the `variables` block of
+[`.vscode/launch.json`](../.vscode/launch.json) from
+`wdaddindevserverport`, `wdaddinmanifestfile`, `wdaddinmanifestguid`, and
+`wdaddintest`, matching the query string the sideload tooling generates.
+`wdaddintest=true` suppresses the Office Online consent dialogs.
+
+The dev server is started by the `Debug: Word Web Dev Server`
+[`preLaunchTask`](../.vscode/tasks.json), which runs
+[`start:web`](../package.json). That script passes `--no-sideload` on purpose:
+sideloading would open a second, un-debuggable browser window in your default
+browser. The launch configuration is solely responsible for the browser.
+
+#### Prerequisites
+
+1. A Word document in Office on the web in your tenant. Web sideloading needs a
+   real document URL; the sideload tooling fails with "For sideload to web, you
+   need to specify a document url" without one.
+2. The localhost development certificate trusted, as described in
+   [Setup](#setup).
+3. Sign-in completed in the dedicated browser profile. Each configuration uses
+   its own `userDataDir` under `.vscode/.debug-profile/`, so the first run
+   requires a separate sign-in.
+4. No other session already listening on the same debug port. Chrome uses 9222
+   and Edge uses 9223 so they never collide with the 9229 WebView2 port used by
+   **Word Desktop (Edge Chromium)**. Run one web configuration at a time.
+
+#### Usage
+
+1. Open **View** | **Run** in Visual Studio Code.
+2. Select **Word on the Web (Chrome)** or **Word on the Web (Edge)**.
+3. Press F5. When prompted, paste the absolute URL of your Office on the web
+   document. The URL is prompted for rather than stored, so your tenant name is
+   never committed to the repository.
+4. The `Debug: Word Web Dev Server` task starts the Webpack development server,
+   and the browser opens to the document with the add-in registered.
+5. Set breakpoints in TypeScript or JavaScript and run the corresponding task
+   pane or ribbon action. Breakpoints bind to the task pane iframe once it has
+   loaded.
+6. End the session with Shift+F5. The dedicated browser profile is reused on
+   the next run, so the sign-in is not repeated.
+
+The `Office.initialize` and `Office.onReady` breakpoint limitation documented
+for the desktop path applies here as well. Use runtime diagnostics or the host
+browser developer tools for initialization-time failures.
+
+#### Manual sideloading without the debugger
+
+`Debug: Word Web Sideload` runs the standard
+[`sideload`](../package.json) flow for the web app type and opens the document
+in your default browser. Use it to confirm registration independently of the
+debugger. It cannot select a browser, and it is not a debug session.
+
 ### Microsoft 365 Agents Toolkit is not the current ToneForge workflow
 
 Microsoft 365 Agents Toolkit is Microsoft's primary environment for **creating

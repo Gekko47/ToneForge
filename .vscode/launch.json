@@ -1,5 +1,21 @@
 {
   "version": "0.2.0",
+  "inputs": [
+    {
+      "id": "officeDocumentUrl",
+      "type": "promptString",
+      "description": "Absolute URL of an existing Word document in Office on the web. Web sideloading requires a real document URL in your tenant.",
+      "default": "https://YOUR-TENANT.sharepoint.com/..."
+    }
+  ],
+  "variables": {
+    "devServerPort": "3000",
+    "manifestFileName": "manifest.xml",
+    "manifestGuid": "96df86d6-ce2f-42e9-8fba-916143aeeb5c",
+    "sideloadQuery": "&wdaddindevserverport=${devServerPort}&wdaddinmanifestfile=${manifestFileName}&wdaddinmanifestguid=${manifestGuid}&wdaddintest=true",
+    "chromeDebugPort": 9222,
+    "edgeWebDebugPort": 9223
+  },
   "configurations": [
     {
       "name": "Word Desktop (Edge Chromium)",
@@ -10,6 +26,28 @@
       "timeout": 600000,
       "webRoot": "${workspaceFolder}",
       "preLaunchTask": "Debug: Word Desktop"
+    },
+    {
+      "name": "Word on the Web (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "${input:officeDocumentUrl}${sideloadQuery}",
+      "port": "${chromeDebugPort}",
+      "userDataDir": "${workspaceFolder}/.vscode/.debug-profile/chrome",
+      "timeout": 300000,
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "Debug: Word Web Dev Server"
+    },
+    {
+      "name": "Word on the Web (Edge)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "${input:officeDocumentUrl}${sideloadQuery}",
+      "port": "${edgeWebDebugPort}",
+      "userDataDir": "${workspaceFolder}/.vscode/.debug-profile/edge",
+      "timeout": 300000,
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "Debug: Word Web Dev Server"
     }
   ]
 }

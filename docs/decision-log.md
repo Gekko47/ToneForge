@@ -847,3 +847,91 @@ added, which is a genuine conformance fix the CLI's crash had been hiding.
   suite, and a dropped `supertip` is rejected
 - `node_modules/@microsoft/app-manifest/build/json-schemas/teams/v1.30/MicrosoftTeams.schema.json`
 - `node_modules/@microsoft/app-manifest/build/generated-types/teams/TeamsManifestV1D30.d.ts`
+
+## ADR-0054 — VS Code launches the browser for a web debug session, with an explicit CDP port
+
+- Status: Accepted
+- Date: 2026-09-26
+- Extends: ADR-0051 (an all-green automated run is never reported as a release)
+
+### Context
+
+The host matrix in [`manual-verification.md`](manual-verification.md) still had to record
+Word on the web in both Chrome and Edge, and the only debug path the repository had was
+`Word Desktop (Edge Chromium)`, which attaches to the WebView2 CDP port 9229. Reaching
+the web hosts meant working out what `office-addin-debugging` can actually do, and the
+answer is that it cannot do it. Version 5.1.6 was read directly rather than assumed:
+
+- The `start` command accepts no `--browser` option and no remote-debugging-port option.
+- `startDebugging()` calls `devSettings.enableDebugging()` only when the app type is
+  `desktop` **and** the platform is Windows. The web path never enables a debug port.
+- For the web app type, `sideloadAddIn()` requires an explicit `--document` URL and then
+  calls `open()` on the **default** browser, with no debug port on the resulting process.
+
+So the "attach to the browser that office-addin-debugging launched" model has nothing to
+attach to. A configuration written in that shape would have looked plausible, appeared in
+the Run and Debug picker, and failed on first use with a timeout.
+
+The second constraint is that web sideloading is not a local operation. It is an Office
+Online query-string protocol: the document URL is appended with `wdaddindevserverport`,
+`wdaddinmanifestfile`, `wdaddinmanifestguid`, and optionally `wdaddintest`, and Office
+Online registers the add-in from those parameters. That means a real document URL in a
+real tenant is required, and that URL contains a tenant and site name.
+
+### Decision
+
+Invert the direction of control. VS Code launches the browser with an explicit
+`--remote-debugging-port`, and the `url` is the sideload URL that `office-addin-debugging`
+would otherwise have opened. The `preLaunchTask` starts only the dev server, via a new
+`start:web` script that passes `--no-sideload` so the task never opens a second,
+un-debuggable browser window. The launch configuration is solely responsible for the
+browser.
+
+The sideload query string is assembled once in a `variables` block in
+[`.vscode/launch.json`](../.vscode/launch.json) and shared by both web configurations, so
+Chrome and Edge cannot drift apart. Chrome takes 9222 and Edge takes 9223, which keeps
+both clear of the 9229 WebView2 port and lets the desktop and web paths coexist.
+
+The document URL is supplied through a `promptString` input rather than written into the
+file. [`.gitignore`](../.gitignore) deliberately un-ignores `launch.json` and `tasks.json`
+so they are shared with the team, which means a hardcoded document URL would commit a
+tenant and site name into the repository. Prompting keeps that out of git at the cost of
+one paste per session.
+
+Mac and Word for Mac are out of scope. No Safari or WebKit configuration is emitted
+anywhere, and the Mac matrix row now says so explicitly instead of leaving the row looking
+merely forgotten.
+
+### Consequences
+
+- The web hosts become reachable for manual verification, which is a precondition for
+  Stage 27. This does not close it. The Chrome and Edge matrix rows stay `PENDING` with
+  their evidence unchanged, because a configuration that has not been run is not evidence.
+  Per ADR-0051, the existence of the path is not a result.
+- Web sideloading is only reachable for someone with a document in a tenant, so the web
+  path is not reproducible on a machine without Office on the web access. The desktop path
+  remains the one that works everywhere.
+- Each web configuration uses its own `userDataDir` under `.vscode/.debug-profile/`, so the
+  first run needs a separate Office sign-in. The sign-in then persists. This isolation is
+  what makes two fixed ports sufficient, and it also means these profiles are not the
+  developer's everyday browser profile.
+- Two web configurations can be run only one at a time; a second F5 on a port already in
+  use will fail to attach.
+- The sideload query string is now duplicated between `launch.json` and the behavior of
+  `office-addin-dev-settings`. If Microsoft changes the protocol, this configuration is the
+  thing that will silently stop registering the add-in. The parameters are documented in
+  [`onboarding.md`](onboarding.md) so a failure is diagnosable.
+- If a future `office-addin-debugging` version adds browser selection and a debug port for
+  the web app type, this indirection should be removed in favor of the supported flag.
+
+### Evidence
+
+- [`.vscode/launch.json`](../.vscode/launch.json) — the `variables` block, the two web
+  configurations, and the unchanged desktop attach
+- [`.vscode/tasks.json`](../.vscode/tasks.json) — `Debug: Word Web Dev Server` and
+  `Debug: Word Web Sideload`
+- `package.json` — the `start:web` script
+- `node_modules/office-addin-debugging/lib/cli.js` — the `start` option surface
+- `node_modules/office-addin-debugging/lib/start.js` — desktop-and-Windows-only debugging
+- `node_modules/office-addin-dev-settings/lib/sideload.js` — `generateSideloadUrl` and the
+  `open()` call that opens the default browser

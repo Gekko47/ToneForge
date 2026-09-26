@@ -55,12 +55,12 @@ this evidence record. See
 
 ## Host matrix
 
-| Host                     | Version | Browser/engine    | Sideload | Task pane | Probe   | Current evidence                                                                                                                           |
-| ------------------------ | ------- | ----------------- | -------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Word on Windows          | unknown | Edge WebView2 153 | PASS     | PASS      | PARTIAL | Desktop text insert/replace and tracking smoke recorded below. Breaks/styles remain false; Phase C/E and accessibility matrix remain open. |
-| Word on the web (Chrome) | —       | Chrome            | PENDING  | PENDING   | PENDING | Not recorded.                                                                                                                              |
-| Word on the web (Edge)   | —       | Edge              | PENDING  | PENDING   | PENDING | Not recorded.                                                                                                                              |
-| Word on Mac              | —       | Safari/WebKit     | PENDING  | PENDING   | PENDING | Not recorded; Mac is conditional on the release-host decision.                                                                             |
+| Host                     | Version | Browser/engine    | Sideload | Task pane | Probe   | Current evidence                                                                                                                                               |
+| ------------------------ | ------- | ----------------- | -------- | --------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Word on Windows          | unknown | Edge WebView2 153 | PASS     | PASS      | PARTIAL | Desktop text insert/replace and tracking smoke recorded below. Breaks/styles remain false; Phase C/E and accessibility matrix remain open.                     |
+| Word on the web (Chrome) | —       | Chrome            | PENDING  | PENDING   | PENDING | Not recorded. A debug path now exists via **Word on the Web (Chrome)** in [`.vscode/launch.json`](../.vscode/launch.json); no evidence has been collected yet. |
+| Word on the web (Edge)   | —       | Edge              | PENDING  | PENDING   | PENDING | Not recorded. A debug path now exists via **Word on the Web (Edge)** in [`.vscode/launch.json`](../.vscode/launch.json); no evidence has been collected yet.   |
+| Word on Mac              | —       | Safari/WebKit     | PENDING  | PENDING   | PENDING | Not recorded. Out of scope: Mac is not a release commitment and no Mac hardware is available, so no Safari/WebKit debug configuration is provided.             |
 
 ## Desktop evidence — 2026-09-22
 

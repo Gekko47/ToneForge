@@ -11,6 +11,45 @@
         "panel": "dedicated"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Debug: Word Web Dev Server",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "start:web"],
+      "presentation": {
+        "clear": true,
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Debug: Word Web Sideload",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "sideload",
+        "--",
+        "web",
+        "--app",
+        "Word",
+        "--document",
+        "${input:officeDocumentUrl}"
+      ],
+      "presentation": {
+        "clear": true,
+        "panel": "dedicated"
+      },
+      "problemMatcher": [],
+      "prompt": {
+        "message": "office-addin-debugging opens your default browser and cannot select Chrome or Edge. To debug in a specific browser, use the Word on the Web launch configurations instead.",
+        "buttons": [
+          {
+            "label": "Continue"
+          }
+        ]
+      }
     }
   ]
 }
