@@ -66,6 +66,40 @@ export function classifyUpstreamBaseUrl(value) {
   return { baseUrl: normalized, classification: "userApprovedSelfHosted" };
 }
 
+/**
+ * Map one OpenRouter model entry onto the gateway catalog contract.
+ *
+ * An entry with no usable id is dropped rather than passed on: a model the
+ * add-in cannot name is a model it cannot offer. Every other field falls back
+ * to a documented default, because one absent optional field should not hide a
+ * model the provider actually serves.
+ */
+export function normalizeModelEntry(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = typeof raw.id === "string" ? raw.id.trim() : "";
+  if (id.length === 0) return null;
+  const strings = (value) =>
+    Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+  const record = (value) => (value && typeof value === "object" ? value : {});
+  const architecture = record(raw.architecture);
+  const topProvider = record(raw.top_provider);
+  const supported = strings(raw.supported_parameters);
+  const number = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+  return {
+    id,
+    displayName: typeof raw.name === "string" && raw.name.trim().length > 0 ? raw.name.trim() : id,
+    description: typeof raw.description === "string" ? raw.description : "",
+    contextWindow: number(topProvider.context_length) ?? number(raw.context_length),
+    inputModalities: strings(architecture.input_modalities),
+    outputModalities: strings(architecture.output_modalities),
+    supportsTools: supported.includes("tools"),
+    supportsStructuredOutput:
+      supported.includes("structured_outputs") || supported.includes("response_format"),
+    supportsReasoning: supported.includes("reasoning") || supported.includes("include_reasoning"),
+    deprecated: typeof raw.expiration_date === "string" && raw.expiration_date.trim().length > 0,
+  };
+}
+
 function sendJson(res, status, body) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
@@ -215,12 +249,17 @@ export function createDevGatewayBroker({
         return;
       }
       const payload = await upstream.json();
-      // The raw provider list is passed through for the client-side pure
-      // normalizer; the broker adds no interpretation of its own.
+      // The response matches the client's catalog contract, not OpenRouter's:
+      // the browser validates `models` and would reject a `data` list outright.
+      // Normalization happens here rather than in the browser so a raw
+      // provider payload never reaches the add-in.
+      const models = Array.isArray(payload?.data)
+        ? payload.data.map((raw) => normalizeModelEntry(raw)).filter((entry) => entry !== null)
+        : [];
       sendJson(response, 200, {
         connectionId,
         fetchedAt: now().toISOString(),
-        data: payload?.data ?? [],
+        models,
       });
     }
 

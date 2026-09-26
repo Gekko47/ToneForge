@@ -143,10 +143,23 @@ describe("buildVerificationSummary", () => {
 
   it("marks a stage with no result as pending rather than omitting it", () => {
     const summary = buildVerificationSummary({ results: {}, startedAt: START, finishedAt: END });
-    expect(summary.ok).toBe(true);
     VERIFICATION_GRAPH.forEach((stage) => {
       expect(summary.stages.find((entry) => entry.name === stage.name)?.status).toBe("pending");
     });
+  });
+
+  it("is not ok when an automated stage never ran", () => {
+    // A run that skipped local verification is not a green run, however few
+    // stages actually failed.
+    const summary = buildVerificationSummary({ results: {}, startedAt: START, finishedAt: END });
+    expect(summary.ok).toBe(false);
+  });
+
+  it("reports only human-owned gates as open external gates", () => {
+    // An unrun automated stage is missing work, not an external gate: listing it
+    // here would imply no local automation is outstanding.
+    const summary = buildVerificationSummary({ results: {}, startedAt: START, finishedAt: END });
+    expect(summary.openExternalGates).toEqual(["word-host-evidence"]);
   });
 
   it("never marks the external gate as passed", () => {

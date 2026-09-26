@@ -85,8 +85,16 @@ export function runSentinelBuild(build, { envImpl, scan } = {}) {
       shell: false,
     },
   );
+  // Webpack and the secret scanner both write their diagnostics to stderr, so a
+  // failure that only ever produced stderr would otherwise be reported as an
+  // empty output and told the reader nothing.
   if (result.status !== 0) {
-    return { build: build.name, built: false, leaks: [], output: result.stdout ?? "" };
+    return {
+      build: build.name,
+      built: false,
+      leaks: [],
+      output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+    };
   }
   const check = scan ?? spawnSync;
   const scanned = check(process.execPath, ["scripts/check-secrets.mjs", "--dist"], {
@@ -98,7 +106,7 @@ export function runSentinelBuild(build, { envImpl, scan } = {}) {
     build: build.name,
     built: true,
     leaks: scanned.status === 0 ? [] : ["secret-shaped value"],
-    output: scanned.stdout ?? "",
+    output: `${scanned.stdout ?? ""}${scanned.stderr ?? ""}`,
   };
 }
 

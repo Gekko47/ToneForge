@@ -8,7 +8,7 @@ import {
   Toggle,
 } from "@fluentui/react";
 import { env } from "../../core/config/env";
-import type { ModelCatalog } from "../../core/domain/index";
+import type { ModelCatalog, ProviderConnection } from "../../core/domain/index";
 import { ProviderIdSchema } from "../../core/domain/index";
 import { invalidateCatalogOnProviderChange } from "../../ai/gateway/modelCatalog";
 import {
@@ -54,10 +54,16 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
   // The catalog is session state, not persisted state: it belongs to a
   // connection that the user may disconnect at any moment.
   const [catalog, setCatalog] = React.useState<ModelCatalog | null>(null);
+  // The persisted connection lives in state, initialized once. Reading it with a
+  // bare `loadState()` during render would return the pre-connect value forever:
+  // nothing re-renders when the child saves, so a successful connect would leave
+  // the pane still showing the API key field.
+  const [openRouterConnection, setOpenRouterConnection] = React.useState<
+    ProviderConnection | undefined
+  >(() => loadState().providerConnections?.openrouter);
 
-  const currentState = loadState();
-  const openRouterConnection = providerAcceptsUserApiKey(draft.llmProvider)
-    ? currentState.providerConnections?.openrouter
+  const connectedConnection = providerAcceptsUserApiKey(draft.llmProvider)
+    ? openRouterConnection
     : undefined;
   const modelOptions = catalog === null ? [] : buildModelOptions(catalog.models);
 
@@ -130,7 +136,8 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
       {providerAcceptsUserApiKey(draft.llmProvider) ? (
         <OpenRouterConnectionSettings
           gatewayOrigin={env.LLM_BROKER_URL ?? ""}
-          connection={openRouterConnection}
+          connection={connectedConnection}
+          onConnectionChange={setOpenRouterConnection}
           catalog={catalog}
           models={modelOptions}
           onCatalogChange={setCatalog}
@@ -152,7 +159,7 @@ export default function ProviderPrivacySettingsSection(): React.ReactNode {
           description="Use the development broker URL. Do not enter an API key here."
         />
       )}
-      {openRouterConnection !== undefined && modelOptions.length > 0 ? null : (
+      {connectedConnection !== undefined && modelOptions.length > 0 ? null : (
         <TextField
           label="Model"
           value={draft.openAiModel}

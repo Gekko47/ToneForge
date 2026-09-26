@@ -114,9 +114,15 @@ export function extractHostMatrix(markdown) {
   return { header: rows[0], dataRows: rows.slice(1) };
 }
 
-/** The most recent `## ... evidence — YYYY-MM-DD` date in the document. */
+/**
+ * The most recent `## ... evidence <dash> YYYY-MM-DD` date in the document.
+ *
+ * All three separators are accepted: the em dash and en dash a typist produces
+ * and the plain hyphen someone typing quickly. A heading written with any of
+ * them still has a date, and a heading without a date still does not.
+ */
 export function extractEvidenceDate(markdown) {
-  const pattern = /^##\s+.*evidence\s+[—-]\s*(\d{4}-\d{2}-\d{2})\s*$/gim;
+  const pattern = /^##\s+.*evidence\s+[—–-]\s*(\d{4}-\d{2}-\d{2})\s*$/gim;
   let latest = null;
   let match = pattern.exec(markdown);
   while (match !== null) {

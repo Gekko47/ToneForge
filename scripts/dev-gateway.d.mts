@@ -10,6 +10,19 @@ export interface StoredConnection {
   createdAt?: string;
 }
 
+export interface GatewayModelEntry {
+  id: string;
+  displayName: string;
+  description: string;
+  contextWindow: number | null;
+  inputModalities: string[];
+  outputModalities: string[];
+  supportsStructuredOutput: boolean;
+  supportsTools: boolean;
+  supportsReasoning: boolean;
+  deprecated: boolean;
+}
+
 export declare const OPENROUTER_DEFAULT_BASE_URL: string;
 export declare const GATEWAY_PATH_PREFIX: string;
 export declare const MAX_BROKER_BODY_BYTES: number;
@@ -24,5 +37,7 @@ export declare function createDevGatewayBroker(options?: {
   connections?: Map<string, StoredConnection>;
   now?: () => Date;
 }): (req: unknown, res: unknown, next: () => void) => Promise<void>;
+
+export declare function normalizeModelEntry(raw: unknown): GatewayModelEntry | null;
 
 export declare function timingSafeEqual(left: Buffer, right: Buffer): boolean;

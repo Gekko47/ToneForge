@@ -94,13 +94,22 @@ export function buildVerificationSummary({ results, startedAt, finishedAt }) {
     };
   });
   const failed = stages.filter((stage) => stage.status === "failed");
-  const openExternal = stages.filter((stage) => stage.status === "pending");
+  const pending = stages.filter((stage) => stage.status === "pending");
+  // A pending stage is only an *external* gate when a human owns it. An
+  // automated stage that never ran is missing work, not an open gate, and
+  // listing it among the external gates would tell a reader no local
+  // automation is outstanding.
+  const openExternal = pending.filter((stage) => stage.owner === "external-evidence");
+  const pendingAutomated = pending.filter((stage) => stage.owner !== "external-evidence");
   return {
     graph: VERIFICATION_GRAPH_NAME,
     version: 1,
     startedAt,
     finishedAt,
-    ok: failed.length === 0,
+    // An automated stage that did not run is not a pass. Reporting `ok` for a
+    // run that skipped local verification would be a green summary for a run
+    // that verified nothing.
+    ok: failed.length === 0 && pendingAutomated.length === 0,
     stages,
     failureOwners: [...new Set(failed.map((stage) => stage.owner))],
     openExternalGates: openExternal.map((stage) => stage.name),

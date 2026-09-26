@@ -40,6 +40,8 @@ export declare function findSentinels(text: string): string[];
 export interface SpawnLikeResult {
   status: number | null;
   stdout?: string | null;
+  /** Diagnostics; both streams are kept so a failure is never reported blank. */
+  stderr?: string | null;
 }
 
 export type SpawnLike = (

@@ -272,7 +272,7 @@ describe("createDevGatewayBroker", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("fetches the model list with the stored key and returns the raw provider data", async () => {
+  it("fetches the model list with the stored key and returns the client contract shape", async () => {
     const mockFetchImpl = vi.fn(async () => okJson({ data: [{ id: "vendor/model" }] }));
     const fetchImpl = asFetch(mockFetchImpl);
     const connections = new Map([
@@ -285,7 +285,22 @@ describe("createDevGatewayBroker", () => {
       vi.fn(),
     );
     expect(res.statusCode).toBe(200);
-    expect(res.json().data).toEqual([{ id: "vendor/model" }]);
+    // The gateway client validates `models`; a `data` list would be rejected.
+    expect(res.json().models).toEqual([
+      {
+        id: "vendor/model",
+        displayName: "vendor/model",
+        description: "",
+        contextWindow: null,
+        inputModalities: [],
+        outputModalities: [],
+        supportsStructuredOutput: false,
+        supportsTools: false,
+        supportsReasoning: false,
+        deprecated: false,
+      },
+    ]);
+    expect(res.json().data).toBeUndefined();
     // The key is used server-side on the upstream call and never returned.
     const upstreamInit = (mockFetchImpl.mock.calls as unknown[][])[0]?.[1] as {
       headers: Record<string, string>;

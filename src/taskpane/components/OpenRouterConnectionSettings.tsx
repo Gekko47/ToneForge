@@ -33,6 +33,14 @@ export interface OpenRouterConnectionSettingsProps {
   gatewayOrigin: string;
   /** The currently persisted connection, if one exists. */
   connection: ProviderConnection | undefined;
+  /**
+   * Called with the connection that was just persisted.
+   *
+   * The parent owns the persisted record; without this the pane would keep
+   * showing the pre-connect state after a successful connect, because saving to
+   * `PersistedState` does not re-render anything on its own.
+   */
+  onConnectionChange?: (connection: ProviderConnection | undefined) => void;
   /** Models the provider offered, once a catalog has been fetched. */
   models: ModelDropdownOption[];
   catalog: ModelCatalog | null;
@@ -46,6 +54,7 @@ type Phase = "idle" | "connecting" | "loadingModels" | "ready" | "error";
 export default function OpenRouterConnectionSettings({
   gatewayOrigin,
   connection,
+  onConnectionChange,
   models,
   catalog,
   onCatalogChange,
@@ -97,6 +106,7 @@ export default function OpenRouterConnectionSettings({
     if (next) connections.openrouter = next;
     else delete connections.openrouter;
     saveState({ ...current, providerConnections: connections });
+    onConnectionChange?.(next);
   }
 
   /**

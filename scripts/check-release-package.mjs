@@ -1,6 +1,10 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { findDevelopmentArtifacts, validateProductionOrigin } from "./production-manifest.mjs";
+import {
+  buildProductionManifest,
+  findDevelopmentArtifacts,
+  validateProductionOrigin,
+} from "./production-manifest.mjs";
 
 const allowedExternalScripts = new Set([
   "https://officeapis.public.onecdn.static.microsoft/1/office.js",
@@ -76,10 +80,27 @@ function validateHtmlBundles(staging, page) {
   return localScripts;
 }
 
-function validateXml(staging, sourceXml) {
+/**
+ * The `manifest.xml` a package is expected to carry.
+ *
+ * Same rule as the JSON manifest: identical to source for a local package, and
+ * derived from it when a production origin is configured. Enforcing raw source
+ * equality in production mode would reject the one package that is allowed to
+ * ship.
+ */
+function expectedXml(sourceXml, sourceManifest, productionOrigin) {
+  if (!productionOrigin) return sourceXml;
+  const source = sourceManifest.validDomains?.[0];
+  if (typeof source !== "string" || source.length === 0) {
+    throw new Error("Development manifest has no validDomains[0] to substitute.");
+  }
+  return sourceXml.split(source).join(new URL(productionOrigin.trim()).origin);
+}
+
+function validateXml(staging, expected) {
   const stagedXml = readFileSync(assertFile(staging, "manifest.xml"), "utf8");
-  if (stagedXml !== sourceXml)
-    throw new Error("Staged manifest.xml differs from source manifest.xml");
+  if (stagedXml !== expected)
+    throw new Error("Staged manifest.xml differs from the expected manifest.xml");
   for (const asset of ["icon-16.png", "icon-32.png", "icon-80.png"]) {
     if (!stagedXml.includes(`assets/${asset}`))
       throw new Error(`manifest.xml does not reference ${asset}`);
@@ -118,19 +139,34 @@ export function checkReleasePackage(staging = resolve(root, "build/release")) {
   const sourceManifest = readJson(resolve(root, "manifest.json"), "source manifest.json");
   const stagedManifestPath = assertFile(staging, "manifest.json");
   const stagedManifest = readJson(stagedManifestPath, "staged manifest.json");
-  if (JSON.stringify(stagedManifest) !== JSON.stringify(sourceManifest)) {
-    throw new Error("Staged manifest.json differs from source manifest.json");
-  }
   // The checked-in manifest is deliberately localhost so `npm run sideload`
-  // works. That is fine for a local package and must never be shipped, so
-  // when a deployment origin is configured the staged manifest is checked
-  // against it rather than silently accepted.
+  // works. That is fine for a local package and must never be shipped, so when
+  // a deployment origin is configured the staged manifest is compared against
+  // the manifest derived from that origin rather than the source file: raw
+  // source equality would reject exactly the package that is allowed to ship.
   const productionOrigin = process.env.TONEFORGE_PRODUCTION_ORIGIN;
+  const expectedManifest = productionOrigin
+    ? buildProductionManifest(sourceManifest, productionOrigin)
+    : sourceManifest;
+  if (JSON.stringify(stagedManifest) !== JSON.stringify(expectedManifest)) {
+    throw new Error(
+      productionOrigin
+        ? "Staged manifest.json differs from the expected production manifest"
+        : "Staged manifest.json differs from source manifest.json",
+    );
+  }
   if (productionOrigin) {
     checkProductionManifest(stagedManifest, productionOrigin);
   }
   validateManifestReferences(staging, stagedManifest);
-  validateXml(staging, readFileSync(resolve(root, "manifest.xml"), "utf8"));
+  validateXml(
+    staging,
+    expectedXml(
+      readFileSync(resolve(root, "manifest.xml"), "utf8"),
+      sourceManifest,
+      productionOrigin,
+    ),
+  );
 
   const javascript = readdirSync(staging).filter((file) => file.endsWith(".js"));
   if (javascript.length === 0) throw new Error("Release package contains no JavaScript bundles");
