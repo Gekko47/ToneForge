@@ -278,6 +278,31 @@ button:disabled {
   color: var(--tf-success);
 }
 
+/* The coverage verdict. It was an inline style object carrying a light-theme
+   palette, so in dark mode it painted a near-white panel with dark text. The
+   border carries the verdict in `--tf-danger`/`--tf-success`, and the panel
+   itself uses the theme's own surface so it can never disagree with the page
+   it sits on. */
+.tf-coverage {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+  background-color: var(--tf-surface);
+}
+
+.tf-coverage-complete {
+  border-color: var(--tf-success);
+}
+
+.tf-coverage-incomplete {
+  border-color: var(--tf-danger);
+}
+
+.tf-coverage-reason {
+  color: var(--tf-danger);
+}
+
 .tf-pending-actions {
   display: flex;
   gap: 0.5rem;

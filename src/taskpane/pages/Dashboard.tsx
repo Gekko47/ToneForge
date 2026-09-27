@@ -257,7 +257,16 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   // render pass rather than after the user navigates away and back.
   const persisted = usePersistedState();
   const [page, setPage] = useState<DashboardPage>("home");
-  const [findingsOpen, setFindingsOpen] = useState(false);
+  /*
+   * Open by default, and opened *for* the user when findings arrive.
+   *
+   * It used to start collapsed, so the pane read "Findings 3" with nothing
+   * under it and the user had to know to click. A count with no list beside it
+   * is a promise the pane is not keeping. The effect below opens it on the
+   * first non-empty scan; the user can still collapse it afterwards, which is
+   * the difference between a default and a rule.
+   */
+  const [findingsOpen, setFindingsOpen] = useState(true);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [reformatResult, setReformatResult] = useState<ReformatResult | null>(null);
   const [status, setStatus] = useState<DocumentObserverStatus | null>(null);
@@ -797,10 +806,22 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const observerFindings = (status?.findings ?? []).filter(
     (finding) => !ignoredFindingIds.has(findingFingerprint(finding)),
   );
-  const currentGovernanceFindings = (reformatResult?.report.findings ?? observerFindings).filter(
-    (finding) => !ignoredFindingIds.has(findingFingerprint(finding)),
-  );
-  const findings = [...currentGovernanceFindings, ...consistencyFindings];
+  /*
+   * The list is the observer's findings, full stop.
+   *
+   * This used to read `reformatResult?.report.findings ?? observerFindings`, and
+   * that was a latent bug: the preview is a *different* run with its own
+   * acquisition and its own rule set, so its findings are not the scan's
+   * findings. While the preview only ran on a button press the disagreement was
+   * rare and brief. Auto-preview sets it on every full scan, so a preview that
+   * found no plannable change replaced a list of three real findings with an
+   * empty one — while the toolbar, reading the observer, still said three.
+   *
+   * The list and the count must come from the same source or the pane
+   * contradicts itself, and the observer is the one that scanned the document
+   * the user is looking at.
+   */
+  const findings = [...observerFindings, ...consistencyFindings];
   /*
    * Counted over the list the user can actually see, with the same ignore
    * predicate the filtering above used. Recomputed from `findings` rather than
@@ -947,7 +968,14 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           </button>
           <PendingChanges
             plan={pendingPlan?.plan ?? null}
-            findings={reformatResult?.report.findings ?? currentGovernanceFindings}
+            /*
+             * The preview's findings, not the observer's, and deliberately so.
+             * Each change carries a `findingId` from the run that planned it, so
+             * the annotation is only found in that same run's findings. Passing
+             * the observer's would look up ids that were never issued and print
+             * every change as unexplained.
+             */
+            findings={reformatResult?.report.findings ?? findings}
             coverage={pendingPlan?.coverage ?? null}
             exportCoverage={reformatResult?.report.coverage ?? null}
             applyDisabledReason={readiness.reason}

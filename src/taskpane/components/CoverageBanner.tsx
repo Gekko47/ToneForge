@@ -21,13 +21,19 @@ export default function CoverageBanner({ coverage }: CoverageBannerProps): React
   return (
     <section
       aria-label="Coverage"
-      style={{
-        marginTop: "1rem",
-        padding: "0.75rem",
-        border: `1px solid ${incomplete ? "#a4262c" : "#0b6a0b"}`,
-        borderRadius: "4px",
-        backgroundColor: incomplete ? "#fff5f5" : "#f5fff5",
-      }}
+      /*
+       * Tokens, not literals.
+       *
+       * The hardcoded pair was a light-theme palette pasted into a component
+       * that renders in both: in dark mode the banner painted a near-white
+       * panel with dark-green text, which is both a theme violation and an
+       * unreadable block at night. `--tf-danger` and `--tf-success` already
+       * carry a per-theme value; the tints do not, so the panel uses the
+       * theme's own surfaces and the border carries the verdict.
+       */
+      className={
+        incomplete ? "tf-coverage tf-coverage-incomplete" : "tf-coverage tf-coverage-complete"
+      }
     >
       <h3 style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem" }}>
         Coverage {incomplete ? "⚠ Incomplete" : "✓ Complete"}
@@ -45,7 +51,7 @@ export default function CoverageBanner({ coverage }: CoverageBannerProps): React
       {coverage.unprocessed.length > 0 && (
         <ul style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem" }}>
           {coverage.unprocessed.map((reason, index) => (
-            <li key={index} style={{ color: "#a4262c" }}>
+            <li key={index} className="tf-coverage-reason">
               {reason}
             </li>
           ))}
