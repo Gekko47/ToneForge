@@ -40,8 +40,17 @@ export interface AcquisitionDiagnostics {
   paragraphCollectionRead: boolean;
   structuralCoverage: "complete" | "partial" | "unsupported";
   unsupported: string[];
-  incremental: false;
-  incrementalReason: "No verified Word changed-range event; conservative full rescan is supported.";
+  /**
+   * Whether acquisition itself examined only part of the document.
+   *
+   * Widened from the literal `false` for the same reason as the coverage schema:
+   * the acquisition adapter always reads the whole body, but a caller that
+   * narrows the examined set afterwards reports that through the coverage
+   * report, and a type that cannot say `true` pushes that lie back onto whoever
+   * builds the diagnostic.
+   */
+  incremental: boolean;
+  incrementalReason: string;
 }
 
 export interface AnalysisIdentity {

@@ -89,7 +89,17 @@ export const CoverageReportSchema = z.object({
       completeDocumentCharacterCount: z.number().int().nonnegative(),
       fullBodyReadCount: z.number().int().nonnegative(),
       paragraphCollectionRead: z.boolean(),
-      incremental: z.literal(false),
+      /**
+       * Whether this report covers only part of the acquired document.
+       *
+       * This was `z.literal(false)`, which meant a narrowed run could not be
+       * represented at all: `buildCoverage` set the field from the caller's
+       * `incremental` flag, so every narrowed scan failed its own schema parse
+       * and was reported as a failed scan. The literal was accurate only while
+       * the flag was hardcoded, and it silently invalidated the incremental
+       * path the moment the observer started setting it.
+       */
+      incremental: z.boolean(),
       incrementalReason: z.string().trim().min(1),
     })
     .optional(),

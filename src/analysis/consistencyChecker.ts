@@ -107,7 +107,10 @@ export const ConsistencyReportSchema = z.object({
           completeDocumentCharacterCount: z.number().int().nonnegative(),
           fullBodyReadCount: z.number().int().nonnegative(),
           paragraphCollectionRead: z.boolean(),
-          incremental: z.literal(false),
+          // Mirrors `CoverageReportSchema`. It was `z.literal(false)`, which made
+          // an honestly narrowed run unrepresentable and turned every
+          // incremental scan into a schema failure.
+          incremental: z.boolean(),
           incrementalReason: z.string().trim().min(1),
         })
         .optional(),

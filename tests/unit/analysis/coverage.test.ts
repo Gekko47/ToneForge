@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildCoverage } from "../../../src/analysis/coverage";
-import { DocumentNodeSchema } from "../../../src/core/domain/DocumentSnapshot";
+import {
+  CoverageReportSchema,
+  DocumentNodeSchema,
+} from "../../../src/core/domain/DocumentSnapshot";
 import { v4 as uuidv4 } from "uuid";
 
 function makeNode(
@@ -117,5 +120,60 @@ describe("buildCoverage", () => {
     const report1 = buildCoverage({ nodes, text: "hello" });
     const report2 = buildCoverage({ nodes, text: "hello" });
     expect(report1.runId).not.toBe(report2.runId);
+  });
+
+  /*
+   * Regression: the coverage schema declared `incremental: z.literal(false)`
+   * while `buildCoverage` set the field from its caller. A narrowed scan
+   * therefore failed its own schema parse, and the observer surfaced that as a
+   * failed scan — so the incremental path reported "could not scan" for every
+   * document where it would have worked. The parse is asserted here, not just
+   * the value, because the value alone passes with a schema that would still
+   * reject it in production.
+   */
+  it("round-trips a report that declares a narrowed scope", () => {
+    // Shaped like the observer really builds it: the narrowed set *is* the node
+    // list, and `examinedNodeIds` covers all of it. A run does not exclude a
+    // required node type from its own list — it never had that node to examine.
+    const nodes = [makeNode("body", "Hello", "body/0"), makeNode("heading", "Title", "body/1")];
+    const report = buildCoverage({
+      nodes,
+      text: "Hello Title",
+      acquisition: {
+        structuralCoverage: "complete",
+        unsupported: [],
+        analyzedCharacterCount: 11,
+        completeDocumentCharacterCount: 11,
+      },
+      examinedNodeIds: nodes.map((node) => node.nodeId),
+      incremental: true,
+      incrementalReason: "Word reported 1 changed paragraph.",
+    });
+
+    const parsed = CoverageReportSchema.parse(report);
+    expect(parsed.acquisition?.incremental).toBe(true);
+    expect(parsed.acquisition?.incrementalReason).toBe("Word reported 1 changed paragraph.");
+    // Narrowed is not the same as broken: the nodes it did examine were still
+    // fully processed, so it must not be reported as an incomplete analysis.
+    // The two facts are separate, and conflating them would make every
+    // incremental scan refuse to apply.
+    expect(parsed.complete).toBe(true);
+  });
+
+  it("round-trips a full-scope report without an incremental claim", () => {
+    const nodes = [makeNode("paragraph", "Hello")];
+    const report = buildCoverage({
+      nodes,
+      text: "Hello",
+      acquisition: {
+        structuralCoverage: "complete",
+        unsupported: [],
+        analyzedCharacterCount: 5,
+        completeDocumentCharacterCount: 5,
+      },
+    });
+
+    const parsed = CoverageReportSchema.parse(report);
+    expect(parsed.acquisition?.incremental).toBe(false);
   });
 });
