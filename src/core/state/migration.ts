@@ -14,6 +14,7 @@ import {
   type PublishedVersion,
 } from "../domain/ProfileRecord";
 import { ProviderConnectionSchema, type ProviderConnection } from "../domain/ProviderConnection";
+import { IgnoredFindingSchema, type IgnoredFinding } from "../domain/Finding";
 import { type PersistedState } from "./persistence";
 
 export const CURRENT_STATE_VERSION = 11;
@@ -262,7 +263,7 @@ function readCurrentState(obj: Record<string, unknown>): PersistedState {
     // worse than an empty tab they can fill.
     semanticProfileRecords: {},
     activeSemanticProfileId: null,
-    ignoredFindings: [],
+    ignoredFindings: normalizeIgnoredFindings(obj.ignoredFindings),
     governanceProfiles: normalizeGovernanceProfiles(obj.governanceProfiles),
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, obj.governanceProfiles),
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
@@ -449,6 +450,30 @@ function normalizeGovernanceHistory(
     if (!result[id]) result[id] = [profile];
   }
   return result;
+}
+
+/**
+ * Recover the ignored-findings list from a current-version store.
+ *
+ * This was hardcoded to `[]`, which meant every load discarded the list. The
+ * write landed in the store and the read threw it away, so the Ignore button
+ * appeared to do nothing and the ignored list never rendered — a silent,
+ * total loss of a user decision on every single reload.
+ *
+ * Entries are validated individually rather than as a set, so one malformed
+ * row cannot cost the user the rest of their ignores. Duplicate fingerprints
+ * are collapsed, keeping the most recent, because a fingerprint identifies a
+ * rule and re-ignoring the same rule should move the existing row rather than
+ * accumulate.
+ */
+function normalizeIgnoredFindings(raw: unknown): IgnoredFinding[] {
+  if (!Array.isArray(raw)) return [];
+  const byFingerprint = new Map<string, IgnoredFinding>();
+  raw.forEach((entry) => {
+    const parsed = IgnoredFindingSchema.safeParse(entry);
+    if (parsed.success) byFingerprint.set(parsed.data.fingerprint, parsed.data);
+  });
+  return Array.from(byFingerprint.values()).sort((a, b) => a.ignoredAt.localeCompare(b.ignoredAt));
 }
 
 function normalizeGovernanceProfiles(raw: unknown): Record<string, GovernanceProfile> {

@@ -1,10 +1,10 @@
 /**
  * Observable persisted state for the task pane.
  *
- * `core/state/persistence.ts` is the single writer of `ToneForge.State.v9` and is
- * deliberately unaware of React. This module is the thin subscription layer that
- * lets mounted components re-render when that state changes, without `core/state`
- * importing anything UI.
+ * `core/state/persistence.ts` is the single writer of `ToneForge.State.v11` and
+ * is deliberately unaware of React. This module is the thin subscription layer
+ * that lets mounted components re-render when that state changes, without
+ * `core/state` importing anything UI.
  *
  * The reason it exists: several components read `loadState()` during render and
  * therefore never see a change. Saving a consent toggle or a provider connection
@@ -14,15 +14,18 @@
  *
  * **Reference stability is the whole design here.** `useSyncExternalStore`
  * re-renders forever if `getSnapshot` returns a fresh object each call, so the
- * snapshot is cached and only replaced when a save actually lands.
+ * snapshot is cached and only replaced when a write actually lands.
+ *
+ * **Subscription is not owned here.** This used to keep a private listener set
+ * that only `persistState` notified, which left every convenience writer in
+ * `persistence.ts` — ignore, restore, activate a profile, publish a draft —
+ * writing to storage while the UI kept showing the old value. The ignore button
+ * was the visible symptom: it saved correctly and appeared to do nothing. The
+ * notification belongs to the write, so it now lives there.
  */
 
 import { useSyncExternalStore } from "react";
-import { loadState, saveState, type PersistedState } from "../../core/state";
-
-type Listener = () => void;
-
-const listeners = new Set<Listener>();
+import { loadState, saveState, subscribeToState, type PersistedState } from "../../core/state";
 
 /**
  * `null` until the first read, rather than a value captured at import time.
@@ -35,25 +38,14 @@ const listeners = new Set<Listener>();
  */
 let cached: PersistedState | null = null;
 
-function emit(): void {
-  // Snapshot taken once per emission so every subscriber in this pass observes
-  // the same object identity; re-reading per listener would defeat the cache.
+/** Replace the cached snapshot with what is actually stored. */
+function refresh(): void {
   cached = loadState();
-  listeners.forEach((listener) => {
-    listener();
-  });
-}
-
-function subscribe(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
 }
 
 function current(): PersistedState {
-  if (cached === null) cached = loadState();
-  return cached;
+  if (cached === null) refresh();
+  return cached as PersistedState;
 }
 
 function getSnapshot(): PersistedState {
@@ -65,15 +57,29 @@ function getServerSnapshot(): PersistedState {
 }
 
 /**
+ * Subscribe to writes from any caller.
+ *
+ * The cache is refreshed once per write, before the listener runs, so every
+ * subscriber in that pass observes the same object identity. Refreshing per
+ * listener would hand two of them different objects and defeat the comparison
+ * `useSyncExternalStore` relies on.
+ */
+function subscribe(listener: () => void): () => void {
+  return subscribeToState(() => {
+    refresh();
+    listener();
+  });
+}
+
+/**
  * Persist state and notify every subscriber.
  *
- * This is the only writer the task pane uses. Going through it rather than
- * calling `saveState` directly is what makes the store correct: a direct call
- * would persist the value and leave the UI showing the old one.
+ * Kept for callers that already hold a whole `PersistedState`. `saveState`
+ * notifies on its own now, so this is `saveState` with a name that reads as the
+ * intent rather than a second notification.
  */
 export function persistState(state: PersistedState): void {
   saveState(state);
-  emit();
 }
 
 /**
@@ -91,10 +97,11 @@ export function usePersistedState(): PersistedState {
  * Reset the store between tests.
  *
  * `vitest.config.ts` sets `clearMocks` and `restoreMocks`, but module state is
- * not a mock, so a test that persists state would otherwise leak that state into
- * the next test file's module instance.
+ * not a mock, so a test that persisted state would otherwise leak that state into
+ * the next test file's module instance. The listener set now lives in
+ * `persistence.ts`, so this clears the snapshot and re-reads; the subscribers
+ * themselves are removed by React on unmount.
  */
 export function __resetPersistedStore(): void {
-  listeners.clear();
   cached = null;
 }

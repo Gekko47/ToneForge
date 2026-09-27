@@ -21,16 +21,27 @@ const mocks = vi.hoisted(() => ({
 // The ignore writers are listed because the Dashboard calls them directly.
 // A partial mock would leave them undefined and fail on first use, which reads
 // as a component bug rather than the fixture gap it is.
+/*
+ * `subscribeToState` must return a real unsubscribe function. React calls the
+ * returned value on unmount, so a stub returning undefined makes every
+ * teardown throw and fails the test for a reason unrelated to what it asserts.
+ * The listener is never invoked here: these tests drive `loadState` directly.
+ *
+ * Defined inside each factory, not as a top-level const, because `vi.mock` is
+ * hoisted above module initialisation and would capture it uninitialised.
+ */
 vi.mock("../../../../src/core/state/persistence", () => ({
   loadState: () => mocks.loadState(),
   saveState: vi.fn(),
   ignoreFinding: vi.fn(),
   restoreFinding: vi.fn(),
+  subscribeToState: () => () => undefined,
 }));
 
 vi.mock("../../../../src/core/state", () => ({
   loadState: () => mocks.loadState(),
   saveState: vi.fn(),
+  subscribeToState: () => () => undefined,
 }));
 
 vi.mock("../../../../src/word/documentObserver", () => ({

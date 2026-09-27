@@ -11,6 +11,16 @@ if (!(globalThis as { __toneforgeIconsInitialized?: boolean }).__toneforgeIconsI
   (globalThis as { __toneforgeIconsInitialized?: boolean }).__toneforgeIconsInitialized = true;
 }
 
+/**
+ * Backing store for the `roamingSettings` mock.
+ *
+ * Hoisted to module scope and cleared after every test, because the mock now
+ * round-trips for real. While `get` returned undefined the store read as
+ * permanently empty, which hid the leak; a working mock persists like the real
+ * one does, so a value saved by one test is otherwise visible to the next.
+ */
+const roamingStore = new Map<string, unknown>();
+
 // Provide a minimal Office global so shared/word modules can be imported in tests.
 const officeMock = {
   run: <T>(func: (context: unknown) => Promise<T>): Promise<T> =>
@@ -61,13 +71,30 @@ const officeMock = {
       host: { name: "Word", version: "16.0" },
       sync: vi.fn(),
     }),
-  roamingSettings: {
-    get: vi.fn(),
-    set: vi.fn(),
-    saveAsync: vi.fn((cb?: (result: unknown) => void) => {
-      if (cb) cb(undefined);
-    }),
-  },
+  /*
+   * A working `roamingSettings` round-trip, not a pair of no-op spies.
+   *
+   * `loadState` prefers `roamingSettings` over `localStorage` whenever an Office
+   * runtime is present, and this mock makes one present. With `get` returning
+   * undefined the store therefore read as permanently empty while every write
+   * landed in `localStorage` — so a persisted value could never be read back,
+   * and a test asserting "the ignore was saved" failed for a reason that had
+   * nothing to do with the code under test.
+   */
+  roamingSettings: (() => {
+    return {
+      get: vi.fn((key: string) => roamingStore.get(key)),
+      set: vi.fn((key: string, value: unknown) => {
+        roamingStore.set(key, value);
+      }),
+      remove: vi.fn((key: string) => {
+        roamingStore.delete(key);
+      }),
+      saveAsync: vi.fn((cb?: (result: unknown) => void) => {
+        if (cb) cb(undefined);
+      }),
+    };
+  })(),
   InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
   BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
   InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
@@ -175,4 +202,9 @@ afterEach(() => {
   if (typeof document !== "undefined" && document.body) {
     document.body.innerHTML = "";
   }
+  // The `roamingSettings` mock persists for real, so a value one test saves is
+  // visible to the next unless the store is reset. `loadState` prefers
+  // roamingSettings over localStorage, so this is the leak a test sees even when
+  // it clears `localStorage` in its own `beforeEach`.
+  roamingStore.clear();
 });

@@ -244,8 +244,19 @@ function setLocalStorage(value: Record<string, unknown>): void {
     const storage = getSafeStorage();
     storage.setItem(STORAGE_KEY, JSON.stringify(value));
     LEGACY_STORAGE_KEYS.forEach((key) => storage.removeItem(key));
-  } catch {
-    // Storage may be unavailable or full; ignore silently.
+  } catch (err: unknown) {
+    /*
+     * Logged rather than swallowed.
+     *
+     * This was a silent catch, and it hid a write failing for a reason the
+     * caller could not act on: the ignore button appeared to do nothing, and
+     * nothing anywhere said the store had rejected the write. A storage failure
+     * is rare but the pane's whole state model assumes writes land, so a failed
+     * one has to be visible to diagnose.
+     */
+    logger.error("Failed to persist state to localStorage", {
+      errorType: err instanceof Error ? err.name : "Unknown",
+    });
   }
 }
 
@@ -275,7 +286,9 @@ export function loadState(): PersistedState {
       !Object.prototype.hasOwnProperty.call(raw, "governanceHistory") ||
       !Object.prototype.hasOwnProperty.call(raw, "profileRecords")
     ) {
-      saveState(parsed);
+      // Silent: this is a read that repaired the store, not a user-initiated
+      // write. Notifying here would wake every subscriber on a plain read.
+      writeState(parsed, false);
     }
     return parsed;
   } catch (err) {
@@ -293,7 +306,46 @@ export function loadState(): PersistedState {
  * it. Office roamingSettings is persisted asynchronously via saveAsync;
  * failures are logged but never thrown.
  */
-export function saveState(state: PersistedState): void {
+type StateListener = () => void;
+
+const stateListeners = new Set<StateListener>();
+
+/**
+ * Subscribe to persisted-state changes.
+ *
+ * Every writer in this module notifies through here rather than leaving it to
+ * each caller. The writers below are convenience functions that call
+ * `saveState` directly, and a save that does not notify leaves the UI showing
+ * the pre-save value: the ignore button wrote its entry to storage, the list
+ * did not re-render, and the control looked broken while having worked.
+ * Notification belongs to the write, not to the component that happened to
+ * trigger it.
+ */
+export function subscribeToState(listener: StateListener): () => void {
+  stateListeners.add(listener);
+  return () => {
+    stateListeners.delete(listener);
+  };
+}
+
+/** Notify after a save, so subscribers re-read rather than trusting the payload. */
+function notifyStateChanged(): void {
+  stateListeners.forEach((listener) => {
+    listener();
+  });
+}
+
+/**
+ * Write the state.
+ *
+ * `notify` is a parameter rather than always-on because `loadState` writes: it
+ * self-heals a store that is missing fields by saving the migrated value, and
+ * that save is a *read* in disguise. Notifying from it would make every read
+ * of a half-built store wake every subscriber, which under
+ * `useSyncExternalStore` is a render loop rather than a single extra render.
+ * Only a write the caller actually asked for notifies.
+ */
+function writeState(state: PersistedState, notify: boolean): void {
   const parsed = StateSchema.parse(state);
   const payload = { ...parsed };
 
@@ -308,6 +360,12 @@ export function saveState(state: PersistedState): void {
       });
     });
   }
+
+  if (notify) notifyStateChanged();
+}
+
+export function saveState(state: PersistedState): void {
+  writeState(state, true);
 }
 
 /** Remove any legacy persisted credential and select the broker/mock-safe default. */
