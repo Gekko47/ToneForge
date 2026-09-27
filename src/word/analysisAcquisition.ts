@@ -85,6 +85,36 @@ const CAPABILITY_PROPERTY_GROUPS: readonly {
   { capability: "supportsCharacterFormat", properties: ["font"] },
 ];
 
+/**
+ * Read a paragraph property only when the load plan actually asked for it.
+ *
+ * This is the fix for the fallback that was not one. `planAcquisitionLoads`
+ * drops every optional property in the degraded scope, but the DTO builders
+ * still read `listItem.level` afterwards — and on a real Office proxy, reading
+ * a property that was never loaded throws `PropertyNotLoaded` rather than
+ * returning `undefined`. So a retry that had already thrown away everything but
+ * text threw again on the way out, and the scan still failed.
+ *
+ * Every optional read goes through here, so "was this asked for?" is answered
+ * by the same plan that built the request. The `try` is the second line of
+ * defence, not the first: a host can accept `load("listItem")` and still refuse
+ * to serve it for one particular paragraph, and that must cost one property
+ * rather than the whole scan.
+ */
+function readPlanned<T>(plan: AcquisitionLoadPlan, property: string, read: () => T): T | null {
+  if (!plan.paragraphProperties.includes(property)) return null;
+  try {
+    const value = read();
+    return value === undefined ? null : value;
+  } catch (error: unknown) {
+    logger.warn("Planned paragraph property could not be read", {
+      ...describeError(error),
+      property,
+    });
+    return null;
+  }
+}
+
 export interface AcquisitionLoadPlan {
   /** Whether `document.styles` may be loaded at all. */
   styleCollection: boolean;
@@ -157,6 +187,7 @@ async function acquireScope(plan: AcquisitionLoadPlan, maxChars: number): Promis
       ? (paragraphs.items as ParagraphView[])
       : [];
     const styleItems = Array.isArray(styles?.items) ? (styles.items as StyleView[]) : [];
+
     paragraphItems.forEach((paragraph) => {
       paragraph.load?.([...plan.paragraphProperties]);
     });
@@ -166,12 +197,51 @@ async function acquireScope(plan: AcquisitionLoadPlan, maxChars: number): Promis
   });
 }
 
+/**
+ * Whether this host has already refused the rich scope, and the capability set
+ * it was refused under.
+ *
+ * Without this, a wrong probe costs a full failed Word transaction on *every*
+ * scan for the rest of the session. The observer rescans on each document
+ * change, so a user typing in a document whose host refuses one property family
+ * paid that failed transaction per edit, and each failure emitted a status that
+ * re-rendered the whole task pane.
+ *
+ * The capabilities are remembered alongside the flag so a fresh probe is
+ * allowed to re-open the question. `prepareReformatHost` re-probes before every
+ * Apply, so a host that gains the family later is picked up on that path rather
+ * than being written off for the session.
+ */
+let refusedCapabilities: AnalysisCapabilities | null = null;
+
+function richScopeRefusedFor(capabilities: AnalysisCapabilities): boolean {
+  return refusedCapabilities === capabilities;
+}
+
+function rememberRefusal(capabilities: AnalysisCapabilities): void {
+  refusedCapabilities = capabilities;
+}
+
+/**
+ * Reset the remembered refusal.
+ *
+ * Module state is not a mock, so `vitest.config.ts`'s `clearMocks` and
+ * `restoreMocks` do not reach it: without this, one test's refusal would make
+ * the next test's acquisition start degraded and the suite would depend on file
+ * order.
+ */
+export function __resetRefusedCapabilities(): void {
+  refusedCapabilities = null;
+}
+
 /** Acquire the complete analysis scope in one Word request transaction. */
 export async function acquireAnalysisContext(
   options: AnalysisAcquisitionOptions,
 ): Promise<AnalysisContext> {
   const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
-  let plan = planAcquisitionLoads(options.capabilities);
+  // A remembered refusal is honoured for the same capability set only. A new
+  // probe result is new evidence, so it gets a new attempt at the rich scope.
+  let plan = planAcquisitionLoads(options.capabilities, richScopeRefusedFor(options.capabilities));
   let acquired: AcquiredScope;
   try {
     acquired = await acquireScope(plan, maxChars);
@@ -180,13 +250,20 @@ export async function acquireAnalysisContext(
     // the probe ran, and a property family we believed was safe can still be
     // refused. Retrying text-only keeps the deterministic rules running over the
     // whole document instead of losing every scan to one rejected property.
-    logger.warn("Analysis acquisition fell back to a text-only scope", describeError(error));
+    logger.warn("Analysis acquisition fell back to a text-only scope", {
+      ...describeError(error),
+      failedProperties: plan.paragraphProperties.join(","),
+    });
+    rememberRefusal(options.capabilities);
     plan = planAcquisitionLoads(options.capabilities, true);
     acquired = await acquireScope(plan, maxChars);
   }
 
-  const snapshot = buildSnapshot(acquired, maxChars);
-  const formatting = buildFormatting(acquired, maxChars);
+  // The plan travels with the acquired scope. The builders read properties
+  // through it, so a degraded scope is honoured all the way to the DTO rather
+  // than only at the point of the request.
+  const snapshot = buildSnapshot(acquired, maxChars, plan);
+  const formatting = buildFormatting(acquired, maxChars, plan);
   const policy = options.policy ?? createGovernanceProfile(options.profile);
   const governedNodes = snapshot.nodes.map((node) => {
     const reason = node.protectionReason;
@@ -244,6 +321,7 @@ function buildSnapshot(
     paragraphItems: ParagraphView[];
   },
   maxChars: number,
+  plan: AcquisitionLoadPlan,
 ): DocumentSnapshot {
   const nodes: DocumentNode[] = [
     {
@@ -259,10 +337,10 @@ function buildSnapshot(
   let bodyCursor = 0;
   acquired.paragraphItems.forEach((paragraph, index) => {
     const text = typeof paragraph.text === "string" ? paragraph.text : "";
-    const styleName = paragraphStyleName(paragraph);
-    const heading = /^(?:Heading\s*([1-9])|Heading([1-9]))$/i.exec(
-      paragraph.styleBuiltIn ?? styleName,
-    );
+    const styleName = plannedStyleName(paragraph, plan);
+    const styleBuiltIn = readPlanned(plan, "styleBuiltIn", () => paragraph.styleBuiltIn);
+    const heading = /^(?:Heading\s*([1-9])|Heading([1-9]))$/i.exec(styleBuiltIn ?? styleName);
+    const isListItem = readPlanned(plan, "isListItem", () => paragraph.isListItem);
     const nodeId = buildParagraphNodeId({
       ...(paragraph.uniqueLocalId ? { uniqueLocalId: paragraph.uniqueLocalId } : {}),
       index,
@@ -277,7 +355,7 @@ function buildSnapshot(
     bodyCursor = endOffset;
     nodes.push({
       nodeId,
-      type: heading ? "heading" : paragraph.isListItem ? "listItem" : "paragraph",
+      type: heading ? "heading" : isListItem === true ? "listItem" : "paragraph",
       text,
       sourcePath,
       sourceRange: {
@@ -332,41 +410,47 @@ function buildFormatting(
     styleItems: StyleView[];
   },
   maxChars: number,
+  plan: AcquisitionLoadPlan,
 ): FormattingSnapshot {
   const styleByName = new Map(
     acquired.styleItems.map((style) => [style.nameLocal ?? style.name ?? "", style.font ?? {}]),
   );
   const paragraphs: FormattingParagraph[] = acquired.paragraphItems.map((paragraph, index) => {
     const text = typeof paragraph.text === "string" ? paragraph.text : "";
-    const styleName = paragraphStyleName(paragraph);
+    const styleName = plannedStyleName(paragraph, plan);
     const styleFont = styleByName.get(styleName) ?? {};
     const nodeId = buildParagraphNodeId({
       ...(paragraph.uniqueLocalId ? { uniqueLocalId: paragraph.uniqueLocalId } : {}),
       index,
       text,
     });
-    const unsupportedProperties: string[] = [];
-    const listLevel =
-      typeof paragraph.listItem?.level === "number" ? paragraph.listItem.level : null;
-    if (paragraph.isListItem !== false && listLevel === null)
-      unsupportedProperties.push("listLevel");
+    const font = readPlanned(plan, "font", () => paragraph.font);
+    const listLevel = readPlanned(plan, "listItem", () => paragraph.listItem?.level);
+    /*
+     * A missing list level is only *unsupported* when the plan asked for one and
+     * the host would not serve it. In a degraded scope the plan never asked, so
+     * reporting `listLevel` as unsupported would blame the host for a scope
+     * ToneForge chose.
+     */
+    const unsupportedProperties: string[] =
+      listLevel === null && plan.paragraphProperties.includes("listItem") ? ["listLevel"] : [];
     return {
       index,
       nodeId,
       sourcePath: `body/paragraph/${index}`,
       text,
       styleName,
-      alignment: normalizeAlignment(paragraph.alignment),
-      lineSpacing: paragraph.lineSpacing ?? null,
-      spaceAfter: paragraph.spaceAfter ?? null,
-      spaceBefore: paragraph.spaceBefore ?? null,
-      listLevel,
-      fontName: fontValue(paragraph.font?.name),
-      fontSize: paragraph.font?.size ?? null,
-      fontColor: fontValue(paragraph.font?.color),
-      bold: paragraph.font?.bold ?? null,
-      italic: paragraph.font?.italic ?? null,
-      underline: paragraph.font?.underline ?? null,
+      alignment: normalizeAlignment(readPlanned(plan, "alignment", () => paragraph.alignment)),
+      lineSpacing: readPlanned(plan, "lineSpacing", () => paragraph.lineSpacing),
+      spaceAfter: readPlanned(plan, "spaceAfter", () => paragraph.spaceAfter),
+      spaceBefore: readPlanned(plan, "spaceBefore", () => paragraph.spaceBefore),
+      listLevel: typeof listLevel === "number" ? listLevel : null,
+      fontName: fontValue(font?.name),
+      fontSize: font?.size ?? null,
+      fontColor: fontValue(font?.color),
+      bold: font?.bold ?? null,
+      italic: font?.italic ?? null,
+      underline: font?.underline ?? null,
       styleFormatting: {
         fontName: fontValue(styleFont.name),
         fontSize: styleFont.size ?? null,
@@ -375,7 +459,7 @@ function buildFormatting(
         italic: styleFont.italic ?? null,
         underline: styleFont.underline ?? null,
       },
-      provenance: deriveAcquisitionProvenance(paragraph, styleFont),
+      provenance: deriveAcquisitionProvenance(plan, paragraph, styleFont),
       unsupportedProperties,
     };
   });
@@ -406,6 +490,7 @@ function buildFormatting(
 }
 
 function deriveAcquisitionProvenance(
+  plan: AcquisitionLoadPlan,
   paragraph: ParagraphView,
   style: FontView,
 ): FormattingParagraph["provenance"] {
@@ -432,14 +517,15 @@ function deriveAcquisitionProvenance(
         property === "italic" ||
         property === "underline"
       ) {
+        const font = readPlanned(plan, "font", () => paragraph.font);
         const effective =
           property === "fontName"
-            ? paragraph.font?.name
+            ? font?.name
             : property === "fontSize"
-              ? paragraph.font?.size
+              ? font?.size
               : property === "fontColor"
-                ? paragraph.font?.color
-                : paragraph.font?.[property];
+                ? font?.color
+                : font?.[property];
         const inherited =
           property === "fontName"
             ? style.name
@@ -462,15 +548,28 @@ function deriveAcquisitionProvenance(
   ) as FormattingParagraph["provenance"];
 }
 
-function paragraphStyleName(paragraph: ParagraphView): string {
-  if (typeof paragraph.style === "string" && paragraph.style.trim()) return paragraph.style.trim();
+/**
+ * Resolve a paragraph's style name, honouring the load plan.
+ *
+ * `style` is an optional family: a degraded scope never asked for it, and a
+ * scope on a host without style support never asked for it either. Reading it
+ * unconditionally is the same defect as the `listItem.level` read — the proxy
+ * throws `PropertyNotLoaded` rather than answering `undefined`.
+ *
+ * "Normal" is the honest answer when the style was not loaded: it is the style
+ * Word applies by default, and reporting it as a name ToneForge actually read
+ * would be a claim the plan cannot support.
+ */
+function plannedStyleName(paragraph: ParagraphView, plan: AcquisitionLoadPlan): string {
+  const style = readPlanned(plan, "style", () => paragraph.style);
+  if (typeof style === "string" && style.trim()) return style.trim();
   if (
-    paragraph.style !== undefined &&
-    typeof paragraph.style !== "string" &&
-    typeof paragraph.style.name === "string" &&
-    paragraph.style.name.trim()
+    style !== null &&
+    typeof style === "object" &&
+    typeof (style as { name?: unknown }).name === "string" &&
+    (style as { name: string }).name.trim()
   ) {
-    return paragraph.style.name.trim();
+    return (style as { name: string }).name.trim();
   }
   return "Normal";
 }

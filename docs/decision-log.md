@@ -1095,6 +1095,67 @@ Negative:
   `tests/unit/word/analysisAcquisitionLoads.test.ts`, and
   `tests/unit/taskpane/fluentTheme.test.ts`.
 
+### Amendment (2026-09-27) — the degraded scope is now honoured by the readers
+
+Decision 2 above was implemented as a retry of the _request_ only. The DTO
+builders that ran after the retry still read `listItem.level`, `style`,
+`styleBuiltIn`, `isListItem`, `font`, and the paragraph-format family
+unconditionally — properties the degraded plan had deliberately not loaded.
+
+On a real Office proxy, reading a property that was never loaded throws
+`PropertyNotLoaded` rather than returning `undefined`. The consequence was that
+the retry converted a `GeneralException` into a `PropertyNotLoaded` and still
+failed, while logging that it had recovered. This is visible in the field as a
+paired `ItemNotFound` / `PropertyNotLoaded` warning on every scan.
+
+`readPlanned()` now gates every optional read on the same
+`AcquisitionLoadPlan` that built the request, and the plan is threaded into
+`buildSnapshot()` and `buildFormatting()`. The `try`/`catch` inside it remains as
+a second line of defence for a host that accepts a load and then refuses to
+serve it, but the plan check is what prevents the read.
+
+Two consequences follow from making the degradation honest:
+
+- A list level is reported as `unsupportedProperties` only when the plan
+  _requested_ it and the host would not serve it. A scope ToneForge chose is not
+  a host limitation, and reporting it as one would be a false coverage claim.
+- A degraded scope cannot classify a node as a list item, because `isListItem`
+  is not a base property. Such a node is reported as a plain paragraph.
+
+The unit suite did not catch this because the shared Office mock in
+`tests/setup.ts` returns `undefined` for an unloaded read. The regression test in
+`tests/unit/word/analysisAcquisitionDegradedScope.test.ts` uses a `Proxy` double
+that throws on any unserved property, matching the host, and asserts that no
+property outside the degraded plan is read at all.
+
+### Amendment (2026-09-27) — a refusal is remembered for the session
+
+Making the retry safe left it still expensive. The observer rescans on every
+document change, and the plan was rebuilt from the probe on every scan, so a
+host that refuses one property family cost a full failed Word transaction per
+scan for the rest of the session. Each failure also emitted a status, re-rendering
+the task pane.
+
+`acquireAnalysisContext()` now remembers the refusal and the capability set it
+happened under, and starts degraded when the same set is seen again. The
+capability set is stored alongside the flag deliberately: a fresh probe result is
+new evidence, and `prepareReformatHost` re-probes before every Apply, so a host
+that gains the family is picked up on that path instead of being written off for
+the session.
+
+This deliberately does **not** split `supportsListLevel` into a read and a write
+capability, which is the underlying defect: the probe answers "can I write a
+list level?" by checking for `listFormat.set`, and that answer gates the
+"can I read one?" request for `listItem`. Those are separate APIs. A sampled
+read probe is the obvious correction and is deferred, because a false negative
+there narrows scope on a capable host, and the honest position is to measure it
+on live Desktop Word first.
+
+The cost, accepted deliberately: on a host that refuses a family, formatting
+coverage is reduced for the session rather than recovered by a later
+successful scan. The alternative was paying a guaranteed failed transaction on
+every scan, and the skip list still reports the narrowing rather than hiding it.
+
 ## ADR-0057 — A Fluent theme is inverted, and the token scope is the document element
 
 - Status: Accepted
@@ -1141,6 +1202,29 @@ need this function revisited; `tests/unit/taskpane/fluentTheme.test.ts` pins the
   [`theme.tsx`](../src/taskpane/theme.tsx),
   [`taskpane.css`](../src/taskpane/taskpane.css), and
   `tests/unit/taskpane/fluentTheme.test.ts`.
+
+### Amendment (2026-09-27) — the theme object is built once, not per render
+
+`ThemeProvider` called `createDefaultTheme(isDark)` inline in its JSX, so every
+render produced a new theme object and handed `FluentThemeProvider` a new
+identity. Each new identity invalidates the theme for every Fluent consumer in
+the pane, forcing a full restyle of every `Dropdown`, `TextField`, `Toggle`, and
+`MessageBar` on every render.
+
+On an idle pane that is waste. Under the scan failure described in the ADR-0056
+amendment it was worse: a failing scan emits a new status on every attempt, and
+each of those emissions restyled the whole pane. The user-visible symptom was
+the task pane locking up during a theme change.
+
+Both themes are now built once with `useMemo` and selected by reference, so the
+identity is stable across re-renders that do not change the theme and changes
+exactly once when the preference does.
+
+This is deliberately not observable through Fluent's own `useTheme`, which
+returns a stable reference even when the provider is handed a new object.
+`tests/unit/taskpane/theme.test.tsx` therefore counts calls to
+`createDefaultTheme` through a module mock — the construction count is the
+property under test, and it is the thing that was actually wrong.
 
 ## ADR-0058 — The Stage 18 smoke path is removed, and readiness is decided once
 
