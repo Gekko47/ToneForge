@@ -4,15 +4,25 @@ import {
   type ProfileRevision,
 } from "../domain/ProfileRecord";
 import type { GovernanceProfile } from "../domain/GovernanceProfile";
-import type { StyleProfile } from "../domain/StyleProfile";
+import type { ProfileKind, StyleProfile } from "../domain/StyleProfile";
 import type { PersistedState } from "./persistence";
 
 /**
- * Pure read-only views over `profileRecords`.
+ * Pure read-only views over the two profile namespaces.
  *
  * These replace the deleted `profiles[]` and `profileHistory` fields. They
  * import no Office, LLM, or UI code, so they are unit testable directly and
  * cannot mutate persisted state.
+ *
+ * Deterministic and semantic profiles are stored in two separate maps. Every
+ * read therefore states which half it wants, and a caller that forgets cannot
+ * silently receive the wrong one: handing a semantic profile to the rules
+ * engine would apply AI-derived tone settings through a deterministic check.
+ *
+ * The two private helpers are declared before their callers on purpose. This
+ * module and `persistence.ts` import each other's types, so a declaration used
+ * above its definition can resolve to an uninitialised binding under the
+ * CommonJS interop the build uses.
  */
 
 export interface ProfileSummary {
@@ -24,11 +34,13 @@ export interface ProfileSummary {
   hasDraft: boolean;
 }
 
-/** Ordered list of records for pickers, newest activity first. */
-export function selectRecordList(state: PersistedState): ProfileSummary[] {
-  return Object.entries(state.profileRecords)
-    .sort(([, left], [, right]) => right.updatedAt.localeCompare(left.updatedAt))
-    .map(([, record]) => selectRecordSummary(record));
+/** The records of one kind, in whichever namespace holds them. */
+function recordsOf(state: PersistedState, kind: ProfileKind): Record<string, ProfileRecord> {
+  return kind === "semantic" ? state.semanticProfileRecords : state.profileRecords;
+}
+
+function activeIdOf(state: PersistedState, kind: ProfileKind): string | null {
+  return kind === "semantic" ? state.activeSemanticProfileId : state.activeProfileId;
 }
 
 export function selectRecordSummary(record: ProfileRecord): ProfileSummary {
@@ -42,24 +54,72 @@ export function selectRecordSummary(record: ProfileRecord): ProfileSummary {
   };
 }
 
-/** The effective profile per record, for callers that previously read `profiles`. */
-export function selectAllProfiles(state: PersistedState): StyleProfile[] {
-  return Object.values(state.profileRecords)
-    .map(effectiveProfile)
+/** Ordered list of records of one kind, for pickers, newest activity first. */
+export function selectKindRecordList(
+  state: PersistedState,
+  kind: ProfileKind,
+): ProfileSummary[] {
+  return Object.entries(recordsOf(state, kind))
+    .sort(([, left], [, right]) => right.updatedAt.localeCompare(left.updatedAt))
+    .map(([, record]) => selectRecordSummary(record));
+}
+
+/** The effective profile per record of one kind. */
+export function selectAllProfiles(
+  state: PersistedState,
+  kind: ProfileKind = "deterministic",
+): StyleProfile[] {
+  return Object.values(recordsOf(state, kind))
+    .map((record) => effectiveProfile(record))
     .filter((profile): profile is StyleProfile => profile !== null);
 }
 
 /**
- * The active profile, preferring `activeProfileId` and falling back to the
- * first record so a stored-but-unselected profile is still usable.
+ * The active profile of one kind, preferring the stored active id and falling
+ * back to the first record of that kind.
+ *
+ * The fallback searches **only** the requested namespace. Falling back across
+ * both would hand a semantic profile to the deterministic review, or a
+ * typography-only profile to the paragraph rewrite.
  */
-export function selectActiveProfile(state: PersistedState): StyleProfile | null {
-  const preferred = state.activeProfileId ? state.profileRecords[state.activeProfileId] : undefined;
-  const record = preferred ?? Object.values(state.profileRecords)[0];
+export function selectActiveProfile(
+  state: PersistedState,
+  kind: ProfileKind = "deterministic",
+): StyleProfile | null {
+  const records = recordsOf(state, kind);
+  const activeId = activeIdOf(state, kind);
+  const preferred = activeId ? records[activeId] : undefined;
+  const record = preferred ?? Object.values(records)[0];
   return record ? effectiveProfile(record) : null;
 }
 
-/** The full audit trail for one profile, oldest revision first. */
+/**
+ * The active record of one kind, or null.
+ *
+ * Callers that need the record rather than its effective profile — the profile
+ * editor and the revision trail — must not go through `selectActiveProfile`,
+ * which returns the published version and would hide the draft they are editing.
+ */
+export function selectActiveRecord(
+  state: PersistedState,
+  kind: ProfileKind = "deterministic",
+): ProfileRecord | null {
+  const records = recordsOf(state, kind);
+  const activeId = activeIdOf(state, kind);
+  return (activeId ? records[activeId] : undefined) ?? Object.values(records)[0] ?? null;
+}
+
+/**
+ * Ordered list of the deterministic records.
+ *
+ * A named alias rather than a default argument, so the common call site reads
+ * as the deterministic case rather than relying on a default to say so.
+ */
+export function selectRecordList(state: PersistedState): ProfileSummary[] {
+  return selectKindRecordList(state, "deterministic");
+}
+
+/** The full audit trail for one deterministic profile, oldest revision first. */
 export function selectRevisions(state: PersistedState, profileId: string): ProfileRevision[] {
   return state.profileRecords[profileId]?.revisions ?? [];
 }
