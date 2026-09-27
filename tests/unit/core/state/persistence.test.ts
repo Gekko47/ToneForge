@@ -44,10 +44,14 @@ describe("persistence", () => {
     saveState({
       version: 7,
       profileRecords: {},
+      semanticProfileRecords: {},
+      activeSemanticProfileId: null,
+      ignoredFindings: [],
       activeProfileId: null,
       settings: {
         llmProvider: "mock",
         openAiCredentialMode: "broker",
+        autoScan: true,
         consistencyReviewConsent: false,
         semanticOptIn: false,
       },

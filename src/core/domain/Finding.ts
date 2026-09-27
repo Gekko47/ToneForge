@@ -84,3 +84,27 @@ export const FindingSchema = z.object({
 });
 
 export type Finding = z.infer<typeof FindingSchema>;
+
+/**
+ * A finding the user chose to ignore, stored by fingerprint.
+ *
+ * The fingerprint is the identity of the *problem*, not of one detection run:
+ * `findingFingerprint` deliberately excludes the generated uuid and the absolute
+ * character offset, so an ignore survives a rescan and survives text shifting
+ * above it. Keying by `finding.id` instead would expire every ignore at the next
+ * scan, and the ignore list would read as broken.
+ *
+ * The subset of fields stored is what the ignored list needs to render and to
+ * offer "Go to text" and "Restore". Nothing capable of holding document text is
+ * included beyond what the user already saw on the card.
+ */
+export const IgnoredFindingSchema = z.object({
+  fingerprint: z.string().trim().min(1),
+  findingId: z.string().uuid(),
+  category: z.string().trim().min(1),
+  message: z.string().trim().min(1),
+  range: RangeSchema,
+  nodeIds: z.array(z.string().trim().min(1)).default([]),
+  ignoredAt: z.string().datetime(),
+});
+export type IgnoredFinding = z.infer<typeof IgnoredFindingSchema>;

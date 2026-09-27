@@ -87,6 +87,9 @@ describe("persistence with Office roamingSettings", () => {
     saveState({
       version: CURRENT_STATE_VERSION,
       profileRecords: {},
+      semanticProfileRecords: {},
+      activeSemanticProfileId: null,
+      ignoredFindings: [],
       activeProfileId: null,
       governanceProfiles: {},
       governanceHistory: {},
@@ -94,6 +97,7 @@ describe("persistence with Office roamingSettings", () => {
       settings: {
         llmProvider: "mock",
         openAiCredentialMode: "broker" as const,
+        autoScan: true,
         consistencyReviewConsent: false,
         semanticOptIn: false,
       },
@@ -113,6 +117,9 @@ describe("persistence with Office roamingSettings", () => {
     officeRuntime.roamingSettings.get = () =>
       JSON.stringify({
         profiles: [],
+        semanticProfileRecords: {},
+        activeSemanticProfileId: null,
+        ignoredFindings: [],
         activeProfileId: null,
         settings: { telemetryDisabled: false },
       });
@@ -127,6 +134,9 @@ describe("persistence with Office roamingSettings", () => {
     officeRuntime.roamingSettings.get = () =>
       JSON.stringify({
         profiles: [],
+        semanticProfileRecords: {},
+        activeSemanticProfileId: null,
+        ignoredFindings: [],
         activeProfileId: null,
         settings: {},
       });
@@ -141,6 +151,9 @@ describe("persistence with Office roamingSettings", () => {
       JSON.stringify({
         version: 1,
         profiles: [],
+        semanticProfileRecords: {},
+        activeSemanticProfileId: null,
+        ignoredFindings: [],
         activeProfileId: null,
         settings: { telemetryDisabled: true },
       });
@@ -158,6 +171,9 @@ describe("persistence with Office roamingSettings", () => {
         : JSON.stringify({
             version: 1,
             profiles: [],
+            semanticProfileRecords: {},
+            activeSemanticProfileId: null,
+            ignoredFindings: [],
             activeProfileId: null,
             settings: { telemetryDisabled: true },
           });

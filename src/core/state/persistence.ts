@@ -27,15 +27,42 @@ import {
   ProfileRecordSchema,
   type ProfileRecord,
 } from "../domain/ProfileRecord";
+import { IgnoredFindingSchema } from "../domain/Finding";
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(10),
+  version: z.number().int().nonnegative().default(11),
   profileRecords: z.record(z.string().uuid(), ProfileRecordSchema).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
   governanceHistory: z.record(z.string().uuid(), z.array(GovernanceProfileSchema)).default({}),
   activeGovernanceProfileId: z.string().uuid().nullable().default(null),
+  /**
+   * Semantic style profiles: tone, voice, register, and learned style.
+   *
+   * A **separate map**, not a second entry in `profileRecords` under a composite
+   * key. The keys of `profileRecords` are uuids validated by
+   * `z.string().uuid()`; a `"deterministic:<uuid>"` key would fail that check and
+   * would have to weaken the schema for every existing consumer. Two maps keep
+   * both namespaces uuid-keyed and independently addressable.
+   */
+  semanticProfileRecords: z.record(z.string().uuid(), ProfileRecordSchema).default({}),
+  /**
+   * The active semantic profile, or null when the user has not created one.
+   *
+   * Null is a real state, not a missing field: the Semantic Style Review tab has
+   * nothing to act on until Learn Style runs, and it must say so rather than
+   * silently falling back to the deterministic profile.
+   */
+  activeSemanticProfileId: z.string().uuid().nullable().default(null),
+  /**
+   * Findings the user chose to ignore, keyed by fingerprint.
+   *
+   * Keyed by fingerprint rather than `finding.id` because ids are minted per
+   * scan: the same rule firing on the same text gets a new id every time, so
+   * keying by id would make every ignore expire at the next rescan.
+   */
+  ignoredFindings: z.array(IgnoredFindingSchema).default([]),
   settings: z
     .object({
       openAiBaseUrl: z.string().url().optional(),
@@ -45,6 +72,15 @@ const StateSchema = z.object({
       // superseded by a stored `providerConnections` entry once one exists.
       llmProvider: z.enum(["openai", "anthropic", "openrouter", "mock"]).default("mock"),
       openAiCredentialMode: z.literal("broker").default("broker"),
+      /**
+       * v11. Whether the document observer scans on every change.
+       *
+       * Defaults to true so the existing behaviour is preserved. Turning it off
+       * leaves scanning to the Re-scan Now button, which always performs a full
+       * document scan. Auto-preview is deliberately **not** a setting: a preview
+       * that can be switched off can be mistaken for an up-to-date one.
+       */
+      autoScan: z.boolean().default(true),
       /**
        * v9. The third and separate consent, belonging only to the cross-report
        * consistency engine.
@@ -72,8 +108,9 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v10";
+const STORAGE_KEY = "ToneForge.State.v11";
 const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v10",
   "ToneForge.State.v9",
   "ToneForge.State.v8",
   "ToneForge.State.v7",

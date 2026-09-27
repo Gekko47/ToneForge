@@ -16,13 +16,14 @@ import {
 import { ProviderConnectionSchema, type ProviderConnection } from "../domain/ProviderConnection";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 10;
+export const CURRENT_STATE_VERSION = 11;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
   openAiCredentialMode: "broker",
   consistencyReviewConsent: false,
   semanticOptIn: false,
+  autoScan: true,
 };
 
 const DEFAULT_GOVERNANCE_PROFILES: Record<string, GovernanceProfile> = {};
@@ -80,6 +81,8 @@ export function migrate(raw: unknown): PersistedState {
       return migrateV8ToV9(obj);
     case 9:
       return migrateV9ToV10(obj);
+    case 10:
+      return migrateV10ToV11(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -92,12 +95,36 @@ function defaultState(): PersistedState {
     version: CURRENT_STATE_VERSION,
     profileRecords: {},
     activeProfileId: null,
+    semanticProfileRecords: {},
+    activeSemanticProfileId: null,
+    ignoredFindings: [],
     governanceProfiles: DEFAULT_GOVERNANCE_PROFILES,
     governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
     settings: { ...DEFAULT_SETTINGS },
     providerConnections: {},
   };
+}
+
+/**
+ * v10 -> v11: split the profile namespaces and add the auto-scan and ignore-list
+ * settings. Defaults only — no data is copied or moved.
+ *
+ * The v11 schema adds a `kind` to every profile and record, a second map for
+ * semantic profiles, and an ignore list keyed by fingerprint. All four are
+ * additive, and a v10 record is by definition a deterministic one, so reading it
+ * through the current shape produces the correct result: `kind` defaults to
+ * `"deterministic"`, the semantic map starts empty, and `autoScan` starts true,
+ * which is the behaviour v10 already had.
+ *
+ * Nothing is extracted into a semantic record. The earlier plan copied each
+ * profile's `semantic` block across, and that step was **deliberately dropped**:
+ * ToneForge has no users yet, so there is no learned style to preserve, and a
+ * copy would fabricate a profile the user never created. A user who runs Learn
+ * Style creates the first semantic profile for real.
+ */
+function migrateV10ToV11(obj: Record<string, unknown>): PersistedState {
+  return readCurrentState(obj);
 }
 
 /**
@@ -229,6 +256,13 @@ function readCurrentState(obj: Record<string, unknown>): PersistedState {
     version: CURRENT_STATE_VERSION,
     profileRecords,
     activeProfileId: normalizeActiveProfileId(obj.activeProfileId, profileRecords),
+    // A legacy record predates the split, so it is a deterministic one. The
+    // semantic namespace starts empty: there is no learned style to recover
+    // from a legacy blob, and inventing a profile the user never made would be
+    // worse than an empty tab they can fill.
+    semanticProfileRecords: {},
+    activeSemanticProfileId: null,
+    ignoredFindings: [],
     governanceProfiles: normalizeGovernanceProfiles(obj.governanceProfiles),
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, obj.governanceProfiles),
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
@@ -247,6 +281,9 @@ function readLegacyState(obj: Record<string, unknown>): PersistedState {
   return {
     version: CURRENT_STATE_VERSION,
     profileRecords: records,
+    semanticProfileRecords: {},
+    activeSemanticProfileId: null,
+    ignoredFindings: [],
     activeProfileId,
     governanceProfiles,
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, governanceProfiles),
@@ -488,6 +525,10 @@ function normalizeSettings(raw: unknown): PersistedState["settings"] {
     // Anything that is not literally `true` becomes `false`.
     consistencyReviewConsent: stored.consistencyReviewConsent === true,
     semanticOptIn: stored.semanticOptIn === true,
+    // A stored `false` is a real choice — the user turned auto-scanning off —
+    // so this cannot be `stored.autoScan !== false`, which would turn it back
+    // on. Anything other than a strict `false` keeps the default.
+    autoScan: stored.autoScan === false ? false : DEFAULT_SETTINGS.autoScan,
   };
   if (typeof stored.openAiBaseUrl === "string" && stored.openAiBaseUrl.length > 0) {
     settings.openAiBaseUrl = stored.openAiBaseUrl;

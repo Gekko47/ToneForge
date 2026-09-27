@@ -87,11 +87,28 @@ export const MeasuredProfileSchema = z.object({
 
 export type MeasuredProfile = z.infer<typeof MeasuredProfileSchema>;
 
+/**
+ * Which half of the product a profile governs.
+ *
+ * The two halves are edited in different places, use different providers, and
+ * are revised independently, so they are separate records rather than one object
+ * with two sets of fields. The kind is a property of the profile so a record can
+ * never be stored in the wrong namespace or shown on the wrong tab.
+ *
+ * - `deterministic` — typography, house style, and measured metrics. Checked
+ *   continuously over the whole document by rules. Sends nothing anywhere.
+ * - `semantic` — tone, voice, register, and learned style. Used by the selected
+ *   paragraph review and rewrite, which do send text to a provider.
+ */
+export const ProfileKindSchema = z.enum(["deterministic", "semantic"]);
+export type ProfileKind = z.infer<typeof ProfileKindSchema>;
+
 export const StyleProfileSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1),
   /** Assigned by the owning ProfileRecord; not a semantic version. */
   revision: RevisionSchema,
+  kind: ProfileKindSchema.default("deterministic"),
   measured: MeasuredProfileSchema,
   semantic: SemanticProfileSchema,
   typography: TypographyRulesSchema,
@@ -110,12 +127,17 @@ export type StyleProfile = z.infer<typeof StyleProfileSchema>;
  * first save. A revision of 0 would mean "not yet persisted", which no
  * ChangePlan may cite.
  */
-export function createEmptyProfile(name: string, revision: Revision = 1): StyleProfile {
+export function createEmptyProfile(
+  name: string,
+  revision: Revision = 1,
+  kind: ProfileKind = "deterministic",
+): StyleProfile {
   const now = new Date().toISOString();
   return StyleProfileSchema.parse({
     id: uuidv4(),
     name,
     revision,
+    kind,
     measured: {},
     semantic: {},
     typography: {},

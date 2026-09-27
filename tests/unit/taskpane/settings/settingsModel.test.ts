@@ -16,6 +16,11 @@ const SETTINGS: PersistedState["settings"] = {
   openAiCredentialMode: "broker",
   consistencyReviewConsent: false,
   semanticOptIn: false,
+  // Auto-scan is persisted state but is deliberately **not** part of
+  // `LlmSettingsDraft`: the provider section projects only the settings it owns,
+  // and proving the projection is narrower than the stored shape is one of the
+  // things this file checks.
+  autoScan: true,
 };
 
 const DRAFT: LlmSettingsDraft = {

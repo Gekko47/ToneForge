@@ -36,12 +36,19 @@ function state(records: ProfileRecord[], activeProfileId: string | null = null):
     version: 7,
     profileRecords: Object.fromEntries(records.map((r) => [r.id, r])),
     activeProfileId,
+    // The semantic namespace starts empty. These selectors are about the
+    // deterministic profiles, and an empty semantic map is the real first-run
+    // state — not a fixture omission.
+    semanticProfileRecords: {},
+    activeSemanticProfileId: null,
+    ignoredFindings: [],
     governanceProfiles: {},
     governanceHistory: {},
     activeGovernanceProfileId: null,
     settings: {
       llmProvider: "mock",
       openAiCredentialMode: "broker",
+      autoScan: true,
       consistencyReviewConsent: false,
       semanticOptIn: false,
     },

@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
-import { StyleProfileSchema, type StyleProfile } from "./StyleProfile";
+import {
+  ProfileKindSchema,
+  StyleProfileSchema,
+  type ProfileKind,
+  type StyleProfile,
+} from "./StyleProfile";
 
 /**
  * The single persisted record for one style profile.
@@ -50,6 +55,7 @@ export type ProfileRevision = z.infer<typeof ProfileRevisionSchema>;
 export const ProfileRecordSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1),
+  kind: ProfileKindSchema.default("deterministic"),
   draft: StyleProfileSchema.nullable().default(null),
   published: z.array(PublishedVersionSchema).default([]),
   revisions: z.array(ProfileRevisionSchema).default([]),
@@ -108,10 +114,12 @@ export function createRecord(
   name: string,
   now: string,
   seed?: StyleProfile,
+  kind: ProfileKind = "deterministic",
 ): ProfileRecord {
   const base = ProfileRecordSchema.parse({
     id,
     name,
+    kind,
     draft: null,
     published: [],
     revisions: [],
@@ -122,7 +130,9 @@ export function createRecord(
   });
   if (!seed) return base;
 
-  const profile = StyleProfileSchema.parse({ ...seed, id, revision: 1, updatedAt: now });
+  // The kind is forced onto the seed rather than read from it, so a record and
+  // the profile it holds can never disagree about which half they belong to.
+  const profile = StyleProfileSchema.parse({ ...seed, id, revision: 1, kind, updatedAt: now });
   return append(
     { ...base, draft: profile },
     {
