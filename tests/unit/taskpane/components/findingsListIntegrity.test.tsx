@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { FindingSchema, type Finding } from "../../../../src/core/domain/Finding";
+import CoverageBanner from "../../../../src/taskpane/components/CoverageBanner";
+import { CoverageReportSchema } from "../../../../src/core/domain/DocumentSnapshot";
 import { v4 as uuidv4 } from "uuid";
 import FindingsList from "../../../../src/taskpane/components/FindingsList";
 
@@ -70,5 +72,53 @@ describe("findings list integrity", () => {
     render(<FindingsList findings={scanFindings} id="tf-findings-list" />);
 
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(3));
+  });
+});
+
+function coverage(complete: boolean) {
+  return CoverageReportSchema.parse({
+    runId: uuidv4(),
+    counts: [],
+    processedCharacterCount: 0,
+    revisedCharacterCount: 0,
+    unprocessed: complete ? [] : ["Required node inaccessible"],
+    complete,
+  });
+}
+
+describe("the coverage section", () => {
+  it("keeps the verdict readable when the detail is collapsed", () => {
+    // The reason it collapses at all: the verdict is reference information and
+    // the detail is not. If collapsing also hid the verdict, the section would
+    // be hiding a gate — which is the one thing it must never do.
+    render(<CoverageBanner coverage={coverage(true)} open={false} onToggle={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: /Coverage Complete/ })).toBeInTheDocument();
+  });
+
+  it("shows the detail only when open", () => {
+    const { rerender } = render(
+      <CoverageBanner coverage={coverage(false)} open={false} onToggle={vi.fn()} />,
+    );
+    expect(screen.queryByText("Required node inaccessible")).toBeNull();
+
+    rerender(<CoverageBanner coverage={coverage(false)} open onToggle={vi.fn()} />);
+    expect(screen.getByText("Required node inaccessible")).toBeInTheDocument();
+  });
+
+  it("is operable, so it matches Findings and Pending changes", () => {
+    const onToggle = vi.fn();
+    render(<CoverageBanner coverage={coverage(true)} open={false} onToggle={onToggle} />);
+
+    const header = screen.getByRole("button", { name: /Coverage/ });
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    header.click();
+    expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  it("names an incomplete analysis in the header, not only in the detail", () => {
+    render(<CoverageBanner coverage={coverage(false)} open={false} onToggle={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: /Coverage Incomplete/ })).toBeInTheDocument();
   });
 });

@@ -32,6 +32,7 @@ import {
   type ConsistencyReport,
 } from "../../analysis/consistency";
 import { findingFingerprint } from "../findingFingerprint";
+import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
 import { decidePreview, isFullScan } from "../autoPreview";
 import { describeOpenFindings, summarizeOpenFindings } from "../findingsSummary";
 import { reformatDocument } from "../../reformat";
@@ -60,7 +61,6 @@ import type { PersistedState } from "../../core/state/persistence";
 const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
 
-const IGNORED_FINDINGS_KEY = "ToneForge.IgnoredFindingFingerprints.v1";
 const REVIEWED_FINDINGS_KEY = "ToneForge.ReviewedFindingFingerprints.v1";
 
 /** Lets the findings toolbar's `aria-controls` point at the rendered list. */
@@ -141,14 +141,6 @@ function persistFingerprintSet(key: string, ids: ReadonlySet<string>): void {
   } catch {
     // Storage may be unavailable; the set still applies for this session.
   }
-}
-
-function readIgnoredFindingIds(): Set<string> {
-  return readFingerprintSet(IGNORED_FINDINGS_KEY);
-}
-
-function persistIgnoredFindingIds(ids: ReadonlySet<string>): void {
-  persistFingerprintSet(IGNORED_FINDINGS_KEY, ids);
 }
 
 function persistReviewedFindingIds(ids: ReadonlySet<string>): void {
@@ -270,7 +262,12 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const [pendingOpen, setPendingOpen] = useState(false);
   const [reformatResult, setReformatResult] = useState<ReformatResult | null>(null);
   const [status, setStatus] = useState<DocumentObserverStatus | null>(null);
-  const [ignoredFindingIds, setIgnoredFindingIds] = useState<Set<string>>(readIgnoredFindingIds);
+  /*
+   * No in-memory set of ignored fingerprints. It was the vehicle for the bug:
+   * a fingerprint identifies a *rule*, so a set of them hid every occurrence of
+   * an ignored rule. The persisted entries carry the range and are the only
+   * source of truth, which is also why the pane needs no effect to mirror them.
+   */
   const [reviewedFindingIds, setReviewedFindingIds] = useState<Set<string>>(() =>
     readFingerprintSet(REVIEWED_FINDINGS_KEY),
   );
@@ -285,6 +282,13 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   const previewedDocHashRef = useRef<string | null>(null);
   const [previewNote, setPreviewNote] = useState<string | null>(null);
+  /*
+   * Coverage starts collapsed, but an *incomplete* analysis overrides that: it
+   * is a warning the user has to act on, and hiding it behind a toggle is how
+   * a partial analysis comes to be read as a complete one.
+   */
+  const [coverageOpen, setCoverageOpen] = useState(false);
+  const coverageIncomplete = status?.coverage?.complete === false;
   // Cross-report consistency review is the only AI review this pane offers. It
   // keeps its own state, its own trigger, and its own consent: collapsing the
   // surface into one section must not let one permission stand in for another.
@@ -493,10 +497,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   }, []);
 
   useEffect(() => {
-    persistIgnoredFindingIds(ignoredFindingIds);
-  }, [ignoredFindingIds]);
-
-  useEffect(() => {
     persistFingerprintSet(REVIEWED_FINDINGS_KEY, reviewedFindingIds);
   }, [reviewedFindingIds]);
 
@@ -571,11 +571,9 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       nodeIds: finding.nodeIds,
       ignoredAt: new Date().toISOString(),
     });
-    setIgnoredFindingIds((previous) => {
-      const next = new Set(previous).add(findingFingerprint(finding));
-      persistIgnoredFindingIds(next);
-      return next;
-    });
+    // The persisted entry is the whole update. `usePersistedState` re-renders on
+    // the save, so there is no second copy to keep in step — and a second copy
+    // keyed on fingerprints is exactly what caused the bug this replaces.
   }
 
   function navigate(destination: TaskPaneDestination): void {
@@ -803,9 +801,16 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     );
   }
 
-  const observerFindings = (status?.findings ?? []).filter(
-    (finding) => !ignoredFindingIds.has(findingFingerprint(finding)),
-  );
+  /*
+   * Filtered with `withoutIgnored` against the *stored* entries, not against an
+   * in-memory set of fingerprints.
+   *
+   * The in-memory set compared fingerprints, and a fingerprint is the identity of
+   * a rule rather than of an occurrence — so ignoring one em dash hid every
+   * other em dash in the document. The stored entries carry the range, which is
+   * what distinguishes the occurrences.
+   */
+  const observerFindings = withoutIgnored(status?.findings ?? [], persisted.ignoredFindings);
   /*
    * The list is the observer's findings, full stop.
    *
@@ -828,8 +833,11 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * from the observer's raw set, so a finding that is hidden is excluded from
    * every bucket and the two can never disagree.
    */
+  // The same matcher the list was filtered with, so a hidden finding cannot be
+  // counted and a visible one cannot be missed. Reading the count from a
+  // different source than the list is how the two disagreed.
   const openSummary = summarizeOpenFindings(findings, (finding) =>
-    ignoredFindingIds.has(findingFingerprint(finding)),
+    isAnyIgnored(finding, persisted.ignoredFindings),
   );
   // Safe reformat is the only review that can still leave a plan here; the spot
   // and full-document surfaces are retired from the pane. The selector keeps
@@ -1077,7 +1085,22 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             problems, it is an unknown subset, and it reads as its own warning
             rather than as a footnote on the findings above.
           */}
-          <CoverageBanner coverage={status?.coverage ?? null} />
+          {/*
+            Collapsible like Findings and Pending changes, and open by default
+            only when the scan is incomplete.
+
+            The asymmetry is deliberate: an incomplete analysis is a warning the
+            user has to act on, so it stays open; a complete one is a statement
+            of fact that has been true since the scan and needs no attention
+            until the next scan changes it. The verdict stays readable in the
+            collapsed header, so collapsing never hides *whether* it passed —
+            only the detail behind it.
+          */}
+          <CoverageBanner
+            coverage={status?.coverage ?? null}
+            open={coverageIncomplete || coverageOpen}
+            onToggle={() => setCoverageOpen((open) => !open)}
+          />
           {/*
             The one thing auto-preview owes the user when it declines: the
             reason, and what would produce a preview instead. Silence here
@@ -1089,14 +1112,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       {page === "home" && (
         <IgnoredFindings
           entries={persisted.ignoredFindings ?? []}
-          onRestore={(fingerprint) => {
-            restoreFinding(fingerprint);
-            setIgnoredFindingIds((previous) => {
-              const next = new Set(previous);
-              next.delete(fingerprint);
-              return next;
-            });
-          }}
+          onRestore={(fingerprint) => restoreFinding(fingerprint)}
         />
       )}
     </main>

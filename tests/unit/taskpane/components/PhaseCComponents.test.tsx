@@ -237,6 +237,11 @@ describe("Phase C task-pane components", () => {
   it("renders coverage, stale, and unavailable states with text status", () => {
     const { rerender } = render(
       <CoverageBanner
+        // Opened explicitly: the banner now collapses like Findings and
+        // Pending changes, so a collapsed render would not show the reasons at
+        // all. The verdict stays in the header either way — asserted below.
+        open
+        onToggle={vi.fn()}
         coverage={{
           runId: uuidv4(),
           counts: [],
