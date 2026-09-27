@@ -11,26 +11,26 @@ removed, and adds a semantic rewrite engine that does not currently exist.
 
 These came from the product owner and are settled. Everything below follows from them.
 
-| # | Decision |
-|---|---|
-| **D1** | The context menu is `ToneForge → Semantic Review`. **One static item.** It runs against the **currently active saved semantic profile** — no profile list in the menu. |
-| **D2** | The navigation guard is restored. It serializes host navigation and **aborts an in-flight jump when the user selects the next finding**, so arrowing through findings cannot flood the host. |
+| #      | Decision                                                                                                                                                                                                                               |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D1** | The context menu is `ToneForge → Semantic Review`. **One static item.** It runs against the **currently active saved semantic profile** — no profile list in the menu.                                                                 |
+| **D2** | The navigation guard is restored. It serializes host navigation and **aborts an in-flight jump when the user selects the next finding**, so arrowing through findings cannot flood the host.                                           |
 | **D3** | **Auto-scan** (default **on**) and **auto-preview** (always on, not toggleable) both operate on **full-document deterministic scans**. A Settings toggle turns auto-scan off and leaves scanning to the manual **Re-scan Now** button. |
 
 ### D1 in practice — why there is no profile submenu
 
 Office.js context-menu controls are declared **statically in the manifest** and there is no API to
 populate them from saved state. A submenu listing saved profiles would be frozen at install time and
-would show placeholder labels. The menu therefore carries one item, and the *active* profile — which
+would show placeholder labels. The menu therefore carries one item, and the _active_ profile — which
 the user picks in normal use — is what the review runs against. If no semantic profile is saved and
 active, the action reports that plainly rather than silently doing nothing.
 
 ### D3 in practice — the two scan modes
 
-| Mode | Trigger | What runs | Preview |
-|---|---|---|---|
-| **Auto** (default) | Debounced document change | Full deterministic scan | Built automatically |
-| **Manual** (auto-scan off) | Re-scan Now only | Full deterministic scan | Built automatically |
+| Mode                       | Trigger                   | What runs               | Preview             |
+| -------------------------- | ------------------------- | ----------------------- | ------------------- |
+| **Auto** (default)         | Debounced document change | Full deterministic scan | Built automatically |
+| **Manual** (auto-scan off) | Re-scan Now only          | Full deterministic scan | Built automatically |
 
 Incremental narrowing (§10) still runs under the hood as a **display optimisation** — it updates
 the findings list faster. It never produces an appliable plan. Preview is always built from a full
@@ -42,17 +42,17 @@ scan, because coverage gates Apply and a narrowed scan has incomplete coverage.
 
 This matters for sizing. A lot of the work is relocation, not construction.
 
-| Capability | Status |
-|---|---|
-| C1–C10 consistency engine (10 checkers, adjudication, coverage) | **Built and wired.** `runConsistencyReview`, `src/analysis/consistency/checks/` |
-| `resolveAnchor()` — semantic target-span resolution with 3 refusals | **Built** (item 4.3) |
-| Learn Style with semantic measurement | **Built**, lives on the wrong tab |
-| Per-finding navigation to text | **Built** (`navigateToFinding`), manually triggered |
-| Tracked apply path | **Built**, single mutation path, gated |
-| **Semantic rewrite engine** | **Does not exist.** `rewrite()` in `withSemanticHelpers` is a no-op alias for `complete()` — it builds no prompt. The prompt builder was deleted in `8338d51`. |
-| **Two profile namespaces** | **Does not exist.** One profile holds all four blocks. |
-| **Context menu** | **Does not exist.** |
-| **Navigation guard** | Deleted in `8338d51`; restoring. |
+| Capability                                                          | Status                                                                                                                                                         |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1–C10 consistency engine (10 checkers, adjudication, coverage)     | **Built and wired.** `runConsistencyReview`, `src/analysis/consistency/checks/`                                                                                |
+| `resolveAnchor()` — semantic target-span resolution with 3 refusals | **Built** (item 4.3)                                                                                                                                           |
+| Learn Style with semantic measurement                               | **Built**, lives on the wrong tab                                                                                                                              |
+| Per-finding navigation to text                                      | **Built** (`navigateToFinding`), manually triggered                                                                                                            |
+| Tracked apply path                                                  | **Built**, single mutation path, gated                                                                                                                         |
+| **Semantic rewrite engine**                                         | **Does not exist.** `rewrite()` in `withSemanticHelpers` is a no-op alias for `complete()` — it builds no prompt. The prompt builder was deleted in `8338d51`. |
+| **Two profile namespaces**                                          | **Does not exist.** One profile holds all four blocks.                                                                                                         |
+| **Context menu**                                                    | **Does not exist.**                                                                                                                                            |
+| **Navigation guard**                                                | Deleted in `8338d51`; restoring.                                                                                                                               |
 
 ---
 
@@ -78,14 +78,14 @@ export function createNavigationGuard(options: {
 
 Rules, each with a test:
 
-| Rule | Behaviour |
-|---|---|
-| Serialize | One host navigation at a time. A request arriving while one is in flight is **aborted**, not queued. |
-| Abort on supersede | Selecting a new finding aborts the in-flight `AbortController`. The superseded request resolves `{ ok: false, message: "aborted" }`. |
-| Coalesce | Re-selecting the finding already shown returns `{ ok: false, message: "alreadyAtTarget" }` and never calls the host. |
-| Stale id | A repeated `requestId` returns `{ ok: false, message: "stale" }`. |
-| Failure is retryable | A *failed* outcome does **not** mark the id accepted, so a retry under the same id is allowed. |
-| Rapid arrow-through | Ten selections in 200ms produce **one** host call, for the final selection. |
+| Rule                 | Behaviour                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Serialize            | One host navigation at a time. A request arriving while one is in flight is **aborted**, not queued.                                 |
+| Abort on supersede   | Selecting a new finding aborts the in-flight `AbortController`. The superseded request resolves `{ ok: false, message: "aborted" }`. |
+| Coalesce             | Re-selecting the finding already shown returns `{ ok: false, message: "alreadyAtTarget" }` and never calls the host.                 |
+| Stale id             | A repeated `requestId` returns `{ ok: false, message: "stale" }`.                                                                    |
+| Failure is retryable | A _failed_ outcome does **not** mark the id accepted, so a retry under the same id is allowed.                                       |
+| Rapid arrow-through  | Ten selections in 200ms produce **one** host call, for the final selection.                                                          |
 
 The last rule is the one that stops the flooding. Implemented by aborting the previous controller
 on every new request, so only the newest survives.
@@ -98,7 +98,7 @@ The spec puts ignored findings in a list at the bottom of the page, so they must
 and a pane reload. Today they are component state plus a fingerprint set in storage.
 
 - `PersistedState.ignoredFindings`: `IgnoredFindingSchema[]` = `{ fingerprint, findingId, category,
-  message, range, nodeIds, ignoredAt }[]`.
+message, range, nodeIds, ignoredAt }[]`.
 - Keyed by **fingerprint** (category + normalised range), so a re-detected finding stays ignored.
 - `ignoreFinding(id)` / `restoreFinding(fingerprint)` in the store.
 - Ignored findings are filtered out of the open list and the open counts.
@@ -112,12 +112,12 @@ Everything in Phases 3–7 depends on this. Do it first.
 
 ### 4.1 Two profile namespaces
 
-| | Deterministic Style Profile | Semantic Style Profile |
-|---|---|---|
-| Owns | `typography`, `houseStyle`, `measured` | `semantic` |
-| Used by | the continuous whole-document scan | Learn Style, paragraph rewrite, deviations |
-| Revisions | own draft/published trail | own draft/published trail |
-| Active id | `activeProfileId` | `activeSemanticProfileId` (new) |
+|           | Deterministic Style Profile            | Semantic Style Profile                     |
+| --------- | -------------------------------------- | ------------------------------------------ |
+| Owns      | `typography`, `houseStyle`, `measured` | `semantic`                                 |
+| Used by   | the continuous whole-document scan     | Learn Style, paragraph rewrite, deviations |
+| Revisions | own draft/published trail              | own draft/published trail                  |
+| Active id | `activeProfileId`                      | `activeSemanticProfileId` (new)            |
 
 - `StyleProfileSchema` gains `kind: z.enum(["deterministic","semantic"]).default("deterministic")`.
 - **A second map** `semanticProfileRecords` in state. Not a composite `${kind}:${uuid}` key — that
@@ -176,18 +176,18 @@ Ignored findings (3)         ← Restore per row
 Pending changes              ← bottom of page
 ```
 
-| # | Item | Where |
-|---|---|---|
-| 5.1 | Reorder; `PendingChanges` last | `Dashboard.tsx` |
-| 5.2 | Header: deterministic revision right of the name; `Last scan` far right, same line | `TaskPaneHeader.tsx`, `taskpane.css` |
-| 5.3 | **Auto-navigate on selection** via the guard | `FindingCard.tsx` |
-| 5.4 | Per-finding **Apply** before **Ignore**; remove Review | `FindingCard.tsx` |
-| 5.5 | Ignored list with Restore | new `IgnoredFindings.tsx` |
-| 5.6 | `summarizeOpenFindings()` → "Mandatory: X / Advisory: X" | new `findingSummary.ts` |
-| 5.7 | `CoverageBanner` out of `GovernanceDashboard` into its own section | split `GovernanceDashboard.tsx` |
-| 5.8 | **Auto-preview** on every full scan; no button | `Dashboard.tsx` scan effect |
-| 5.9 | **Apply All** below prev/next; **Re-scan Now** to its right, removed from `GovernanceDashboard` | `Dashboard.tsx` |
-| 5.10 | Remove the Safe Reformat section | `ReformatPanel` |
+| #    | Item                                                                                            | Where                                |
+| ---- | ----------------------------------------------------------------------------------------------- | ------------------------------------ |
+| 5.1  | Reorder; `PendingChanges` last                                                                  | `Dashboard.tsx`                      |
+| 5.2  | Header: deterministic revision right of the name; `Last scan` far right, same line              | `TaskPaneHeader.tsx`, `taskpane.css` |
+| 5.3  | **Auto-navigate on selection** via the guard                                                    | `FindingCard.tsx`                    |
+| 5.4  | Per-finding **Apply** before **Ignore**; remove Review                                          | `FindingCard.tsx`                    |
+| 5.5  | Ignored list with Restore                                                                       | new `IgnoredFindings.tsx`            |
+| 5.6  | `summarizeOpenFindings()` → "Mandatory: X / Advisory: X"                                        | new `findingSummary.ts`              |
+| 5.7  | `CoverageBanner` out of `GovernanceDashboard` into its own section                              | split `GovernanceDashboard.tsx`      |
+| 5.8  | **Auto-preview** on every full scan; no button                                                  | `Dashboard.tsx` scan effect          |
+| 5.9  | **Apply All** below prev/next; **Re-scan Now** to its right, removed from `GovernanceDashboard` | `Dashboard.tsx`                      |
+| 5.10 | Remove the Safe Reformat section                                                                | `ReformatPanel`                      |
 
 **Severity mapping** for the counts: `error → mandatory`, `warning → advisory`, `info → informational`.
 Counts exclude ignored findings.
@@ -211,14 +211,14 @@ host capability toggle, not a findings feature, and removing it would strand `ST
 
 Renamed from "Style profile".
 
-| # | Item |
-|---|---|
+| #   | Item                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 6.1 | Remove all `semantic` fields from `ProfileEditor`: tone, voice, formality, readingGradeTarget, preferredSentenceLength, vocabularyRegister, rhetoricalStyle, avoidWords. They move to the Semantic tab. |
-| 6.2 | Save writes only `typography`, `houseStyle`, `measured` into a `kind: "deterministic"` record. |
-| 6.3 | **Show all revisions** toggles `ProfileRecordSection` + `VersionDiff`. Default collapsed. |
-| 6.4 | Publish-in-place (§4.3). |
-| 6.5 | **Move `GovernancePolicySection` off this tab** → Phase 5. |
-| 6.6 | Move **Learn Style** off this tab → Phase 6. |
+| 6.2 | Save writes only `typography`, `houseStyle`, `measured` into a `kind: "deterministic"` record.                                                                                                          |
+| 6.3 | **Show all revisions** toggles `ProfileRecordSection` + `VersionDiff`. Default collapsed.                                                                                                               |
+| 6.4 | Publish-in-place (§4.3).                                                                                                                                                                                |
+| 6.5 | **Move `GovernancePolicySection` off this tab** → Phase 5.                                                                                                                                              |
+| 6.6 | Move **Learn Style** off this tab → Phase 6.                                                                                                                                                            |
 
 After this phase the tab holds only deterministic concerns, which is the point.
 
@@ -226,11 +226,11 @@ After this phase the tab holds only deterministic concerns, which is the point.
 
 ## 7. Phase 5 — Governance Policy tab (new)
 
-| # | Item |
-|---|---|
-| 7.1 | New destination `governance-policy`: `TaskPaneDestination`, `TaskPaneTarget`, `TARGETS`, `DESTINATIONS`, `commandHandlers.openGovernancePolicy`. |
-| 7.2 | `GovernancePolicySection` moves here unchanged. |
-| 7.3 | Lead paragraph: this governs **all three engines** — deterministic review, semantic review, consistency check. Protection and analysis scope live here and nowhere else. |
+| #   | Item                                                                                                                                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7.1 | New destination `governance-policy`: `TaskPaneDestination`, `TaskPaneTarget`, `TARGETS`, `DESTINATIONS`, `commandHandlers.openGovernancePolicy`.                           |
+| 7.2 | `GovernancePolicySection` moves here unchanged.                                                                                                                            |
+| 7.3 | Lead paragraph: this governs **all three engines** — deterministic review, semantic review, consistency check. Protection and analysis scope live here and nowhere else.   |
 | 7.4 | Manifest: `ToneForgeGovernancePolicyControl` + `ToneForgeGovernancePolicy` action, in **both** `manifest.json` (v1.30) and `manifest.xml`. `npm run validate` checks both. |
 
 ---
@@ -286,13 +286,13 @@ count. Deterministic changes must not appear here.
 
 The engine already exists. This is **relocation**.
 
-| # | Item |
-|---|---|
-| 9.1 | New destination `consistency`. `AiReviewSection` moves here verbatim, renamed `ConsistencyReviewSection`. |
-| 9.2 | Button reads **"Check Consistency"**. Results adopt the Governance findings format: prev/next stepping, Go to text, auto-navigate through the guard. |
+| #   | Item                                                                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 9.1 | New destination `consistency`. `AiReviewSection` moves here verbatim, renamed `ConsistencyReviewSection`.                                                                                                                                               |
+| 9.2 | Button reads **"Check Consistency"**. Results adopt the Governance findings format: prev/next stepping, Go to text, auto-navigate through the guard.                                                                                                    |
 | 9.3 | **Group similar inconsistencies.** `toFindings` emits one finding per issue; group by `checkId` plus a normalised evidence pair, so "the same figure given two values — 6 places" is one card listing 6 locations. Each location jumps to its own span. |
-| 9.4 | A finding with no resolvable `sourceRange` prints **"cannot be located"** rather than offering a jump that will fail. |
-| 9.5 | `consistencyReviewConsent` and its own wording stay exactly as they are (ADR-0052). Adding a surface must not relax a consent. |
+| 9.4 | A finding with no resolvable `sourceRange` prints **"cannot be located"** rather than offering a jump that will fail.                                                                                                                                   |
+| 9.5 | `consistencyReviewConsent` and its own wording stay exactly as they are (ADR-0052). Adding a surface must not relax a consent.                                                                                                                          |
 
 ---
 
@@ -300,11 +300,11 @@ The engine already exists. This is **relocation**.
 
 Phase 4.2 made scans incremental. That stays, as a **display optimisation only**.
 
-| Condition | Behaviour |
-|---|---|
-| Auto-scan on, full rescan | Findings + **preview** |
+| Condition                         | Behaviour                                                                  |
+| --------------------------------- | -------------------------------------------------------------------------- |
+| Auto-scan on, full rescan         | Findings + **preview**                                                     |
 | Auto-scan on, narrowed local edit | Findings updated fast; **preview withheld**, message: "Re-scan to preview" |
-| Auto-scan off | Nothing until **Re-scan Now**, which is a full scan and produces a preview |
+| Auto-scan off                     | Nothing until **Re-scan Now**, which is a full scan and produces a preview |
 
 The five conservative full-rescan fallbacks from item 4.2 are unchanged, as is the refusal to
 retain findings across runs (ADR-0063). Recorded as ADR-0067.
@@ -313,15 +313,15 @@ retain findings across runs (ADR-0063). Recorded as ADR-0067.
 
 ## 11. Phase 8 — Context menu (D1)
 
-| # | Item |
-|---|---|
+| #    | Item                                                                                                                                                                              |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 11.1 | `manifest.json`: `ExtensionPoint` → `OfficeMenu` `id: "ContextMenuText"` → `Menu` **"ToneForge"** → one `Button` **"Semantic Review"**, `ShowTaskpane`. Mirror in `manifest.xml`. |
-| 11.2 | New nav instruction `semantic-style` with `action: "review"`. |
-| 11.3 | The pane reads the **live selection itself** via `runInWord` and runs the review against `activeSemanticProfileId`. |
-| 11.4 | No active semantic profile → the action says so and offers the Semantic tab. It must not silently do nothing. |
-| 11.5 | Fix the `supportsContextMenu` probe: it tests the `Office.contextMenus` (ContextMenuApi 1.1) namespace, which is a **different feature** from manifest-declared menu support. |
-| 11.6 | Ribbon fallback **"Semantic Style"** for contexts where the menu does not appear. |
-| 11.7 | Record host requirements in `docs/manual-verification.md`. |
+| 11.2 | New nav instruction `semantic-style` with `action: "review"`.                                                                                                                     |
+| 11.3 | The pane reads the **live selection itself** via `runInWord` and runs the review against `activeSemanticProfileId`.                                                               |
+| 11.4 | No active semantic profile → the action says so and offers the Semantic tab. It must not silently do nothing.                                                                     |
+| 11.5 | Fix the `supportsContextMenu` probe: it tests the `Office.contextMenus` (ContextMenuApi 1.1) namespace, which is a **different feature** from manifest-declared menu support.     |
+| 11.6 | Ribbon fallback **"Semantic Style"** for contexts where the menu does not appear.                                                                                                 |
+| 11.7 | Record host requirements in `docs/manual-verification.md`.                                                                                                                        |
 
 ### 11.8 Selection must not travel through storage
 
@@ -377,21 +377,21 @@ Three new sections, each sourced from a real failure the new wiring can produce:
   anchor could not be resolved (three named reasons from `resolveAnchor`).
 - **Consistency review is partial** — windowing, cross-window pairs skipped, adjudication cap hit.
   All three already appear in `coverage.limitations`; surface them verbatim.
-- **Context menu item missing** — needs a build with `AddinCommands 1.1` and *selected text*;
+- **Context menu item missing** — needs a build with `AddinCommands 1.1` and _selected text_;
   ribbon fallback available.
 
 ---
 
 ## 13. ADRs
 
-| ADR | Subject |
-|---|---|
+| ADR  | Subject                                                                                             |
+| ---- | --------------------------------------------------------------------------------------------------- |
 | 0065 | **Reverses ADR-0055** — three review surfaces are correct; one-surface removed required capability. |
-| 0066 | Deterministic and semantic profiles are separate records with separate revisions. |
-| 0067 | Auto-preview is full-scan only; auto-scan is toggleable. |
-| 0068 | Context menu is one static item using the active profile; requires selected text. |
-| 0069 | Auto-navigate on selection makes the navigation guard a correctness requirement. |
-| 0070 | OAuth stays flag-off until a gateway exists (status update on ADR-0060). |
+| 0066 | Deterministic and semantic profiles are separate records with separate revisions.                   |
+| 0067 | Auto-preview is full-scan only; auto-scan is toggleable.                                            |
+| 0068 | Context menu is one static item using the active profile; requires selected text.                   |
+| 0069 | Auto-navigate on selection makes the navigation guard a correctness requirement.                    |
+| 0070 | OAuth stays flag-off until a gateway exists (status update on ADR-0060).                            |
 
 ---
 
@@ -399,17 +399,17 @@ Three new sections, each sourced from a real failure the new wiring can produce:
 
 Each phase is independently shippable and each ends green on `npm run verify`.
 
-| Phase | Scope | Exit gate |
-|---|---|---|
-| **P1** | Navigation guard, ignore list | Guard unit-tested; ignored findings survive rescan |
-| **P2** | Data model, migration v11, publish-in-place, auto-scan | Migration round-trip tests |
-| **P3** | Document Governance | Auto-preview, per-finding apply, counts, ordering |
-| **P4** | Deterministic Style Profile | Semantic fields gone; revisions collapsible |
-| **P5** | Governance Policy tab + manifest | `npm run validate` green on both manifests |
-| **P6** | Semantic Style Review + rewrite engine | Engine tested offline via `MockAdapter` |
-| **P7** | Consistency tab | Relocation only; existing engine tests unchanged |
-| **P8** | Context menu | Host-gated manual evidence recorded |
-| **P9** | Settings, OAuth docs, troubleshooting, ADRs, CHANGELOG, project-state | Full `npm run verify` |
+| Phase  | Scope                                                                 | Exit gate                                          |
+| ------ | --------------------------------------------------------------------- | -------------------------------------------------- |
+| **P1** | Navigation guard, ignore list                                         | Guard unit-tested; ignored findings survive rescan |
+| **P2** | Data model, migration v11, publish-in-place, auto-scan                | Migration round-trip tests                         |
+| **P3** | Document Governance                                                   | Auto-preview, per-finding apply, counts, ordering  |
+| **P4** | Deterministic Style Profile                                           | Semantic fields gone; revisions collapsible        |
+| **P5** | Governance Policy tab + manifest                                      | `npm run validate` green on both manifests         |
+| **P6** | Semantic Style Review + rewrite engine                                | Engine tested offline via `MockAdapter`            |
+| **P7** | Consistency tab                                                       | Relocation only; existing engine tests unchanged   |
+| **P8** | Context menu                                                          | Host-gated manual evidence recorded                |
+| **P9** | Settings, OAuth docs, troubleshooting, ADRs, CHANGELOG, project-state | Full `npm run verify`                              |
 
 ---
 

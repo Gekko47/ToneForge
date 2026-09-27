@@ -15,15 +15,14 @@ import {
   type ReformatResult,
 } from "../../reformat";
 import { consumeTaskpaneTarget } from "../../shared/office/taskpaneNavigation";
-import ReformatPanel from "../components/ReformatPanel";
 import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
-import GovernanceDashboard from "../components/GovernanceDashboard";
 import FindingsList from "../components/FindingsList";
 import FindingsToolbar from "../components/FindingsToolbar";
 import CoverageBanner from "../components/CoverageBanner";
 import StaleBanner from "../components/StaleBanner";
 import PendingChanges from "../components/PendingChanges";
+import IgnoredFindings from "../components/IgnoredFindings";
 import AiReviewSection, { type AiReviewStage } from "../components/AiReviewSection";
 import {
   previewStatements,
@@ -33,6 +32,9 @@ import {
   type ConsistencyReport,
 } from "../../analysis/consistency";
 import { findingFingerprint } from "../findingFingerprint";
+import { decidePreview, isFullScan } from "../autoPreview";
+import { describeOpenFindings, summarizeOpenFindings } from "../findingsSummary";
+import { reformatDocument } from "../../reformat";
 import {
   createWorkflowState,
   selectCurrentTask,
@@ -40,7 +42,11 @@ import {
   selectPreviousFindingIndex,
   workflowReducer,
 } from "../workflow/workflowState";
-import { loadState } from "../../core/state/persistence";
+import {
+  ignoreFinding as persistIgnore,
+  loadState,
+  restoreFinding,
+} from "../../core/state/persistence";
 import { selectActiveProfile } from "../../core/state/profileSelectors";
 import { usePersistedState } from "../state/usePersistedState";
 import { useAnnouncement } from "../settings/useAnnouncement";
@@ -260,6 +266,16 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     readFingerprintSet(REVIEWED_FINDINGS_KEY),
   );
   const observerRef = useRef<ReturnType<typeof createDocumentObserver> | null>(null);
+  /**
+   * The document the held preview was built from.
+   *
+   * A ref, not state: it is a guard for the auto-preview effect rather than
+   * something the user sees, and rendering on it would re-run the very effect
+   * that sets it. Reset when the profile changes, because a plan built under
+   * one profile cannot answer for another.
+   */
+  const previewedDocHashRef = useRef<string | null>(null);
+  const [previewNote, setPreviewNote] = useState<string | null>(null);
   // Cross-report consistency review is the only AI review this pane offers. It
   // keeps its own state, its own trigger, and its own consent: collapsing the
   // surface into one section must not let one permission stand in for another.
@@ -322,6 +338,67 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     dispatchWorkflow({ type: "analysis/findings", findings: status?.findings ?? [] });
   }, [status]);
 
+  /**
+   * Build the preview automatically once a whole-document scan settles.
+   *
+   * This replaces the "Preview changes" button, so the gap it closes is real:
+   * a user who opened the pane and read their findings could not see what
+   * would change without a second action they had to know to take.
+   *
+   * The decision is delegated to `decidePreview` rather than re-derived here,
+   * because the interesting cases are the ones a reader would get wrong — a
+   * narrowed scan must not produce a plan, and a plan already held for the
+   * current document must not be rebuilt underneath a user reviewing it.
+   *
+   * `previewing` is a ref rather than state: it only gates this effect, and
+   * using state would make setting it re-trigger the effect that sets it.
+   */
+  const previewingRef = useRef(false);
+  useEffect(() => {
+    if (status === null) return;
+    const decision = decidePreview({
+      fullScan: isFullScan(status.coverage),
+      // The document identity the *plan* would apply to, which is the scan's
+      // own hash rather than the preview's: a plan is only valid for the text
+      // it was derived from.
+      docHash: status.documentVersion,
+      previewedDocHash: previewedDocHashRef.current,
+      previewing: previewingRef.current,
+    });
+    if (decision.kind === "skip") {
+      // The narrowed case is the only skip worth telling the user about; the
+      // rest are quiet no-ops that would otherwise re-announce on every scan.
+      if (!isFullScan(status.coverage)) setPreviewNote(decision.reason);
+      return;
+    }
+    setPreviewNote(null);
+    previewingRef.current = true;
+    void (async () => {
+      try {
+        const result = await reformatDocument({
+          profile: activeProfile,
+          preview: true,
+          // Deterministic only. The scan that produced these findings was
+          // deterministic too, so letting the model add its own would make the
+          // preview describe a document state the findings never saw.
+          includeRawText: false,
+          policy: resolveGovernanceProfile(persisted, activeProfile),
+        });
+        // Set the held hash even on a plan with zero changes: an unchanged
+        // document is a settled answer, not a reason to re-plan on every scan.
+        previewedDocHashRef.current = decision.docHash;
+        setReformatResult(result);
+        setPendingOpen(true);
+      } catch (error: unknown) {
+        setApplyMessage(
+          `Preview could not be built: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        previewingRef.current = false;
+      }
+    })();
+  }, [status, activeProfile]);
+
   useEffect(() => {
     void prepareReformatHost()
       .then(setCaps)
@@ -352,6 +429,10 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         hostVersion: null,
       },
     });
+    // A plan built under the previous profile cannot answer for this one, so
+    // the auto-preview guard is released here. Otherwise the next scan would
+    // see a hash it thinks it has already previewed and build nothing.
+    previewedDocHashRef.current = null;
     observerRef.current = observer;
     observer.startObserver();
     // The change payload is forwarded rather than discarded. It is what lets the
@@ -462,6 +543,25 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   }, [status, applyMessage, consistencyMessage, announcement]);
 
   function ignoreFinding(finding: Finding): void {
+    /*
+     * Persisted as well as held in component state.
+     *
+     * The in-memory set is what filters the list, but findings are re-derived
+     * on every scan with a fresh uuid, so an ignore that lived only in memory
+     * would quietly stop applying the first time the user edited the document —
+     * and the finding they set aside would reappear with no explanation.
+     * The fingerprint is the identity that survives that, which is why the
+     * stored entry is keyed on it.
+     */
+    persistIgnore({
+      fingerprint: findingFingerprint(finding),
+      findingId: finding.id,
+      category: finding.category,
+      message: finding.message,
+      range: finding.range,
+      nodeIds: finding.nodeIds,
+      ignoredAt: new Date().toISOString(),
+    });
     setIgnoredFindingIds((previous) => {
       const next = new Set(previous).add(findingFingerprint(finding));
       persistIgnoredFindingIds(next);
@@ -701,9 +801,15 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     (finding) => !ignoredFindingIds.has(findingFingerprint(finding)),
   );
   const findings = [...currentGovernanceFindings, ...consistencyFindings];
-  const currentStatus = status;
-  const scanPhase = currentStatus?.phase ?? "notStarted";
-  const canReviewFindings = scanPhase === "fresh" || scanPhase === "clean";
+  /*
+   * Counted over the list the user can actually see, with the same ignore
+   * predicate the filtering above used. Recomputed from `findings` rather than
+   * from the observer's raw set, so a finding that is hidden is excluded from
+   * every bucket and the two can never disagree.
+   */
+  const openSummary = summarizeOpenFindings(findings, (finding) =>
+    ignoredFindingIds.has(findingFingerprint(finding)),
+  );
   // Safe reformat is the only review that can still leave a plan here; the spot
   // and full-document surfaces are retired from the pane. The selector keeps
   // understanding their plans so either could return behind the single section
@@ -771,6 +877,12 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           </button>
           {findingsOpen && (
             <>
+              {/*
+                The counts lead the list rather than sitting below it. A user
+                deciding whether to work through twenty findings needs to know
+                how many of them are mandatory before deciding to, not after.
+              */}
+              <p className="tf-sub">{describeOpenFindings(openSummary)}</p>
               <FindingsToolbar
                 label={currentTask.label}
                 nextAction={currentTask.nextAction}
@@ -893,18 +1005,21 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           }}
         />
       )}
+      {/*
+        Page order follows the work: what was found, how complete the analysis
+        was, what the user set aside, and only then the change list. Safe
+        reformat is gone as a section — it duplicated the findings and pending
+        changes above it, and the preview it produced is now built automatically
+        by the scan. The tracked-editing control it also owned is a host
+        capability toggle and lives in Settings, so `STAGE_01_PASSED` is not
+        stranded with nothing able to set it.
+      */}
       {page === "home" && (
-        <section
-          className="tf-governance-reformat"
-          aria-label="Document governance and safe reformat"
-        >
-          <GovernanceDashboard
-            findings={findings}
+        <>
+          <StaleBanner
+            stale={status?.stale ?? false}
+            hostUnavailable={status?.hostUnavailable ?? false}
             lastScan={status?.lastScan ?? null}
-            phase={scanPhase}
-            error={status?.error ?? null}
-            canReviewFindings={canReviewFindings}
-            onViewFindings={() => setFindingsOpen(true)}
             onRescan={() => observerRef.current?.onDocumentChanged()}
           />
           {/*
@@ -928,23 +1043,33 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
               )}
             </p>
           )}
-          <StaleBanner
-            stale={status?.stale ?? false}
-            hostUnavailable={status?.hostUnavailable ?? false}
-            lastScan={status?.lastScan ?? null}
-            onRescan={() => observerRef.current?.onDocumentChanged()}
-          />
+          {/*
+            Coverage sits directly under the findings because it qualifies them:
+            a list drawn from a partial analysis is not a smaller list of
+            problems, it is an unknown subset, and it reads as its own warning
+            rather than as a footnote on the findings above.
+          */}
           <CoverageBanner coverage={status?.coverage ?? null} />
           {/*
-            Safe reformat sits above the findings and pending-changes sections:
-            it is the cause of a plan, and the sections it feeds were previously
-            rendered above the control that produced them.
+            The one thing auto-preview owes the user when it declines: the
+            reason, and what would produce a preview instead. Silence here
+            would read as "the pane is working" while nothing was planned.
           */}
-          <ReformatPanel
-            profile={activeProfile}
-            onPreview={(result) => setReformatResult(result)}
-          />
-        </section>
+          {previewNote !== null && <p className="tf-sub">{previewNote}</p>}
+        </>
+      )}
+      {page === "home" && (
+        <IgnoredFindings
+          entries={persisted.ignoredFindings ?? []}
+          onRestore={(fingerprint) => {
+            restoreFinding(fingerprint);
+            setIgnoredFindingIds((previous) => {
+              const next = new Set(previous);
+              next.delete(fingerprint);
+              return next;
+            });
+          }}
+        />
       )}
     </main>
   );

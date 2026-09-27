@@ -18,9 +18,14 @@ const mocks = vi.hoisted(() => ({
   isTrackedEditingEnabled: vi.fn(() => true),
 }));
 
+// The ignore writers are listed because the Dashboard calls them directly.
+// A partial mock would leave them undefined and fail on first use, which reads
+// as a component bug rather than the fixture gap it is.
 vi.mock("../../../../src/core/state/persistence", () => ({
   loadState: () => mocks.loadState(),
   saveState: vi.fn(),
+  ignoreFinding: vi.fn(),
+  restoreFinding: vi.fn(),
 }));
 
 vi.mock("../../../../src/core/state", () => ({
@@ -50,6 +55,19 @@ vi.mock("../../../../src/reformat", () => ({
   prepareReformatHost: mocks.prepareReformatHost,
   applyReviewedPlan: vi.fn(),
   isTrackedEditingEnabled: mocks.isTrackedEditingEnabled,
+  // Auto-preview builds the plan itself now that the Preview button is gone.
+  // Returning a settled empty result keeps this test about profile resolution
+  // and the live region rather than about planning.
+  reformatDocument: async () => ({
+    plan: {
+      schemaVersion: 2,
+      changes: [],
+      conflicts: [],
+      docHash: "hash-1",
+      stale: false,
+    },
+    report: { findings: [], coverage: null, semantic: { status: "skipped" } },
+  }),
 }));
 
 // The first-run editor only needs to report that the user navigated back; the
