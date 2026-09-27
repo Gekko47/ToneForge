@@ -55,10 +55,7 @@ export function selectRecordSummary(record: ProfileRecord): ProfileSummary {
 }
 
 /** Ordered list of records of one kind, for pickers, newest activity first. */
-export function selectKindRecordList(
-  state: PersistedState,
-  kind: ProfileKind,
-): ProfileSummary[] {
+export function selectKindRecordList(state: PersistedState, kind: ProfileKind): ProfileSummary[] {
   return Object.entries(recordsOf(state, kind))
     .sort(([, left], [, right]) => right.updatedAt.localeCompare(left.updatedAt))
     .map(([, record]) => selectRecordSummary(record));

@@ -92,10 +92,14 @@ describe("profile record persistence", () => {
     expect(reloaded?.revisions.map((r) => r.revision)).toEqual([1, 1]);
     expect(reloaded?.revisions[1]?.action).toBe("published");
     // The next *edit* is what starts the next number, so there is no gap.
-    const edited = updateDraft(reloaded as ReturnType<typeof house>, {
-      ...draftOf(reloaded as ReturnType<typeof house>),
-      name: "House v2",
-    }, NOW).record;
+    const edited = updateDraft(
+      reloaded as ReturnType<typeof house>,
+      {
+        ...draftOf(reloaded as ReturnType<typeof house>),
+        name: "House v2",
+      },
+      NOW,
+    ).record;
     expect(edited.draft?.revision).toBe(2);
   });
 

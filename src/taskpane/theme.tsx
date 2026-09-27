@@ -59,6 +59,23 @@ export function ThemeProvider({ children }: { children: React.ReactNode }): Reac
 
   const isDark = themePreference === "dark" || (themePreference === "system" && systemDark);
 
+  /*
+   * The theme object must be stable across renders.
+   *
+   * `createDefaultTheme` builds a fresh object every call, and passing a new
+   * identity to `FluentThemeProvider` invalidates the theme for every Fluent
+   * consumer in the pane — each one recomputes its styles from scratch. That is
+   * survivable on an idle pane and ruinous when something else is already
+   * re-rendering, which is exactly the case here: a failing document scan emits
+   * a new status on every attempt, so a single theme change could fan a handful
+   * of status emissions into a full-pane restyle each time.
+   *
+   * Two themes exist, so both are built once and selected by reference.
+   */
+  const lightTheme = React.useMemo(() => createDefaultTheme(false), []);
+  const darkTheme = React.useMemo(() => createDefaultTheme(true), []);
+  const theme = isDark ? darkTheme : lightTheme;
+
   // The theme class is applied to the document element, not to an inner
   // wrapper, because the CSS custom properties are consumed by `html` and
   // `body`. A wrapper cannot supply variables to its own ancestors: the page
@@ -72,7 +89,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }): Reac
 
   return (
     <ThemeContext.Provider value={{ reducedMotion, themePreference, setThemePreference }}>
-      <FluentThemeProvider theme={createDefaultTheme(isDark)}>
+      <FluentThemeProvider theme={theme}>
         <div className={isDark ? "tf-theme-dark" : "tf-theme-light"}>{children}</div>
       </FluentThemeProvider>
     </ThemeContext.Provider>
