@@ -118,15 +118,27 @@ describe("ProfileRecord", () => {
     const numbers = record.revisions.map((entry) => entry.revision);
     const publishedNumbers = record.published.map((entry) => entry.revision);
 
-    // 20 recent entries, plus any older revision that is still published.
-    expect(record.revisions.length).toBeLessThanOrEqual(REVISION_RETENTION_CAP + 1);
+    // The newest `cap` entries, plus every entry whose revision is published.
+    // The bound is per *entry*, not per revision: publishing no longer mints a
+    // number, so one published revision legitimately holds two entries — the
+    // edit that created it and the publish that promoted it — and both are kept.
+    const protectedEntries = record.revisions.filter((entry) =>
+      publishedNumbers.includes(entry.revision),
+    ).length;
+    expect(record.revisions.length).toBeLessThanOrEqual(REVISION_RETENTION_CAP + protectedEntries);
+    expect(record.revisions.length).toBeLessThanOrEqual(REVISION_RETENTION_CAP + 2);
     publishedNumbers.forEach((revision) => {
       expect(numbers).toContain(revision);
     });
     expect([...numbers].sort((a, b) => a - b)).toEqual(numbers);
   });
 
-  it("keeps revision numbers unique as the trail is trimmed", () => {
+  it("keeps the trail bounded and monotonic as it is trimmed", () => {
+    // Revision numbers are no longer required to be unique: a revision identifies
+    // a version of the content, and one version can be edited and then published.
+    // What must hold is that the trail stays bounded and that `nextRevision` only
+    // ever moves forward, so a trimmed entry can never be renumbered underneath
+    // a stored snapshot.
     let record = recordWithDraft();
     Array.from({ length: REVISION_RETENTION_CAP + 5 }, (_unused, index) => index).forEach(
       (index) => {
@@ -134,12 +146,17 @@ describe("ProfileRecord", () => {
       },
     );
     const once = record.revisions.length;
-    const twice = rename(record, "after-trim").revisions.length;
+    const afterTrim = rename(record, "after-trim");
 
-    expect(once).toBeLessThanOrEqual(REVISION_RETENTION_CAP + 1);
-    expect(twice).toBeLessThanOrEqual(REVISION_RETENTION_CAP + 1);
-    expect(new Set(record.revisions.map((entry) => entry.revision)).size).toBe(
-      record.revisions.length,
-    );
+    expect(once).toBeLessThanOrEqual(REVISION_RETENTION_CAP);
+    expect(afterTrim.revisions.length).toBeLessThanOrEqual(REVISION_RETENTION_CAP);
+    // The numbers that survive are still a strictly increasing run: the trail is
+    // trimmed from the oldest end, never from the middle.
+    const numbers = afterTrim.revisions.map((entry) => entry.revision);
+    expect([...numbers].sort((a, b) => a - b)).toEqual(numbers);
+    expect(new Set(numbers).size).toBe(numbers.length);
+    // The draft sits at the newest revision, which is the last entry in the
+    // trail — so it must still be present after the oldest entries are trimmed.
+    expect(afterTrim.draft?.revision).toBe(numbers[numbers.length - 1]);
   });
 });

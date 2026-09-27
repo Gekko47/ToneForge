@@ -81,13 +81,22 @@ describe("profile record persistence", () => {
     saveProfileRecord(published);
 
     const reloaded = loadProfileRecord(record.id);
-    // Publishing consumes a fresh number, so the trail stays unique.
+    // Publishing promotes the draft in place: the revision a plan was built
+    // from and the revision the user approved are the same number, not two
+    // labels for one thing.
     expect(reloaded?.published).toHaveLength(1);
-    expect(reloaded?.published[0]?.revision).toBe(2);
-    expect(reloaded?.activePublishedRevision).toBe(2);
-    expect(reloaded?.draft?.revision).toBe(2);
-    expect(reloaded?.revisions.map((r) => r.revision)).toEqual([1, 2]);
+    expect(reloaded?.published[0]?.revision).toBe(1);
+    expect(reloaded?.activePublishedRevision).toBe(1);
+    expect(reloaded?.draft?.revision).toBe(1);
+    // One revision, two events: the edit that created it and the publish.
+    expect(reloaded?.revisions.map((r) => r.revision)).toEqual([1, 1]);
     expect(reloaded?.revisions[1]?.action).toBe("published");
+    // The next *edit* is what starts the next number, so there is no gap.
+    const edited = updateDraft(reloaded as ReturnType<typeof house>, {
+      ...draftOf(reloaded as ReturnType<typeof house>),
+      name: "House v2",
+    }, NOW).record;
+    expect(edited.draft?.revision).toBe(2);
   });
 
   it("migrates v5 state to the current version without discarding profiles", () => {

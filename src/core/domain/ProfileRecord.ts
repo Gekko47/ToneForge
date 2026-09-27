@@ -77,11 +77,16 @@ export interface RecordTransition {
  * Append one audit entry, applying the retention cap. The cap keeps the newest
  * `cap` entries and never drops an entry whose revision is a published
  * version, so an approved version always remains auditable.
+ *
+ * `bumpNextRevision` is false for publishing, because publishing does not create
+ * a new revision: it promotes the draft that already has one. Bumping there would
+ * leave a gap in the sequence — publish r4, then the next edit would be r6.
  */
 function append(
   record: ProfileRecord,
   entry: ProfileRevision,
   cap: number = REVISION_RETENTION_CAP,
+  bumpNextRevision = true,
 ): ProfileRecord {
   const revisions = [...record.revisions, entry];
   const recentFrom = Math.max(0, revisions.length - cap);
@@ -92,7 +97,7 @@ function append(
   return ProfileRecordSchema.parse({
     ...record,
     revisions: trimmed,
-    nextRevision: record.nextRevision + 1,
+    nextRevision: bumpNextRevision ? record.nextRevision + 1 : record.nextRevision,
     updatedAt: entry.at,
   });
 }
@@ -157,18 +162,29 @@ export function updateDraft(
 }
 
 /**
- * Publish the current draft as a new immutable version and activate it.
+ * Publish the current draft in place and activate it.
  *
- * Publishing consumes its own revision number rather than reusing the draft's,
- * so every number in the audit trail is unique and identifies exactly one
- * event. The draft is kept at that same number so subsequent edits continue
- * from what was published.
+ * Publishing does **not** create a new revision. The draft already carries a
+ * number that identifies its content, and the deterministic review cites that
+ * number; minting a second number for the same content would mean the revision a
+ * plan was built from and the revision the user approved were different labels
+ * for one thing. So the draft is promoted at its own revision, and the next
+ * *edit* — not the publish — starts the next number.
+ *
+ * Two consequences, both deliberate:
+ *
+ * - Publishing twice at the same revision **replaces** the earlier published
+ *   entry rather than appending a second copy. Two entries claiming to be r4
+ *   with different timestamps would be indistinguishable to a reader.
+ * - The audit trail may therefore hold two entries for one revision (the
+ *   `draft-updated` that created it and the `published` that promoted it).
+ *   A revision number identifies a *version of the content*, not a single event.
  */
 export function publishDraft(record: ProfileRecord, now: string): RecordTransition {
   const draft = record.draft;
   if (!draft) throw new Error("Cannot publish a profile without a draft");
 
-  const revision = record.nextRevision;
+  const revision = draft.revision;
   const profile = StyleProfileSchema.parse({ ...draft, revision, updatedAt: now });
   const version: PublishedVersion = { revision, at: now, profile };
   const entry: ProfileRevision = {
@@ -178,16 +194,19 @@ export function publishDraft(record: ProfileRecord, now: string): RecordTransiti
     detail: `Revision ${revision} published.`,
     profile,
   };
+  const published = [...record.published.filter((item) => item.revision !== revision), version];
 
   return {
     record: append(
       {
         ...record,
         draft: profile,
-        published: [...record.published, version],
+        published,
         activePublishedRevision: revision,
       },
       entry,
+      REVISION_RETENTION_CAP,
+      false,
     ),
     revision: entry,
   };
@@ -302,6 +321,15 @@ export function effectiveProfile(record: ProfileRecord): StyleProfile | null {
   return record.draft;
 }
 
+/**
+ * The newest audit entry for a revision.
+ *
+ * Publishing no longer mints a new number, so one revision can have more than one
+ * entry — the `draft-updated` that created it and the `published` that promoted
+ * it. `find` would return whichever happened to be first, which is the *older*
+ * event; the last match is the current state of that revision, which is what
+ * recall needs to copy back into a draft.
+ */
 export function findRevision(record: ProfileRecord, revision: number): ProfileRevision | undefined {
-  return record.revisions.find((entry) => entry.revision === revision);
+  return [...record.revisions].reverse().find((entry) => entry.revision === revision);
 }

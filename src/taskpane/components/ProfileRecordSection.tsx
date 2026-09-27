@@ -179,7 +179,10 @@ export default function ProfileRecordSection({
             {revisions.map((entry) => {
               const isCurrentDraft = record.draft?.revision === entry.revision;
               return (
-                <li key={entry.revision} className="tf-published-item">
+                <li
+                  key={`${entry.revision}-${entry.action}-${entry.at}`}
+                  className="tf-published-item"
+                >
                   <span>
                     Revision {entry.revision} · {dateLabel(entry.at)} · {entry.detail}
                   </span>

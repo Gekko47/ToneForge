@@ -6,6 +6,7 @@ import {
   createRecord,
   newProfileId,
   publishDraft,
+  updateDraft,
   type ProfileRecord,
 } from "../../../../src/core/domain/ProfileRecord";
 import ProfileRecordSection from "../../../../src/taskpane/components/ProfileRecordSection";
@@ -26,10 +27,18 @@ function draftOf(rec: ProfileRecord) {
   return draft;
 }
 
-/** A record with two published versions, so comparison is meaningful. */
+/**
+ * A record with two published versions, so comparison is meaningful.
+ *
+ * The second version needs a real `updateDraft` first. Publishing promotes the
+ * draft in place rather than minting a new number, so republishing an unchanged
+ * draft is the same version republished — which is why the fixture cannot fake a
+ * second version by swapping the draft's fields behind the record's back.
+ */
 function twicePublished(): ProfileRecord {
   const first = published();
-  return publishDraft({ ...first, draft: { ...draftOf(first), name: "House v2" } }, STAMP).record;
+  const edited = updateDraft(first, { ...draftOf(first), name: "House v2" }, STAMP).record;
+  return publishDraft(edited, STAMP).record;
 }
 
 describe("ProfileRecordSection", () => {
@@ -92,11 +101,13 @@ describe("ProfileRecordSection", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     const rec = published();
-    const renamed = {
-      ...rec,
-      draft: rec.draft ? { ...rec.draft, name: "House v2" } : null,
-    };
-    const second = publishDraft(renamed, STAMP).record;
+    // A real edit before the second publish: publishing promotes the draft in
+    // place, so swapping the draft's fields without going through `updateDraft`
+    // would leave the record claiming a revision it never assigned.
+    const second = publishDraft(
+      updateDraft(rec, { ...draftOf(rec), name: "House v2" }, STAMP).record,
+      STAMP,
+    ).record;
     const firstRevision = second.published[0]?.revision ?? 0;
     const latest = second.published[second.published.length - 1]?.revision ?? 0;
 
