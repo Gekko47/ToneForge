@@ -27,7 +27,7 @@ import {
   ProfileRecordSchema,
   type ProfileRecord,
 } from "../domain/ProfileRecord";
-import { IgnoredFindingSchema } from "../domain/Finding";
+import { IgnoredFindingSchema, type IgnoredFinding } from "../domain/Finding";
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
@@ -451,5 +451,99 @@ export function removeProfile(id: string): void {
 export function setActiveProfile(id: string | null): void {
   const state = loadState();
   state.activeProfileId = id;
+  saveState(state);
+}
+
+// ---------------------------------------------------------------------------
+// Semantic namespace writers
+//
+// Deliberately separate functions rather than a `kind` parameter on the
+// deterministic ones. `saveProfileRecord` seeds a governance profile for every
+// record it writes, and that must **not** happen here: governance policy is a
+// single thing that governs all three engines, keyed by the deterministic style
+// profile. A second policy seeded from a semantic record would be a second
+// source of truth for what the consistency engine is allowed to touch.
+// ---------------------------------------------------------------------------
+
+/**
+ * Persist a semantic profile record. Does not seed or refresh governance.
+ *
+ * The asymmetry with `saveProfileRecord` is the point: the governance tab
+ * edits one policy, and this namespace is governed by it rather than owning one.
+ */
+export function saveSemanticProfileRecord(record: ProfileRecord): void {
+  const state = loadState();
+  const parsed = ProfileRecordSchema.parse({ ...record, kind: "semantic" });
+  state.semanticProfileRecords[parsed.id] = parsed;
+  saveState(state);
+}
+
+/** Read a semantic profile record, or null when it does not exist. */
+export function loadSemanticProfileRecord(id: string): ProfileRecord | null {
+  return loadState().semanticProfileRecords[id] ?? null;
+}
+
+/** Create and persist a new semantic profile record, and make it active. */
+export function createSemanticProfileRecord(
+  name: string,
+  now: string,
+  seed?: StyleProfile,
+): ProfileRecord {
+  const record = createRecord(newProfileId(), name, now, seed, "semantic");
+  saveSemanticProfileRecord(record);
+  setActiveSemanticProfile(record.id);
+  return record;
+}
+
+/**
+ * Choose the active semantic profile, or null when there is none.
+ *
+ * Null is a real state the Semantic Style Review tab has to render: with no
+ * profile there is no style to apply, and falling back to the deterministic one
+ * would rewrite a paragraph against typography rules.
+ */
+export function setActiveSemanticProfile(id: string | null): void {
+  const state = loadState();
+  if (id !== null && state.semanticProfileRecords[id] === undefined) {
+    throw new Error(`setActiveSemanticProfile: no semantic profile record for "${id}"`);
+  }
+  state.activeSemanticProfileId = id;
+  saveState(state);
+}
+
+/**
+ * Delete a semantic profile record, clearing the active id when it pointed here.
+ */
+export function removeSemanticProfile(id: string): void {
+  const state = loadState();
+  if (state.semanticProfileRecords[id] === undefined) return;
+  const next = { ...state.semanticProfileRecords };
+  delete next[id];
+  state.semanticProfileRecords = next;
+  if (state.activeSemanticProfileId === id) state.activeSemanticProfileId = null;
+  saveState(state);
+}
+
+/**
+ * Record an ignored finding, keyed by fingerprint.
+ *
+ * A second ignore of the same fingerprint refreshes the stored range rather
+ * than appending, so the list cannot grow every time a rescan re-detects a
+ * problem the user has already dismissed.
+ */
+export function ignoreFinding(entry: IgnoredFinding): void {
+  const parsed = IgnoredFindingSchema.parse(entry);
+  const state = loadState();
+  const retained = state.ignoredFindings.filter((item) => item.fingerprint !== parsed.fingerprint);
+  state.ignoredFindings = [...retained, parsed];
+  saveState(state);
+}
+
+/** Stop ignoring a finding. Unknown fingerprints are a no-op, not an error. */
+export function restoreFinding(fingerprint: string): void {
+  const state = loadState();
+  const retained = state.ignoredFindings.filter((item) => item.fingerprint !== fingerprint);
+  if (retained.length === state.ignoredFindings.length) return;
+  state.ignoredFindings = retained;
   saveState(state);
 }
