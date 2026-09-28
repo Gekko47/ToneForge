@@ -28,7 +28,8 @@ import { toFindings, type ConsistencyReport } from "../../analysis/consistency";
 import { findingFingerprint } from "../findingFingerprint";
 import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
 import { decidePreview, isFullScan } from "../autoPreview";
-import { reviewFinding } from "../reviewGate";
+import { reviewFinding, reviewedPlan } from "../reviewGate";
+import { reviewKey } from "../reviewKey";
 import { describeOpenFindings, summarizeOpenFindings } from "../findingsSummary";
 import { reformatDocument } from "../../reformat";
 import {
@@ -122,14 +123,14 @@ export function resolvePendingPlan(reformatResult: ReformatResult | null): Pendi
 }
 
 /**
- * Read a versioned set of finding ids from storage.
+ * Read a versioned set of review keys from storage.
  *
- * Used for the reviewed set, keyed on the finding **id** rather than the
- * fingerprint. A fingerprint is the identity of a rule, so persisting it would
- * re-apply "reviewed" to every occurrence of that rule on the next scan — the
- * same rule-versus-occurrence collision the ignore path had.
+ * These are strings, not findings, so the shape is a plain string array. The
+ * key is rule-plus-position rather than the id, for the reason given on
+ * `reviewKey`: the id a user clicks is issued by the observer's run and never
+ * reappears in the plan's.
  */
-function readReviewedIds(key: string): Set<string> {
+function readReviewedKeys(key: string): Set<string> {
   try {
     const value = window.localStorage.getItem(key);
     const parsed: unknown = value ? JSON.parse(value) : [];
@@ -141,16 +142,12 @@ function readReviewedIds(key: string): Set<string> {
   }
 }
 
-function persistFingerprintSet(key: string, ids: ReadonlySet<string>): void {
+function persistReviewedKeys(keys: ReadonlySet<string>): void {
   try {
-    window.localStorage.setItem(key, JSON.stringify(Array.from(ids)));
+    window.localStorage.setItem(REVIEWED_FINDINGS_KEY, JSON.stringify(Array.from(keys)));
   } catch {
     // Storage may be unavailable; the set still applies for this session.
   }
-}
-
-function persistReviewedFindingIds(ids: ReadonlySet<string>): void {
-  persistFingerprintSet(REVIEWED_FINDINGS_KEY, ids);
 }
 
 export default function Dashboard(): React.ReactNode {
@@ -284,8 +281,18 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * an ignored rule. The persisted entries carry the range and are the only
    * source of truth, which is also why the pane needs no effect to mirror them.
    */
-  const [reviewedFindingIds, setReviewedFindingIds] = useState<Set<string>>(() =>
-    readReviewedIds(REVIEWED_FINDINGS_KEY),
+  /*
+   * Review keys, not finding ids.
+   *
+   * The id cannot be used: the observer's scan and the preview that builds the
+   * plan are separate runs and issue separate uuids, so an id the user clicked
+   * would never reappear in the plan and the reviewed-only list could never
+   * fill. The key is the rule plus its position, which both runs derive
+   * identically. See `reviewKey` for why an ignore tolerates a shifted offset
+   * and a review must not.
+   */
+  const [reviewedKeys, setReviewedKeys] = useState<Set<string>>(() =>
+    readReviewedKeys(REVIEWED_FINDINGS_KEY),
   );
   const observerRef = useRef<ReturnType<typeof createDocumentObserver> | null>(null);
   /**
@@ -329,14 +336,14 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   const [consistencyResult, setConsistencyResult] = useState<ConsistencyReport | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
-  /**
-   * True while a tracked apply is in flight.
+  /*
+   * The in-flight flag lives in `PendingChanges`, beside the button it disables.
    *
-   * `applyPendingPlan` is awaited rather than fire-and-forget, so without this
-   * the button stays enabled and a second click would start a second apply
-   * against a document the first one is still writing to.
+   * It was duplicated here for a whole-pane "Apply all changes" button that no
+   * longer exists. Two copies of one flag are two chances for a button to be
+   * enabled while a write is in flight, and the copy guarding the button the
+   * user can actually press is the one that has to be right.
    */
-  const [applying, setApplying] = useState(false);
   /**
    * One live region for the whole pane.
    *
@@ -570,8 +577,8 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   }, []);
 
   useEffect(() => {
-    persistFingerprintSet(REVIEWED_FINDINGS_KEY, reviewedFindingIds);
-  }, [reviewedFindingIds]);
+    persistReviewedKeys(reviewedKeys);
+  }, [reviewedKeys]);
 
   /*
    * The reviewed set is no longer written back onto `status`.
@@ -714,9 +721,9 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   function reviewOne(finding: Finding): void {
     const decision = reviewFinding(finding, pendingPlanRef.current?.plan ?? null);
-    setReviewedFindingIds((previous) => {
-      const next = new Set(previous).add(finding.id);
-      persistReviewedFindingIds(next);
+    setReviewedKeys((previous) => {
+      const next = new Set(previous).add(reviewKey(finding));
+      persistReviewedKeys(next);
       return next;
     });
     /*
@@ -730,22 +737,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     if (decision.kind === "pending") {
       setPendingOpen(true);
       return;
-    }
-  }
-
-  /**
-   * Apply every change in the previewed plan, tracked.
-   *
-   * Wraps `applyPendingPlan` in an in-flight flag so a second click cannot start
-   * a second apply while the first is still writing to the document.
-   */
-  async function applyAllChanges(): Promise<void> {
-    if (applying) return;
-    setApplying(true);
-    try {
-      await applyPendingPlan(pendingPlanRef.current);
-    } finally {
-      setApplying(false);
     }
   }
 
@@ -881,12 +872,39 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * had already moved on from. Mutating a ref during render is acceptable here
    * because nothing observable is derived from it in this pass.
    */
-  pendingPlanRef.current = resolvePendingPlan(reformatResult);
-  // Safe reformat is the only review that can still leave a plan here; the spot
-  // and full-document surfaces are retired from the pane. The selector keeps
-  // understanding their plans so either could return behind the single section
-  // without changing the pending-changes contract.
-  const pendingPlan = resolvePendingPlan(reformatResult);
+  /*
+   * The plan Pending Changes shows and Apply writes, narrowed to the reviewed
+   * findings — and only that.
+   *
+   * Both the table and `applyPendingPlan` read this same value, so there is no
+   * path by which the pane displays one set of changes and writes another. It
+   * is also the plan the review gate judges against, for the same reason: a
+   * verdict of "added to Pending changes" has to describe what Apply will do.
+   *
+   * The findings passed are the *preview run's own*. A change's `findingId`
+   * names a finding from the run that planned it, so pairing the plan with the
+   * observer's list would match nothing and leave Apply permanently empty —
+   * safe, but indistinguishable from a broken button.
+   */
+  const previewFindings = reformatResult?.report.findings ?? [];
+  const reviewedOnly = resolvePendingPlan(reformatResult);
+  pendingPlanRef.current =
+    reviewedOnly === null
+      ? null
+      : {
+          ...reviewedOnly,
+          plan: reviewedPlan(reviewedOnly.plan, reviewedKeys, previewFindings) ?? reviewedOnly.plan,
+        };
+  const pendingPlan = pendingPlanRef.current;
+  /**
+   * How many changes exist in total, for the collapsed header.
+   *
+   * The header counts what the user has, not what they have reviewed, so
+   * "Pending changes 12" while the open section lists two would look like the
+   * other ten had been lost.
+   */
+  const totalPlannedChanges = reviewedOnly?.plan.changes.length ?? 0;
+  const reviewedChangeCount = pendingPlan?.plan.changes.length ?? 0;
   /**
    * One readiness decision, shared by the Apply button and the host banner.
    *
@@ -961,7 +979,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                 id={FINDINGS_LIST_ID}
                 findings={findings}
                 selectedIndex={workflow.planReview.selectedFindingIndex}
-                reviewedIds={reviewedFindingIds}
+                reviewedKeys={reviewedKeys}
                 onReview={reviewOne}
                 onIgnore={(findingId) => {
                   const finding = findings.find((item) => item.id === findingId);
@@ -997,7 +1015,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           onClick={() => setPendingOpen(true)}
           aria-expanded={false}
         >
-          Pending changes <span>{pendingPlan?.plan.changes.length ?? 0}</span>
+          Pending changes <span>{totalPlannedChanges}</span>
         </button>
       ) : (
         <section className="tf-collapsible" aria-label="Pending changes section">
@@ -1007,10 +1025,11 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             onClick={() => setPendingOpen(false)}
             aria-expanded
           >
-            Pending changes <span>{pendingPlan?.plan.changes.length ?? 0}</span>
+            Pending changes <span>{totalPlannedChanges}</span>
           </button>
           <PendingChanges
             plan={pendingPlan?.plan ?? null}
+            unreviewedCount={Math.max(0, totalPlannedChanges - reviewedChangeCount)}
             /*
              * The preview's findings, not the observer's, and deliberately so.
              * Each change carries a `findingId` from the run that planned it, so
@@ -1046,13 +1065,14 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
        */}
       {page === "home" && (
         <div className="tf-actions">
-          <button
-            type="button"
-            onClick={() => void applyAllChanges()}
-            disabled={readiness.reason !== null || pendingPlan === null || applying}
-          >
-            {applying ? "Applying…" : "Apply all changes"}
-          </button>
+          {/*
+            Only Re-scan now. The row used to carry an "Apply all changes" button
+            that applied the whole plan, which is the exact behaviour the
+            reviewed-only list exists to prevent — and it sat beside a Pending
+            Changes section that Apply already owned, so the two disagreed about
+            what "all" meant. One Apply, in the section that lists what it will
+            do, is the only version a user can read before pressing it.
+          */}
           <button type="button" onClick={rescanNow} disabled={status?.phase === "scanning"}>
             {status?.phase === "scanning" ? "Re-scanning…" : "Re-scan now"}
           </button>

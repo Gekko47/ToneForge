@@ -167,8 +167,11 @@ describe("Phase C task-pane components", () => {
 
     expect(screen.getByText("Before: --")).toBeInTheDocument();
     expect(screen.getByText("After: —")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    // The buttons name their scope. "Apply" beside a table of one said nothing
+    // about what it would write, and "Reject" read as refusing one change rather
+    // than the whole list beside it.
+    expect(screen.getByRole("button", { name: "Apply 1 reviewed change" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Reject all" }));
     expect(onReject).toHaveBeenCalledOnce();
     expect(screen.getByText("Changes rejected.")).toBeInTheDocument();
   });

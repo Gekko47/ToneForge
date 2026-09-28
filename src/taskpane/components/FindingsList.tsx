@@ -9,6 +9,7 @@
 
 import React from "react";
 import type { Finding } from "../../core/domain/Finding";
+import { reviewKey } from "../reviewKey";
 import FindingCard from "./FindingCard";
 
 export interface FindingsListProps {
@@ -21,12 +22,16 @@ export interface FindingsListProps {
   onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
   /**
-   * Finding ids the user has already sent through the review gate.
+   * Review keys the user has already produced.
    *
-   * A set of ids, not a boolean: the gate records one decision per finding, and
+   * Keys rather than finding ids, and the reason is load-bearing: the id issued
+   * by the observer's run never reappears in the plan's, so an id-keyed set could
+   * never line up with what Apply writes. See `reviewKey`.
+   *
+   * A set rather than a boolean: the gate records one decision per finding, and
    * a single flag would mark every card at once.
    */
-  reviewedIds?: ReadonlySet<string>;
+  reviewedKeys?: ReadonlySet<string>;
 }
 
 export default function FindingsList({
@@ -36,7 +41,7 @@ export default function FindingsList({
   selectedIndex = null,
   onReview,
   onIgnore,
-  reviewedIds,
+  reviewedKeys,
 }: FindingsListProps): React.ReactNode {
   const [visibleCount, setVisibleCount] = React.useState(pageSize);
   if (findings.length === 0) {
@@ -61,7 +66,7 @@ export default function FindingsList({
               selected={index === selectedIndex}
               onReview={onReview}
               onIgnore={onIgnore}
-              reviewed={reviewedIds?.has(finding.id) === true}
+              reviewed={reviewedKeys?.has(reviewKey(finding)) === true}
             />
           ))}
       </div>

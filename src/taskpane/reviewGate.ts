@@ -27,6 +27,7 @@
 import type { Change } from "../core/domain/Change";
 import type { ChangePlan } from "../core/domain/ChangePlan";
 import type { Finding } from "../core/domain/Finding";
+import { reviewKey } from "./reviewKey";
 
 /** The change a reviewed finding contributes, when it has one. */
 export interface ReviewedChange {
@@ -133,6 +134,43 @@ export function reviewFinding(finding: Finding, plan: ChangePlan | null): Review
     change: { findingId: finding.id, changeId: match.change.id },
     message: "Reviewed. Added to Pending changes.",
   };
+}
+
+/**
+ * The plan reduced to the changes the user actually reviewed.
+ *
+ * Pending Changes used to render, and Apply used to apply, the whole
+ * auto-previewed plan. Review was therefore decorative: a user who looked at
+ * one finding out of twenty and pressed Apply got all twenty. This is the
+ * narrowing that makes the Review button mean something, and it is applied
+ * before the plan reaches the reviewer *and* before it reaches the adapter, so
+ * there is no path by which an unreviewed change can be written.
+ *
+ * `findings` must be the run that built the plan. A change's `findingId` names a
+ * finding from its own run, so passing the observer's list would match nothing
+ * and the result would be an empty plan — a refusal to apply anything, which is
+ * at least safe but would look like a broken button.
+ *
+ * Returns `null` when nothing was reviewed, so the caller can distinguish "no
+ * reviews yet" from "reviewed, and the plan is empty", which are different
+ * things to show a user.
+ */
+export function reviewedPlan(
+  plan: ChangePlan | null,
+  reviewedKeys: ReadonlySet<string>,
+  findings: readonly Finding[],
+): ChangePlan | null {
+  if (plan === null || reviewedKeys.size === 0) return null;
+  const byId = new Map(findings.map((finding) => [finding.id, finding]));
+  const changes = plan.changes.filter((change) => {
+    const finding = change.findingId === undefined ? undefined : byId.get(change.findingId);
+    // A change with no finding behind it cannot have been reviewed, so it is not
+    // carried. Same rule as `findChangeForFinding`: Pending Changes shows what
+    // the user looked at.
+    return finding !== undefined && reviewedKeys.has(reviewKey(finding));
+  });
+  if (changes.length === 0) return null;
+  return { ...plan, changes, conflicts: [] };
 }
 
 /** Every finding that is already represented by a change the user can apply. */

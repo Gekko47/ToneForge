@@ -178,28 +178,30 @@ describe("the whole-document action row", () => {
     mocks.loadState.mockReturnValue(stateWithProfile(true));
   });
 
-  it("shows Apply all and Re-scan now together, Apply first", async () => {
-    // Order is the contract: apply, then the less destructive re-scan beside it.
+  it("offers no whole-document Apply outside the section that lists what it writes", () => {
+    /*
+     * The row used to carry an "Apply all changes" button that applied the whole
+     * plan, sitting beside a Pending Changes section whose own Apply did the same
+     * thing. Two controls, two different meanings of "all", and the one outside
+     * the list applied changes the user had not been shown.
+     */
     render(<Dashboard />);
 
-    const apply = screen.getByRole("button", { name: "Apply all changes" });
-    const rescan = screen.getByRole("button", { name: "Re-scan now" });
-    expect(apply).toBeInTheDocument();
-    expect(rescan).toBeInTheDocument();
-    // Rendered order, read from the DOM rather than from the JSX: the two live
-    // in sibling branches of one conditional, so their source order is not the
-    // contract the user experiences.
-    const labels = screen.getAllByRole("button").map((button) => button.textContent?.trim() ?? "");
-    expect(labels.indexOf("Apply all changes")).toBeLessThan(labels.indexOf("Re-scan now"));
+    expect(screen.queryByRole("button", { name: /apply all/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Re-scan now" })).toBeEnabled();
   });
 
-  it("disables Apply all when the host cannot apply, and says why", () => {
-    // `isTrackedEditingEnabled` is false in this file's mock, so readiness has a
-    // real blocker. A disabled control with no stated reason is the defect the
-    // readiness work in Item 1.2 was about.
+  it("offers no Apply while nothing has been reviewed", async () => {
+    // The reviewed-only list starts empty, so there is genuinely nothing to
+    // apply. The section has to say that rather than presenting a live button
+    // that would write the whole plan behind the user's back. This file's
+    // `reformatDocument` mock returns a null plan, so the honest wording is the
+    // "nothing to apply" branch.
     render(<Dashboard />);
+    await userEvent.click(screen.getByRole("button", { name: /Pending changes/ }));
 
-    expect(screen.getByRole("button", { name: "Apply all changes" })).toBeDisabled();
+    expect(screen.getByText(/no changes are ready to apply/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Apply/ })).not.toBeInTheDocument();
   });
 
   it("drives a scan when Re-scan now is pressed", async () => {

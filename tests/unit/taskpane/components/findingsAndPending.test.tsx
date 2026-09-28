@@ -8,6 +8,7 @@ import PendingChanges from "../../../../src/taskpane/components/PendingChanges";
 import StaleBanner from "../../../../src/taskpane/components/StaleBanner";
 import { createTestPlan } from "../../../fixtures/changePlans";
 import { sampleFinding } from "../../../fixtures/sampleDocs";
+import { reviewKey } from "../../../../src/taskpane/reviewKey";
 import type { Change } from "../../../../src/core/domain/Change";
 
 /** One applied-able change, so PendingChanges renders its table and actions. */
@@ -50,7 +51,7 @@ describe("FindingsList selection", () => {
   });
 
   it("disables Review once a finding has been reviewed", () => {
-    // Driven by `reviewedIds`, not by `finding.status`. The status field is
+    // Driven by `reviewedKeys`, not by `finding.status`. The status field is
     // written by the observer, so reading it here made the label depend on a
     // value the pane had to patch back after every scan.
     const first = findings[0];
@@ -58,7 +59,7 @@ describe("FindingsList selection", () => {
     render(
       <FindingsList
         findings={findings}
-        reviewedIds={new Set([first.id])}
+        reviewedKeys={new Set([reviewKey(first)])}
         onReview={() => undefined}
       />,
     );
@@ -68,16 +69,23 @@ describe("FindingsList selection", () => {
   });
 
   it("marks only the reviewed finding, not every finding sharing its rule", () => {
-    // Two occurrences of the same rule. A rule-keyed set would disable Review on
-    // both, which is the collision the ignore path already had to be fixed for.
-    // Distinct ids: `sampleFinding` ships a fixed one, so two calls without an
-    // override would be the same finding rather than two occurrences of a rule.
-    const first = sampleFinding({ id: uuidv4(), ruleId: "typography.em-dash" });
-    const second = sampleFinding({ id: uuidv4(), ruleId: "typography.em-dash" });
+    // Two occurrences of the same rule, at different offsets. The key is the
+    // rule plus its position, so a rule-only key would disable Review on both —
+    // the same collision the ignore path had to be fixed for.
+    const first = sampleFinding({
+      id: uuidv4(),
+      ruleId: "typography.em-dash",
+      range: { start: 10, end: 11, unit: "character" },
+    });
+    const second = sampleFinding({
+      id: uuidv4(),
+      ruleId: "typography.em-dash",
+      range: { start: 400, end: 401, unit: "character" },
+    });
     render(
       <FindingsList
         findings={[first, second]}
-        reviewedIds={new Set([first.id])}
+        reviewedKeys={new Set([reviewKey(first)])}
         onReview={() => undefined}
       />,
     );
@@ -195,10 +203,28 @@ describe("PendingChanges apply readiness", () => {
   it("offers Apply with no reason when the host is ready", async () => {
     const onApply = vi.fn().mockResolvedValue(true);
     render(<PendingChanges plan={plan} findings={[]} onApply={onApply} />);
-    const apply = screen.getByRole("button", { name: "Apply" });
+    // The label names how many changes it will write. A bare "Apply" beside a
+    // table of one did not say so, and beside a longer table it was worse.
+    const apply = screen.getByRole("button", { name: "Apply 1 reviewed change" });
     expect(apply).toBeEnabled();
     await userEvent.click(apply);
     expect(onApply).toHaveBeenCalledOnce();
+  });
+
+  it("says changes are waiting to be reviewed, rather than that there are none", () => {
+    /*
+     * The reviewed-only list starts empty every time, and "No pending changes" in
+     * that state is a flat denial of work that is sitting in Findings — the user
+     * would conclude there was nothing to do.
+     */
+    render(<PendingChanges plan={null} findings={[]} unreviewedCount={4} />);
+    expect(screen.getByText(/4 changes ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/choose Review to add it here/i)).toBeInTheDocument();
+  });
+
+  it("says so plainly when there is genuinely nothing to apply", () => {
+    render(<PendingChanges plan={null} findings={[]} unreviewedCount={0} />);
+    expect(screen.getByText(/no changes are ready to apply/i)).toBeInTheDocument();
   });
 
   it("gives the preview table a caption and column headers", () => {

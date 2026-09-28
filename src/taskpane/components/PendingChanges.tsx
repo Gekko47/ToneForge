@@ -31,6 +31,14 @@ export interface PendingChangesProps {
     unprocessed?: readonly string[];
   } | null;
   /**
+   * How many changes exist in total, before the reviewed-only narrowing.
+   *
+   * Only used for the empty state. The section is otherwise showing the
+   * reviewed subset, and a bare "No pending changes" while a dozen changes sit
+   * unreviewed in the pane reads as a refusal rather than a choice.
+   */
+  unreviewedCount?: number;
+  /**
    * The full coverage report, when the caller has one.
    *
    * The `coverage` prop above is a deliberately narrow shape used for the
@@ -50,7 +58,9 @@ export default function PendingChanges({
   onOpenSettings,
   coverage = null,
   exportCoverage = null,
+  unreviewedCount = 0,
 }: PendingChangesProps): React.ReactNode {
+  const hasUnreviewedChanges = unreviewedCount > 0;
   const [result, setResult] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const localReadinessId = useId();
@@ -106,11 +116,26 @@ export default function PendingChanges({
     onReject?.();
   }
 
+  /*
+   * An empty list has to say *why* it is empty, or it reads as "nothing to fix".
+   *
+   * There are two different empties and they need different words: nothing has
+   * been proposed at all, versus changes exist but the user has not reviewed
+   * any yet. The second is the common case, and "No pending changes" in that
+   * situation is a flat denial of work that is sitting right there in Findings.
+   */
   if (!plan || plan.changes.length === 0) {
     return (
       <section aria-label="Pending changes">
         <h3>Pending Changes</h3>
-        <p>No pending changes to review.</p>
+        {hasUnreviewedChanges ? (
+          <p>
+            {unreviewedCount} change{unreviewedCount === 1 ? "" : "s"} ready. Open a finding and
+            choose Review to add it here — nothing is applied until you approve it.
+          </p>
+        ) : (
+          <p>No changes are ready to apply for this document.</p>
+        )}
       </section>
     );
   }
@@ -205,10 +230,14 @@ export default function PendingChanges({
           disabled={applying || !canApply}
           aria-describedby={canApply ? undefined : describedBy || undefined}
         >
-          {applying ? "Applying…" : canApply ? "Apply" : "Apply unavailable"}
+          {applying
+            ? "Applying…"
+            : canApply
+              ? `Apply ${plan.changes.length} reviewed change${plan.changes.length === 1 ? "" : "s"}`
+              : "Apply unavailable"}
         </button>
         <button type="button" onClick={handleReject} disabled={applying}>
-          Reject
+          Reject all
         </button>
         {/*
           A change list a reviewer can hand to a colleague, without granting them
