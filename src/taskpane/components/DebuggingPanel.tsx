@@ -3,69 +3,47 @@ import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import { isTrackedEditingEnabled, prepareReformatHost } from "../../reformat";
 import { formatDiagnostics, probeOfficeRuntime } from "../../shared/office/diagnostics";
 import { loadState } from "../../core/state/persistence";
+import { isRemoteProviderConfigured } from "../settings/providerComposition";
+import { diagnoseSituation, type TroubleshootingInput } from "../troubleshooting/checks";
+
+/**
+ * Re-exported for the surface that renders these, so a caller does not have to
+ * know that the registry moved out of this component.
+ */
+export type { TroubleshootingNote } from "../troubleshooting/checks";
 
 interface DebuggingPanelProps {
   onBack: () => void;
   coverage?: CoverageReport | null;
-}
-
-/** One situation the pane is actually in, with what to do about it. */
-export interface TroubleshootingNote {
-  id: string;
-  situation: string;
-  cause: string;
-  remedy: string;
+  /** Pending and reviewed counts, so the Apply blocker can be reported here too. */
+  plannedCount?: number;
+  reviewedCount?: number;
 }
 
 /**
- * The situations a user is most likely to be in, derived from current state.
+ * Read the current state once, in the shape the registry takes.
  *
- * The panel used to answer "what does this host support" and nothing else, so a
- * user whose Apply was being refused had to already know that tracked editing
- * was the cause. This reads the same state the panes act on, so each note names
- * a reason the user can act on rather than a setting they have to go looking for.
- *
- * Only true situations are returned. Listing every possible symptom on a page
- * people arrive at *because something is wrong* would make the one line that
- * matters indistinguishable from the four that do not apply.
+ * Collected here rather than in the registry so `checks.ts` stays pure and can
+ * be called from a surface that already holds this state — Apply and the
+ * semantic rewrite both know their own blockers, and neither should have to
+ * re-derive them to explain themselves.
  */
-export function diagnoseSituation(input: {
-  autoScan: boolean;
-  trackedEditing: boolean;
-  coverage: CoverageReport | null;
-}): TroubleshootingNote[] {
-  const notes: TroubleshootingNote[] = [];
-  if (input.autoScan === false) {
-    notes.push({
-      id: "auto-scan-off",
-      situation: "Findings stop updating while I type",
-      cause:
-        "Automatic scanning is switched off in Settings. ToneForge is not watching the document for changes.",
-      remedy:
-        "Turn auto-scan back on in Settings, or press Re-scan now on Document Governance — the manual scan is not affected by this setting.",
-    });
-  }
-  if (input.trackedEditing === false) {
-    notes.push({
-      id: "tracked-editing-off",
-      situation: "Apply is refused, or the host banner says tracked changes are unavailable",
-      cause:
-        "Tracked editing is not enabled for this host. ToneForge will not write a change it cannot record as a reviewable Word revision.",
-      remedy:
-        "Enable tracked editing in Settings, where the host probe runs as part of the change.",
-    });
-  }
-  if (input.coverage !== null && input.coverage.complete === false) {
-    notes.push({
-      id: "coverage-incomplete",
-      situation: "There are fewer findings than I expected",
-      cause:
-        "Only part of this document could be checked. The findings shown are an unknown subset of the problems present, not a shorter list of them.",
-      remedy:
-        "Open Analysis coverage below for exactly which parts were skipped and why, and try again in a host that supports them.",
-    });
-  }
-  return notes;
+function currentInput(
+  trackedEditing: boolean,
+  coverage: CoverageReport | null,
+  plannedCount: number,
+  reviewedCount: number,
+): TroubleshootingInput {
+  const state = loadState();
+  return {
+    autoScan: state.settings.autoScan,
+    trackedEditing,
+    coverage,
+    semanticProfileActive: state.activeSemanticProfileId !== null,
+    providerConfigured: isRemoteProviderConfigured(state.settings, state.providerConnections),
+    plannedCount,
+    reviewedCount,
+  };
 }
 
 /**
@@ -80,6 +58,8 @@ export function diagnoseSituation(input: {
 export default function DebuggingPanel({
   onBack,
   coverage = null,
+  plannedCount = 0,
+  reviewedCount = 0,
 }: DebuggingPanelProps): React.ReactNode {
   const [capabilities, setCapabilities] = useState<Awaited<
     ReturnType<typeof prepareReformatHost>
@@ -107,11 +87,9 @@ export default function DebuggingPanel({
     }
   }
 
-  const notes = diagnoseSituation({
-    autoScan: loadState().settings.autoScan,
-    trackedEditing,
-    coverage,
-  });
+  const notes = diagnoseSituation(
+    currentInput(trackedEditing, coverage, plannedCount, reviewedCount),
+  );
 
   return (
     <div className="tf-card" data-page="debugging">
@@ -159,14 +137,23 @@ export default function DebuggingPanel({
         What is actually wrong right now. Above this point the panel answers
         "what does this host support"; this answers "why is the pane not doing
         what I expect", which is the question a person arrives here with.
+
+        The section is titled for the question, not for a control: this is the one
+        place every surface's blockers are collected, so the user has somewhere
+        to look that is not the surface refusing them. The title was "What to
+        check", which named an action rather than the answer to the question.
       */}
-      <section aria-label="What to check" className="tf-debug-section">
-        <h2>What to check</h2>
+      <section aria-label="Why something may not be working" className="tf-debug-section">
+        <h2>Why something may not be working</h2>
+        <p className="tf-sub">
+          Everything the other pages would refuse to do, and the setting behind each one. Only
+          situations that are true right now are listed.
+        </p>
         {notes.length === 0 ? (
           <p className="tf-sub">
-            Nothing is currently standing between this document and a scan: automatic scanning is
-            on, tracked editing is enabled, and any analysis that has run covered the whole
-            document.
+            Nothing is currently standing in the way: automatic scanning is on, tracked editing is
+            enabled, a semantic profile is active, a provider is configured, and any analysis that
+            has run covered the whole document.
           </p>
         ) : (
           <ul className="tf-troubleshooting-list">
@@ -177,6 +164,15 @@ export default function DebuggingPanel({
                 </p>
                 <p>{note.cause}</p>
                 <p>{note.remedy}</p>
+                {/*
+                  The target, on its own labelled line. Folding it into the
+                  remedy prose meant the one actionable part was indistinguishable
+                  from the explanation around it.
+                */}
+                <p>
+                  <span className="tf-sub">Change this: </span>
+                  {note.remedyTarget.label}
+                </p>
               </li>
             ))}
           </ul>

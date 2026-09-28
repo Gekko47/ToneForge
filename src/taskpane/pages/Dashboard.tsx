@@ -843,7 +843,20 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
               navigation={arrival}
             />
           ) : (
-            <DebuggingPanel onBack={back} coverage={status?.coverage ?? null} />
+            /*
+             * The plan and review counts go in so the registry can report an
+             * Apply blocked by an unreviewed plan. That refusal is invisible from
+             * the button itself: it is simply disabled, and nothing near it says
+             * why. `reformatResult` and `reviewedKeys` are the state this page
+             * already holds, read here rather than re-derived, so the panel
+             * cannot disagree with the pending-changes section below it.
+             */
+            <DebuggingPanel
+              onBack={back}
+              coverage={status?.coverage ?? null}
+              plannedCount={reformatResult?.plan.changes.length ?? 0}
+              reviewedCount={reviewedKeys.size}
+            />
           )}
         </Suspense>
       </main>
