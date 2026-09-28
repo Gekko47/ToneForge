@@ -2,19 +2,7 @@ import React from "react";
 import ProfileEditor from "../components/ProfileEditor";
 import ProfileRecordSection from "../components/ProfileRecordSection";
 import { readActiveGovernanceContext } from "../activeGovernance";
-import { getDocumentSnapshot, getSelectionText } from "../../word/documentReader";
-import {
-  createRegistryFromSettings,
-  isRemoteProviderConfigured,
-} from "../settings/providerComposition";
-import { captureSample } from "../../style/sampleCapture";
-import { learnStyleDraft } from "../../style/learnStyle";
-import {
-  createProfileRecord,
-  loadState,
-  saveProfileRecord,
-  setActiveProfile,
-} from "../../core/state/persistence";
+import { saveProfileRecord } from "../../core/state/persistence";
 import type { ProfileRecord } from "../../core/domain/ProfileRecord";
 
 export interface ProfileProps {
@@ -22,9 +10,6 @@ export interface ProfileProps {
 }
 
 export default function Profile({ onBack }: ProfileProps): React.ReactNode {
-  const [learnStatus, setLearnStatus] = React.useState<string | null>(null);
-  const [learnError, setLearnError] = React.useState<string | null>(null);
-  const [learning, setLearning] = React.useState(false);
   const [record, setRecord] = React.useState<ProfileRecord | null>(
     readActiveGovernanceContext().record,
   );
@@ -39,46 +24,6 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
   React.useEffect(() => {
     refreshFromStore();
   }, []);
-
-  async function learnFromCurrentDocument(): Promise<void> {
-    setLearning(true);
-    setLearnError(null);
-    setLearnStatus(null);
-    try {
-      const state = loadState();
-      const [snapshot, selection] = await Promise.all([getDocumentSnapshot(), getSelectionText()]);
-      const sample = captureSample(selection, snapshot);
-      // Semantic learning needs a configured remote provider, not a specific
-      // one — every remote adapter speaks the same gateway contract.
-      const includeSemantic =
-        state.settings.semanticOptIn &&
-        isRemoteProviderConfigured(state.settings, state.providerConnections);
-      const result = await learnStyleDraft(sample, {
-        name: "Learned style profile",
-        includeSemantic,
-        ...(includeSemantic
-          ? { registry: createRegistryFromSettings(state.settings, state.providerConnections) }
-          : {}),
-      });
-
-      // Learn Style always creates a new record: a learned draft is a distinct
-      // profile, not an edit of whichever profile happens to be active.
-      const created = createProfileRecord(
-        result.draft.name,
-        new Date().toISOString(),
-        result.draft,
-      );
-      setActiveProfile(created.id);
-      setRecord(created);
-      setLearnStatus(
-        `Learned from ${result.evidence.source} sample (${result.evidence.wordCount} words). The draft is editable below.`,
-      );
-    } catch (error: unknown) {
-      setLearnError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLearning(false);
-    }
-  }
 
   // Both writers below re-read rather than patching local state. `saveProfileRecord`
   // rewrites the governance profile's wrapped style, so a policy held in a React
@@ -104,35 +49,11 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
       <h1 className="tf-title">Deterministic Style Profile</h1>
       <p className="tf-sub">
         The rules ToneForge checks deterministically: typography, house style, and the measured
-        metrics they were derived from. Semantic style is authored on the Semantic tab.
+        metrics they were derived from. Semantic style is authored on the Semantic tab, and the
+        policy that decides which of these may be applied without asking is on the Governance Policy
+        tab.
       </p>
-      <section aria-labelledby="learn-style-heading" className="tf-collapsible">
-        <h2 id="learn-style-heading">Learn Style</h2>
-        <p className="tf-sub">
-          Capture the current selection when present, otherwise the eligible document text, check
-          sample quality, and create a new editable profile. AI interpretation is used only when
-          consent and a configured provider are available.
-        </p>
-        <button type="button" onClick={() => void learnFromCurrentDocument()} disabled={learning}>
-          {learning ? "Learning style…" : "Learn from current document"}
-        </button>
-        {learnStatus && (
-          <p role="status" className="tf-sub">
-            {learnStatus}
-          </p>
-        )}
-        {learnError && (
-          <p role="alert" className="tf-error">
-            {learnError}
-          </p>
-        )}
-      </section>
-      {record && <ProfileRecordSection record={record} onChange={applyRecord} />}
-      {/*
-        The governance policy is not on this tab. It answers a different question
-        — which corrections ToneForge may apply without asking — and it now lives
-        on the Governance Policy tab, reached from the navigation.
-      */}
+      {record !== null && <ProfileRecordSection record={record} onChange={applyRecord} />}
       <ProfileEditor onRecordSaved={refreshRecord} />
     </div>
   );

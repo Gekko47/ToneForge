@@ -54,6 +54,7 @@ const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
 const GovernancePolicy = lazy(() => import("./GovernancePolicy"));
 const ConsistencyReview = lazy(() => import("./ConsistencyReview"));
+const Semantic = lazy(() => import("./Semantic"));
 
 const REVIEWED_FINDINGS_KEY = "ToneForge.ReviewedFindingFingerprints.v1";
 
@@ -61,7 +62,13 @@ const REVIEWED_FINDINGS_KEY = "ToneForge.ReviewedFindingFingerprints.v1";
 const FINDINGS_LIST_ID = "tf-findings-list";
 
 type DashboardPage =
-  "home" | "consistency" | "profile" | "governance-policy" | "settings" | "troubleshooting";
+  | "home"
+  | "consistency"
+  | "profile"
+  | "semantic"
+  | "governance-policy"
+  | "settings"
+  | "troubleshooting";
 
 /** Destinations reachable before a profile exists. */
 type SetupDestination = "home" | "settings" | "troubleshooting";
@@ -762,6 +769,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     page === "profile" ||
     page === "governance-policy" ||
     page === "consistency" ||
+    page === "semantic" ||
     page === "troubleshooting"
   ) {
     const back = () => navigate("home");
@@ -786,6 +794,18 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
               onOpenSettings={() => navigate("settings")}
               result={consistencyResult}
               onResult={setConsistencyResult}
+            />
+          ) : page === "semantic" ? (
+            <Semantic
+              onBack={back}
+              onOpenSettings={() => navigate("settings")}
+              /*
+               * Straight through the existing review gate, not a private route
+               * into the document. A proposed rewrite therefore meets the same
+               * preconditions, the same approval, and the same refusal
+               * messages as every other change in the product.
+               */
+              onSendToPendingChanges={reviewOne}
             />
           ) : (
             <DebuggingPanel onBack={back} coverage={status?.coverage ?? null} />

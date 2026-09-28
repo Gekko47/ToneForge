@@ -2,7 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { IconButton } from "@fluentui/react";
 
 export type TaskPaneDestination =
-  "home" | "consistency" | "profile" | "governance-policy" | "settings" | "troubleshooting";
+  | "home"
+  | "consistency"
+  | "profile"
+  | "semantic"
+  | "governance-policy"
+  | "settings"
+  | "troubleshooting";
 
 interface TaskPaneHeaderProps {
   activePage: TaskPaneDestination;
@@ -18,6 +24,7 @@ const DESTINATIONS: readonly {
   { key: "home", label: "Document Governance" },
   { key: "consistency", label: "Consistency Review" },
   { key: "profile", label: "Deterministic Style Profile" },
+  { key: "semantic", label: "Semantic" },
   { key: "governance-policy", label: "Governance Policy" },
   { key: "settings", label: "Settings" },
   { key: "troubleshooting", label: "Troubleshooting" },
