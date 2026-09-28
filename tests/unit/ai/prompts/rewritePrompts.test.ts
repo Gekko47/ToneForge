@@ -48,15 +48,17 @@ describe("buildRewritePrompt", () => {
     });
   });
 
-  it("states that the anchor must be copied, not paraphrased", () => {
+  it("requires the anchor to be the whole selection, copied exactly", () => {
     /*
-     * A paraphrased anchor has no exact span to match, so the change would have
-     * no precondition and Apply would refuse it. Saying so at the point the
-     * model can still see the text is the only place the instruction works.
+     * A paraphrased anchor has no exact span to match, and a partial anchor
+     * leaves the replacement describing more text than the change would touch.
+     * Saying so at the point the model can still see the text is the only place
+     * the instruction works.
      */
     const prompt = buildRewritePrompt(SEMANTIC, SELECTION, { includeRawText: true });
     expect(prompt).toMatch(/character for character/i);
-    expect(prompt).toMatch(/never paraphrase/i);
+    expect(prompt).toMatch(/entire text below/i);
+    expect(prompt).toMatch(/partial anchor is refused/i);
   });
 
   it("forbids a content edit as well as a style change", () => {
