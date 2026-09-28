@@ -18,6 +18,13 @@ export interface FindingCardProps {
   selected?: boolean;
   onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
+  /**
+   * True when this finding has already been sent through the review gate.
+   *
+   * Passed in rather than read from `finding.status`, because the gate's verdict
+   * is a decision the Dashboard makes and the card only renders.
+   */
+  reviewed?: boolean;
 }
 
 export default function FindingCard({
@@ -25,6 +32,7 @@ export default function FindingCard({
   selected = false,
   onReview,
   onIgnore,
+  reviewed = false,
 }: FindingCardProps): React.ReactNode {
   const [navigationState, setNavigationState] = useState<
     { status: "idle" } | { status: "working" } | { status: "message"; message: string }
@@ -43,10 +51,16 @@ export default function FindingCard({
   const riskLabel = finding.risk
     ? finding.risk.charAt(0).toUpperCase() + finding.risk.slice(1)
     : "None";
-  const statusLabel =
-    finding.status === "reviewed"
-      ? "Reviewed"
-      : finding.status.charAt(0).toUpperCase() + finding.status.slice(1);
+  /*
+   * "Reviewed" comes from the gate's own record, not from `finding.status`.
+   *
+   * The status field is written by the observer, which knows nothing about what
+   * the user reviewed, so reading it here made the label depend on a value the
+   * pane had to patch back in after every scan.
+   */
+  const statusLabel = reviewed
+    ? "Reviewed"
+    : finding.status.charAt(0).toUpperCase() + finding.status.slice(1);
 
   /*
    * Scroll only when this card becomes the selected one.
@@ -135,8 +149,8 @@ export default function FindingCard({
           {navigationState.status === "working" ? "Going to text…" : "Go to text"}
         </button>
         {onReview && (
-          <button type="button" onClick={handleReview} disabled={finding.status === "reviewed"}>
-            {finding.status === "reviewed" ? "Reviewed" : "Review"}
+          <button type="button" onClick={handleReview} disabled={reviewed}>
+            {reviewed ? "Reviewed" : "Review"}
           </button>
         )}
         {onIgnore && (

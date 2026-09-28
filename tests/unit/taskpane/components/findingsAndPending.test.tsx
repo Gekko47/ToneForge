@@ -49,10 +49,40 @@ describe("FindingsList selection", () => {
     expect(screen.getByText(/Reviewed/)).toBeInTheDocument();
   });
 
-  it("disables Review once a finding has been reviewed", async () => {
-    const reviewed = [{ ...findings[0]!, status: "reviewed" as const }];
-    render(<FindingsList findings={reviewed} onReview={() => undefined} />);
-    expect(screen.getByRole("button", { name: "Reviewed" })).toBeDisabled();
+  it("disables Review once a finding has been reviewed", () => {
+    // Driven by `reviewedIds`, not by `finding.status`. The status field is
+    // written by the observer, so reading it here made the label depend on a
+    // value the pane had to patch back after every scan.
+    const first = findings[0];
+    if (first === undefined) throw new Error("expected a finding");
+    render(
+      <FindingsList
+        findings={findings}
+        reviewedIds={new Set([first.id])}
+        onReview={() => undefined}
+      />,
+    );
+    const buttons = screen.getAllByRole("button", { name: "Reviewed" });
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).toBeDisabled();
+  });
+
+  it("marks only the reviewed finding, not every finding sharing its rule", () => {
+    // Two occurrences of the same rule. A rule-keyed set would disable Review on
+    // both, which is the collision the ignore path already had to be fixed for.
+    // Distinct ids: `sampleFinding` ships a fixed one, so two calls without an
+    // override would be the same finding rather than two occurrences of a rule.
+    const first = sampleFinding({ id: uuidv4(), ruleId: "typography.em-dash" });
+    const second = sampleFinding({ id: uuidv4(), ruleId: "typography.em-dash" });
+    render(
+      <FindingsList
+        findings={[first, second]}
+        reviewedIds={new Set([first.id])}
+        onReview={() => undefined}
+      />,
+    );
+    expect(screen.getAllByRole("button", { name: "Reviewed" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Review" })).toHaveLength(1);
   });
 
   it("widens the visible window so a selected finding beyond the page is rendered", () => {

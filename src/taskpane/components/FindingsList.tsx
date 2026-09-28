@@ -20,6 +20,13 @@ export interface FindingsListProps {
   selectedIndex?: number | null;
   onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
+  /**
+   * Finding ids the user has already sent through the review gate.
+   *
+   * A set of ids, not a boolean: the gate records one decision per finding, and
+   * a single flag would mark every card at once.
+   */
+  reviewedIds?: ReadonlySet<string>;
 }
 
 export default function FindingsList({
@@ -29,6 +36,7 @@ export default function FindingsList({
   selectedIndex = null,
   onReview,
   onIgnore,
+  reviewedIds,
 }: FindingsListProps): React.ReactNode {
   const [visibleCount, setVisibleCount] = React.useState(pageSize);
   if (findings.length === 0) {
@@ -53,6 +61,7 @@ export default function FindingsList({
               selected={index === selectedIndex}
               onReview={onReview}
               onIgnore={onIgnore}
+              reviewed={reviewedIds?.has(finding.id) === true}
             />
           ))}
       </div>

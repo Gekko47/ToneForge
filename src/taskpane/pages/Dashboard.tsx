@@ -34,6 +34,7 @@ import {
 import { findingFingerprint } from "../findingFingerprint";
 import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
 import { decidePreview, isFullScan } from "../autoPreview";
+import { reviewFinding } from "../reviewGate";
 import { describeOpenFindings, summarizeOpenFindings } from "../findingsSummary";
 import { reformatDocument } from "../../reformat";
 import {
@@ -117,13 +118,14 @@ export function resolvePendingPlan(reformatResult: ReformatResult | null): Pendi
 }
 
 /**
- * Read a versioned set of finding fingerprints from storage.
+ * Read a versioned set of finding ids from storage.
  *
- * One reader for both the ignore set and the reviewed set: the parsing and the
- * failure behaviour are identical, and duplicating them is how the two lists end
- * up disagreeing about what a corrupt value means.
+ * Used for the reviewed set, keyed on the finding **id** rather than the
+ * fingerprint. A fingerprint is the identity of a rule, so persisting it would
+ * re-apply "reviewed" to every occurrence of that rule on the next scan — the
+ * same rule-versus-occurrence collision the ignore path had.
  */
-function readFingerprintSet(key: string): Set<string> {
+function readReviewedIds(key: string): Set<string> {
   try {
     const value = window.localStorage.getItem(key);
     const parsed: unknown = value ? JSON.parse(value) : [];
@@ -269,7 +271,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * source of truth, which is also why the pane needs no effect to mirror them.
    */
   const [reviewedFindingIds, setReviewedFindingIds] = useState<Set<string>>(() =>
-    readFingerprintSet(REVIEWED_FINDINGS_KEY),
+    readReviewedIds(REVIEWED_FINDINGS_KEY),
   );
   const observerRef = useRef<ReturnType<typeof createDocumentObserver> | null>(null);
   /**
@@ -282,6 +284,18 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   const previewedDocHashRef = useRef<string | null>(null);
   const [previewNote, setPreviewNote] = useState<string | null>(null);
+  /**
+   * The plan the review gate reads, held in a ref.
+   *
+   * `pendingPlan` is derived during render, below the early return for the
+   * settings and profile pages, so a handler declared above it cannot close over
+   * it. A ref is read at click time rather than render time, which is what the
+   * gate needs: it must judge against the plan the user is looking at now, not
+   * the one present when the handler was created.
+   */
+  const pendingPlanRef = useRef<PendingPlan | null>(null);
+  /** Why a reviewed finding did not become a pending change, if it did not. */
+  const [reviewNote, setReviewNote] = useState<string | null>(null);
   /*
    * Coverage starts collapsed, but an *incomplete* analysis overrides that: it
    * is a warning the user has to act on, and hiding it behind a toggle is how
@@ -500,29 +514,18 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     persistFingerprintSet(REVIEWED_FINDINGS_KEY, reviewedFindingIds);
   }, [reviewedFindingIds]);
 
-  /**
-   * Reapply the reviewed set to freshly emitted findings.
+  /*
+   * The reviewed set is no longer written back onto `status`.
    *
-   * Without this a reviewed finding reverts to `new` on the next scan, because
-   * the observer owns `status` and knows nothing about the user's review marks.
-   * Applying the set here keeps the two owners in agreement without the observer
-   * needing to know anything about task-pane storage.
+   * This effect existed because FindingCard read the label from `finding.status`,
+   * which the observer rewrites on every scan — so the pane had to patch the
+   * observer's data back afterwards. FindingCard now takes the reviewed state as
+   * a prop, so the two owners no longer have to be reconciled: the observer
+   * owns `status`, and the gate owns what the user reviewed.
+   *
+   * It also matched on the fingerprint, which is the identity of a rule, so
+   * reviewing one em dash marked every em dash in the document reviewed.
    */
-  useEffect(() => {
-    if (reviewedFindingIds.size === 0) return;
-    setStatus((previous) => {
-      if (!previous || previous.findings.length === 0) return previous;
-      let changed = false;
-      const findings = previous.findings.map((item) => {
-        if (reviewedFindingIds.has(findingFingerprint(item)) && item.status !== "reviewed") {
-          changed = true;
-          return { ...item, status: "reviewed" as const };
-        }
-        return item;
-      });
-      return changed ? { ...previous, findings } : previous;
-    });
-  }, [reviewedFindingIds, status]);
 
   /**
    * Announce the settled state, and only when it actually changed.
@@ -748,20 +751,34 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   }
 
   /**
-   * Mark a finding as seen, durably.
+   * Review a finding: either it becomes a pending change, or the pane says why
+   * it cannot be one.
    *
-   * This used to set `status` on a React copy, which the next observer emission
-   * overwrote: a reviewed finding reverted to `new` on the next scan, so the
-   * control did nothing. The fingerprint is persisted under the same kind of
-   * versioned key the ignore path already uses, and reapplied on every emission
-   * so a reviewed finding stays reviewed across rescans.
+   * This replaces a `markForReview` that only flipped a status label, which is
+   * why the button appeared to do nothing. The decision is delegated to
+   * `reviewGate` so the rule — never announce a change Apply will refuse — is
+   * testable without a host, and so the same conditions Apply enforces are the
+   * ones the gate reads.
    */
-  function markForReview(finding: Finding): void {
+  function reviewOne(finding: Finding): void {
+    const decision = reviewFinding(finding, pendingPlanRef.current?.plan ?? null);
     setReviewedFindingIds((previous) => {
-      const next = new Set(previous).add(findingFingerprint(finding));
+      const next = new Set(previous).add(finding.id);
       persistReviewedFindingIds(next);
       return next;
     });
+    /*
+     * Both outcomes speak through the one pane-wide live region rather than
+     * adding a second `role="status"` beside the list. A review that produced no
+     * pending change has to say so — otherwise the button looks broken again,
+     * which is exactly what the status label-only version of Review did.
+     */
+    setReviewNote(decision.message);
+    announcement.announce(decision.message);
+    if (decision.kind === "pending") {
+      setPendingOpen(true);
+      return;
+    }
   }
 
   // The consistency report crosses into the ordinary finding model through the
@@ -839,6 +856,16 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const openSummary = summarizeOpenFindings(findings, (finding) =>
     isAnyIgnored(finding, persisted.ignoredFindings),
   );
+  /*
+   * Publish the plan for the review gate to read at click time.
+   *
+   * Assigned during render rather than in an effect on purpose: an effect would
+   * leave the ref holding the *previous* plan for the render in which a handler
+   * could first fire, so the gate would judge a finding against a plan the user
+   * had already moved on from. Mutating a ref during render is acceptable here
+   * because nothing observable is derived from it in this pass.
+   */
+  pendingPlanRef.current = resolvePendingPlan(reformatResult);
   // Safe reformat is the only review that can still leave a plan here; the spot
   // and full-document surfaces are retired from the pane. The selector keeps
   // understanding their plans so either could return behind the single section
@@ -935,12 +962,21 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                 id={FINDINGS_LIST_ID}
                 findings={findings}
                 selectedIndex={workflow.planReview.selectedFindingIndex}
-                onReview={markForReview}
+                reviewedIds={reviewedFindingIds}
+                onReview={reviewOne}
                 onIgnore={(findingId) => {
                   const finding = findings.find((item) => item.id === findingId);
                   if (finding) ignoreFinding(finding);
                 }}
               />
+              {/*
+               * The gate's verdict, in a live region.
+
+               * A review that produced no pending change has to say so. The
+               * alternative is a button that appears to do nothing again — which
+               * is exactly what the status label-only version of Review did.
+               */}
+              {reviewNote !== null && <p className="tf-sub">{reviewNote}</p>}
             </>
           )}
         </section>
