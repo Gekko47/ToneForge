@@ -51,11 +51,26 @@ describe("buildCoverage", () => {
     expect(report.unprocessed).toEqual([]);
   });
 
-  it("marks incomplete when required nodes are missing", () => {
+  it("marks incomplete when a caller-required node type is missing", () => {
+    // `requiredNodeTypes` is now opt-in. The check is still a real one when a
+    // caller asks for a specific type; what is gone is the hardcoded default
+    // that asked every document whether it happened to contain a paragraph.
     const nodes = [makeNode("textBox")];
-    const report = buildCoverage({ nodes, text: "hello" });
+    const report = buildCoverage({
+      nodes,
+      text: "hello",
+      requiredNodeTypes: ["paragraph"],
+    });
     expect(report.complete).toBe(false);
-    expect(report.unprocessed).toContain("Required in-scope node type inaccessible: body");
+    expect(report.unprocessed).toContain("Required in-scope node type inaccessible: paragraph");
+  });
+
+  it("marks incomplete when no in-scope content was acquired at all", () => {
+    // The one condition that genuinely means "we read nothing". A body node
+    // with no text, and nothing else, is the shape of a failed acquisition.
+    const report = buildCoverage({ nodes: [makeNode("body", "")], text: "" });
+    expect(report.complete).toBe(false);
+    expect(report.unprocessed).toContain("No in-scope document content was acquired");
   });
 
   it("handles empty nodes array", () => {
@@ -63,7 +78,61 @@ describe("buildCoverage", () => {
     expect(report.counts).toEqual([]);
     expect(report.processedCharacterCount).toBe(0);
     expect(report.complete).toBe(false);
-    expect(report.unprocessed).toContain("Required in-scope node type inaccessible: body");
+    expect(report.unprocessed).toContain("No in-scope document content was acquired");
+  });
+
+  /*
+   * Regression, from live Word.
+   *
+   * A document made entirely of list items produced
+   * `Required in-scope node type inaccessible: paragraph/heading`, was marked
+   * incomplete, and therefore could never be applied — even though ToneForge
+   * had read it end to end and found real problems in it. `complete` drives the
+   * Apply gate, so a check that misfires does not merely mislabel a report; it
+   * denies the user the one action the product exists to offer.
+   */
+  it("reports a document of nothing but list items as complete", () => {
+    const nodes = [
+      makeNode("body", "Some document text", "body/0"),
+      makeNode("listItem", "First item"),
+      makeNode("listItem", "Second item"),
+    ];
+    const report = buildCoverage({
+      nodes,
+      text: "Some document text",
+      acquisition: {
+        structuralCoverage: "partial",
+        unsupported: ["tables", "headers", "footers"],
+        analyzedCharacterCount: 20,
+        completeDocumentCharacterCount: 20,
+      },
+    });
+
+    expect(report.unprocessed).toEqual([]);
+    expect(report.complete).toBe(true);
+  });
+
+  it("does not report declared unsupported containers as an incomplete analysis", () => {
+    // Tables and headers being unsupported is a *fact about the host*, and it
+    // is already visible in `unsupported`. It is not a processing gap, so it
+    // must not withhold Apply from the parts of the document that were read.
+    const nodes = [
+      makeNode("body", "Some document text", "body/0"),
+      makeNode("paragraph", "A readable paragraph"),
+    ];
+    const report = buildCoverage({
+      nodes,
+      text: "Some document text",
+      acquisition: {
+        structuralCoverage: "partial",
+        unsupported: ["tables", "headers", "footers", "sections", "fields"],
+        analyzedCharacterCount: 20,
+        completeDocumentCharacterCount: 20,
+      },
+    });
+
+    expect(report.unsupported).toHaveLength(5);
+    expect(report.complete).toBe(true);
   });
 
   it("keeps declared exclusions visible without making the requested scope incomplete", () => {
@@ -107,11 +176,16 @@ describe("buildCoverage", () => {
       makeNode("body", "hello", "body/0"),
       makeNode("paragraph", "protected", "body/paragraphs/0", false),
     ];
-    const report = buildCoverage({ nodes, text: "hello\nprotected" });
+    const report = buildCoverage({
+      nodes,
+      text: "hello\nprotected",
+      requiredNodeTypes: ["paragraph"],
+    });
 
-    expect(report.unprocessed).toContain(
-      "Required in-scope node type inaccessible: paragraph/heading",
-    );
+    // A protected node is not a node governance can act on, so requiring one
+    // and finding only the protected copy is a genuine gap. This is the case
+    // the check was written for, and it is why the check stays available.
+    expect(report.unprocessed).toContain("Required in-scope node type inaccessible: paragraph");
     expect(report.excluded.map((entry) => entry.reason)).toContain("Protected text");
   });
 

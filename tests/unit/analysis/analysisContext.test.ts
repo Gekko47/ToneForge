@@ -120,6 +120,9 @@ describe("authoritative coverage accounting", () => {
       {
         nodeId: "body",
         type: "body" as const,
+        // Text on the in-scope node, so this case tests the excluded paragraph
+        // rather than the separate "nothing was acquired" condition.
+        text: "Hello",
         sourcePath: "body",
         editable: true,
         includedInGovernance: true,
@@ -149,6 +152,10 @@ describe("authoritative coverage accounting", () => {
       appliedChangeCount: 0,
       changedNodeIds: ["body"],
       changedCharacterCount: 5,
+      // Opt-in: a caller that genuinely needs a paragraph in scope. Without it
+      // the report is complete, because the only paragraph is protected and the
+      // body is readable — which is a different question from this one.
+      requiredNodeTypes: ["paragraph"],
     });
 
     expect(coverage.examinedNodeIds).toEqual(["body"]);
@@ -159,9 +166,7 @@ describe("authoritative coverage accounting", () => {
     expect(coverage.changedNodeIds).toEqual(["body"]);
     // The only paragraph node is excluded from governance, so it stays visible
     // in `excluded` but cannot satisfy the required in-scope node type.
-    expect(coverage.unprocessed).toEqual([
-      "Required in-scope node type inaccessible: paragraph/heading",
-    ]);
+    expect(coverage.unprocessed).toEqual(["Required in-scope node type inaccessible: paragraph"]);
     expect(coverage.complete).toBe(false);
   });
 });

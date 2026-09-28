@@ -17,6 +17,17 @@ import type { AcquisitionDiagnostics } from "./analysisContext";
 export interface CoverageOptions {
   nodes: readonly DocumentNode[];
   text: string;
+  /**
+   * Node types the caller genuinely requires, as `type/alternative` groups.
+   *
+   * Defaults to empty. It used to default to `["body", "paragraph/heading"]`,
+   * which asked whether any node was typed *exactly* `paragraph` or `heading` —
+   * so a document made entirely of list items reported
+   * `Required in-scope node type inaccessible: paragraph/heading`, was marked
+   * incomplete, and could never be applied. That is the wrong question: the
+   * check is a discovery test, and the acquisition it was reaching for is
+   * already reported by `structuralCoverage === "unsupported"` below.
+   */
   requiredNodeTypes?: readonly string[];
   exclusions?: Array<{ reason: string; nodeTypes?: readonly string[] }>;
   acquisition?: Pick<
@@ -45,7 +56,7 @@ export interface CoverageOptions {
 }
 
 export function buildCoverage(options: CoverageOptions): CoverageReport {
-  const { nodes, exclusions = [], requiredNodeTypes = ["body", "paragraph/heading"] } = options;
+  const { nodes, exclusions = [], requiredNodeTypes = [] } = options;
   const counts = new Map<string, CoverageItem>();
   const examinedNodeIds = [
     ...(options.examinedNodeIds ??
@@ -88,6 +99,27 @@ export function buildCoverage(options: CoverageOptions): CoverageReport {
       .slice(0, 10);
     if (locations.length > 0) excluded.push({ reason: exclusion.reason, locations });
   });
+
+  /*
+   * Did we acquire anything governance can act on?
+   *
+   * The question is deliberately about *content*, not about a list of node
+   * types. Asking "is there a node typed exactly paragraph or heading" reports
+   * a perfectly readable document of nothing but list items as inaccessible,
+   * and since `complete` drives the Apply gate, that permanently denies Apply
+   * on a document ToneForge had in fact read end to end.
+   *
+   * This is the only check that should be able to say "we acquired no scope".
+   * The narrower structural case — the host would not expose a paragraph
+   * collection at all — is reported separately below, from the acquisition
+   * diagnostics, which is the artefact that actually knows.
+   */
+  const inScopeContent = nodes.filter(
+    (node) => node.includedInGovernance && (node.text?.length ?? 0) > 0,
+  );
+  if (inScopeContent.length === 0) {
+    unprocessed.push("No in-scope document content was acquired");
+  }
 
   requiredNodeTypes.forEach((requiredType) => {
     const alternatives = requiredType.split("/");
