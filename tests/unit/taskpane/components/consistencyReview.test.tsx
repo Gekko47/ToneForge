@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import ConsistencyReviewPreflight from "../../../../src/taskpane/components/ConsistencyReviewPreflight";
 import ConsistencyReviewProgress from "../../../../src/taskpane/components/ConsistencyReviewProgress";
 import ConsistencyReviewResults from "../../../../src/taskpane/components/ConsistencyReviewResults";
@@ -152,6 +152,145 @@ describe("consistency results", () => {
     );
   });
 
+  it("shows the two compared statements side by side, in one labelled group", () => {
+    /*
+     * The split is the point: a reader who has to scroll past one statement,
+     * remember it, and scroll to the other is doing the diff by hand. Both panes
+     * render at once inside a single group, so the disagreement is visible.
+     */
+    render(
+      <ConsistencyReviewResults
+        report={report({
+          issues: [
+            {
+              checkId: "C1",
+              fingerprint: "C1:split",
+              title: "Terminology drift",
+              detail: "The same term is used two ways.",
+              severity: "warning",
+              confidence: 0.9,
+              actionable: true,
+              nodeIds: ["s0", "s1"],
+              ranges: { left: { start: 0, end: 5 }, right: { start: 20, end: 30 } },
+              evidence: {
+                left: "Onboarding is manual.",
+                right: "Onboarding is automated.",
+                sectionLeft: "Intro",
+                sectionRight: "Appendix",
+              },
+              suggestedNodeId: "s1",
+            },
+          ],
+        })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+
+    const split = screen.getByRole("group", { name: /Compared statements/ });
+    expect(within(split).getByText("Onboarding is manual.")).toBeTruthy();
+    expect(within(split).getByText("Onboarding is automated.")).toBeTruthy();
+    // The section each side came from is shown, because which of two sections is
+    // the summary is often what decides whether the conflict matters.
+    expect(within(split).getByText("Intro")).toBeTruthy();
+    expect(within(split).getByText("Appendix")).toBeTruthy();
+  });
+
+  it("says a missing section rather than hiding it", () => {
+    render(
+      <ConsistencyReviewResults
+        report={report({
+          issues: [
+            {
+              checkId: "C1",
+              fingerprint: "C1:no-sections",
+              title: "Terminology drift",
+              detail: "The same term is used two ways.",
+              severity: "warning",
+              confidence: 0.9,
+              actionable: true,
+              nodeIds: ["s0", "s1"],
+              ranges: { left: { start: 0, end: 5 }, right: { start: 20, end: 30 } },
+              evidence: { left: "alpha", right: "beta", sectionLeft: "", sectionRight: "" },
+            },
+          ],
+        })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+
+    expect(screen.getAllByText("(no section)")).toHaveLength(2);
+  });
+
+  it("gives each conflict the shared finding actions rather than a bespoke set", () => {
+    /*
+     * This is the assertion that makes the two surfaces one format. Before the
+     * shared body a consistency conflict had no Go to text, no Review, and no
+     * Ignore: it could be read but not acted on.
+     *
+     * The card is a plain article, not a listbox option. It is not one of the
+     * navigable findings, and claiming `option` would invent a selection model
+     * for a list that has no toolbar to drive it.
+     */
+    render(
+      <ConsistencyReviewResults
+        report={report({
+          issues: [
+            {
+              checkId: "C1",
+              fingerprint: "C1:actions",
+              title: "Terminology drift",
+              detail: "The same term is used two ways.",
+              severity: "warning",
+              confidence: 0.9,
+              actionable: true,
+              nodeIds: ["s0", "s1"],
+              ranges: { left: { start: 0, end: 5 }, right: { start: 20, end: 30 } },
+              evidence: { left: "alpha", right: "beta", sectionLeft: "", sectionRight: "" },
+            },
+          ],
+        })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+
+    const card = screen.getByRole("article", { name: /Consistency issue/ });
+    expect(card.querySelector("[role='option']")).toBeNull();
+    expect(within(card).getByRole("button", { name: "Go to text" })).toBeTruthy();
+  });
+
+  it("adds no live region of its own, keeping the one-region rule", () => {
+    render(
+      <ConsistencyReviewResults
+        report={report({
+          issues: [
+            {
+              checkId: "C1",
+              fingerprint: "C1:live",
+              title: "Terminology drift",
+              detail: "The same term is used two ways.",
+              severity: "warning",
+              confidence: 0.9,
+              actionable: true,
+              nodeIds: ["s0", "s1"],
+              ranges: { left: { start: 0, end: 5 }, right: { start: 20, end: 30 } },
+              evidence: { left: "alpha", right: "beta", sectionLeft: "", sectionRight: "" },
+            },
+          ],
+        })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+
+    // Coverage and the count. The navigation status element is always rendered
+    // but is only a live region once it holds a message, so a fresh report adds
+    // no new ones.
+    expect(screen.getAllByRole("status").length).toBeLessThanOrEqual(2);
+  });
+
   it("collapses repeats of one disagreement and says how many were folded in", () => {
     /*
      * The cross-section checks pair statements by shared vocabulary, so one real
@@ -263,8 +402,11 @@ describe("consistency results", () => {
       />,
     );
 
-    expect(screen.getByText(/cannot be located in the document/)).toBeTruthy();
-    expect(screen.queryByText(/is located in the document\./)).toBeNull();
+    const location = screen.getByText(/Cannot be located in the document/);
+    expect(location).toBeTruthy();
+    // The located wording is the thing being contradicted, so its absence is
+    // part of the assertion: printing both would leave the reader unsure.
+    expect(screen.queryByText(/Located in the document\./)).toBeNull();
   });
 
   it("states that a located conflict is located, so the warning means something", () => {
@@ -297,7 +439,8 @@ describe("consistency results", () => {
       />,
     );
 
-    expect(screen.getByText("This conflict is located in the document.")).toBeTruthy();
+    expect(screen.getByText(/Located in the document\./)).toBeTruthy();
+    expect(screen.queryByText(/Cannot be located/)).toBeNull();
   });
 
   /**

@@ -137,6 +137,67 @@ body {
   margin-top: 6px;
 }
 
+/* The two statements a cross-report finding compared, side by side.
+ *
+ * The point of the split is that the disagreement is visible rather than
+ * reconstructed: a reader who has to scroll down, remember the first statement,
+ * scroll back, and diff them mentally is doing the hard part by hand.
+ *
+ * Two columns collapse to one below 480px. The task pane is routinely docked
+ * that narrow, and two 200px columns of prose is worse than no comparison at
+ * all. Structure rather than a table, so the reflow is a grid change and nothing
+ * has to be re-announced. */
+.tf-evidence-split {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.tf-evidence-pane {
+  padding: 6px 8px;
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+  background: var(--tf-surface-subtle);
+  min-width: 0;
+}
+
+/* The later statement is the one the engine usually says is wrong, so it is
+ * marked as the second side rather than given a colour. Colour alone would
+ * encode the judgement in a way a screen reader and a monochrome print both
+ * lose; the "later statement" label carries it in text. */
+.tf-evidence-section {
+  margin: 0 0 4px;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--tf-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tf-evidence-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.tf-evidence-connector {
+  align-self: center;
+  color: var(--tf-muted);
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+@media (max-width: 480px) {
+  .tf-evidence-split {
+    grid-template-columns: 1fr;
+  }
+
+  .tf-evidence-connector {
+    justify-self: center;
+  }
+}
+
 .tf-finding-actions {
   justify-content: flex-start;
   margin-top: 8px;

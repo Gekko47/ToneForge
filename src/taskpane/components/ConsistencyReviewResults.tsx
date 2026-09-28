@@ -7,9 +7,9 @@
  * - Coverage is rendered first and unconditionally, including when the result is
  *   empty. "No problems found" over a document that was only partly examined is
  *   a false reassurance, so the limitation sits above the findings, not below.
- * - Every issue shows both statements it compared. A user cannot judge a
- *   cross-report claim without seeing what was actually compared, and the model
- *   supplied the verdict, not the user.
+ * - Every issue shows both statements it compared, side by side. A user cannot
+ *   judge a cross-report claim without seeing what was actually compared, and the
+ *   model supplied the verdict, not the user.
  * - Confidence is shown as a number. Below the actionable threshold the finding
  *   is labelled advisory, because a non-deterministic engine that rewrites prose
  *   without saying so is worse than one that asks.
@@ -23,6 +23,12 @@
  * - A conflict the engine could not place in this document says so. An empty
  *   location line looks like a rendering fault, and a reader who cannot tell the
  *   difference will assume the finding is located at the top of the file.
+ *
+ * Each conflict renders through `FindingDetail`, the same body Document
+ * Governance uses. That is what makes the two surfaces one format rather than
+ * two that happen to agree today: the header, the location line, and the
+ * Go to text / Review / Ignore actions are the same components, so a conflict
+ * found by an AI review can be navigated to and reviewed like any other finding.
  */
 
 import React from "react";
@@ -30,9 +36,11 @@ import {
   CONSISTENCY_ACTIONABLE_CONFIDENCE,
   collapsedCount,
   groupConsistencyIssues,
+  toFinding,
   type ConsistencyIssueGroup,
   type ConsistencyReport,
 } from "../../analysis/consistency";
+import FindingDetail from "./FindingDetail";
 
 export interface ConsistencyReviewResultsProps {
   report: ConsistencyReport;
@@ -40,53 +48,50 @@ export interface ConsistencyReviewResultsProps {
   onDismiss: () => void;
 }
 
-/** One collapsed conflict, in the order the groups were ranked. */
+const UNLOCATABLE_NOTE =
+  "Cannot be located in the document: the engine could not place either statement in the " +
+  "text it read, so there is nothing to jump to. The statements above are what it saw.";
+const LOCATABLE_NOTE = "Located in the document.";
+
+/**
+ * One collapsed conflict, rendered in the shared finding format.
+ *
+ * The identity is the group's first issue. A group's members are the same
+ * comparison reported repeatedly, so they share a location whenever any of them
+ * has one; `groupConsistencyIssues` already worked out whether the group as a
+ * whole is locatable, and that is the fact being reported here.
+ */
 function ConflictCard({ group }: { group: ConsistencyIssueGroup }): React.ReactNode {
   const lead = group.issues[0];
   if (lead === undefined) return null;
-  const repeats = group.issues.length - 1;
+  // A real uuid, not the group key: `FindingSchema` requires one, and the key is
+  // not a uuid. The key stays the React identity, which is the thing that has to
+  // be stable across re-renders.
+  const finding = toFinding(lead, () => crypto.randomUUID());
 
   return (
-    <article aria-label={`Consistency issue: ${group.title}`}>
-      <h3>
-        {group.title} — {group.worstSeverity}
-      </h3>
-      <p>{lead.detail}</p>
-      {/* Both sides, always. The verdict is about this pair and no other. */}
-      <blockquote>
-        <p>{lead.evidence.left}</p>
-      </blockquote>
-      <blockquote>
-        <p>{lead.evidence.right}</p>
-      </blockquote>
-      <p className="tf-sub">
-        Sections: {lead.evidence.sectionLeft || "(none)"} / {lead.evidence.sectionRight || "(none)"}
-      </p>
-      {/*
-        Located or not, stated either way. A conflict the engine could not anchor
-        is still a true report of a conflict — it just is not a place in this
-        document, and pretending otherwise with a blank location would invite the
-        reader to go looking for text that is not there.
-      */}
-      <p className={group.locatable ? "tf-sub" : "tf-debug-warning"}>
-        {group.locatable
-          ? "This conflict is located in the document."
-          : "This conflict cannot be located in the document: the engine could not place either statement in the text it read, so there is nothing to jump to. The report above is what it saw."}
-      </p>
-      {repeats > 0 && (
-        <p className="tf-sub">
-          Reported {group.issues.length} times for this same pair of statements; shown once.
-        </p>
-      )}
-      <p>
-        Confidence: {Math.round(Math.max(...group.issues.map((issue) => issue.confidence)) * 100)}%
-        ·{" "}
-        {group.issues.some((issue) => issue.actionable)
-          ? "Treated as a real contradiction."
-          : `Below ${Math.round(
-              CONSISTENCY_ACTIONABLE_CONFIDENCE * 100,
-            )}% — advisory only; this will not change anything on its own.`}
-      </p>
+    <article className="tf-finding-card" aria-label={`Consistency issue: ${group.title}`}>
+      <FindingDetail
+        finding={finding}
+        evidence={{
+          left: lead.evidence.left,
+          right: lead.evidence.right,
+          sectionLeft: lead.evidence.sectionLeft,
+          sectionRight: lead.evidence.sectionRight,
+          repeats: group.issues.length - 1,
+        }}
+        locationNote={[
+          group.locatable ? LOCATABLE_NOTE : UNLOCATABLE_NOTE,
+          `Confidence: ${Math.round(
+            Math.max(...group.issues.map((issue) => issue.confidence)) * 100,
+          )}%`,
+          group.issues.some((issue) => issue.actionable)
+            ? "Treated as a real contradiction."
+            : `Below ${Math.round(
+                CONSISTENCY_ACTIONABLE_CONFIDENCE * 100,
+              )}% — advisory only; this will not change anything on its own.`,
+        ].join(" · ")}
+      />
     </article>
   );
 }
