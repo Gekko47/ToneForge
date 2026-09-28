@@ -32,10 +32,13 @@ describe("AiReviewSection", () => {
     renderSection();
     const headings = screen.getAllByRole("heading", { level: 2 });
     expect(headings).toHaveLength(1);
-    expect(headings[0]).toHaveTextContent("AI Review");
+    // Named for what it does, and matching the consent it is gated on, which is
+    // `consistencyReviewConsent`. "AI Review" described the mechanism rather than
+    // the check, and invited the reading that some other review was elsewhere.
+    expect(headings[0]).toHaveTextContent("Consistency Review");
     // Exactly one trigger. The page used to offer three buttons, each carrying
     // its own copy of the same consent sentence.
-    expect(screen.getAllByRole("button", { name: /review this document/i })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Check Consistency" })).toHaveLength(1);
   });
 
   it("states the missing consent once and links to Settings", () => {
@@ -51,7 +54,7 @@ describe("AiReviewSection", () => {
 
   it("disables the action while a prerequisite is missing", () => {
     renderSection({ providerConfigured: false });
-    expect(screen.getByRole("button", { name: /review this document/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Check Consistency" })).toBeDisabled();
   });
 
   it("prefers the consent prerequisite over the provider prerequisite", () => {

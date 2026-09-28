@@ -99,8 +99,8 @@ export default function AiReviewSection({
   const blocker = aiReviewBlocker({ hasConsent, providerConfigured, onOpenSettings });
 
   return (
-    <section aria-label="AI Review" className="tf-governance-reformat">
-      <h2>AI Review</h2>
+    <section aria-label="Consistency Review" className="tf-governance-reformat">
+      <h2>Consistency Review</h2>
       <p>
         Checks whether different parts of the document disagree with each other — the same figure
         given two values, two different dates for one event, a term used two ways.
@@ -135,7 +135,7 @@ export default function AiReviewSection({
           disabled={blocker !== null}
           aria-describedby={blocker !== null ? "ai-review-blocker" : undefined}
         >
-          Review this document for internal consistency
+          Check Consistency
         </button>
       ) : null}
 

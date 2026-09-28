@@ -1,7 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { type WordCapabilities } from "../../word/capabilityProbe";
-import { getStructuredSnapshot } from "../../word/documentReader";
-import { createRegistryFromSettings } from "../settings/providerComposition";
 import {
   createGovernanceProfile,
   type GovernanceProfile,
@@ -23,14 +21,7 @@ import CoverageBanner from "../components/CoverageBanner";
 import StaleBanner from "../components/StaleBanner";
 import PendingChanges from "../components/PendingChanges";
 import IgnoredFindings from "../components/IgnoredFindings";
-import AiReviewSection, { type AiReviewStage } from "../components/AiReviewSection";
-import {
-  previewStatements,
-  runConsistencyReview,
-  toFindings,
-  type ConsistencyProgress,
-  type ConsistencyReport,
-} from "../../analysis/consistency";
+import { toFindings, type ConsistencyReport } from "../../analysis/consistency";
 import { findingFingerprint } from "../findingFingerprint";
 import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
 import { decidePreview, isFullScan } from "../autoPreview";
@@ -62,6 +53,7 @@ import type { PersistedState } from "../../core/state/persistence";
 const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
 const GovernancePolicy = lazy(() => import("./GovernancePolicy"));
+const ConsistencyReview = lazy(() => import("./ConsistencyReview"));
 
 const REVIEWED_FINDINGS_KEY = "ToneForge.ReviewedFindingFingerprints.v1";
 
@@ -69,7 +61,7 @@ const REVIEWED_FINDINGS_KEY = "ToneForge.ReviewedFindingFingerprints.v1";
 const FINDINGS_LIST_ID = "tf-findings-list";
 
 type DashboardPage =
-  "home" | "ai-review" | "profile" | "governance-policy" | "settings" | "troubleshooting";
+  "home" | "consistency" | "profile" | "governance-policy" | "settings" | "troubleshooting";
 
 /** Destinations reachable before a profile exists. */
 type SetupDestination = "home" | "settings" | "troubleshooting";
@@ -315,25 +307,17 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   const [coverageOpen, setCoverageOpen] = useState(false);
   const coverageIncomplete = status?.coverage?.complete === false;
-  // Cross-report consistency review is the only AI review this pane offers. It
-  // keeps its own state, its own trigger, and its own consent: collapsing the
-  // surface into one section must not let one permission stand in for another.
-  // The preflight holds the text it counted, not just the counts. The run sends
-  // exactly what the disclosure described, so a second read here would mean the
-  // user agreed to send a document that is no longer the one on screen.
-  const [consistencyPreflight, setConsistencyPreflight] = useState<{
-    wordCount: number;
-    statementCount: number;
-    text: string;
-    /** Section headings, so the engine can attribute statements to sections. */
-    sections: string[];
-    revision: string;
-  } | null>(null);
-  const [consistencyProgress, setConsistencyProgress] = useState<ConsistencyProgress | null>(null);
+  /*
+   * The finished consistency report, and nothing else about the review.
+   *
+   * The run itself — preflight, progress, cancellation, the abort handle — lives
+   * on the Consistency Review page. This copy of the report stays here because
+   * Document Governance's findings list shows it too, and that list is on a
+   * different tab. Keeping the report with the run would drop the findings the
+   * moment the user navigated across to read them, which is the one thing
+   * "Review in Findings" must not do.
+   */
   const [consistencyResult, setConsistencyResult] = useState<ConsistencyReport | null>(null);
-  const [consistencyCancelled, setConsistencyCancelled] = useState(false);
-  const [consistencyMessage, setConsistencyMessage] = useState<string | null>(null);
-  const consistencyAbortRef = useRef<AbortController | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   /**
    * True while a tracked apply is in flight.
@@ -539,7 +523,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       return;
     }
     if (request.target === "ai-review") {
-      setPage("ai-review");
+      setPage("consistency");
       return;
     }
     if (request.target === "findings") {
@@ -594,15 +578,18 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       error: status?.error ?? null,
       applyMessage,
       // A blocked host is announced through the same region. It is a state, not
-      // a burst, so it is only spoken when it actually changes.
-      reviewMessage: consistencyMessage ?? hostBlocker,
+      // a burst, so it is only spoken when it actually changes. The consistency
+      // review's own message belongs to the Consistency Review page, which has
+      // its own status region; reading it here would announce it from a tab the
+      // user is not on.
+      reviewMessage: hostBlocker,
       hostUnavailable: status?.hostUnavailable ?? false,
     });
     if (sentence === lastAnnounced.current) return;
     lastAnnounced.current = sentence;
     if (sentence === null) announcement.clear();
     else announcement.announce(sentence);
-  }, [status, applyMessage, consistencyMessage, announcement]);
+  }, [status, applyMessage, hostBlocker, announcement]);
 
   function ignoreFinding(finding: Finding): void {
     /*
@@ -631,116 +618,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
 
   function navigate(destination: TaskPaneDestination): void {
     setPage(destination);
-  }
-
-  /**
-   * Open the consistency preflight.
-   *
-   * The snapshot is taken here and reused for the run so the count shown in the
-   * preflight is the count the engine will actually see. Re-reading between the
-   * two would let the disclosure describe a document that is no longer the one
-   * about to be sent.
-   */
-  async function openConsistencyPreflight(): Promise<void> {
-    setConsistencyMessage(null);
-    setConsistencyResult(null);
-    setConsistencyCancelled(false);
-    const state = loadState();
-    if (!state.settings.consistencyReviewConsent) {
-      setConsistencyMessage(
-        "Cross-report consistency review needs its own consent in Settings. It is not covered by the other review permissions.",
-      );
-      return;
-    }
-    const snapshot = await getStructuredSnapshot();
-    // Headings are carried into the run text as Markdown headings rather than
-    // flattened into the body. `segmentDocument` reads section identity from
-    // those markers, so flattening them leaves every statement unattributed:
-    // C1 would no longer be able to tell two sections apart, and C9 and the other
-    // cross-section checks would have no section to reason about. The `heading`
-    // node type is the snapshot's own discriminator, not a guess at a style
-    // name.
-    const sections: string[] = [];
-    const blocks = snapshot.nodes.map((node) => {
-      const body = node.text ?? "";
-      if (node.type !== "heading") return body;
-      const title = body.trim();
-      if (title.length === 0) return "";
-      sections.push(title);
-      return `## ${title}`;
-    });
-    const text = blocks.join("\n\n");
-    const wordCount = text.split(/\s+/).filter((word) => word.length > 0).length;
-    setConsistencyPreflight({
-      wordCount,
-      statementCount: previewStatements(text).length,
-      text,
-      sections,
-      // The document's content hash is the run's identity, not its length: an
-      // edit that replaces a word with another of the same length leaves the
-      // length identical, and a guard keyed on length would report such a run
-      // as still current.
-      revision: snapshot.contentHash,
-    });
-    setPage("ai-review");
-  }
-
-  async function startConsistencyReview(): Promise<void> {
-    if (!consistencyPreflight) return;
-    setConsistencyResult(null);
-    setConsistencyCancelled(false);
-    setConsistencyMessage(null);
-    const controller = new AbortController();
-    consistencyAbortRef.current = controller;
-    setConsistencyProgress({ phase: "segmenting", fraction: 0, message: "Reading the document…" });
-    try {
-      const state = loadState();
-      // Re-checked here, not only at the entry point. Consent can be withdrawn
-      // in Settings while the preflight is open, and the engine's own gate is
-      // the backstop for that.
-      if (!state.settings.consistencyReviewConsent) {
-        throw new Error("Cross-report consistency review consent is required in Settings.");
-      }
-      // The preflight's text, not a fresh read: the disclosure counted this
-      // document, so this is the document that was agreed to.
-      const { text, sections, revision } = consistencyPreflight;
-      const registry = createRegistryFromSettings(state.settings, state.providerConnections);
-      const active = registry.activeProvider;
-      const report = await runConsistencyReview(
-        {
-          consistencyConsent: true,
-          document: { revision, text, sections },
-          model: state.settings.openAiModel ?? "",
-        },
-        {
-          // Reused, never re-selected: the consistency engine has no provider
-          // picker of its own. The offline stub is passed as no provider at all
-          // so the engine reports a deterministic-only run rather than
-          // pretending a model was consulted.
-          ...(active.name === "mock" ? {} : { provider: active }),
-          signal: controller.signal,
-          onProgress: setConsistencyProgress,
-          // The engine discards its own report if the document moved underneath
-          // it; this re-reads the live document's identity to tell it the
-          // document moved. Returning the value captured at the start would make
-          // the guard answer "unchanged" to every edit, including a same-length
-          // one, which is the edit it exists to catch.
-          currentRevision: async () => (await getStructuredSnapshot()).contentHash,
-        },
-      );
-      setConsistencyResult(report);
-      setConsistencyProgress(null);
-    } catch (error: unknown) {
-      setConsistencyProgress(null);
-      setConsistencyMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      consistencyAbortRef.current = null;
-    }
-  }
-
-  function cancelConsistencyReview(): void {
-    consistencyAbortRef.current?.abort();
-    setConsistencyCancelled(true);
   }
 
   async function applyPendingPlan(pendingPlan: PendingPlan | null): Promise<boolean> {
@@ -884,6 +761,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     page === "settings" ||
     page === "profile" ||
     page === "governance-policy" ||
+    page === "consistency" ||
     page === "troubleshooting"
   ) {
     const back = () => navigate("home");
@@ -902,6 +780,13 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             <Profile onBack={back} />
           ) : page === "governance-policy" ? (
             <GovernancePolicy onBack={back} />
+          ) : page === "consistency" ? (
+            <ConsistencyReview
+              onBack={back}
+              onOpenSettings={() => navigate("settings")}
+              result={consistencyResult}
+              onResult={setConsistencyResult}
+            />
           ) : (
             <DebuggingPanel onBack={back} coverage={status?.coverage ?? null} />
           )}
@@ -963,12 +848,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   // understanding their plans so either could return behind the single section
   // without changing the pending-changes contract.
   const pendingPlan = resolvePendingPlan(reformatResult);
-  // Read through the store, not `loadState()`: a consent toggle saved in Settings
-  // must be reflected here in the same render pass, not after a navigation.
-  const aiSettings = persisted.settings;
-  const aiProviderConfigured =
-    Boolean(aiSettings.openAiBaseUrl) || aiSettings.llmProvider === "mock";
-  const aiReviewConsent = aiSettings.consistencyReviewConsent;
   /**
    * One readiness decision, shared by the Apply button and the host banner.
    *
@@ -980,17 +859,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     capabilities: caps,
     changes: pendingPlan?.plan.changes ?? [],
   });
-  // Derived rather than stored, so the displayed stage cannot disagree with the
-  // state that produced it.
-  const aiReviewStage: AiReviewStage =
-    consistencyProgress !== null
-      ? "running"
-      : consistencyResult !== null
-        ? "results"
-        : consistencyPreflight !== null
-          ? "preflight"
-          : "idle";
-
   return (
     <main className="tf-card" tabIndex={0}>
       {/* `page`, not a literal: the header reports the destination the user is
@@ -1150,47 +1018,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             {status?.phase === "scanning" ? "Re-scanning…" : "Re-scan now"}
           </button>
         </div>
-      )}
-      {page === "ai-review" && (
-        <AiReviewSection
-          stage={aiReviewStage}
-          providerConfigured={aiProviderConfigured}
-          hasConsent={aiReviewConsent}
-          providerName={aiSettings.llmProvider}
-          preflight={
-            consistencyPreflight === null
-              ? null
-              : {
-                  wordCount: consistencyPreflight.wordCount,
-                  statementCount: consistencyPreflight.statementCount,
-                }
-          }
-          progress={consistencyProgress}
-          cancelled={consistencyCancelled}
-          result={consistencyResult}
-          message={consistencyMessage}
-          onOpenSettings={() => setPage("settings")}
-          onStart={() => void openConsistencyPreflight()}
-          onConfirm={() => void startConsistencyReview()}
-          onCancel={() => {
-            setConsistencyPreflight(null);
-            setConsistencyMessage(null);
-          }}
-          onCancelRun={cancelConsistencyReview}
-          onReviewFindings={() => {
-            // Only navigates when the review findings are actually part of the
-            // displayed list. Opening a Findings section that does not contain
-            // them would show the user their governance findings and read as
-            // though the review had been handed over.
-            if (consistencyFindings.length === 0) return;
-            setPage("home");
-            setFindingsOpen(true);
-          }}
-          onDismiss={() => {
-            setConsistencyResult(null);
-            setConsistencyPreflight(null);
-          }}
-        />
       )}
       {/*
         Page order follows the work: what was found, how complete the analysis
