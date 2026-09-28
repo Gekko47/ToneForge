@@ -237,15 +237,21 @@ describe("the whole-document action row", () => {
   });
 
   it("offers no Apply while nothing has been reviewed", async () => {
-    // The reviewed-only list starts empty, so there is genuinely nothing to
-    // apply. The section has to say that rather than presenting a live button
-    // that would write the whole plan behind the user's back. This file's
-    // `reformatDocument` mock returns a null plan, so the honest wording is the
-    // "nothing to apply" branch.
+    /*
+     * The reviewed-only list starts empty, so there is genuinely nothing to
+     * apply. The section has to say that rather than presenting a live button
+     * that would write the whole plan behind the user's back.
+     *
+     * This file's `reformatDocument` mock returns a null plan, so the honest
+     * state is the first of the three: no preview has been built yet. The
+     * wording comes from `reviewedPlan` rather than from the component, which is
+     * why three states exist at all — "no preview" and "nothing reviewed" are
+     * different facts and the user does something different about each.
+     */
     render(<Dashboard />);
     await userEvent.click(screen.getByRole("button", { name: /Pending changes/ }));
 
-    expect(screen.getByText(/no changes are ready to apply/i)).toBeInTheDocument();
+    expect(screen.getByText(/no preview has been built/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Apply/ })).not.toBeInTheDocument();
   });
 

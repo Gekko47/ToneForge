@@ -38,10 +38,11 @@ function state(records: ProfileRecord[], activeProfileId: string | null = null):
     activeProfileId,
     // The semantic namespace starts empty. These selectors are about the
     // deterministic profiles, and an empty semantic map is the real first-run
-    // state — not a fixture omission.
+    // state Ã¢â‚¬â€ not a fixture omission.
     semanticProfileRecords: {},
     activeSemanticProfileId: null,
     ignoredFindings: [],
+    reviewedFindings: [],
     governanceProfiles: {},
     governanceHistory: {},
     activeGovernanceProfileId: null,

@@ -31,13 +31,19 @@ export interface PendingChangesProps {
     unprocessed?: readonly string[];
   } | null;
   /**
-   * How many changes exist in total, before the reviewed-only narrowing.
+   * Why the section is empty, in the words its state deserves.
    *
-   * Only used for the empty state. The section is otherwise showing the
-   * reviewed subset, and a bare "No pending changes" while a dozen changes sit
-   * unreviewed in the pane reads as a refusal rather than a choice.
+   * Three states produce three different sentences, and they are decided by
+   * `reviewedPlan` rather than reconstructed here: no preview built yet, a
+   * preview with nothing reviewed, and a reviewed subset. A single "No pending
+   * changes" for all three read as a refusal in the middle case, where the real
+   * position is a choice the user has not made yet.
    */
-  unreviewedCount?: number;
+  emptyReason?: string | null;
+  /** Every change the preview proposed, before the reviewed-only narrowing. */
+  totalCount?: number;
+  /** The changes actually in this list, all of which the user reviewed. */
+  reviewedCount?: number;
   /**
    * The full coverage report, when the caller has one.
    *
@@ -58,9 +64,10 @@ export default function PendingChanges({
   onOpenSettings,
   coverage = null,
   exportCoverage = null,
-  unreviewedCount = 0,
+  emptyReason = null,
+  totalCount = 0,
+  reviewedCount = 0,
 }: PendingChangesProps): React.ReactNode {
-  const hasUnreviewedChanges = unreviewedCount > 0;
   const [result, setResult] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const localReadinessId = useId();
@@ -128,14 +135,7 @@ export default function PendingChanges({
     return (
       <section aria-label="Pending changes">
         <h3>Pending Changes</h3>
-        {hasUnreviewedChanges ? (
-          <p>
-            {unreviewedCount} change{unreviewedCount === 1 ? "" : "s"} ready. Open a finding and
-            choose Review to add it here — nothing is applied until you approve it.
-          </p>
-        ) : (
-          <p>No changes are ready to apply for this document.</p>
-        )}
+        <p>{emptyReason ?? "No changes are ready to apply for this document."}</p>
       </section>
     );
   }
@@ -143,6 +143,25 @@ export default function PendingChanges({
   return (
     <section aria-label="Pending changes" style={{ marginTop: "1rem" }}>
       <h3>Pending Changes ({plan.changes.length})</h3>
+      {/*
+        The three counts, labelled.
+
+        The header above this section counts every change the preview proposed,
+        so a header of 5 over a table of 2 is correct but reads as lost work
+        unless it is said which is which. Naming them is the difference between
+        a deliberate narrowing and an apparent loss.
+      */}
+      {totalCount > plan.changes.length ? (
+        <p className="tf-sub">
+          {plan.changes.length} of {totalCount} proposed change
+          {totalCount === 1 ? "" : "s"} shown. The rest are waiting for you to review the finding
+          they came from.
+        </p>
+      ) : (
+        <p className="tf-sub">
+          {reviewedCount} reviewed change{reviewedCount === 1 ? "" : "s"}.
+        </p>
+      )}
 
       {(plan.conflicts ?? []).length > 0 && (
         <div className="tf-conflict-list">

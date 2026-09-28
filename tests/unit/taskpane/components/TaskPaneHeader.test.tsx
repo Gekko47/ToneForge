@@ -9,7 +9,7 @@ describe("TaskPaneHeader", () => {
     const onNavigate = vi.fn();
     render(
       <TaskPaneHeader
-        activePage="home"
+        activePage="review"
         profileName="Corporate editorial"
         profileRevision={241}
         onNavigate={onNavigate}
@@ -23,10 +23,9 @@ describe("TaskPaneHeader", () => {
 
     await user.click(trigger);
     const navigation = screen.getByRole("navigation", { name: "Task pane navigation" });
-    expect(within(navigation).getByRole("button", { name: "Document Governance" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(
+      within(navigation).getByRole("button", { name: "Deterministic Review" }),
+    ).toHaveAttribute("aria-current", "page");
     expect(trigger).toHaveAttribute("aria-expanded", "true");
 
     await user.click(within(navigation).getByRole("button", { name: "Settings" }));
@@ -38,7 +37,7 @@ describe("TaskPaneHeader", () => {
     const user = userEvent.setup();
     render(
       <TaskPaneHeader
-        activePage="home"
+        activePage="review"
         profileName="Corporate editorial"
         profileRevision={7}
         onNavigate={vi.fn()}
@@ -58,7 +57,7 @@ describe("TaskPaneHeader", () => {
     const user = userEvent.setup();
     render(
       <TaskPaneHeader
-        activePage="home"
+        activePage="review"
         profileName="Corporate editorial"
         profileRevision={7}
         onNavigate={vi.fn()}
@@ -80,7 +79,7 @@ describe("TaskPaneHeader", () => {
     const user = userEvent.setup();
     render(
       <TaskPaneHeader
-        activePage="home"
+        activePage="review"
         profileName="Corporate editorial"
         profileRevision={7}
         onNavigate={vi.fn()}

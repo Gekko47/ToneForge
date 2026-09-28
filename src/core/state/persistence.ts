@@ -27,11 +27,16 @@ import {
   ProfileRecordSchema,
   type ProfileRecord,
 } from "../domain/ProfileRecord";
-import { IgnoredFindingSchema, type IgnoredFinding } from "../domain/Finding";
+import {
+  IgnoredFindingSchema,
+  ReviewedFindingSchema,
+  type IgnoredFinding,
+  type ReviewedFinding,
+} from "../domain/Finding";
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(11),
+  version: z.number().int().nonnegative().default(12),
   profileRecords: z.record(z.string().uuid(), ProfileRecordSchema).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
@@ -63,6 +68,22 @@ const StateSchema = z.object({
    * keying by id would make every ignore expire at the next rescan.
    */
   ignoredFindings: z.array(IgnoredFindingSchema).default([]),
+  /**
+   * Findings the user has reviewed, as decisions rather than as status labels.
+   *
+   * v12. This was previously a bare `Set` of review keys held in
+   * `localStorage["ToneForge.ReviewedFindingFingerprints.v1"]` and mirrored into
+   * component state. Two things were wrong with that: the write never went
+   * through the store's change notification, so the pane re-rendered only by
+   * accident, and the set had no room to record *what* was decided — so a
+   * finding reviewed when no plan existed was indistinguishable from one never
+   * reviewed, and Pending Changes could not tell a review that admitted a change
+   * from one that did not.
+   *
+   * Keyed by occurrence identity, which both runs derive identically. See
+   * `ReviewedFinding` and `occurrenceIdentity` for why that identity is exact.
+   */
+  reviewedFindings: z.array(ReviewedFindingSchema).default([]),
   settings: z
     .object({
       openAiBaseUrl: z.string().url().optional(),
@@ -108,8 +129,9 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v11";
+const STORAGE_KEY = "ToneForge.State.v12";
 const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v11",
   "ToneForge.State.v10",
   "ToneForge.State.v9",
   "ToneForge.State.v8",
@@ -121,6 +143,40 @@ const LEGACY_STORAGE_KEYS = [
   "ToneForge.State.v2",
   "ToneForge.State.v1",
 ] as const;
+
+/**
+ * The occurrence key for a stored ignore, derived from its stored fields.
+ *
+ * `core/state` cannot import `taskpane/occurrenceIdentity`: that module lives in
+ * the UI layer and imports the fingerprint helper from here. The derivation is
+ * duplicated rather than shared so the dependency stays one-way, and it is
+ * pinned by a test that asserts the two produce the same string for the same
+ * finding — a divergence would resurrect the exact "ignoring a second item brings
+ * back the first" defect the key exists to fix.
+ */
+function occurrenceKeyFor(entry: IgnoredFinding): string {
+  return [
+    entry.fingerprint,
+    [...entry.nodeIds].sort().join(","),
+    entry.range.start,
+    entry.range.end,
+  ].join("@");
+}
+
+/**
+ * Whether a review and an ignore describe the same occurrence.
+ *
+ * Compared on rule, node, and position rather than on either key: the two keys
+ * are built for different lookup paths, and this is a cross-check between them.
+ */
+function isSameIgnoredOccurrenceIdentity(review: ReviewedFinding, entry: IgnoredFinding): boolean {
+  return (
+    review.category === entry.category &&
+    review.range.start === entry.range.start &&
+    review.range.end === entry.range.end &&
+    [...review.nodeIds].sort().join(",") === [...entry.nodeIds].sort().join(",")
+  );
+}
 
 function isOfficeRuntime(): boolean {
   return typeof (globalThis as unknown as { Office?: unknown }).Office !== "undefined";
@@ -583,25 +639,117 @@ export function removeSemanticProfile(id: string): void {
 }
 
 /**
- * Record an ignored finding, keyed by fingerprint.
+ * Record an ignored finding, replacing any entry for the same occurrence.
  *
- * A second ignore of the same fingerprint refreshes the stored range rather
- * than appending, so the list cannot grow every time a rescan re-detects a
- * problem the user has already dismissed.
+ * **Dedupe is on the occurrence key, not the fingerprint.** The fingerprint is
+ * the identity of a *rule* — it deliberately excludes the range — so filtering
+ * on it meant that ignoring the second em dash in a document deleted the entry
+ * for the first. The finding the user had already set aside reappeared, and
+ * nothing on screen said why. Two hits of one rule are now two independently
+ * ignorable occurrences, which is what "ignore this one" has always meant to the
+ * person clicking it.
  */
 export function ignoreFinding(entry: IgnoredFinding): void {
-  const parsed = IgnoredFindingSchema.parse(entry);
+  const parsed = IgnoredFindingSchema.parse({
+    ...entry,
+    occurrenceKey: entry.occurrenceKey.length > 0 ? entry.occurrenceKey : occurrenceKeyFor(entry),
+  });
   const state = loadState();
-  const retained = state.ignoredFindings.filter((item) => item.fingerprint !== parsed.fingerprint);
+  const retained = state.ignoredFindings.filter(
+    (item) => item.occurrenceKey !== parsed.occurrenceKey,
+  );
   state.ignoredFindings = [...retained, parsed];
+  /*
+   * Set aside and reviewed are the same occurrence expressed two ways, and a
+   * finding cannot be both. Without this the reviewed-only plan kept carrying a
+   * change for a finding the user had just put aside, so Apply would write a
+   * correction to something they no longer want mentioned.
+   */
+  state.reviewedFindings = state.reviewedFindings.filter(
+    (item) => !isSameIgnoredOccurrenceIdentity(item, parsed),
+  );
   saveState(state);
 }
 
-/** Stop ignoring a finding. Unknown fingerprints are a no-op, not an error. */
-export function restoreFinding(fingerprint: string): void {
+/**
+ * Stop ignoring one occurrence.
+ *
+ * Takes the occurrence key rather than the fingerprint, so restoring one row
+ * leaves every other hit of the same rule ignored. A fingerprint here would make
+ * Restore all-or-nothing per rule, which is not what the button says it does.
+ * An unknown key is a no-op rather than an error: the row may already be gone.
+ */
+export function restoreFinding(occurrence: string): void {
   const state = loadState();
-  const retained = state.ignoredFindings.filter((item) => item.fingerprint !== fingerprint);
+  // A row whose key was never written matches nothing and matches everything.
+  // Comparing it directly would make a single keyless row unreachable by
+  // Restore, which is a control that would then silently do nothing — the same
+  // failure mode this whole change exists to remove. Keyless rows are matched by
+  // fingerprint instead, which is the identity they *do* carry.
+  const retained = state.ignoredFindings.filter((item) =>
+    item.occurrenceKey.length === 0
+      ? occurrence.startsWith(item.fingerprint)
+      : item.occurrenceKey !== occurrence,
+  );
   if (retained.length === state.ignoredFindings.length) return;
   state.ignoredFindings = retained;
   saveState(state);
+}
+
+// ---------------------------------------------------------------------------
+// Review decisions
+// ---------------------------------------------------------------------------
+
+/** Every review the user has made, newest last. */
+export function loadReviewedFindings(): ReviewedFinding[] {
+  return loadState().reviewedFindings;
+}
+
+/**
+ * Record that the user reviewed a finding.
+ *
+ * Replaces any prior decision for the same occurrence so that re-reviewing after
+ * a preview lands does not leave two rows, and so the stored decision always
+ * describes the latest thing the user actually did.
+ */
+export function saveReviewedFinding(entry: ReviewedFinding): void {
+  const parsed = ReviewedFindingSchema.parse(entry);
+  const state = loadState();
+  const retained = state.reviewedFindings.filter((item) => item.identity !== parsed.identity);
+  state.reviewedFindings = [...retained, parsed];
+  saveState(state);
+}
+
+/**
+ * Withdraw a review, so the finding can be reviewed again.
+ *
+ * Also used when a review expires: the occurrence it described no longer exists
+ * in the document, so the decision is removed and the user is asked afresh rather
+ * than having a stale approval quietly apply to whatever moved into its place.
+ */
+export function clearReviewedFinding(identity: string): void {
+  const state = loadState();
+  const retained = state.reviewedFindings.filter((item) => item.identity !== identity);
+  if (retained.length === state.reviewedFindings.length) return;
+  state.reviewedFindings = retained;
+  saveState(state);
+}
+
+/**
+ * Discard reviews that no longer describe a finding in the current run.
+ *
+ * Returns the identities that were dropped so the pane can say how many expired
+ * rather than letting the list quietly shrink — a review disappearing with no
+ * message reads as the tool losing the user's work.
+ */
+export function pruneStaleReviews(liveIdentities: ReadonlySet<string>): string[] {
+  const state = loadState();
+  const retained = state.reviewedFindings.filter((item) => liveIdentities.has(item.identity));
+  if (retained.length === state.reviewedFindings.length) return [];
+  const dropped = state.reviewedFindings
+    .filter((item) => !liveIdentities.has(item.identity))
+    .map((item) => item.identity);
+  state.reviewedFindings = retained;
+  saveState(state);
+  return dropped;
 }

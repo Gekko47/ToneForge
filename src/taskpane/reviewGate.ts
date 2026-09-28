@@ -9,16 +9,23 @@
  * decides something: it either puts a real change in front of the user, or it
  * says in words why there is nothing to apply.
  *
+ * **One identity, used by both halves.** This module previously matched a change
+ * with `change.findingId === finding.id`, while `reviewedPlan` matched on a
+ * review key. Those are different namespaces: the finding the user clicks comes
+ * from the document observer's scan, and the plan comes from the preview run, and
+ * the two issue separate uuids for the same problem. So the gate could never
+ * find its change, every review reported "the planner proposes no correction",
+ * and the reviewed-only list filled only by accident of the other matcher
+ * agreeing. A verdict that cannot succeed carries no information, so both halves
+ * now resolve through `reviewIdentity` — the same occurrence key, derived
+ * identically from either run.
+ *
  * **Why a finding may have no change.** Most findings are advisory and the
  * planner has no correction for them: a consistency contradiction has no
  * replacement sentence, and an AI deviation that could not be anchored in the
  * document cannot be rewritten safely. Queueing those would put rows in Pending
  * Changes that Apply would refuse, which is worse than not queueing them — it
  * teaches the user that the list overstates what the tool can do.
- *
- * Identity is the finding **id**, not the fingerprint. The fingerprint is the
- * identity of a rule, so matching on it would admit every occurrence of a
- * reviewed rule into the gate.
  *
  * Pure: no React, no Office, no storage. The caller owns persistence and
  * rendering, which is what makes the refusal reasons testable.
@@ -27,7 +34,7 @@
 import type { Change } from "../core/domain/Change";
 import type { ChangePlan } from "../core/domain/ChangePlan";
 import type { Finding } from "../core/domain/Finding";
-import { reviewKey } from "./reviewKey";
+import { reviewIdentity } from "./occurrenceIdentity";
 
 /** The change a reviewed finding contributes, when it has one. */
 export interface ReviewedChange {
@@ -60,17 +67,33 @@ export function changeRefusalReason(change: Change): string | null {
 /**
  * Find the change a finding produced, if the plan carries one.
  *
- * Matches on `findingId`. A change with no `findingId` cannot be attributed to
- * a finding, so it is not offered here even though it is in the plan: Pending
- * Changes shows what the user reviewed, and a change nobody reviewed is not
- * that.
+ * Resolved through the occurrence identity rather than through `findingId`. The
+ * id on a change names a finding from the run that planned it, and the finding in
+ * front of the user comes from a different run, so an id match is not merely
+ * fragile — it can never succeed across runs.
+ *
+ * `findings` must therefore be the run that built the plan. It is not optional
+ * here: without it there is no way to know which change, if any, this finding
+ * produced, and a change nobody can attribute is a change nobody reviewed.
  */
 export function findChangeForFinding(
   finding: Finding,
   plan: ChangePlan | null,
+  findings: readonly Finding[],
 ): { change: Change; refusal: string | null } | null {
   if (plan === null) return null;
-  const change = plan.changes.find((candidate) => candidate.findingId === finding.id);
+  const identity = reviewIdentity(finding);
+  // Two indexes, because the two sides of the comparison are keyed differently.
+  // A change names its finding by **id**, and the finding in front of the user
+  // was issued by a different run, so id-to-id is the wrong join. The id index
+  // resolves the change to *its* finding; the identity index then decides
+  // whether that finding is the one in front of us.
+  const byId = new Map(findings.map((entry) => [entry.id, entry]));
+  const change = plan.changes.find((candidate) => {
+    if (candidate.findingId === undefined) return false;
+    const owner = byId.get(candidate.findingId);
+    return owner !== undefined && reviewIdentity(owner) === identity;
+  });
   if (change === undefined) return null;
   return { change, refusal: changeRefusalReason(change) };
 }
@@ -78,11 +101,15 @@ export function findChangeForFinding(
 /**
  * Decide what reviewing a finding means right now.
  *
- * `plan` is the currently previewed plan. A finding with no plan behind it has
- * no change, and the reason says so rather than implying the tool decided the
- * finding needs no correction.
+ * `plan` is the currently previewed plan and `planFindings` the run that built
+ * it. A finding with no plan behind it has no change, and the reason says so
+ * rather than implying the tool decided the finding needs no correction.
  */
-export function reviewFinding(finding: Finding, plan: ChangePlan | null): ReviewDecision {
+export function reviewFinding(
+  finding: Finding,
+  plan: ChangePlan | null,
+  planFindings: readonly Finding[] = [],
+): ReviewDecision {
   /*
    * A finding that declares itself non-actionable carries the reason itself.
    *
@@ -111,7 +138,7 @@ export function reviewFinding(finding: Finding, plan: ChangePlan | null): Review
     };
   }
 
-  const match = findChangeForFinding(finding, plan);
+  const match = findChangeForFinding(finding, plan, planFindings);
   if (match === null) {
     const reason = "the planner proposes no correction for this finding";
     return {
@@ -131,58 +158,94 @@ export function reviewFinding(finding: Finding, plan: ChangePlan | null): Review
 
   return {
     kind: "pending",
-    change: { findingId: finding.id, changeId: match.change.id },
+    change: { findingId: match.change.findingId ?? finding.id, changeId: match.change.id },
     message: "Reviewed. Added to Pending changes.",
   };
 }
+
+/** The three things Pending Changes can be showing, stated rather than implied. */
+export type PendingProjection =
+  | { kind: "no-plan"; plan: null; reason: string }
+  | { kind: "nothing-reviewed"; plan: null; reason: string }
+  | { kind: "reviewed"; plan: ChangePlan };
 
 /**
  * The plan reduced to the changes the user actually reviewed.
  *
  * Pending Changes used to render, and Apply used to apply, the whole
- * auto-previewed plan. Review was therefore decorative: a user who looked at
- * one finding out of twenty and pressed Apply got all twenty. This is the
- * narrowing that makes the Review button mean something, and it is applied
- * before the plan reaches the reviewer *and* before it reaches the adapter, so
- * there is no path by which an unreviewed change can be written.
+ * auto-previewed plan. Review was therefore decorative: a user who looked at one
+ * finding out of twenty and pressed Apply got all twenty. This is the narrowing
+ * that makes the Review button mean something, and it is applied before the plan
+ * reaches the reviewer *and* before it reaches the adapter, so there is no path
+ * by which an unreviewed change can be written.
  *
- * `findings` must be the run that built the plan. A change's `findingId` names a
- * finding from its own run, so passing the observer's list would match nothing
- * and the result would be an empty plan — a refusal to apply anything, which is
- * at least safe but would look like a broken button.
+ * **It returns a discriminated result rather than `ChangePlan | null`.** The
+ * previous signature returned null both when nothing was reviewed and when the
+ * reviewed subset was empty, and the caller resolved that with
+ * `reviewedPlan(...) ?? fullPlan` — so an empty reviewed set quietly became the
+ * *entire unreviewed plan*, and Apply could write changes nobody had looked at.
+ * Three states need three answers, and the caller has to be able to tell them
+ * apart.
  *
- * Returns `null` when nothing was reviewed, so the caller can distinguish "no
- * reviews yet" from "reviewed, and the plan is empty", which are different
- * things to show a user.
+ * `reviewed` is the set of review identities the user has actually made.
  */
 export function reviewedPlan(
   plan: ChangePlan | null,
-  reviewedKeys: ReadonlySet<string>,
-  findings: readonly Finding[],
-): ChangePlan | null {
-  if (plan === null || reviewedKeys.size === 0) return null;
-  const byId = new Map(findings.map((finding) => [finding.id, finding]));
+  reviewed: ReadonlySet<string>,
+  planFindings: readonly Finding[],
+): PendingProjection {
+  if (plan === null) {
+    return {
+      kind: "no-plan",
+      plan: null,
+      reason: "No preview has been built for this document yet. Scan, or press Re-scan now.",
+    };
+  }
+  if (reviewed.size === 0) {
+    return {
+      kind: "nothing-reviewed",
+      plan: null,
+      reason:
+        plan.changes.length === 0
+          ? "No changes are ready to apply for this document."
+          : `${plan.changes.length} change${plan.changes.length === 1 ? " is" : "s are"} ready. ` +
+            "Open a finding and choose Review to add it here — nothing is applied until you approve it.",
+    };
+  }
+
+  const identityByFindingId = new Map(
+    planFindings.map((finding) => [finding.id, reviewIdentity(finding)]),
+  );
   const changes = plan.changes.filter((change) => {
-    const finding = change.findingId === undefined ? undefined : byId.get(change.findingId);
-    // A change with no finding behind it cannot have been reviewed, so it is not
-    // carried. Same rule as `findChangeForFinding`: Pending Changes shows what
-    // the user looked at.
-    return finding !== undefined && reviewedKeys.has(reviewKey(finding));
+    if (change.findingId === undefined) return false;
+    const identity = identityByFindingId.get(change.findingId);
+    return identity !== undefined && reviewed.has(identity);
   });
-  if (changes.length === 0) return null;
-  return { ...plan, changes, conflicts: [] };
+
+  if (changes.length === 0) {
+    return {
+      kind: "nothing-reviewed",
+      plan: null,
+      reason:
+        "The findings you reviewed produced no applicable change. Re-scan, or review a finding " +
+        "the planner has a correction for.",
+    };
+  }
+
+  return { kind: "reviewed", plan: { ...plan, changes, conflicts: [] } };
 }
 
 /** Every finding that is already represented by a change the user can apply. */
 export function pendingChangesFor(
   findings: readonly Finding[],
   plan: ChangePlan | null,
+  planFindings: readonly Finding[] = [],
 ): ReviewedChange[] {
   if (plan === null) return [];
   return findings.reduce<ReviewedChange[]>((queued, finding) => {
-    const match = findChangeForFinding(finding, plan);
-    if (match !== null && match.refusal === null) {
-      queued.push({ findingId: finding.id, changeId: match.change.id });
+    const match = findChangeForFinding(finding, plan, planFindings);
+    if (match !== null && match.refusal === null && match.change.findingId !== undefined) {
+      queued.push({ findingId: match.change.findingId, changeId: match.change.id });
     }
     return queued;
   }, []);

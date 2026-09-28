@@ -2,7 +2,10 @@ import React, { useEffect, useRef, useState } from "react";
 import { IconButton } from "@fluentui/react";
 
 export type TaskPaneDestination =
-  | "home"
+  /** The landing page: the setup checklist. Reachable with no profile at all. */
+  | "landing"
+  /** Deterministic Review: findings, coverage, and pending changes. */
+  | "review"
   | "consistency"
   | "profile"
   | "semantic"
@@ -21,7 +24,8 @@ const DESTINATIONS: readonly {
   key: TaskPaneDestination;
   label: string;
 }[] = [
-  { key: "home", label: "Document Governance" },
+  { key: "landing", label: "Home" },
+  { key: "review", label: "Deterministic Review" },
   { key: "consistency", label: "Consistency Review" },
   { key: "profile", label: "Deterministic Style Profile" },
   { key: "semantic", label: "Semantic" },

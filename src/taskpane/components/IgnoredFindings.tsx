@@ -22,7 +22,15 @@ import type { IgnoredFinding } from "../../core/domain/Finding";
 
 export interface IgnoredFindingsProps {
   entries: readonly IgnoredFinding[];
-  onRestore: (fingerprint: string) => void;
+  /**
+   * Restore one occurrence, by its occurrence key.
+   *
+   * Not the fingerprint. A fingerprint identifies a *rule*, so restoring by it
+   * removed every ignored row of that rule at once — the button said "Restore"
+   * and the list lost entries the user never asked about. Two hits of one rule
+   * are two rows, and each restores itself.
+   */
+  onRestore: (occurrence: string) => void;
 }
 
 function ignoredAtLabel(iso: string): string {
@@ -35,6 +43,13 @@ export default function IgnoredFindings({
   entries,
   onRestore,
 }: IgnoredFindingsProps): React.ReactNode {
+  // Rows are keyed on the occurrence, not the fingerprint: two ignored rows of
+  // the same rule share a fingerprint, and a React key collision there means one
+  // row silently replaces the other in the DOM.
+  const rows = entries.map((entry) => ({
+    entry,
+    occurrence: entry.occurrenceKey.length > 0 ? entry.occurrenceKey : entry.fingerprint,
+  }));
   const [open, setOpen] = React.useState(false);
   if (entries.length === 0) return null;
 
@@ -59,14 +74,14 @@ export default function IgnoredFindings({
             keep being re-detected until the underlying text changes.
           </p>
           <ul>
-            {entries.map((entry) => (
-              <li key={entry.fingerprint} className="tf-published-item">
+            {rows.map(({ entry, occurrence }) => (
+              <li key={occurrence} className="tf-published-item">
                 <div>
                   <strong>{entry.message}</strong>
                 </div>
                 <div className="tf-sub">{entry.category}</div>
                 <div className="tf-sub">Ignored {ignoredAtLabel(entry.ignoredAt)}</div>
-                <button type="button" onClick={() => onRestore(entry.fingerprint)}>
+                <button type="button" onClick={() => onRestore(occurrence)}>
                   Restore
                   <span className="sr-only"> {entry.message}</span>
                 </button>

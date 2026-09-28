@@ -1689,3 +1689,99 @@ of "y"`. The prose parser remains for unanchored findings.
     `Office.contextMenu.requestUpdate`. The probe answered `false` on every
     host and had no test. It now probes the namespace that exists, and
     `supportsRibbonUpdate` was added for the same reason.
+
+## ADR-0071: The first run reports; it does not lock
+
+- Amends: ADR-0069 (every refusal names the control that resolves it)
+- Status: Accepted (2026-09-28)
+- **Context**: `Dashboard` returned a `NoProfileSetup` component when no
+  deterministic profile existed. Its `navigate` collapsed every destination
+  except Settings, Troubleshooting, and home back to home — where home _was_ the
+  profile editor. The header's other items were therefore rendered and inert,
+  so a user could not read the AI consent, change the theme, or inspect
+  Troubleshooting before committing to anything. A user whose document was too
+  short for Learn Style's quality gate had no route to the blank profile that
+  would have unblocked them, because the editor they were stranded on was
+  Learn Style's. The prerequisite is real; enforcing it by making half the
+  application unreachable is not a way to communicate it.
+- **Decision**: The app shell renders with or without a profile. `Home` is a
+  page of its own that states what is outstanding and what each item currently
+  prevents, and links to the control that resolves it. The prerequisite is
+  unchanged: scanning and applying still need a deterministic profile, and the
+  surfaces that need one say so. The setup state is computed by a pure
+  `src/taskpane/setupStatus.ts` so the checklist cannot drift from the store.
+- **Consequences**:
+  - Every warning is phrased as what is _unavailable_, never as what will
+    become available. A warning that promises a capability is a capability grant
+    the page cannot make, and the real gates still decide.
+  - `Home` and the findings list were one destination called `home`. They are
+    now `landing` and `review`, because a single destination could only show
+    one of them and the first run could only show the other.
+  - Absence of an LLM provider never blocks deterministic work. A checklist
+    that implied it did would send users to configure a provider they do not
+    need in order to fix a deterministic profile.
+  - Leaving the profile editor with no profile returns to the checklist. It
+    cannot be handled by re-resolving the profile alone: that sets the state to
+    the value it already holds, React bails out of the re-render, and the user
+    is left on the editor with only the header to escape by — the same lockout
+    arriving through the back button.
+
+## ADR-0072: Review and ignore are different identities for the same finding
+
+- Amends: ADR-0065 (Apply writes only the findings the user has reviewed)
+- Status: Accepted (2026-09-28)
+- **Context**: Both concepts keyed on `findingId` and, at the store, on a
+  fingerprint. Three defects followed. Reviewing a finding in one scan did not
+  admit its change in the next, because a re-scan issues new ids — so the user
+  had to press Re-scan and click again, which is why re-scan felt mandatory. The
+  projection resolved a change by looking it up with `findingId` in a map it had
+  built by identity, so every review reported "no change" for a finding that had
+  one. And ignoring a reviewed item did not simply remove it: the ignore list was
+  pruned by fingerprint, so ignoring one finding cleared the ignore entries of
+  every _other_ occurrence of the same rule, which is what made a second ignore
+  appear to resurrect the first.
+- **Decision**: `src/taskpane/occurrenceIdentity.ts` owns two identities. Review
+  identity is exact — fingerprint, node ids, and both range bounds — because a
+  review is a decision about one span. Ignore identity is the fingerprint and
+  node ids with a 400-character relocation tolerance, because an ignore is a
+  decision about a recurring problem surviving edits above it. Ignored entries
+  additionally carry an occurrence key so two occurrences of the same rule in
+  one paragraph are separate rows with separate Restore actions.
+- **Consequences**:
+  - A review does not survive the document moving the finding, and that is
+    deliberate: a reviewed span that is now elsewhere is not the span the user
+    approved. Stale reviews are pruned against the live identities.
+  - The gate and the projection resolve through the same identity, so a finding
+    cannot be admitted by one and refused by the other.
+  - `reviewedPlan` returns a discriminated union rather than a plan or `null`,
+    which makes the previous `?? fullPlan` fallback inexpressible. Falling back to
+    the whole plan is exactly how an unreviewed change reached Pending Changes.
+  - Reviews live in the store, not in component state mirrored into
+    `localStorage`. The write bypassed `saveState` and so never notified
+    subscribers, and the pane re-rendered only when something else changed.
+  - Once a finding is reviewed its Ignore control is disabled. The two decisions
+    are contradictory, and the store would otherwise have to resolve the
+    contradiction on the user's behalf.
+
+## ADR-0073: The two manifests need not agree, and that is a recorded deviation
+
+- Amends: ADR-0053 (manifest validation reads the published schema) and
+  ADR-0070 (a manifest change requires re-registration)
+- Status: Accepted (2026-09-28)
+- **Context**: ADR-0070 records that a control added to only one manifest passes
+  every check in this repository and produces a Word that has never heard of it.
+  `scripts/validate-manifest.mjs` compares the JSON against the XML today, which
+  is the correct check, but the naming surfaces have been drifting: the
+  "Deterministic Review" rename touches group labels and supertips in both
+  files, and a label is exactly the kind of string that gets updated in the file
+  a developer happens to have open.
+- **Decision**: Every naming change is applied to both files, and the parity
+  check stays. The finding is recorded here rather than left as an open
+  question so that a future divergence is read as a regression against a stated
+  decision rather than as a discovered oversight.
+- **Consequences**:
+  - `npm run validate` is the gate. A rename that reaches one manifest and not
+    the other fails the build.
+  - This does not fix the underlying hazard that a manifest change requires
+    re-registration before Word will show it. That remains a Word-side property
+    documented in `manual-verification.md` under ADR-0070.

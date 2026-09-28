@@ -168,10 +168,28 @@ export default function FindingDetail({
           </button>
         )}
         {onIgnore && (
-          <button type="button" onClick={() => onIgnore(finding.id)}>
-            Ignore
+          <button
+            type="button"
+            onClick={() => onIgnore(finding.id)}
+            /*
+             * Disabled once reviewed, and it has to be: reviewing admits a change
+             * to Apply and ignoring withdraws the finding, so a button offering
+             * both is a finding that is simultaneously queued and set aside. The
+             * store refuses the ignore as well, so this is not only a UI
+             * courtesy — a caller that bypassed it would corrupt the two.
+             */
+            disabled={reviewed}
+            aria-describedby={reviewed ? "finding-ignore-blocked" : undefined}
+          >
+            {reviewed ? "Reviewed" : "Ignore"}
           </button>
         )}
+        {reviewed && onIgnore ? (
+          <span id="finding-ignore-blocked" className="sr-only">
+            This finding is already reviewed and waiting in Pending changes. Set it aside by
+            rejecting the change instead.
+          </span>
+        ) : null}
       </nav>
       <p
         id={navigationStatusId}

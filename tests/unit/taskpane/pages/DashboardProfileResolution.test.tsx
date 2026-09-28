@@ -35,6 +35,8 @@ vi.mock("../../../../src/core/state/persistence", () => ({
   saveState: vi.fn(),
   ignoreFinding: vi.fn(),
   restoreFinding: vi.fn(),
+  saveReviewedFinding: vi.fn(),
+  pruneStaleReviews: vi.fn(),
   subscribeToState: () => () => undefined,
 }));
 
@@ -100,6 +102,10 @@ function emptyState() {
     version: 7,
     profileRecords: {} as Record<string, unknown>,
     activeProfileId: null,
+    semanticProfileRecords: {},
+    activeSemanticProfileId: null,
+    ignoredFindings: [],
+    reviewedFindings: [],
     governanceProfiles: {},
     governanceHistory: {},
     activeGovernanceProfileId: null,
@@ -128,7 +134,14 @@ describe("Dashboard profile resolution", () => {
     mocks.loadState.mockReturnValue(emptyState());
 
     render(<Dashboard />);
-    expect(screen.getByRole("heading", { name: "Create a style profile" })).toBeInTheDocument();
+    // The first-run landing page, not the editor itself: the checklist replaced
+    // the embedded editor, and the editor is reached from a checklist row.
+    // Awaited because the page is lazily imported, so the first paint is the
+    // Suspense fallback rather than the checklist.
+    expect(await screen.findByTestId("tf-setup-deterministicProfile")).toBeInTheDocument();
+    await user.click(
+      await screen.findByRole("button", { name: /Set up deterministic style profile/ }),
+    );
 
     const record = createRecord(profile.id, profile.name, profile.createdAt, profile);
     mocks.loadState.mockReturnValue({
@@ -139,9 +152,7 @@ describe("Dashboard profile resolution", () => {
     await user.click(await screen.findByRole("button", { name: "Leave profile setup" }));
 
     await waitFor(() =>
-      expect(
-        screen.queryByRole("heading", { name: "Create a style profile" }),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByTestId("tf-setup-deterministicProfile")).not.toBeInTheDocument(),
     );
     expect(mocks.reload).not.toHaveBeenCalled();
     // Office-dependent wiring is established by the dashboard, not by a reload.
@@ -149,14 +160,19 @@ describe("Dashboard profile resolution", () => {
     expect(mocks.createDocumentObserver).toHaveBeenCalled();
   });
 
-  it("stays in setup when leaving the editor without a profile", async () => {
+  it("stays on the checklist when leaving the editor without a profile", async () => {
     const user = userEvent.setup();
     mocks.loadState.mockReturnValue(emptyState());
 
     render(<Dashboard />);
+    await user.click(
+      await screen.findByRole("button", { name: /Set up deterministic style profile/ }),
+    );
     await user.click(await screen.findByRole("button", { name: "Leave profile setup" }));
 
-    expect(screen.getByRole("heading", { name: "Create a style profile" })).toBeInTheDocument();
+    // Leaving the editor returns to the checklist rather than reloading the
+    // pane, so the checklist comes back lazily and has to be awaited.
+    expect(await screen.findByTestId("tf-setup-deterministicProfile")).toBeInTheDocument();
     expect(mocks.reload).not.toHaveBeenCalled();
   });
 
@@ -167,7 +183,7 @@ describe("Dashboard profile resolution", () => {
    * own `role="status"` element, so two of them could speak in the same tick and
    * a screen reader read them in DOM order rather than in the order they
    * happened. The priority that decides which one wins now lives in
-   * `deriveAnnouncement`; this asserts the structural half — that the surfaces
+   * `deriveAnnouncement`; this asserts the structural half Ã¢â‚¬â€ that the surfaces
    * are visible text and the region is singular.
    */
   it("announces a settled scan through a single live region", async () => {

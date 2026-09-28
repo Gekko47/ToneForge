@@ -17,8 +17,8 @@ import { v4 as uuidv4 } from "uuid";
  * A write that does not notify looks exactly like a control that does nothing.
  *
  * The bug this pins: `usePersistedState` kept a private listener set that only
- * `persistState` notified. Every convenience writer in `persistence.ts` — the
- * one the Ignore button calls — saved correctly and left the UI showing the
+ * `persistState` notified. Every convenience writer in `persistence.ts` â€” the
+ * one the Ignore button calls â€” saved correctly and left the UI showing the
  * previous value. The user clicked Ignore, the entry was written, the list did
  * not re-render, and the button looked broken. The ignore list never appeared at
  * all, because it renders from this snapshot.
@@ -49,7 +49,7 @@ describe("persisted state notification", () => {
      * `tests/setup.ts` installs a `roamingSettings` mock, which makes
      * `isOfficeRuntime()` true, and `loadState` prefers roamingSettings over
      * localStorage. Writes to roamingSettings are asynchronous, so a value
-     * written and immediately read is not there yet — a persisted value could
+     * written and immediately read is not there yet â€” a persisted value could
      * not be read back in the same tick. That is correct behaviour for a real
      * host and unworkable for these tests, which assert on what was just saved.
      */
@@ -80,7 +80,11 @@ describe("persisted state notification", () => {
     const listener = vi.fn();
     const unsubscribe = subscribeToState(listener);
 
-    restoreFinding(target.fingerprint);
+    // Read the stored key rather than the one the fixture passed in. The writer
+    // derives and stamps the occurrence key, so a fixture that never set one
+    // carries none — and restoring by that empty string would address nothing,
+    // which is precisely the silent no-op this change set out to remove.
+    restoreFinding(loadState().ignoredFindings[0]?.occurrenceKey ?? "");
 
     expect(listener).toHaveBeenCalledOnce();
     unsubscribe();
@@ -95,7 +99,7 @@ describe("persisted state notification", () => {
 
     // `act` is required, not decorative: `useSyncExternalStore` schedules a
     // re-render, and outside `act` React has not committed it when the
-    // assertion runs. The write itself is synchronous — the two tests above
+    // assertion runs. The write itself is synchronous â€” the two tests above
     // prove the notification fires without any React involved.
     act(() => {
       ignoreFinding(entry("First"));
@@ -112,7 +116,7 @@ describe("persisted state notification", () => {
     expect(result.current.ignoredFindings).toHaveLength(1);
 
     act(() => {
-      restoreFinding(target.fingerprint);
+      restoreFinding(loadState().ignoredFindings[0]?.occurrenceKey ?? "");
     });
 
     expect(result.current.ignoredFindings).toHaveLength(0);

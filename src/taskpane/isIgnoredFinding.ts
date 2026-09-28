@@ -25,22 +25,10 @@
  */
 
 import type { Finding, IgnoredFinding } from "../core/domain/Finding";
-import { findingFingerprint } from "./findingFingerprint";
-
-/** Character distance within which two positions are the same occurrence. */
-const POSITION_TOLERANCE = 400;
-
-function sameNode(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length === 0 || b.length === 0) return a.length === b.length;
-  const left = [...a].sort();
-  const right = [...b].sort();
-  return left.length === right.length && left.every((nodeId, index) => nodeId === right[index]);
-}
+import { isSameIgnoredOccurrence } from "./occurrenceIdentity";
 
 export function isIgnoredFinding(finding: Finding, entry: IgnoredFinding): boolean {
-  if (entry.fingerprint !== findingFingerprint(finding)) return false;
-  if (!sameNode(entry.nodeIds, finding.nodeIds)) return false;
-  return Math.abs(entry.range.start - finding.range.start) <= POSITION_TOLERANCE;
+  return isSameIgnoredOccurrence(finding, entry);
 }
 
 /**

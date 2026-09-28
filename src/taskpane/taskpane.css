@@ -645,6 +645,45 @@ button:disabled {
   display: block;
 }
 
+/* The Home checklist. A row is a status plus a remedy, so the status is a
+   heading and the remedy is a button beneath it rather than two controls on one
+   line — the reader has to be able to act on the row without hunting for which
+   of several labels belongs to it. */
+.tf-setup-list {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tf-setup-row {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--tf-border);
+  border-radius: 6px;
+  background: var(--tf-surface-subtle);
+}
+
+.tf-setup-row-blocked {
+  border-left: 3px solid var(--tf-warning-border);
+}
+
+.tf-setup-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tf-setup-row-label {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
 .tf-settings-page,
 .tf-settings-section {
   display: grid;

@@ -106,5 +106,58 @@ export const IgnoredFindingSchema = z.object({
   range: RangeSchema,
   nodeIds: z.array(z.string().trim().min(1)).default([]),
   ignoredAt: z.string().datetime(),
+  /**
+   * The occurrence this ignore covers.
+   *
+   * Stored alongside the fingerprint rather than replacing it. The fingerprint is
+   * the identity of the *rule* and is what makes the list readable; the occurrence
+   * key is what makes two hits of the same rule separately ignorable. Keeping
+   * both is what lets Restore address one row instead of every row of that rule.
+   *
+   * Optional and unconstrained rather than `min(1).default("")`: a row written
+   * before the key existed parses as an empty string, and a key that is absent
+   * is a different fact from a key that is malformed. A minimum length would
+   * reject the old rows outright and take the user's ignores with them.
+   */
+  occurrenceKey: z.string().trim().default(""),
 });
 export type IgnoredFinding = z.infer<typeof IgnoredFindingSchema>;
+
+/**
+ * A finding the user reviewed, stored as a decision rather than as a status.
+ *
+ * **Why it is a separate record and not `Finding.status = "reviewed"`.** The
+ * status field is written by the observer, which knows nothing about what the
+ * user did, so the pane had to patch the observer's data back after every scan.
+ * Worse, the review has to survive a *different run*: the observer's scan and the
+ * preview that builds the plan are separate passes that issue separate uuids, so
+ * a review recorded against the id the user clicked could never be recognised in
+ * the plan Apply actually writes. Storing the decision under an occurrence
+ * identity — rather than under an id or a bare rule fingerprint — is what makes
+ * the two passes agree.
+ *
+ * `changeId` records the change the review resolved to, when one exists. A review
+ * with no eligible change is still a real decision ("I have seen this, it needs
+ * no correction"), so it is kept and reported rather than discarded.
+ */
+export const ReviewedFindingSchema = z.object({
+  /** `reviewIdentity` of the finding the user reviewed. Exact by design. */
+  identity: z.string().trim().min(1),
+  findingId: z.string().uuid(),
+  category: z.string().trim().min(1),
+  range: RangeSchema,
+  nodeIds: z.array(z.string().trim().min(1)).default([]),
+  reviewedAt: z.string().datetime(),
+  /**
+   * The plan change this review admitted, or null when the finding produced none.
+   *
+   * Null is a real outcome, not a missing value: most findings are advisory and
+   * the planner has no correction for them. Recording that explicitly is what
+   * lets the pane say "reviewed, and there is nothing to apply" instead of
+   * treating the finding as unreviewed and asking again.
+   */
+  changeId: z.string().uuid().nullable().default(null),
+  /** Why no change was admitted, when none was. The engine's own words. */
+  noChangeReason: z.string().trim().min(1).nullable().default(null),
+});
+export type ReviewedFinding = z.infer<typeof ReviewedFindingSchema>;

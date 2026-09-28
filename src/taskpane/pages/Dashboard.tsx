@@ -29,7 +29,8 @@ import { findingFingerprint } from "../findingFingerprint";
 import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
 import { decidePreview, isFullScan } from "../autoPreview";
 import { reviewFinding, reviewedPlan } from "../reviewGate";
-import { reviewKey } from "../reviewKey";
+import { reviewIdentity, occurrenceKey } from "../occurrenceIdentity";
+import { setupStatusFromState } from "../setupStatus";
 import { describeOpenFindings, summarizeOpenFindings } from "../findingsSummary";
 import { reformatDocument } from "../../reformat";
 import {
@@ -43,6 +44,8 @@ import {
   ignoreFinding as persistIgnore,
   loadState,
   restoreFinding,
+  saveReviewedFinding,
+  pruneStaleReviews,
 } from "../../core/state/persistence";
 import { selectActiveProfile } from "../../core/state/profileSelectors";
 import { usePersistedState } from "../state/usePersistedState";
@@ -59,23 +62,17 @@ const Profile = lazy(() => import("./Profile"));
 const GovernancePolicy = lazy(() => import("./GovernancePolicy"));
 const ConsistencyReview = lazy(() => import("./ConsistencyReview"));
 const Semantic = lazy(() => import("./Semantic"));
-
-const REVIEWED_FINDINGS_KEY = "ToneForge.ReviewedFindingFingerprints.v1";
+const Home = lazy(() => import("./Home"));
 
 /** Lets the findings toolbar's `aria-controls` point at the rendered list. */
 const FINDINGS_LIST_ID = "tf-findings-list";
 
-type DashboardPage =
-  | "home"
-  | "consistency"
-  | "profile"
-  | "semantic"
-  | "governance-policy"
-  | "settings"
-  | "troubleshooting";
-
-/** Destinations reachable before a profile exists. */
-type SetupDestination = "home" | "settings" | "troubleshooting";
+/**
+ * The pane's pages. `landing` and `review` are the two that used to be one
+ * destination called `home`, which meant the setup checklist and the findings
+ * list were the same page and the first run could only show one of them.
+ */
+type DashboardPage = TaskPaneDestination;
 
 function resolveActiveProfile(): StyleProfile | null {
   const profile = selectActiveProfile(loadState());
@@ -110,7 +107,7 @@ type PendingPlan = {
  *
  * Safe reformat is the only review the pane runs, so this takes exactly one
  * result. It previously accepted a full-document result and a spot result that
- * no caller ever passed — both were always `null` at the call site, so two of
+ * no caller ever passed â€” both were always `null` at the call site, so two of
  * its three branches were unreachable while still reading as live capability
  * (ADR-0059).
  */
@@ -123,84 +120,119 @@ export function resolvePendingPlan(reformatResult: ReformatResult | null): Pendi
 }
 
 /**
- * Read a versioned set of review keys from storage.
+ * The review identities the user has made, read from the store.
  *
- * These are strings, not findings, so the shape is a plain string array. The
- * key is rule-plus-position rather than the id, for the reason given on
- * `reviewKey`: the id a user clicks is issued by the observer's run and never
- * reappears in the plan's.
+ * **Not component state.** Reviews used to be a `Set` in `useState` mirrored into
+ * `localStorage` by an effect. The write bypassed `saveState`, so it never
+ * notified the store's subscribers, and the pane re-rendered only when something
+ * *else* happened to change. That is why a reviewed finding reached Pending
+ * Changes only sometimes, and why pressing Re-scan was the reliable way to make
+ * it appear: the rescan changed other state, which is what re-rendered the list.
+ *
+ * Reading from the store makes the write and the render the same event.
  */
-function readReviewedKeys(key: string): Set<string> {
-  try {
-    const value = window.localStorage.getItem(key);
-    const parsed: unknown = value ? JSON.parse(value) : [];
-    return new Set(
-      Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [],
-    );
-  } catch {
-    return new Set();
-  }
+function reviewedIdentities(state: PersistedState): ReadonlySet<string> {
+  // Tolerated as absent rather than assumed present. `PersistedState` is
+  // Zod-defaulted, so a real store always has it, but a partial mock or a
+  // hand-edited store is a real caller and a pane that cannot render because of
+  // one missing list is worse than one that shows the findings unreviewed.
+  return new Set((state.reviewedFindings ?? []).map((entry) => entry.identity));
 }
 
-function persistReviewedKeys(keys: ReadonlySet<string>): void {
-  try {
-    window.localStorage.setItem(REVIEWED_FINDINGS_KEY, JSON.stringify(Array.from(keys)));
-  } catch {
-    // Storage may be unavailable; the set still applies for this session.
-  }
-}
-
+/**
+ * The app shell, which renders with or without a profile.
+ *
+ * **Why this is not a gate.** With no active profile this used to return a
+ * `NoProfileSetup` component whose `navigate` collapsed every destination except
+ * Settings, Troubleshooting, and home back to home â€” where home *was* the profile
+ * editor. The header's other items were therefore visible and inert, and the
+ * only way to reach the AI consent, the theme control, or the Semantic tab was
+ * to create a profile first. That is a worse first run than an honest one: the
+ * user cannot read what they are agreeing to before agreeing to it, and a user
+ * whose document is too short to sample had no way to create the blank profile
+ * that would unblock them.
+ *
+ * The prerequisite is unchanged and still enforced â€” scanning and applying need a
+ * deterministic profile â€” but it is now stated on the Home page as a warning
+ * with a link, rather than enforced by making half the app unreachable.
+ */
 export default function Dashboard(): React.ReactNode {
   // Held in state rather than resolved on every render so a profile created in
-  // the first-run editor can be picked up without reloading the task pane. A
+  // the profile editor can be picked up without reloading the task pane. A
   // reload would discard the Office runtime, the capability probe, and the
   // document observer the dashboard already established.
   const [activeProfile, setActiveProfile] = useState<StyleProfile | null>(resolveActiveProfile);
 
   if (!activeProfile) {
-    return <NoProfileSetup onProfileCreated={() => setActiveProfile(resolveActiveProfile())} />;
+    return (
+      <DashboardWithoutProfile
+        onProfileCreated={() => setActiveProfile(resolveActiveProfile())}
+        activeProfile={activeProfile}
+      />
+    );
   }
 
   return <DashboardWithProfile key={activeProfile.id} activeProfile={activeProfile} />;
 }
 
 /**
- * The first-run state, which still has the app frame.
+ * The app with no deterministic profile.
  *
- * This used to render a bare `<main>` with no header, so a user with no profile
- * could not reach Settings, the theme control, or Troubleshooting. That is a
- * real lockout: the AI Review consent lives in Settings, and a user who wants to
- * understand what they are agreeing to before creating a profile had no way to
- * read it. Navigation is available; only the governance actions are not.
+ * Every destination is reachable, and each renders its own state rather than
+ * being redirected. What the missing profile removes is stated, once, on the
+ * Home page, with a link to the control that resolves it.
+ *
+ * `activeProfile` is passed through rather than resolved again so the parent can
+ * swap this component for the full dashboard the moment a profile is created,
+ * without a re-render racing the two.
  */
-function NoProfileSetup({ onProfileCreated }: { onProfileCreated: () => void }): React.ReactNode {
-  const [page, setPage] = useState<SetupDestination>("home");
+function DashboardWithoutProfile({
+  onProfileCreated,
+  activeProfile,
+}: {
+  onProfileCreated: () => void;
+  activeProfile: StyleProfile | null;
+}): React.ReactNode {
+  const [page, setPage] = useState<DashboardPage>("landing");
+  const persisted = usePersistedState();
+  const status = setupStatusFromState(persisted);
 
-  /*
-   * The header offers every destination, so this accepts them all and narrows
-   * them. Profile and AI Review need the profile this gate is asking for, so
-   * they resolve to home rather than rendering a page that cannot work — the
-   * click still does something explainable instead of appearing to do nothing.
-   */
   function navigate(destination: TaskPaneDestination): void {
-    if (destination === "settings" || destination === "troubleshooting" || destination === "home") {
-      setPage(destination);
-      return;
-    }
-    setPage("home");
+    setPage(destination);
+  }
+
+  const header = (
+    <TaskPaneHeader
+      activePage={page}
+      profileName={activeProfile?.name ?? "None yet"}
+      profileRevision={activeProfile?.revision ?? 0}
+      onNavigate={navigate}
+    />
+  );
+
+  const back = () => navigate("landing");
+
+  /**
+   * Leaving the profile editor with no profile still returns to the checklist.
+   *
+   * `onProfileCreated` alone is not enough. It re-resolves the active profile and
+   * calls `setActiveProfile(null)`, which is the value the state already holds, so
+   * React bails out of the re-render and this component never re-renders to
+   * restore its own `page` state. The user is left on the editor with the header
+   * as the only way out — the same lockout S1 removed, reintroduced through the
+   * back button. Navigating here is what makes "Back" mean back.
+   */
+  function leaveProfileEditor(): void {
+    onProfileCreated();
+    navigate("landing");
   }
 
   if (page === "settings") {
     return (
       <main className="tf-card" tabIndex={0}>
-        <TaskPaneHeader
-          activePage="settings"
-          profileName="None yet"
-          profileRevision={0}
-          onNavigate={navigate}
-        />
-        <Suspense fallback={<div role="status">Loading…</div>}>
-          <Settings onBack={() => navigate("home")} />
+        {header}
+        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+          <Settings onBack={back} />
         </Suspense>
       </main>
     );
@@ -209,14 +241,63 @@ function NoProfileSetup({ onProfileCreated }: { onProfileCreated: () => void }):
   if (page === "troubleshooting") {
     return (
       <main className="tf-card" tabIndex={0}>
-        <TaskPaneHeader
-          activePage="troubleshooting"
-          profileName="None yet"
-          profileRevision={0}
-          onNavigate={navigate}
-        />
-        <Suspense fallback={<div role="status">Loading…</div>}>
-          <DebuggingPanel onBack={() => navigate("home")} coverage={null} />
+        {header}
+        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+          <DebuggingPanel onBack={back} coverage={null} />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (page === "profile") {
+    return (
+      <main className="tf-card" tabIndex={0}>
+        {header}
+        <Suspense fallback={<div role="status">Loading profile editorâ€¦</div>}>
+          <Profile onBack={leaveProfileEditor} />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (page === "semantic") {
+    return (
+      <main className="tf-card" tabIndex={0}>
+        {header}
+        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+          <Semantic
+            onBack={back}
+            onOpenSettings={() => navigate("settings")}
+            onSendToPendingChanges={() => undefined}
+            navigation={null}
+          />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (page === "consistency") {
+    return (
+      <main className="tf-card" tabIndex={0}>
+        {header}
+        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+          <ConsistencyReview
+            onBack={back}
+            onOpenSettings={() => navigate("settings")}
+            result={null}
+            onResult={() => undefined}
+          />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (page === "governance-policy") {
+    return (
+      <main className="tf-card" tabIndex={0}>
+        {header}
+        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+          <GovernancePolicy onBack={back} />
         </Suspense>
       </main>
     );
@@ -224,22 +305,9 @@ function NoProfileSetup({ onProfileCreated }: { onProfileCreated: () => void }):
 
   return (
     <main className="tf-card" tabIndex={0}>
-      <TaskPaneHeader
-        activePage="home"
-        profileName="None yet"
-        profileRevision={0}
-        onNavigate={navigate}
-      />
-      <h1 className="tf-title">Create a style profile</h1>
-      <p className="tf-sub">
-        ToneForge needs a style profile before it can analyse or safely reformat this document. You
-        can still change Settings and review AI permissions before you create one.
-      </p>
-      <p className="tf-sub">
-        Scanning and applying changes stay unavailable until a profile exists.
-      </p>
-      <Suspense fallback={<div role="status">Loading profile editor…</div>}>
-        <Profile onBack={onProfileCreated} />
+      {header}
+      <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+        <Home setup={status} onNavigate={navigate} onProfileCreated={onProfileCreated} />
       </Suspense>
     </main>
   );
@@ -254,14 +322,14 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   /**
    * Whether the pane watches the document on its own.
    *
-   * Persisted and defaulted on, but previously never read anywhere — the
+   * Persisted and defaulted on, but previously never read anywhere â€” the
    * observer started unconditionally, so the setting was a stored intention
    * with no effect. Turning it off now actually stops the automatic scans, and
    * "Re-scan now" is the way back, which is why that control is never
    * disabled by this flag.
    */
   const autoScan = persisted.settings.autoScan;
-  const [page, setPage] = useState<DashboardPage>("home");
+  const [page, setPage] = useState<DashboardPage>("review");
   /*
    * Open by default, and opened *for* the user when findings arrive.
    *
@@ -281,19 +349,18 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * an ignored rule. The persisted entries carry the range and are the only
    * source of truth, which is also why the pane needs no effect to mirror them.
    */
-  /*
-   * Review keys, not finding ids.
+  /**
+   * Review identities, derived from the store on every render.
    *
-   * The id cannot be used: the observer's scan and the preview that builds the
-   * plan are separate runs and issue separate uuids, so an id the user clicked
-   * would never reappear in the plan and the reviewed-only list could never
-   * fill. The key is the rule plus its position, which both runs derive
-   * identically. See `reviewKey` for why an ignore tolerates a shifted offset
-   * and a review must not.
+   * Not component state, and that is the fix. Reviews were a `Set` in
+   * `useState` written straight to `localStorage` by an effect, which meant the
+   * write never notified the store's subscribers â€” the pane re-rendered only
+   * when something else happened to change. A reviewed finding therefore reached
+   * Pending Changes only sometimes, and the reliable way to make it appear was
+   * to press Re-scan, which changed other state. Deriving from `persisted`
+   * makes the write and the re-render the same event.
    */
-  const [reviewedKeys, setReviewedKeys] = useState<Set<string>>(() =>
-    readReviewedKeys(REVIEWED_FINDINGS_KEY),
-  );
+  const reviewedKeys = reviewedIdentities(persisted);
   const observerRef = useRef<ReturnType<typeof createDocumentObserver> | null>(null);
   /**
    * The document the held preview was built from.
@@ -322,7 +389,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * Separate from `pendingPlanRef` because the two answer different questions.
    * `pendingPlan` is what the user has already agreed to and is all Apply may
    * write; this is everything the preview proposed. A finding under review is,
-   * by definition, not in the first one — resolving it against the narrowed
+   * by definition, not in the first one â€” resolving it against the narrowed
    * plan meant the gate answered "the planner proposes no correction" for a
    * finding that had one, and reviewing the first finding could never add
    * anything.
@@ -342,7 +409,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   /*
    * The finished consistency report, and nothing else about the review.
    *
-   * The run itself — preflight, progress, cancellation, the abort handle — lives
+   * The run itself â€” preflight, progress, cancellation, the abort handle â€” lives
    * on the Consistency Review page. This copy of the report stays here because
    * Document Governance's findings list shows it too, and that list is on a
    * different tab. Keeping the report with the run would drop the findings the
@@ -409,7 +476,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * would change without a second action they had to know to take.
    *
    * The decision is delegated to `decidePreview` rather than re-derived here,
-   * because the interesting cases are the ones a reader would get wrong — a
+   * because the interesting cases are the ones a reader would get wrong â€” a
    * narrowed scan must not produce a plan, and a plan already held for the
    * current document must not be rebuilt underneath a user reviewing it.
    *
@@ -420,7 +487,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * *when the pane scans*; this governs what the pane does with a scan that
    * already happened. Gating it would mean a user who turned auto-scan off and
    * pressed "Re-scan now" got a findings list with no Pending Changes and an
-   * Apply button that could never enable — a dead end caused by the setting,
+   * Apply button that could never enable â€” a dead end caused by the setting,
    * not by anything about their document.
    */
   const previewingRef = useRef(false);
@@ -445,7 +512,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     if (decision.kind === "skip") {
       /*
        * A narrowed scan cannot produce a whole-document plan, so the preview is
-       * declined — and without this the previous plan simply sat there
+       * declined â€” and without this the previous plan simply sat there
        * describing text that no longer existed, which reads as "the pane stopped
        * updating". Rather than build a plan from a partial read, ask the observer
        * for the full scan that can.
@@ -550,7 +617,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
      *
      * These events are the host's own notification that the text changed, so
      * subscribing to them while auto-scan is off would re-enable exactly the
-     * automatic scanning the preference turns off — the setting would appear
+     * automatic scanning the preference turns off â€” the setting would appear
      * inert for every host that reports paragraph events, which is every
      * current one.
      */
@@ -599,11 +666,11 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       return;
     }
     if (request.target === "findings") {
-      setPage("home");
+      setPage("review");
       setFindingsOpen(true);
     }
     if (request.target === "pending-changes") {
-      setPage("home");
+      setPage("review");
       setPendingOpen(true);
     }
     /*
@@ -616,15 +683,11 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     }
   }, []);
 
-  useEffect(() => {
-    persistReviewedKeys(reviewedKeys);
-  }, [reviewedKeys]);
-
   /*
    * The reviewed set is no longer written back onto `status`.
    *
    * This effect existed because FindingCard read the label from `finding.status`,
-   * which the observer rewrites on every scan — so the pane had to patch the
+   * which the observer rewrites on every scan â€” so the pane had to patch the
    * observer's data back afterwards. FindingCard now takes the reviewed state as
    * a prop, so the two owners no longer have to be reconciled: the observer
    * owns `status`, and the gate owns what the user reviewed.
@@ -669,7 +732,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
      *
      * The in-memory set is what filters the list, but findings are re-derived
      * on every scan with a fresh uuid, so an ignore that lived only in memory
-     * would quietly stop applying the first time the user edited the document —
+     * would quietly stop applying the first time the user edited the document â€”
      * and the finding they set aside would reappear with no explanation.
      * The fingerprint is the identity that survives that, which is why the
      * stored entry is keyed on it.
@@ -682,9 +745,10 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       range: finding.range,
       nodeIds: finding.nodeIds,
       ignoredAt: new Date().toISOString(),
+      occurrenceKey: occurrenceKey(finding),
     });
     // The persisted entry is the whole update. `usePersistedState` re-renders on
-    // the save, so there is no second copy to keep in step — and a second copy
+    // the save, so there is no second copy to keep in step â€” and a second copy
     // keyed on fingerprints is exactly what caused the bug this replaces.
   }
 
@@ -755,30 +819,37 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    *
    * This replaces a `markForReview` that only flipped a status label, which is
    * why the button appeared to do nothing. The decision is delegated to
-   * `reviewGate` so the rule — never announce a change Apply will refuse — is
+   * `reviewGate` so the rule â€” never announce a change Apply will refuse â€” is
    * testable without a host, and so the same conditions Apply enforces are the
    * ones the gate reads.
    */
   function reviewOne(finding: Finding): void {
     /*
-     * Resolved against the preview run's findings by `reviewKey`, not by id.
-     * The id the user clicked was issued by the observer's scan; the change
-     * names a finding from the preview that planned it. Without the key
-     * translation an observer finding matched nothing in the plan at all.
+     * Judged against the *preview run's* plan and that run's own findings.
+     *
+     * The finding in front of the user comes from the observer's scan; the plan
+     * comes from the preview. The two are reconciled inside `reviewFinding`
+     * through the shared occurrence identity rather than here, so the gate and
+     * the pending projection cannot drift apart. Judging the observer's finding
+     * id against the preview's changes could never match: the two runs issue
+     * separate uuids, so every review reported "the planner proposes no
+     * correction" for a finding that had one.
      */
-    const key = reviewKey(finding);
-    const previewFinding =
-      previewFindingsRef.current.find((candidate) => reviewKey(candidate) === key) ?? finding;
-    const decision = reviewFinding(previewFinding, previewPlanRef.current);
-    setReviewedKeys((previous) => {
-      const next = new Set(previous).add(reviewKey(finding));
-      persistReviewedKeys(next);
-      return next;
+    const decision = reviewFinding(finding, previewPlanRef.current, previewFindingsRef.current);
+    saveReviewedFinding({
+      identity: reviewIdentity(finding),
+      findingId: finding.id,
+      category: finding.category,
+      range: finding.range,
+      nodeIds: finding.nodeIds,
+      reviewedAt: new Date().toISOString(),
+      changeId: decision.kind === "pending" ? decision.change.changeId : null,
+      noChangeReason: decision.kind === "pending" ? null : decision.reason,
     });
     /*
      * Both outcomes speak through the one pane-wide live region rather than
      * adding a second `role="status"` beside the list. A review that produced no
-     * pending change has to say so — otherwise the button looks broken again,
+     * pending change has to say so â€” otherwise the button looks broken again,
      * which is exactly what the status label-only version of Review did.
      */
     setReviewNote(decision.message);
@@ -830,7 +901,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     page === "semantic" ||
     page === "troubleshooting"
   ) {
-    const back = () => navigate("home");
+    const back = () => navigate("review");
     return (
       <main className="tf-card" tabIndex={0}>
         <TaskPaneHeader
@@ -839,7 +910,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           profileRevision={activeProfile.revision}
           onNavigate={navigate}
         />
-        <Suspense fallback={<div role="status">Loading…</div>}>
+        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
           {page === "settings" ? (
             <Settings onBack={back} />
           ) : page === "profile" ? (
@@ -892,7 +963,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * in-memory set of fingerprints.
    *
    * The in-memory set compared fingerprints, and a fingerprint is the identity of
-   * a rule rather than of an occurrence — so ignoring one em dash hid every
+   * a rule rather than of an occurrence â€” so ignoring one em dash hid every
    * other em dash in the document. The stored entries carry the range, which is
    * what distinguishes the occurrences.
    */
@@ -906,7 +977,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * findings. While the preview only ran on a button press the disagreement was
    * rare and brief. Auto-preview sets it on every full scan, so a preview that
    * found no plannable change replaced a list of three real findings with an
-   * empty one — while the toolbar, reading the observer, still said three.
+   * empty one â€” while the toolbar, reading the observer, still said three.
    *
    * The list and the count must come from the same source or the pane
    * contradicts itself, and the observer is the one that scanned the document
@@ -936,7 +1007,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   /*
    * The plan Pending Changes shows and Apply writes, narrowed to the reviewed
-   * findings — and only that.
+   * findings â€” and only that.
    *
    * Both the table and `applyPendingPlan` read this same value, so there is no
    * path by which the pane displays one set of changes and writes another. It
@@ -945,25 +1016,37 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    *
    * The findings passed are the *preview run's own*. A change's `findingId`
    * names a finding from the run that planned it, so pairing the plan with the
-   * observer's list would match nothing and leave Apply permanently empty —
+   * observer's list would match nothing and leave Apply permanently empty â€”
    * safe, but indistinguishable from a broken button.
    */
   const previewFindings = reformatResult?.report.findings ?? [];
   const reviewedOnly = resolvePendingPlan(reformatResult);
-  const narrowed =
-    reviewedOnly === null ? null : reviewedPlan(reviewedOnly.plan, reviewedKeys, previewFindings);
   /*
-   * `null` when nothing is reviewed, and not the full plan as a fallback.
-   * Falling back meant a user who had reviewed nothing was handed the entire
-   * plan as "pending": Apply's own gate would refuse it, but the table listed
-   * every change and the count claimed they were all the user's to apply. The
-   * fallback also defeated the reason for narrowing at all.
+   * A discriminated result, so "no plan yet", "nothing reviewed", and "a
+   * reviewed subset" are three answers rather than two.
+   *
+   * The previous shape returned `ChangePlan | null` and the caller resolved the
+   * ambiguity with `reviewedPlan(...) ?? fullPlan` â€” so a user who had reviewed
+   * nothing was handed the entire plan as "pending". Apply's own gate would
+   * refuse it, but the table listed every change and the count claimed they were
+   * all the user's to apply, which is the exact thing the reviewed-only list
+   * exists to prevent. `reviewedPlan` now refuses to be resolved that way.
    */
+  const projection =
+    reviewedOnly === null
+      ? ({
+          kind: "no-plan",
+          plan: null,
+          reason: "No preview has been built for this document yet.",
+        } as const)
+      : reviewedPlan(reviewedOnly.plan, reviewedKeys, previewFindings);
   pendingPlanRef.current =
-    reviewedOnly === null || narrowed === null ? null : { ...reviewedOnly, plan: narrowed };
+    projection.kind === "reviewed" ? { ...reviewedOnly!, plan: projection.plan } : null;
   previewPlanRef.current = reviewedOnly?.plan ?? null;
   previewFindingsRef.current = previewFindings;
   const pendingPlan = pendingPlanRef.current;
+  /** Why the section is empty, in the words the three states each deserve. */
+  const pendingEmptyReason = projection.plan === null ? projection.reason : null;
   /**
    * How many changes exist in total, for the collapsed header.
    *
@@ -973,6 +1056,34 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   const totalPlannedChanges = reviewedOnly?.plan.changes.length ?? 0;
   const reviewedChangeCount = pendingPlan?.plan.changes.length ?? 0;
+  /**
+   * A review that no longer describes anything in this document.
+   *
+   * A review is tied to exact text, so an edit anywhere above a reviewed finding
+   * moves it and the decision expires. The old behaviour was to let the pending
+   * list empty silently, which reads as the tool losing the user's work. Saying
+   * how many expired is the difference between a decision being respected and a
+   * decision being quietly forgotten.
+   */
+  const liveIdentities = new Set(findings.map((finding) => reviewIdentity(finding)));
+  const expiredReviews = (persisted.reviewedFindings ?? []).filter(
+    (entry) => !liveIdentities.has(entry.identity),
+  ).length;
+  /*
+   * Drop the expired ones once the scan has settled.
+   *
+   * Counting them is not enough. A review that no longer describes anything in
+   * the document would sit in the store indefinitely, and a document that later
+   * re-derives the same finding at the same offset would find a stale approval
+   * already waiting for it — which is precisely the thing a review must never be.
+   *
+   * Pruned in an effect rather than during render, so the write stays out of the
+   * render pass, and gated on the count so it runs once per settled set rather
+   * than on every render.
+   */
+  useEffect(() => {
+    if (expiredReviews > 0) pruneStaleReviews(liveIdentities);
+  }, [expiredReviews, liveIdentities]);
   /**
    * One readiness decision, shared by the Apply button and the host banner.
    *
@@ -1006,7 +1117,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         {announcement.message}
       </p>
 
-      {page === "home" && findingsOpen && (
+      {page === "review" && findingsOpen && (
         <section className="tf-collapsible" aria-label="Findings section">
           <button
             type="button"
@@ -1058,15 +1169,34 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                * The gate's verdict, in a live region.
 
                * A review that produced no pending change has to say so. The
-               * alternative is a button that appears to do nothing again — which
+               * alternative is a button that appears to do nothing again â€” which
                * is exactly what the status label-only version of Review did.
                */}
               {reviewNote !== null && <p className="tf-sub">{reviewNote}</p>}
+              {/*
+                Reviews that no longer describe anything in this document.
+
+                A review is tied to exact text, so an edit above a reviewed
+                finding moves it and the decision expires. Letting the pending
+                list empty quietly reads as the tool losing the user's work, so
+                the count is stated. Nothing is applied on the strength of an
+                expired review; the user reviews again, which is the direction
+                that fails safe.
+              */}
+              {expiredReviews > 0 && (
+                <p className="tf-sub">
+                  {expiredReviews} reviewed finding{expiredReviews === 1 ? "" : "s"} no longer match
+                  {expiredReviews === 1 ? "es" : ""} this document, because the text changed after{" "}
+                  {expiredReviews === 1 ? "it was" : "they were"} reviewed. Review{" "}
+                  {expiredReviews === 1 ? "it" : "them"} again to include{" "}
+                  {expiredReviews === 1 ? "it" : "them"} in Pending changes.
+                </p>
+              )}
             </>
           )}
         </section>
       )}
-      {page === "home" && !findingsOpen && (
+      {page === "review" && !findingsOpen && (
         <button
           type="button"
           className="tf-collapsible-header"
@@ -1076,7 +1206,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           Findings <span>{findings.length}</span>
         </button>
       )}
-      {page === "home" && !pendingOpen ? (
+      {page === "review" && !pendingOpen ? (
         <button
           type="button"
           className="tf-collapsible-header"
@@ -1097,7 +1227,9 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           </button>
           <PendingChanges
             plan={pendingPlan?.plan ?? null}
-            unreviewedCount={Math.max(0, totalPlannedChanges - reviewedChangeCount)}
+            emptyReason={pendingEmptyReason}
+            totalCount={totalPlannedChanges}
+            reviewedCount={reviewedChangeCount}
             /*
              * The preview's findings, not the observer's, and deliberately so.
              * Each change carries a `findingId` from the run that planned it, so
@@ -1128,34 +1260,34 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
        * Both are decisions about the whole document rather than about the
        * selected finding, so they sit outside the per-card actions: a user
        * stepping through findings should not be offered a button that rewrites
-       * all of them. Re-scan Now is always available — it is the only way back
+       * all of them. Re-scan Now is always available â€” it is the only way back
        * to a fresh list when auto-scan is off.
        */}
-      {page === "home" && (
+      {page === "review" && (
         <div className="tf-actions">
           {/*
             Only Re-scan now. The row used to carry an "Apply all changes" button
             that applied the whole plan, which is the exact behaviour the
-            reviewed-only list exists to prevent — and it sat beside a Pending
+            reviewed-only list exists to prevent â€” and it sat beside a Pending
             Changes section that Apply already owned, so the two disagreed about
             what "all" meant. One Apply, in the section that lists what it will
             do, is the only version a user can read before pressing it.
           */}
           <button type="button" onClick={rescanNow} disabled={status?.phase === "scanning"}>
-            {status?.phase === "scanning" ? "Re-scanning…" : "Re-scan now"}
+            {status?.phase === "scanning" ? "Re-scanningâ€¦" : "Re-scan now"}
           </button>
         </div>
       )}
       {/*
         Page order follows the work: what was found, how complete the analysis
         was, what the user set aside, and only then the change list. Safe
-        reformat is gone as a section — it duplicated the findings and pending
+        reformat is gone as a section â€” it duplicated the findings and pending
         changes above it, and the preview it produced is now built automatically
         by the scan. The tracked-editing control it also owned is a host
         capability toggle and lives in Settings, so `STAGE_01_PASSED` is not
         stranded with nothing able to set it.
       */}
-      {page === "home" && (
+      {page === "review" && (
         <>
           <StaleBanner
             stale={status?.stale ?? false}
@@ -1198,7 +1330,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             user has to act on, so it stays open; a complete one is a statement
             of fact that has been true since the scan and needs no attention
             until the next scan changes it. The verdict stays readable in the
-            collapsed header, so collapsing never hides *whether* it passed —
+            collapsed header, so collapsing never hides *whether* it passed â€”
             only the detail behind it.
           */}
           <CoverageBanner
@@ -1214,10 +1346,10 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           {previewNote !== null && <p className="tf-sub">{previewNote}</p>}
         </>
       )}
-      {page === "home" && (
+      {page === "review" && (
         <IgnoredFindings
           entries={persisted.ignoredFindings ?? []}
-          onRestore={(fingerprint) => restoreFinding(fingerprint)}
+          onRestore={(occurrence) => restoreFinding(occurrence)}
         />
       )}
     </main>

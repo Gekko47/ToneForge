@@ -70,7 +70,7 @@ describe("FindingsList selection", () => {
 
   it("marks only the reviewed finding, not every finding sharing its rule", () => {
     // Two occurrences of the same rule, at different offsets. The key is the
-    // rule plus its position, so a rule-only key would disable Review on both —
+    // rule plus its position, so a rule-only key would disable Review on both â€”
     // the same collision the ignore path had to be fixed for.
     const first = sampleFinding({
       id: uuidv4(),
@@ -214,16 +214,24 @@ describe("PendingChanges apply readiness", () => {
   it("says changes are waiting to be reviewed, rather than that there are none", () => {
     /*
      * The reviewed-only list starts empty every time, and "No pending changes" in
-     * that state is a flat denial of work that is sitting in Findings — the user
+     * that state is a flat denial of work that is sitting in Findings â€” the user
      * would conclude there was nothing to do.
      */
-    render(<PendingChanges plan={null} findings={[]} unreviewedCount={4} />);
-    expect(screen.getByText(/4 changes ready/i)).toBeInTheDocument();
+    /*
+     * The wording is no longer composed here. It is decided once, in
+     * `reviewedPlan`, and handed in — because three empty states ("no preview",
+     * "nothing reviewed", "reviewed, and the subset is empty") each need
+     * different words, and reconstructing that sentence here is how the section
+     * and the gate start saying different things about the same state.
+     */
+    const reason = "4 changes are ready. Open a finding and choose Review to add it here.";
+    render(<PendingChanges plan={null} findings={[]} emptyReason={reason} totalCount={4} />);
+    expect(screen.getByText(/4 changes are ready/i)).toBeInTheDocument();
     expect(screen.getByText(/choose Review to add it here/i)).toBeInTheDocument();
   });
 
   it("says so plainly when there is genuinely nothing to apply", () => {
-    render(<PendingChanges plan={null} findings={[]} unreviewedCount={0} />);
+    render(<PendingChanges plan={null} findings={[]} emptyReason={null} totalCount={0} />);
     expect(screen.getByText(/no changes are ready to apply/i)).toBeInTheDocument();
   });
 

@@ -14,10 +14,15 @@ import {
   type PublishedVersion,
 } from "../domain/ProfileRecord";
 import { ProviderConnectionSchema, type ProviderConnection } from "../domain/ProviderConnection";
-import { IgnoredFindingSchema, type IgnoredFinding } from "../domain/Finding";
+import {
+  IgnoredFindingSchema,
+  ReviewedFindingSchema,
+  type IgnoredFinding,
+  type ReviewedFinding,
+} from "../domain/Finding";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 11;
+export const CURRENT_STATE_VERSION = 12;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
@@ -84,6 +89,8 @@ export function migrate(raw: unknown): PersistedState {
       return migrateV9ToV10(obj);
     case 10:
       return migrateV10ToV11(obj);
+    case 11:
+      return migrateV11ToV12(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -99,12 +106,75 @@ function defaultState(): PersistedState {
     semanticProfileRecords: {},
     activeSemanticProfileId: null,
     ignoredFindings: [],
+    reviewedFindings: [],
     governanceProfiles: DEFAULT_GOVERNANCE_PROFILES,
     governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
     settings: { ...DEFAULT_SETTINGS },
     providerConnections: {},
   };
+}
+
+/**
+ * v11 -> v12: give reviewed findings a real home in the store.
+ *
+ * Reviewed decisions used to live in
+ * `localStorage["ToneForge.ReviewedFindingFingerprints.v1"]` as a bare set of
+ * review keys, outside this schema entirely. That has two consequences this
+ * migration fixes:
+ *
+ * 1. The write never went through `saveState`, so it never notified subscribers.
+ *    The pane re-rendered because unrelated state happened to change, which is
+ *    why reviewed items reached Pending Changes only sometimes and why the only
+ *    reliable recovery was pressing Re-scan.
+ * 2. The set had no room to record *what* was decided. A review made before any
+ *    plan existed was indistinguishable from no review at all.
+ *
+ * **The old keys are deliberately not carried across.** They are
+ * fingerprint-plus-offset strings with no document identity, so there is no way
+ * to prove one belongs to the document now open — and ToneForge has no users, so
+ * there is nothing to preserve. Carrying them onto an arbitrary document would
+ * be a fabricated consent, which is the one failure mode worse than losing a
+ * convenience.
+ *
+ * Ignored findings keep their rows, but each is re-keyed onto the occurrence
+ * identity the pane now matches on, so two hits of the same rule stop collapsing
+ * into one row.
+ */
+function migrateV11ToV12(obj: Record<string, unknown>): PersistedState {
+  const current = readCurrentState(obj);
+  return {
+    ...current,
+    version: CURRENT_STATE_VERSION,
+    ignoredFindings: rekeyIgnoredFindings(current.ignoredFindings),
+    reviewedFindings: [],
+  };
+}
+
+/**
+ * Give every stored ignore its occurrence key.
+ *
+ * A row written before v12 has an empty key, so the key is derived from the
+ * fingerprint, node set, and range the row already carries. Two rows that derive
+ * the same key are genuinely the same occurrence — a re-detected finding the user
+ * had already dismissed — so the newest wins rather than both surviving as
+ * duplicates.
+ */
+function rekeyIgnoredFindings(entries: readonly IgnoredFinding[]): IgnoredFinding[] {
+  const byOccurrence = new Map<string, IgnoredFinding>();
+  entries.forEach((entry) => {
+    const key =
+      entry.occurrenceKey.length > 0
+        ? entry.occurrenceKey
+        : [
+            entry.fingerprint,
+            [...entry.nodeIds].sort().join(","),
+            entry.range.start,
+            entry.range.end,
+          ].join("@");
+    byOccurrence.set(key, { ...entry, occurrenceKey: key });
+  });
+  return Array.from(byOccurrence.values());
 }
 
 /**
@@ -264,6 +334,7 @@ function readCurrentState(obj: Record<string, unknown>): PersistedState {
     semanticProfileRecords: {},
     activeSemanticProfileId: null,
     ignoredFindings: normalizeIgnoredFindings(obj.ignoredFindings),
+    reviewedFindings: normalizeReviewedFindings(obj.reviewedFindings),
     governanceProfiles: normalizeGovernanceProfiles(obj.governanceProfiles),
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, obj.governanceProfiles),
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
@@ -285,6 +356,7 @@ function readLegacyState(obj: Record<string, unknown>): PersistedState {
     semanticProfileRecords: {},
     activeSemanticProfileId: null,
     ignoredFindings: [],
+    reviewedFindings: [],
     activeProfileId,
     governanceProfiles,
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, governanceProfiles),
@@ -461,19 +533,51 @@ function normalizeGovernanceHistory(
  * total loss of a user decision on every single reload.
  *
  * Entries are validated individually rather than as a set, so one malformed
- * row cannot cost the user the rest of their ignores. Duplicate fingerprints
- * are collapsed, keeping the most recent, because a fingerprint identifies a
- * rule and re-ignoring the same rule should move the existing row rather than
- * accumulate.
+ * row cannot cost the user the rest of their ignores.
+ *
+ * **Collapsed on the occurrence key, not the fingerprint.** Collapsing on the
+ * fingerprint was the defect: a fingerprint identifies a *rule*, so a store
+ * holding two ignored em dashes could only keep one, and the load silently
+ * un-ignored the other. Two hits of one rule are two rows.
  */
 function normalizeIgnoredFindings(raw: unknown): IgnoredFinding[] {
   if (!Array.isArray(raw)) return [];
-  const byFingerprint = new Map<string, IgnoredFinding>();
+  const byOccurrence = new Map<string, IgnoredFinding>();
   raw.forEach((entry) => {
     const parsed = IgnoredFindingSchema.safeParse(entry);
-    if (parsed.success) byFingerprint.set(parsed.data.fingerprint, parsed.data);
+    if (!parsed.success) return;
+    const data = parsed.data;
+    const key = data.occurrenceKey.length > 0 ? data.occurrenceKey : occurrenceKeyOf(data);
+    byOccurrence.set(key, { ...data, occurrenceKey: key });
   });
-  return Array.from(byFingerprint.values()).sort((a, b) => a.ignoredAt.localeCompare(b.ignoredAt));
+  return Array.from(byOccurrence.values()).sort((a, b) => a.ignoredAt.localeCompare(b.ignoredAt));
+}
+
+function occurrenceKeyOf(entry: IgnoredFinding): string {
+  return [
+    entry.fingerprint,
+    [...entry.nodeIds].sort().join(","),
+    entry.range.start,
+    entry.range.end,
+  ].join("@");
+}
+
+/**
+ * Recover reviewed decisions from a current-version store.
+ *
+ * Validated per row so one malformed decision cannot cost the rest, and
+ * collapsed on identity so re-reviewing the same occurrence leaves one decision
+ * rather than a growing list of near-duplicates. The newest wins, because the
+ * latest decision is the one the user actually made.
+ */
+function normalizeReviewedFindings(raw: unknown): ReviewedFinding[] {
+  if (!Array.isArray(raw)) return [];
+  const byIdentity = new Map<string, ReviewedFinding>();
+  raw.forEach((entry) => {
+    const parsed = ReviewedFindingSchema.safeParse(entry);
+    if (parsed.success) byIdentity.set(parsed.data.identity, parsed.data);
+  });
+  return Array.from(byIdentity.values()).sort((a, b) => a.reviewedAt.localeCompare(b.reviewedAt));
 }
 
 function normalizeGovernanceProfiles(raw: unknown): Record<string, GovernanceProfile> {
