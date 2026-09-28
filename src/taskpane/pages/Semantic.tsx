@@ -1,5 +1,6 @@
 import React from "react";
 import SemanticProfileEditor from "../components/SemanticProfileEditor";
+import SemanticProfilePicker from "../components/SemanticProfilePicker";
 import FindingDetail from "../components/FindingDetail";
 import {
   getDocumentSnapshot,
@@ -10,8 +11,11 @@ import {
   createSemanticProfileRecord,
   loadSemanticProfileRecord,
   loadState,
+  removeSemanticProfile,
   saveSemanticProfileRecord,
+  setActiveSemanticProfile,
 } from "../../core/state/persistence";
+import { selectKindRecordList } from "../../core/state/profileSelectors";
 import {
   createRegistryFromSettings,
   isRemoteProviderConfigured,
@@ -20,7 +24,7 @@ import { captureSample } from "../../style/sampleCapture";
 import { learnStyleDraft } from "../../style/learnStyle";
 import { updateDraft, effectiveProfile, type ProfileRecord } from "../../core/domain/ProfileRecord";
 import { proposeSemanticRewrite } from "../../analysis/rewriteEngine";
-import { type StyleProfile } from "../../core/domain/StyleProfile";
+import { createEmptyProfile, type StyleProfile } from "../../core/domain/StyleProfile";
 import { type Finding } from "../../core/domain/Finding";
 import { type TaskpaneNavigation } from "../../shared/office/taskpaneNavigation";
 import { syncSemanticRibbon } from "../../commands/ribbonState";
@@ -123,10 +127,28 @@ export default function Semantic({
     return {
       state,
       record: active === null ? null : loadSemanticProfileRecord(active),
+      records: selectKindRecordList(state, "semantic"),
     };
   });
 
   const [record, setRecord] = React.useState<ProfileRecord | null>(initial.record);
+  /**
+   * The picker list, held rather than derived from `initial.state`.
+   *
+   * `initial.state` is a snapshot taken once, so deriving from it would leave the
+   * list showing a profile the user had just deleted and refusing to show one they
+   * had just created. Every mutation below re-reads instead.
+   */
+  const [records, setRecords] = React.useState(initial.records);
+  /**
+   * The active profile's id, held for the same reason.
+   *
+   * `initial.state` is read once, so reading the active id from it would leave
+   * the picker marking the *previous* profile active after a create or a delete —
+   * telling the user their rewrite is matching a voice they just switched away
+   * from.
+   */
+  const [activeId, setActiveId] = React.useState(initial.state.activeSemanticProfileId);
   const [learnStatus, setLearnStatus] = React.useState<string | null>(null);
   const [learnError, setLearnError] = React.useState<string | null>(null);
   const [learning, setLearning] = React.useState(false);
@@ -166,6 +188,60 @@ export default function Semantic({
   React.useEffect(() => {
     void syncSemanticRibbon(profile !== null);
   }, [profile]);
+
+  /**
+   * Re-read the picker list after a write.
+   *
+   * Every mutation goes through here rather than patching the held list, so the
+   * list cannot disagree with what is actually stored — the same rule the ignore
+   * path settled on, and for the same reason.
+   */
+  function refreshRecords(): void {
+    setRecords(selectKindRecordList(loadState(), "semantic"));
+  }
+
+  function selectProfile(id: string): void {
+    setActiveSemanticProfile(id);
+    setActiveId(id);
+    setRecord(loadSemanticProfileRecord(id));
+    refreshRecords();
+    // The pending proposal was made against the previous profile, so carrying it
+    // across would offer a rewrite that matches a voice the user just switched
+    // away from.
+    setProposal(null);
+    setStage("idle");
+  }
+
+  /**
+   * A blank semantic profile, with no sample behind it.
+   *
+   * Learn Style needs a sample that passes the quality gate, so without this the
+   * tab is unreachable for anyone whose document is too short — and the only
+   * route in runs a model over their prose. The `kind` is passed explicitly
+   * because the record rewrites it on save anyway, and a default of
+   * "deterministic" would be a typo waiting to happen.
+   */
+  function createBlankProfile(): void {
+    const created = createSemanticProfileRecord(
+      "New semantic style",
+      new Date().toISOString(),
+      createEmptyProfile("New semantic style", 1, "semantic"),
+    );
+    setRecord(created);
+    setActiveId(created.id);
+    refreshRecords();
+    setLearnStatus("Created an empty semantic profile. Set its voice below, or delete it here.");
+  }
+
+  function deleteProfile(id: string): void {
+    removeSemanticProfile(id);
+    const active = loadState().activeSemanticProfileId;
+    setActiveId(active);
+    setRecord(active === null ? null : loadSemanticProfileRecord(active));
+    refreshRecords();
+    setProposal(null);
+    setStage("idle");
+  }
 
   function persistSemantic(semantic: StyleProfile["semantic"]): void {
     if (record === null || record.draft === null) return;
@@ -278,18 +354,31 @@ export default function Semantic({
           {learning ? "Learning style…" : "Learn from current document"}
         </button>
       </section>
-
       {/*
-        The tab's one live region. Rendered near the top so it precedes the
-        sections it reports on, and given a stable node identity so a changed
-        sentence is re-announced rather than the region appearing from nothing.
-      */}
+  The tab's one live region. Rendered near the top so it precedes the
+  sections it reports on, and given a stable node identity so a changed
+  sentence is re-announced rather than the region appearing from nothing.
+*/}
       <p
         role={announcement?.assertive === true ? "alert" : "status"}
         className={announcement?.assertive === true ? "tf-error" : "tf-sub"}
       >
         {announcement?.text ?? ""}
       </p>
+
+      {/*
+  Above everything that depends on a profile existing, because it is also
+  how one comes into existence. The "no profile" state below is otherwise a
+  dead end with a single exit through Learn Style.
+*/}
+      <SemanticProfilePicker
+        records={records}
+        activeId={activeId}
+        activeRecord={record}
+        onSelect={selectProfile}
+        onCreateEmpty={createBlankProfile}
+        onDelete={deleteProfile}
+      />
 
       {/*
         Measured style, read-only and labelled as derived. It sits here so the

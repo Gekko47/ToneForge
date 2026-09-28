@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Semantic, { deriveSemanticAnnouncement } from "../../../../src/taskpane/pages/Semantic";
 import { createRecord } from "../../../../src/core/domain/ProfileRecord";
@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   loadSemanticProfileRecord: vi.fn(),
   createSemanticProfileRecord: vi.fn(),
   saveSemanticProfileRecord: vi.fn(),
+  setActiveSemanticProfile: vi.fn(),
+  removeSemanticProfile: vi.fn(),
   learnStyleDraft: vi.fn(),
   proposeSemanticRewrite: vi.fn(),
 }));
@@ -30,6 +32,8 @@ vi.mock("../../../../src/core/state/persistence", () => ({
   loadSemanticProfileRecord: mocks.loadSemanticProfileRecord,
   createSemanticProfileRecord: mocks.createSemanticProfileRecord,
   saveSemanticProfileRecord: mocks.saveSemanticProfileRecord,
+  setActiveSemanticProfile: mocks.setActiveSemanticProfile,
+  removeSemanticProfile: mocks.removeSemanticProfile,
 }));
 
 vi.mock("../../../../src/style/learnStyle", () => ({
@@ -47,9 +51,18 @@ vi.mock("../../../../src/commands/ribbonState", () => ({
 /** Local alias, so the assertions read as the call they are checking. */
 const syncRibbon = mocks.syncRibbon;
 
+/** The ids the real records carry, so state keys and record ids cannot diverge. */
+const FIRST_ID = "3f1b0c6e-6a54-4b1e-9c2a-0d1e2f3a4b5c";
+const SECOND_ID = "9a2c7d11-3f0b-4c8e-9a44-5b6c7d8e9f01";
+
 function semanticState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    activeSemanticProfileId: "rec-1",
+    activeSemanticProfileId: FIRST_ID,
+    /*
+     * The picker reads the real `selectKindRecordList`, so the fixture has to
+     * hold actual records rather than just an active id.
+     */
+    semanticProfileRecords: { [FIRST_ID]: record() },
     providerConnections: {},
     settings: {
       semanticOptIn: true,
@@ -71,6 +84,25 @@ function record(): ReturnType<typeof createRecord> {
   );
 }
 
+/** A second profile, so switching is not a switch to the only one there is. */
+function secondRecord(): ReturnType<typeof createRecord> {
+  return createRecord(
+    SECOND_ID,
+    "Second voice",
+    "2026-01-02T00:00:00.000Z",
+    createEmptyProfile("Second voice"),
+    "semantic",
+  );
+}
+
+/** State holding both profiles, with the first one active. */
+function twoProfileState(): Record<string, unknown> {
+  return {
+    ...semanticState(),
+    semanticProfileRecords: { [FIRST_ID]: record(), [SECOND_ID]: secondRecord() },
+  };
+}
+
 beforeEach(() => {
   mocks.getDocumentSnapshot.mockResolvedValue({
     id: "doc-1",
@@ -82,9 +114,18 @@ beforeEach(() => {
   mocks.getSelectionText.mockResolvedValue("");
   mocks.getStructuredSnapshot.mockResolvedValue({ nodes: [] });
   mocks.loadState.mockReturnValue(semanticState());
-  mocks.loadSemanticProfileRecord.mockReturnValue(record());
-  mocks.createSemanticProfileRecord.mockReturnValue(record());
+  /*
+   * Id-aware, so switching profiles actually loads the other one. A mock that
+   * returned the same record for every id would let the page pass while holding
+   * the previous voice — the exact bug the `activeId` state exists to prevent.
+   */
+  mocks.loadSemanticProfileRecord.mockImplementation((id: string) =>
+    id === SECOND_ID ? secondRecord() : record(),
+  );
+  mocks.createSemanticProfileRecord.mockReturnValue(secondRecord());
   mocks.saveSemanticProfileRecord.mockImplementation(() => undefined);
+  mocks.setActiveSemanticProfile.mockImplementation(() => undefined);
+  mocks.removeSemanticProfile.mockImplementation(() => undefined);
   mocks.proposeSemanticRewrite.mockResolvedValue(sampleFinding({ actionable: true }));
   mocks.learnStyleDraft.mockResolvedValue({
     draft: { name: "Learned semantic style" },
@@ -326,5 +367,140 @@ describe("the Semantic tab", () => {
     mocks.loadSemanticProfileRecord.mockReturnValue(null);
     renderPage();
     await waitFor(() => expect(syncRibbon).toHaveBeenCalledWith(false));
+  });
+});
+
+describe("managing semantic profiles from the Semantic tab", () => {
+  /*
+   * F5. Every writer this needs — `selectKindRecordList`,
+   * `setActiveSemanticProfile`, `createSemanticProfileRecord`, `removeSemanticProfile`
+   * — already existed in the persistence layer and had no caller. The tab could
+   * only ever show the one profile Learn Style had just made.
+   */
+
+  it("lists the profiles and marks the active one", () => {
+    mocks.loadState.mockReturnValue(twoProfileState());
+    renderPage();
+
+    const list = screen.getByRole("list", { name: "Semantic profiles" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    // The one the rewrite is currently matching, named rather than a bare
+    // "Active" that would be ambiguous the moment a second profile exists.
+    expect(within(list).getByText(/^Active/)).toHaveTextContent("Active — Learned semantic style");
+  });
+
+  it("gives every row a button that says which profile it acts on", () => {
+    /*
+     * Three buttons all reading "Use this one" is not a list a screen reader user
+     * can navigate: nothing distinguishes them but position.
+     */
+    mocks.loadState.mockReturnValue(twoProfileState());
+    renderPage();
+
+    expect(screen.getByRole("button", { name: "Use this one — Second voice" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete Learned semantic style" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers a route in when there is no profile at all", () => {
+    /*
+     * Learn Style needs a sample that passes the quality gate, so for a document
+     * too short to sample, the create-empty path is the only way onto this tab.
+     */
+    mocks.loadState.mockReturnValue({
+      ...semanticState(),
+      activeSemanticProfileId: null,
+      semanticProfileRecords: {},
+    });
+    mocks.loadSemanticProfileRecord.mockReturnValue(null);
+    renderPage();
+
+    expect(screen.getByRole("button", { name: /create empty profile/i })).toBeInTheDocument();
+  });
+
+  it("creates a profile without a model and without a sample", async () => {
+    /*
+     * A blank profile is the whole point: it must not require a provider, because
+     * a user with no LLM configured is exactly who cannot learn from a sample.
+     */
+    mocks.loadState.mockReturnValue({
+      ...semanticState(),
+      activeSemanticProfileId: null,
+      semanticProfileRecords: {},
+    });
+    mocks.createSemanticProfileRecord.mockReturnValue(secondRecord());
+    renderPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /create empty profile/i }));
+
+    expect(mocks.createSemanticProfileRecord).toHaveBeenCalledTimes(1);
+    // The kind is passed explicitly, or the record would land in the
+    // deterministic namespace and diverge from what the tab edits.
+    expect(mocks.learnStyleDraft).not.toHaveBeenCalled();
+    expect(mocks.proposeSemanticRewrite).not.toHaveBeenCalled();
+  });
+
+  it("switches to another profile and drops the proposal made against the old one", async () => {
+    mocks.loadState.mockReturnValue(twoProfileState());
+    mocks.getSelectionText.mockResolvedValue("A sentence worth rewriting.");
+    mocks.proposeSemanticRewrite.mockResolvedValue(sampleFinding({ actionable: true }));
+    renderPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /read current selection/i }));
+    await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /review in document governance/i })).toBeEnabled(),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /use this one — second voice/i }));
+
+    expect(mocks.setActiveSemanticProfile).toHaveBeenCalledWith(SECOND_ID);
+    expect(mocks.loadSemanticProfileRecord).toHaveBeenLastCalledWith(SECOND_ID);
+    // A rewrite matching the previous voice must not survive the switch.
+    expect(screen.queryByRole("button", { name: /review in document governance/i })).toBeNull();
+  });
+
+  it("marks the switched-to profile active rather than the one it came from", async () => {
+    /*
+     * `initial.state` is a snapshot read once. Deriving the active id from it
+     * would leave the list still claiming the previous profile is in effect —
+     * so the user would believe the rewrite is matching a voice they just left.
+     */
+    mocks.loadState.mockReturnValue(twoProfileState());
+    renderPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /use this one — second voice/i }));
+
+    expect(screen.getByText(/^Active: Second voice,/)).toBeInTheDocument();
+  });
+
+  it("returns to no profile when the only profile is deleted", async () => {
+    /*
+     * A store that actually changes, so the page's post-delete re-read sees an
+     * empty list. Returning a fixed state would have left the profile on screen
+     * and the test would have passed while proving nothing.
+     */
+    let stored = semanticState() as {
+      activeSemanticProfileId: string | null;
+      semanticProfileRecords: Record<string, unknown>;
+    };
+    stored = { ...stored, semanticProfileRecords: { [FIRST_ID]: record() } };
+    mocks.loadState.mockImplementation(() => stored);
+    mocks.removeSemanticProfile.mockImplementation(() => {
+      stored = { activeSemanticProfileId: null, semanticProfileRecords: {} };
+    });
+    mocks.loadSemanticProfileRecord.mockReturnValue(null);
+    renderPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /delete learned semantic style/i }));
+
+    expect(mocks.removeSemanticProfile).toHaveBeenCalledWith(FIRST_ID);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /no semantic profile is active/i })).toBeVisible(),
+    );
+    expect(screen.getByText(/no semantic profiles yet/i)).toBeInTheDocument();
+    // Nothing is in effect, so the ribbon control must go back off.
+    await waitFor(() => expect(syncRibbon).toHaveBeenLastCalledWith(false));
   });
 });
