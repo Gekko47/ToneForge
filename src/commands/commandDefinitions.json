@@ -54,5 +54,13 @@
     "xmlAction": "ShowTaskpane",
     "navigationTarget": "debugging",
     "xmlNavigationTarget": "default"
+  },
+  {
+    "id": "ToneForgeSemantic",
+    "label": "Check Semantic Style",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "semantic",
+    "xmlNavigationTarget": "default"
   }
 ]

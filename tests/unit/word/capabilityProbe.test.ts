@@ -241,4 +241,31 @@ describe("probeWordCapabilities", () => {
     // method with "Replace" mode, so both flags must agree.
     expect(caps.supportsInsertText).toBe(caps.supportsReplaceText);
   });
+
+  /**
+   * The namespace is `Office.contextMenu`, singular. The probe used to check
+   * `Office.contextMenus` and `Office.ui.contextMenus`, neither of which exists
+   * in the Office.js surface, so it answered `false` on every host — including
+   * fully capable ones. A probe that always says no is worse than none, because
+   * callers read it as evidence rather than as an absence of testing.
+   */
+  it("detects the context menu API on the namespace that actually exists", async () => {
+    setOffice({ ...fullOffice(), contextMenu: { requestUpdate: vi.fn() } });
+    expect((await probeWordCapabilities()).supportsContextMenu).toBe(true);
+  });
+
+  it("reports no context menu API on a host that lacks it", async () => {
+    setOffice(fullOffice());
+    expect((await probeWordCapabilities()).supportsContextMenu).toBe(false);
+  });
+
+  it("detects the ribbon update API, which enabling a control depends on", async () => {
+    setOffice({ ...fullOffice(), ribbon: { requestUpdate: vi.fn() } });
+    expect((await probeWordCapabilities()).supportsRibbonUpdate).toBe(true);
+  });
+
+  it("reports no ribbon update API on a host that lacks it", async () => {
+    setOffice(fullOffice());
+    expect((await probeWordCapabilities()).supportsRibbonUpdate).toBe(false);
+  });
 });

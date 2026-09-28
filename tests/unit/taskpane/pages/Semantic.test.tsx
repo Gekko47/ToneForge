@@ -7,6 +7,7 @@ import { createEmptyProfile } from "../../../../src/core/domain/StyleProfile";
 import { sampleFinding } from "../../../fixtures/sampleDocs";
 
 const mocks = vi.hoisted(() => ({
+  syncRibbon: vi.fn(),
   getDocumentSnapshot: vi.fn(),
   getSelectionText: vi.fn(),
   getStructuredSnapshot: vi.fn(),
@@ -38,6 +39,13 @@ vi.mock("../../../../src/style/learnStyle", () => ({
 vi.mock("../../../../src/analysis/rewriteEngine", () => ({
   proposeSemanticRewrite: mocks.proposeSemanticRewrite,
 }));
+
+vi.mock("../../../../src/commands/ribbonState", () => ({
+  syncSemanticRibbon: mocks.syncRibbon,
+}));
+
+/** Local alias, so the assertions read as the call they are checking. */
+const syncRibbon = mocks.syncRibbon;
 
 function semanticState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -270,5 +278,53 @@ describe("the Semantic tab", () => {
     expect(screen.getByText(/no ai provider is configured/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /open settings/i }));
     expect(props.onOpenSettings).toHaveBeenCalled();
+  });
+
+  it("reads the selection it was sent for, without asking for it again", async () => {
+    /*
+     * Arriving from the context menu. The user right-clicked a specific piece of
+     * text, so making them select it a second time would be asking them to
+     * repeat the gesture that brought them here.
+     */
+    mocks.getSelectionText.mockResolvedValue("  A sentence worth rewriting.  ");
+    renderPage({ navigation: { target: "semantic", action: "read-selection" } });
+
+    await waitFor(() =>
+      expect(screen.getByText("A sentence worth rewriting.")).toBeInTheDocument(),
+    );
+    // Reading a selection must not start a request on its own.
+    expect(mocks.proposeSemanticRewrite).not.toHaveBeenCalled();
+  });
+
+  it("does not read a selection when it was not sent for one", async () => {
+    mocks.getSelectionText.mockResolvedValue("Some text.");
+    renderPage({ navigation: { target: "semantic" } });
+
+    await waitFor(() => expect(mocks.getSelectionText).not.toHaveBeenCalled());
+  });
+
+  it("says plainly that nothing can be checked without a profile", () => {
+    // The context-menu path lands here with no profile more often than the
+    // navigation path does, and "no measured style to show" did not tell the
+    // user why the rewrite they came for is unavailable.
+    mocks.loadSemanticProfileRecord.mockReturnValue(null);
+    renderPage();
+
+    expect(screen.getByRole("heading", { name: /no semantic profile is active/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /propose rewrite/i })).toBeDisabled();
+  });
+
+  it("enables the ribbon control once a profile exists", async () => {
+    // The button ships disabled in the manifest; learning a profile here is
+    // what turns it on. Without this the user would have a button that never
+    // becomes clickable no matter what they do on this page.
+    renderPage();
+    await waitFor(() => expect(syncRibbon).toHaveBeenCalledWith(true));
+  });
+
+  it("keeps the ribbon control disabled with no profile", async () => {
+    mocks.loadSemanticProfileRecord.mockReturnValue(null);
+    renderPage();
+    await waitFor(() => expect(syncRibbon).toHaveBeenCalledWith(false));
   });
 });

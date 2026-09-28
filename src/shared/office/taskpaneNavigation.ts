@@ -23,18 +23,27 @@ export type TaskpaneTarget =
   | "ai-review"
   | "profile"
   | "governance-policy"
-  | "pending-changes";
+  | "pending-changes"
+  | "semantic";
+
+/**
+ * What the pane should do on arrival, beyond opening the destination.
+ *
+ * `scan` re-scans. `read-selection` reads the live Word selection into the
+ * semantic page, which is the point of arriving there from the context menu: the
+ * user right-clicked *this text* and would otherwise have to select it again.
+ * Both are local Word reads — neither sends anything anywhere — so both are
+ * safe to run on arrival. Absent for every other target, which is why an
+ * ordinary "open this page" command cannot accidentally start work.
+ */
+export type TaskpaneAction = "scan" | "read-selection";
 
 export interface TaskpaneNavigation {
   target: TaskpaneTarget;
-  /**
-   * What the pane should do on arrival, beyond opening the destination.
-   *
-   * `scan` triggers a re-scan. Absent for every other target, which is why an
-   * ordinary "open this page" command cannot accidentally start work.
-   */
-  action?: "scan";
+  action?: TaskpaneAction;
 }
+
+const ACTIONS: readonly TaskpaneAction[] = ["scan", "read-selection"];
 
 const TARGETS: readonly TaskpaneTarget[] = [
   "governance",
@@ -44,6 +53,7 @@ const TARGETS: readonly TaskpaneTarget[] = [
   "profile",
   "governance-policy",
   "pending-changes",
+  "semantic",
 ];
 
 function getStorage(): Storage | null {
@@ -54,7 +64,7 @@ function getStorage(): Storage | null {
   }
 }
 
-export function setTaskpaneTarget(target: TaskpaneTarget, action?: "scan"): void {
+export function setTaskpaneTarget(target: TaskpaneTarget, action?: TaskpaneAction): void {
   getStorage()?.setItem(
     TASKPANE_NAVIGATION_KEY,
     JSON.stringify(action === undefined ? { target } : { target, action }),
@@ -79,6 +89,10 @@ function isTarget(value: unknown): value is TaskpaneTarget {
   return typeof value === "string" && (TARGETS as readonly string[]).includes(value);
 }
 
+function isAction(value: unknown): value is TaskpaneAction {
+  return typeof value === "string" && (ACTIONS as readonly string[]).includes(value);
+}
+
 /**
  * Parse a stored instruction, tolerating the pre-object string form.
  *
@@ -93,8 +107,8 @@ function parseNavigation(raw: string | null): TaskpaneNavigation | null {
     if (typeof parsed !== "object" || parsed === null) return null;
     const record = parsed as { target?: unknown; action?: unknown };
     if (!isTarget(record.target)) return null;
-    return record.action === "scan"
-      ? { target: record.target, action: "scan" }
+    return isAction(record.action)
+      ? { target: record.target, action: record.action }
       : { target: record.target };
   } catch {
     return null;

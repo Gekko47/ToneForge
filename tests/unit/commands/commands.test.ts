@@ -6,9 +6,11 @@ import {
   openFindings,
   openPendingChanges,
   openProfile,
+  openSemanticStyle,
   openTroubleshooting,
   reviewForConsistency,
   scanNow,
+  ToneForgeSemantic,
 } from "../../../src/commands/commands";
 import { consumeTaskpaneTarget } from "../../../src/shared/office/taskpaneNavigation";
 
@@ -99,6 +101,13 @@ describe("command entry points", () => {
         xmlAction: "ShowTaskpane",
         navigationTarget: "debugging",
       },
+      {
+        id: "ToneForgeSemantic",
+        label: "Check Semantic Style",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "semantic",
+      },
     ]);
   });
 
@@ -126,6 +135,30 @@ describe("command entry points", () => {
     await openTroubleshooting();
     expect(consumeTaskpaneTarget()).toEqual({ target: "debugging" });
     expect(showAsTaskpane).toHaveBeenCalledTimes(5);
+  });
+
+  /**
+   * The context-menu entry point. The user right-clicked one specific piece of
+   * text, so the instruction carries that read with it — otherwise the gesture
+   * that brought them to the pane has to be repeated by hand.
+   */
+  it("asks the pane to read the selection for the semantic command", async () => {
+    setOffice({ addin: { showAsTaskpane: vi.fn().mockResolvedValue(undefined) } });
+    await openSemanticStyle();
+    expect(consumeTaskpaneTarget()).toEqual({
+      target: "semantic",
+      action: "read-selection",
+    });
+  });
+
+  it("resolves the XML manifest's onAction name to the same destination", async () => {
+    // The XML manifest resolves `onAction` against a global, not against the
+    // JSON action registry, so this alias has to reach the same place. If the
+    // two manifests could open different pages, sideloading one of them would
+    // silently ship a different product.
+    setOffice({ addin: { showAsTaskpane: vi.fn().mockResolvedValue(undefined) } });
+    await ToneForgeSemantic();
+    expect(consumeTaskpaneTarget()).toEqual({ target: "semantic", action: "read-selection" });
   });
 
   /**

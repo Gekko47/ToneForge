@@ -24,6 +24,7 @@ function capabilities(overrides: Partial<WordCapabilities> = {}): WordCapabiliti
     supportsParagraphResolution: true,
     supportsHighlight: true,
     supportsContextMenu: true,
+    supportsRibbonUpdate: true,
     hostName: "Word",
     hostVersion: "16.0",
     ...overrides,

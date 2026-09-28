@@ -1,6 +1,10 @@
-import { setTaskpaneTarget, type TaskpaneTarget } from "../shared/office/taskpaneNavigation";
+import {
+  setTaskpaneTarget,
+  type TaskpaneAction,
+  type TaskpaneTarget,
+} from "../shared/office/taskpaneNavigation";
 
-async function showTaskpane(target: TaskpaneTarget, action?: "scan"): Promise<void> {
+async function showTaskpane(target: TaskpaneTarget, action?: TaskpaneAction): Promise<void> {
   setTaskpaneTarget(target, action);
   const office = (
     globalThis as {
@@ -69,4 +73,29 @@ export async function scanNow(): Promise<void> {
 
 export async function openTroubleshooting(): Promise<void> {
   await showTaskpane("debugging");
+}
+
+/**
+ * Open the Semantic tab and read the live selection into it.
+ *
+ * This is the context-menu entry point. The user right-clicked *this text*, so
+ * making them select it again would be asking them to repeat the gesture that
+ * brought them here. Reading a selection is a local Word call — nothing is sent
+ * anywhere — and the rewrite still needs its own explicit click, so arriving
+ * here has not started a request.
+ */
+export async function openSemanticStyle(): Promise<void> {
+  await showTaskpane("semantic", "read-selection");
+}
+
+/**
+ * The name the XML manifest's `onAction` attribute calls.
+ *
+ * The XML manifest resolves `onAction` against a global on the function file's
+ * window, not against the JSON action registry, so this alias has to exist under
+ * exactly this name. It delegates rather than duplicating the logic, so the two
+ * manifests cannot reach the pane by different routes.
+ */
+export async function ToneForgeSemantic(): Promise<void> {
+  await openSemanticStyle();
 }

@@ -22,12 +22,23 @@ import { updateDraft, effectiveProfile, type ProfileRecord } from "../../core/do
 import { proposeSemanticRewrite } from "../../analysis/rewriteEngine";
 import { type StyleProfile } from "../../core/domain/StyleProfile";
 import { type Finding } from "../../core/domain/Finding";
+import { type TaskpaneNavigation } from "../../shared/office/taskpaneNavigation";
+import { syncSemanticRibbon } from "../../commands/ribbonState";
 
 export interface SemanticProps {
   onBack: () => void;
   onOpenSettings: () => void;
   /** Hands a reviewed finding to the pending-changes flow on Document Governance. */
   onSendToPendingChanges: (finding: Finding) => void;
+  /**
+   * The instruction that brought the pane here, already consumed.
+   *
+   * `read-selection` arrives from the context menu, where the user right-clicked
+   * one specific piece of text. Reading a selection is a local Word call and
+   * sends nothing anywhere; the rewrite still needs its own click, so arriving
+   * here has not started a request.
+   */
+  navigation?: TaskpaneNavigation | null;
 }
 
 type RewriteStage = "idle" | "proposing" | "proposed" | "failed";
@@ -98,6 +109,7 @@ export default function Semantic({
   onBack,
   onOpenSettings,
   onSendToPendingChanges,
+  navigation,
 }: SemanticProps): React.ReactNode {
   /*
    * One read of the store, in a lazy initialiser. Reading it again in an effect
@@ -128,6 +140,32 @@ export default function Semantic({
   const settings = state.settings;
 
   const profile: StyleProfile | null = record === null ? null : effectiveProfile(record);
+
+  /*
+   * Arriving from the context menu. The user right-clicked a specific piece of
+   * text, so reading that text is completing the gesture they started rather
+   * than starting new work — and it is a local Word call, so nothing is sent.
+   * The rewrite itself still waits for a click.
+   */
+  React.useEffect(() => {
+    if (navigation?.action !== "read-selection") return;
+    void (async () => {
+      try {
+        const text = (await getSelectionText()).trim();
+        setSelection(text.length === 0 ? null : text);
+      } catch (error: unknown) {
+        setRewriteError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+  }, [navigation]);
+
+  /*
+   * Keep the ribbon button honest. It is declared disabled in the manifest and
+   * enabled only here, so learning a profile on this tab is what turns it on.
+   */
+  React.useEffect(() => {
+    void syncSemanticRibbon(profile !== null);
+  }, [profile]);
 
   function persistSemantic(semantic: StyleProfile["semantic"]): void {
     if (record === null || record.draft === null) return;
@@ -259,10 +297,15 @@ export default function Semantic({
         editable because the next scan overwrites anything typed into it.
       */}
       {profile === null ? (
-        <p className="tf-sub">
-          No semantic profile yet, so there is no measured style to show. Use Learn Style above to
-          create one.
-        </p>
+        <section aria-labelledby="no-profile-heading" className="tf-card">
+          <h2 id="no-profile-heading">No semantic profile is active</h2>
+          <p className="tf-sub">
+            There is nothing to match a rewrite against yet. A semantic profile says how the writing
+            should sound, so without one there is no measured style to show, no values to edit, and
+            nothing for the rewrite button on the ribbon to ask for. Use Learn Style above to create
+            one.
+          </p>
+        </section>
       ) : (
         <>
           <section aria-labelledby="measured-heading" className="tf-card">

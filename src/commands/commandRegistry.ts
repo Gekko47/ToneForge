@@ -6,6 +6,7 @@ import {
   openGovernancePolicy,
   openPendingChanges,
   openProfile,
+  openSemanticStyle,
   openTroubleshooting,
   reviewForConsistency,
   scanNow,
@@ -42,6 +43,7 @@ const CommandDefinitionSchema = z.object({
     "governance-policy",
     "pending-changes",
     "debugging",
+    "semantic",
   ]),
 });
 
@@ -54,6 +56,7 @@ const handlers: Readonly<Record<(typeof commandDefinitions)[number]["id"], Comma
   ToneForgeGovernancePolicy: openGovernancePolicy,
   ToneForgePendingChanges: openPendingChanges,
   ToneForgeTroubleshooting: openTroubleshooting,
+  ToneForgeSemantic: openSemanticStyle,
 };
 
 export const COMMAND_REGISTRY = commandDefinitions.map((definition): CommandDefinition => {

@@ -31,6 +31,18 @@
           {
             "name": "WordApi",
             "minVersion": "1.1"
+          },
+          {
+            "name": "SharedRuntime",
+            "minVersion": "1.1"
+          },
+          {
+            "name": "RibbonApi",
+            "minVersion": "1.1"
+          },
+          {
+            "name": "ContextMenuApi",
+            "minVersion": "1.1"
           }
         ],
         "scopes": ["document"],
@@ -134,6 +146,22 @@
                         "title": "Governance Policy",
                         "description": "Open the policy that decides which checks are mandatory, which are advisory, and which corrections ToneForge may apply without asking."
                       }
+                    },
+                    {
+                      "id": "ToneForgeSemanticControl",
+                      "type": "button",
+                      "label": "Check Semantic Style",
+                      "actionId": "ToneForgeSemantic",
+                      "enabled": false,
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Check Semantic Style",
+                        "description": "Ask for a rewrite of the selected text that matches your semantic style. Nothing is changed until you approve it on Document Governance. Disabled until a semantic profile exists."
+                      }
                     }
                   ]
                 },
@@ -178,6 +206,32 @@
           ]
         }
       ],
+      "contextMenus": [
+        {
+          "menus": [
+            {
+              "entryPoint": "text",
+              "controls": [
+                {
+                  "id": "ToneForgeSemanticContextControl",
+                  "type": "button",
+                  "label": "Check Semantic Style",
+                  "actionId": "ToneForgeSemantic",
+                  "icons": [
+                    { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                    { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                    { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                  ],
+                  "supertip": {
+                    "title": "Check Semantic Style",
+                    "description": "Ask for a rewrite of this selection that matches your semantic style. Nothing is changed until you approve it on Document Governance."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
       "runtimes": [
         {
           "id": "taskpane",
@@ -200,7 +254,7 @@
           "code": {
             "page": "https://localhost:3000/commands.html"
           },
-          "lifetime": "short",
+          "lifetime": "long",
           "actions": [
             { "id": "ToneForgeScan", "type": "executeFunction" },
             { "id": "ToneForgeFindings", "type": "executeFunction" },
@@ -208,7 +262,8 @@
             { "id": "ToneForgeProfile", "type": "executeFunction" },
             { "id": "ToneForgeGovernancePolicy", "type": "executeFunction" },
             { "id": "ToneForgePendingChanges", "type": "executeFunction" },
-            { "id": "ToneForgeTroubleshooting", "type": "executeFunction" }
+            { "id": "ToneForgeTroubleshooting", "type": "executeFunction" },
+            { "id": "ToneForgeSemantic", "type": "executeFunction" }
           ]
         }
       ]

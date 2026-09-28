@@ -12,7 +12,10 @@ import {
   prepareReformatHost,
   type ReformatResult,
 } from "../../reformat";
-import { consumeTaskpaneTarget } from "../../shared/office/taskpaneNavigation";
+import {
+  consumeTaskpaneTarget,
+  type TaskpaneNavigation,
+} from "../../shared/office/taskpaneNavigation";
 import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
 import FindingsList from "../components/FindingsList";
@@ -470,6 +473,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         supportsParagraphResolution: false,
         supportsHighlight: false,
         supportsContextMenu: false,
+        supportsRibbonUpdate: false,
         hostName: "unknown",
         hostVersion: null,
       },
@@ -514,11 +518,25 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     // would never re-run.
   }, [activeProfileKey, caps, autoScan]);
 
+  /*
+   * The instruction that arrived with the pane, held so the page that owns the
+   * action can read it. Consuming it once here and passing it down keeps the
+   * single-consumption guarantee in one place: an effect inside the Semantic
+   * page that re-read storage would fire again every time the user navigated
+   * back to it.
+   */
+  const [arrival, setArrival] = useState<TaskpaneNavigation | null>(null);
+
   useEffect(() => {
     const request = consumeTaskpaneTarget();
     if (!request) return;
+    setArrival(request);
     if (request.target === "debugging") {
       setPage("troubleshooting");
+      return;
+    }
+    if (request.target === "semantic") {
+      setPage("semantic");
       return;
     }
     if (request.target === "profile") {
@@ -806,6 +824,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                * messages as every other change in the product.
                */
               onSendToPendingChanges={reviewOne}
+              navigation={arrival}
             />
           ) : (
             <DebuggingPanel onBack={back} coverage={status?.coverage ?? null} />

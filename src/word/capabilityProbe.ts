@@ -30,6 +30,8 @@ export interface WordCapabilities {
   supportsParagraphResolution: boolean;
   supportsHighlight: boolean;
   supportsContextMenu: boolean;
+  /** Whether `Office.ribbon.requestUpdate` is reachable (RibbonApi 1.1). */
+  supportsRibbonUpdate: boolean;
   hostName: "Word" | "Excel" | "PowerPoint" | "unknown";
   hostVersion: string | null;
 }
@@ -49,6 +51,7 @@ const DEFAULT_CAPABILITIES: WordCapabilities = {
   supportsParagraphResolution: false,
   supportsHighlight: false,
   supportsContextMenu: false,
+  supportsRibbonUpdate: false,
   hostName: "unknown",
   hostVersion: null,
 };
@@ -255,13 +258,22 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
 
   // Context menus are an Office UI extension point, not a Word document
   // capability. This inspection is non-destructive and stays outside Office.run.
+  //
+  // The namespace is `Office.contextMenu` — singular. This previously checked
+  // `Office.contextMenus` and `Office.ui.contextMenus`, neither of which exists
+  // in the Office.js surface, so the probe reported `false` on every host
+  // including ones that fully support the feature. A capability probe that
+  // always says no is worse than no probe, because callers treat it as evidence.
   const office = (
     globalThis as {
-      Office?: { contextMenus?: unknown; ui?: { contextMenus?: unknown } };
+      Office?: {
+        contextMenu?: { requestUpdate?: unknown };
+        ribbon?: { requestUpdate?: unknown };
+      };
     }
   ).Office;
-  caps.supportsContextMenu =
-    typeof office?.contextMenus === "object" || typeof office?.ui?.contextMenus === "object";
+  caps.supportsContextMenu = typeof office?.contextMenu?.requestUpdate === "function";
+  caps.supportsRibbonUpdate = typeof office?.ribbon?.requestUpdate === "function";
 
   for (const [key, probe] of probes) {
     try {
