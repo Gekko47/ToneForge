@@ -1,5 +1,6 @@
 import React from "react";
 import ProviderPrivacySettingsSection from "./ProviderPrivacySettingsSection";
+import ScanningSettingsSection from "./ScanningSettingsSection";
 import StylingSettingsSection from "./StylingSettingsSection";
 import TrackedEditingSettingsSection from "./TrackedEditingSettingsSection";
 
@@ -19,6 +20,7 @@ export default function SettingsForm(): React.ReactNode {
       </div>
 
       <StylingSettingsSection />
+      <ScanningSettingsSection />
       <ProviderPrivacySettingsSection />
       <TrackedEditingSettingsSection />
     </div>
