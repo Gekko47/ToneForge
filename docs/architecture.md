@@ -58,7 +58,30 @@ Deterministic rules/formatting   Optional AI review
 | `word`                                 | shared Office helpers, core domain, and permitted deterministic readers                 | AI, UI                                                          |
 | `ai/gateway`                           | `core/config`, `core/domain`, `shared/utils`, `ai/providers/retry`                      | Word, UI, `Office`                                              |
 | `ai/providers`                         | core config, shared utilities, `ai/gateway` (types only)                                | Word, UI                                                        |
+| `taskpane/troubleshooting`             | `core/domain` (types only)                                                              | Store reads, `word`, `ai`, UI, React                            |
 | `taskpane` / `commands`                | core, shared, approved service boundaries                                               | direct `word/revisionAdapter` imports and direct mutation       |
+
+### Troubleshooting registry boundary
+
+`taskpane/troubleshooting/checks.ts` is pure: state in, notes out. It reads no
+store, calls no Office API, and imports no React. That is the whole point of it
+— the diagnostics were previously a private function inside the troubleshooting
+panel, so no other surface could reuse them and two surfaces could state
+different reasons for the same blocker. Anything that can read state can call
+`diagnoseSituation`; the state gathering happens at the call site, so the
+Dashboard passes the plan and review counts it already holds rather than the
+registry re-deriving them and possibly disagreeing with the section below it.
+
+Every remedy carries a `remedyTarget` naming the control by its on-screen label.
+This is a documentation obligation enforced by a test that pins every label, not
+a suggestion: a remedy that does not say where to go is the same non-answer the
+panel was already giving, one level of indirection further from the user.
+
+A remedy target is a label and not a navigation destination, deliberately. The
+pane's `TaskPaneDestination` and the command layer's `TaskpaneTarget` are
+different unions with no mapping between them, and a link landing the user one
+screen early — where they must still find the control — is not better advice
+than naming it.
 
 ### Provider connection boundary (Phase 4)
 

@@ -244,6 +244,42 @@ For each host:
   engine claims it would, and that the model adjudication behaves as reported
   when it is genuinely consulted.
 
+## Open gate — re-test of the live-Word corrections (ADR-0065–0070)
+
+Six defects were found by using the add-in in a real Word document. All six are
+fixed and unit-verified. **None has been re-tested in Word**, which is the whole
+point of recording them here: a fix verified only by the suite that did not catch
+the original bug is not a verified fix.
+
+Re-run, in this order, and record the result of each:
+
+1. **Apply on a list-only document** (ADR-0066). Open a document made entirely
+   of list items, scan, review one finding, apply it. The original symptom was
+   `Required in-scope node type inaccessible: paragraph/heading` and a permanently
+   disabled Apply. Record whether coverage reports complete and whether Apply
+   becomes available.
+2. **Apply writes only what was reviewed** (ADR-0065). With a plan of several
+   changes, review exactly one. Record that the button reads `Apply 1 reviewed
+change`, that the preview table shows one row, and — the part that matters —
+   that the applied Word revision count is 1, not the plan's length.
+3. **Semantic profile management** (ADR-0068). With no semantic profile, confirm
+   **Create empty profile** reaches an editable profile without a sample or a
+   provider. Then create a second, switch between them, and confirm the pending
+   rewrite is dropped on the switch.
+4. **No stale flash while typing** (ADR-0067). Type continuously for several
+   seconds. Record whether the stale banner appears at all. It should appear
+   only if a refresh genuinely fails — never merely because you are typing.
+5. **Every refusal names its control** (ADR-0069). Open Troubleshooting with
+   auto-scan off and tracked editing off. Record that each entry names a
+   control, and that renaming a control in code now fails a test.
+6. **Ribbon and context menu after a clean re-sideload** (ADR-0070). Follow
+   **After changing a manifest** above exactly. Record whether the tab and the
+   menu entry appear. If they do not, the manifest is being rejected, and the
+   reason is in Word's log — capture it rather than re-diagnosing.
+
+Until this is recorded, describe these six as "fixed and unit-verified, not yet
+confirmed in a host". No release claim rests on them.
+
 ## Open gate — incremental scan scope (ADR-0063)
 
 The observer narrows a scan to the paragraphs Word reports as changed when the

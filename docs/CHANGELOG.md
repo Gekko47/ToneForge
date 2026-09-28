@@ -1,5 +1,59 @@
 # ToneForge — Changelog
 
+## Unreleased — Found by using it in Word
+
+Every item here came from a session of driving the add-in in a real Word
+document, not from reading the code. The theme is that the automated suite was
+green throughout: none of these were visible to it, because each one is a
+statement the product makes that turned out to be untrue.
+
+- **Apply is no longer permanently blocked on a list-item document.**
+  `buildCoverage` defaulted to requiring a `paragraph`/`heading` node, so a
+  document of nothing but list items reported itself incomplete forever, and an
+  incomplete plan blocks Apply. The check read as "did we acquire governance
+  scope" but was written as a necessity test, and its `body` alternative was
+  satisfied by every document — so it could only ever produce a false alarm.
+  Completeness is now a shape-independent discovery question. See ADR-0066.
+- **Apply writes only what you reviewed.** Review marked a finding and changed
+  nothing else; the plan handed to Apply was the whole auto-previewed plan. It
+  is now filtered, the button says `Apply {n} reviewed changes`, and the
+  "apply all" shortcut is removed — a shortcut around the review gate is the
+  affordance the gate exists to prevent. See ADR-0065.
+- **The semantic tab can hold a profile.** `selectKindRecordList`,
+  `setActiveSemanticProfile`, `createSemanticProfileRecord`, and
+  `removeSemanticProfile` all existed with no caller, so the tab could only
+  display the one profile Learn Style had just made. There is now a picker, and
+  "create empty" needs neither a sample nor a provider — without it the tab was
+  unreachable for anyone whose document was too short to sample, and the one
+  route in ran a model over their prose. See ADR-0068.
+- **Consent no longer locks you out of your own words.** The semantic editor was
+  disabled when semantic consent was missing, which disabled typing a tone into
+  a local field — exactly the user who had declined. Consent governs sending
+  text to a provider; it has nothing to say about a local field.
+- **Typing a tone no longer writes five revisions.** Tone, voice, and rhetorical
+  style saved on every keystroke, and each save mints a revision, so typing
+  "formal" polluted the audit trail with five drafts. They commit on blur, like
+  the numeric fields beside them.
+- **The stale banner stopped flashing.** `scheduleScan` marked findings stale on
+  the first change event, before the 300 ms debounce elapsed, so every keystroke
+  produced a banner that vanished faster than it could be read. Staleness is
+  now declared only when a refresh genuinely fails, and the debounce is 1200 ms.
+  See ADR-0067.
+- **The capability probe stopped answering `false` to everything.** It checked
+  `Office.contextMenus` and `Office.ui.contextMenus`, neither of which exists;
+  the runtime API is `Office.contextMenu.requestUpdate`. It had no test.
+- **Every refusal now names the control that resolves it.** "What to check" was
+  a private function inside the troubleshooting panel, so no other surface could
+  reuse it and the panel could only help someone who had already found it. It is
+  a pure registry now, and each remedy names the actual control by its on-screen
+  label. See ADR-0069.
+- **A manifest change needs a full Word restart, and this is documented.** The
+  ribbon tab and context-menu entry were missing from a live Word after being
+  added correctly to both manifests. They were not a provider problem. Word
+  caches the manifest at registration, and `npm run sideload` reads
+  `manifest.xml` — never the unified `manifest.json` — so a control added to one
+  file passes every check in this repository. See ADR-0070.
+
 ## 0.4.0 — Honest capabilities
 
 Every control now changes behaviour, and every surface says what it did not do.

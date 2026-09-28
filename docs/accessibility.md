@@ -32,10 +32,34 @@
 - Safe reformat and pending-change Apply controls expose disabled reasons through
   `aria-describedby` and announce stale, conflict, approval, precondition, host,
   tracking, and coverage states with polite status regions.
+- Apply is unavailable until at least one finding has been reviewed, and the
+  reason is rendered on the section rather than left to a disabled button. A
+  disabled control whose reason is not adjacent is indistinguishable from a
+  broken one.
 - Per-change previews use semantic tables and explicit text when before/after
   values are unavailable; absence is never rendered as a successful preview.
 - Navigation retains initial focus, traps Tab while the modal drawer is open,
   closes on Escape, and restores focus to the navigation trigger.
+
+## Repeated controls must name their target
+
+A list whose rows each carry an identical control is not navigable by a screen
+reader. On the semantic profile picker every row offered "Use this one" and
+"Delete" with the profile named only in adjacent visible text, so a user moving
+through the list by control heard the same name three times and had no way to
+know which row they were on.
+
+Every such control now carries its target in the accessible name — "Use this one
+— Second voice", "Delete Learned semantic style" — while the visible label stays
+short. The same applies to the "Active" marker, which reads "Active — {name}"
+rather than a bare "Active" that becomes ambiguous the moment a second profile
+exists. A repeated control is only acceptable when its target is in its name.
+
+## Live regions are per pane, not per surface
+
+The rule below is stated per pane rather than per component because it has been
+broken three times on three surfaces, each time by a component that had a
+legitimate reason to announce something.
 
 ## One live region per pane
 
