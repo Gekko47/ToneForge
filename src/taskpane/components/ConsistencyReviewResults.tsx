@@ -15,11 +15,22 @@
  *   without saying so is worse than one that asks.
  * - `usedModel: false` is stated, not hidden. That run had no model judgement in
  *   it and the user is entitled to know.
+ * - Repeats are collapsed, and the count of what was collapsed is stated. The
+ *   cross-section checks pair statements by shared vocabulary, so one real drift
+ *   between two sections arrives many times over; a list of nine rows about one
+ *   disagreement reads as nine problems, and a count of nine is a claim about the
+ *   document that is not true.
+ * - A conflict the engine could not place in this document says so. An empty
+ *   location line looks like a rendering fault, and a reader who cannot tell the
+ *   difference will assume the finding is located at the top of the file.
  */
 
 import React from "react";
 import {
   CONSISTENCY_ACTIONABLE_CONFIDENCE,
+  collapsedCount,
+  groupConsistencyIssues,
+  type ConsistencyIssueGroup,
   type ConsistencyReport,
 } from "../../analysis/consistency";
 
@@ -29,12 +40,66 @@ export interface ConsistencyReviewResultsProps {
   onDismiss: () => void;
 }
 
+/** One collapsed conflict, in the order the groups were ranked. */
+function ConflictCard({ group }: { group: ConsistencyIssueGroup }): React.ReactNode {
+  const lead = group.issues[0];
+  if (lead === undefined) return null;
+  const repeats = group.issues.length - 1;
+
+  return (
+    <article aria-label={`Consistency issue: ${group.title}`}>
+      <h3>
+        {group.title} — {group.worstSeverity}
+      </h3>
+      <p>{lead.detail}</p>
+      {/* Both sides, always. The verdict is about this pair and no other. */}
+      <blockquote>
+        <p>{lead.evidence.left}</p>
+      </blockquote>
+      <blockquote>
+        <p>{lead.evidence.right}</p>
+      </blockquote>
+      <p className="tf-sub">
+        Sections: {lead.evidence.sectionLeft || "(none)"} / {lead.evidence.sectionRight || "(none)"}
+      </p>
+      {/*
+        Located or not, stated either way. A conflict the engine could not anchor
+        is still a true report of a conflict — it just is not a place in this
+        document, and pretending otherwise with a blank location would invite the
+        reader to go looking for text that is not there.
+      */}
+      <p className={group.locatable ? "tf-sub" : "tf-debug-warning"}>
+        {group.locatable
+          ? "This conflict is located in the document."
+          : "This conflict cannot be located in the document: the engine could not place either statement in the text it read, so there is nothing to jump to. The report above is what it saw."}
+      </p>
+      {repeats > 0 && (
+        <p className="tf-sub">
+          Reported {group.issues.length} times for this same pair of statements; shown once.
+        </p>
+      )}
+      <p>
+        Confidence: {Math.round(Math.max(...group.issues.map((issue) => issue.confidence)) * 100)}%
+        ·{" "}
+        {group.issues.some((issue) => issue.actionable)
+          ? "Treated as a real contradiction."
+          : `Below ${Math.round(
+              CONSISTENCY_ACTIONABLE_CONFIDENCE * 100,
+            )}% — advisory only; this will not change anything on its own.`}
+      </p>
+    </article>
+  );
+}
+
 export default function ConsistencyReviewResults({
   report,
   onReviewFindings,
   onDismiss,
 }: ConsistencyReviewResultsProps): React.ReactNode {
   const { coverage, issues } = report;
+  const groups = groupConsistencyIssues(issues);
+  const collapsed = collapsedCount(groups);
+
   return (
     <section aria-label="Consistency review result">
       <h2>Consistency review result</h2>
@@ -74,45 +139,27 @@ export default function ConsistencyReviewResults({
       </div>
 
       <p role="status">
-        {issues.length} possible contradiction(s) found. Nothing has been changed in Word.
+        {groups.length === 1
+          ? "1 possible contradiction"
+          : `${groups.length} possible contradictions`}{" "}
+        found.{" "}
+        {collapsed > 0
+          ? `${issues.length} reports collapsed into ${groups.length}, because the same pair of statements matched more than once.`
+          : "Nothing has been changed in Word."}
       </p>
-      {issues.length === 0 && (
+      {groups.length === 0 && (
         <p>
           No contradictions were found in the part of the document that was reviewed. Check the
           coverage above before treating that as a clean bill of health.
         </p>
       )}
 
-      {issues.map((issue) => (
-        <article key={issue.fingerprint} aria-label={`Consistency issue: ${issue.title}`}>
-          <h3>
-            {issue.title} — {issue.severity}
-          </h3>
-          <p>{issue.detail}</p>
-          {/* Both sides, always. The verdict is about this pair and no other. */}
-          <blockquote>
-            <p>{issue.evidence.left}</p>
-          </blockquote>
-          <blockquote>
-            <p>{issue.evidence.right}</p>
-          </blockquote>
-          <p className="tf-sub">
-            Sections: {issue.evidence.sectionLeft || "(none)"} /{" "}
-            {issue.evidence.sectionRight || "(none)"}
-          </p>
-          <p>
-            Confidence: {Math.round(issue.confidence * 100)}% ·{" "}
-            {issue.actionable
-              ? "Treated as a real contradiction."
-              : `Below ${Math.round(
-                  CONSISTENCY_ACTIONABLE_CONFIDENCE * 100,
-                )}% — advisory only; this will not change anything on its own.`}
-          </p>
-        </article>
+      {groups.map((group) => (
+        <ConflictCard key={group.key} group={group} />
       ))}
 
       <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button type="button" onClick={onReviewFindings} disabled={issues.length === 0}>
+        <button type="button" onClick={onReviewFindings} disabled={groups.length === 0}>
           Review in Findings
         </button>
         <button type="button" onClick={onDismiss}>

@@ -141,9 +141,163 @@ describe("consistency results", () => {
     );
     const text = container.textContent ?? "";
     expect(text.indexOf("Reviewed the whole document")).toBeGreaterThanOrEqual(0);
+    /*
+     * Matched without the count and the suffix, because the wording is now
+     * plural-aware: "1 possible contradiction found" against "3 possible
+     * contradictions found". The ordering guarantee is what is under test, not
+     * the sentence.
+     */
     expect(text.indexOf("Reviewed the whole document")).toBeLessThan(
-      text.indexOf("possible contradiction(s) found"),
+      text.indexOf("possible contradiction"),
     );
+  });
+
+  it("collapses repeats of one disagreement and says how many were folded in", () => {
+    /*
+     * The cross-section checks pair statements by shared vocabulary, so one real
+     * drift arrives once per matching pair. Nine rows about one disagreement read
+     * as nine problems, and a count of nine is a claim about the document that is
+     * not true.
+     */
+    const repeated = ["a", "b", "c", "d", "e"].map((tag) => ({
+      checkId: "C1" as const,
+      fingerprint: `C1:${tag}`,
+      title: "Terminology drift",
+      detail: "The same term is used two ways.",
+      severity: "warning" as const,
+      confidence: 0.9,
+      actionable: true,
+      nodeIds: ["s0", "s1"],
+      ranges: { left: { start: 0, end: 5 }, right: { start: 20, end: 30 } },
+      evidence: {
+        left: "Onboarding is manual.",
+        right: "Onboarding is automated.",
+        sectionLeft: "Intro",
+        sectionRight: "Appendix",
+      },
+      suggestedNodeId: "s1",
+    }));
+
+    render(
+      <ConsistencyReviewResults
+        report={report({ issues: repeated })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.getByText(/5 reports collapsed into 1/)).toBeTruthy();
+  });
+
+  it("keeps different conflicts apart even under the same check", () => {
+    const base = {
+      checkId: "C1" as const,
+      title: "Terminology drift",
+      detail: "The same term is used two ways.",
+      severity: "warning" as const,
+      confidence: 0.9,
+      actionable: true,
+      nodeIds: ["s0", "s1"],
+      ranges: { left: { start: 0, end: 5 }, right: { start: 20, end: 30 } },
+      sectionLeft: "Intro",
+      sectionRight: "Appendix",
+    };
+
+    render(
+      <ConsistencyReviewResults
+        report={report({
+          issues: [
+            {
+              ...base,
+              fingerprint: "one",
+              evidence: { ...base, left: "alpha", right: "beta" },
+            },
+            {
+              ...base,
+              fingerprint: "two",
+              evidence: { ...base, left: "alpha", right: "gamma" },
+            },
+          ],
+        })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+  });
+
+  it("says a conflict cannot be located rather than leaving a blank location", () => {
+    /*
+     * No `suggestedNodeId`: the engine reported the conflict but never placed
+     * either statement. An empty location line would read as a rendering fault,
+     * and a reader who cannot tell the difference will go looking for text that
+     * is not in the document.
+     */
+    render(
+      <ConsistencyReviewResults
+        report={report({
+          issues: [
+            {
+              checkId: "C1",
+              fingerprint: "C1:unanchored",
+              title: "Terminology drift",
+              detail: "The same term is used two ways.",
+              severity: "warning",
+              confidence: 0.8,
+              actionable: true,
+              nodeIds: ["s0", "s1"],
+              ranges: { left: { start: 0, end: 5 }, right: { start: 20, end: 30 } },
+              evidence: {
+                left: "Onboarding is manual.",
+                right: "Onboarding is automated.",
+                sectionLeft: "",
+                sectionRight: "",
+              },
+            },
+          ],
+        })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText(/cannot be located in the document/)).toBeTruthy();
+    expect(screen.queryByText(/is located in the document\./)).toBeNull();
+  });
+
+  it("states that a located conflict is located, so the warning means something", () => {
+    render(
+      <ConsistencyReviewResults
+        report={report({
+          issues: [
+            {
+              checkId: "C1",
+              fingerprint: "C1:anchored",
+              title: "Terminology drift",
+              detail: "The same term is used two ways.",
+              severity: "warning",
+              confidence: 0.8,
+              actionable: true,
+              nodeIds: ["s0", "s1"],
+              ranges: { left: { start: 0, end: 5 }, right: { start: 20, end: 30 } },
+              evidence: {
+                left: "Onboarding is manual.",
+                right: "Onboarding is automated.",
+                sectionLeft: "Intro",
+                sectionRight: "Appendix",
+              },
+              suggestedNodeId: "s1",
+            },
+          ],
+        })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText("This conflict is located in the document.")).toBeTruthy();
   });
 
   /**

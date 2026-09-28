@@ -61,3 +61,11 @@ export {
 } from "./checks";
 
 export { consistencyCategory, summarizeReport, toFinding, toFindings } from "./bridge";
+
+export {
+  collapsedCount,
+  groupConsistencyIssues,
+  isLocatable,
+  issueGroupKey,
+  type ConsistencyIssueGroup,
+} from "./grouping";
