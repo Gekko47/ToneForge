@@ -43,7 +43,7 @@ export default function GovernancePolicy({ onBack }: GovernancePolicyProps): Rea
     <div className="tf-card" data-page="governance-policy">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
         <button type="button" onClick={onBack}>
-          Back to Document Governance
+          Back to Deterministic Review
         </button>
       </nav>
       <h1 className="tf-title">Governance Policy</h1>

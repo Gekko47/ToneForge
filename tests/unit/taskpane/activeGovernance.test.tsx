@@ -158,12 +158,12 @@ describe("GovernancePolicy page", () => {
     expect(mocks.loadState).toHaveBeenCalledTimes(1);
   });
 
-  it("offers a route back to Document Governance", async () => {
+  it("offers a route back to Deterministic Review", async () => {
     const onBack = vi.fn();
     installStore({ activeProfileId: null });
 
     render(<GovernancePolicy onBack={onBack} />);
-    await userEvent.click(screen.getByRole("button", { name: "Back to Document Governance" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back to Deterministic Review" }));
 
     expect(onBack).toHaveBeenCalledTimes(1);
   });

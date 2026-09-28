@@ -43,7 +43,7 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
     <div className="tf-card" data-page="profile">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
         <button type="button" onClick={onBack}>
-          Back to Document Governance
+          Back to Deterministic Review
         </button>
       </nav>
       <h1 className="tf-title">Deterministic Style Profile</h1>

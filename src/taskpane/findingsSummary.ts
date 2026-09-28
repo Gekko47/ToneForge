@@ -1,5 +1,5 @@
 /**
- * The open-findings summary the Document Governance header shows.
+ * The open-findings summary the Deterministic Review header shows.
  *
  * Severity is the *consequence*, not the label: a finding the checker calls
  * `error` is one it believes must be fixed, and calling that "high severity"

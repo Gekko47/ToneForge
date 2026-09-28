@@ -54,7 +54,7 @@
               "groups": [
                 {
                   "id": "ToneForgeGovernance",
-                  "label": "Governance",
+                  "label": "Deterministic Review",
                   "controls": [
                     {
                       "id": "ToneForgeScanControl",
@@ -156,7 +156,7 @@
                       ],
                       "supertip": {
                         "title": "Check Semantic Style",
-                        "description": "Ask for a rewrite of the selected text that matches your semantic style. Nothing is changed until you approve it on Document Governance. Disabled until a semantic profile exists."
+                        "description": "Ask for a rewrite of the selected text that matches your semantic style. Nothing is changed until you approve it on Deterministic Review. Disabled until a semantic profile exists."
                       }
                     }
                   ]
@@ -228,7 +228,7 @@
                   ],
                   "supertip": {
                     "title": "Check Semantic Style",
-                    "description": "Ask for a rewrite of this selection that matches your semantic style. Nothing is changed until you approve it on Document Governance."
+                    "description": "Ask for a rewrite of this selection that matches your semantic style. Nothing is changed until you approve it on Deterministic Review."
                   }
                 }
               ]

@@ -133,7 +133,7 @@ describe("ConsistencyReview page", () => {
 
   it("hands the finished report upward rather than keeping it", async () => {
     /*
-     * The report belongs to the Dashboard because Document Governance's findings
+     * The report belongs to the Dashboard because Deterministic Review's findings
      * list shows it on another tab. A page that kept its own copy would drop the
      * findings the moment the user navigated across to read them.
      */
@@ -185,7 +185,7 @@ describe("ConsistencyReview page", () => {
     expect(mocks.runConsistencyReview).not.toHaveBeenCalled();
   });
 
-  it("offers a route back to Document Governance", async () => {
+  it("offers a route back to Deterministic Review", async () => {
     const onBack = vi.fn();
     render(
       <ConsistencyReview
@@ -196,7 +196,7 @@ describe("ConsistencyReview page", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Back to Document Governance" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back to Deterministic Review" }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

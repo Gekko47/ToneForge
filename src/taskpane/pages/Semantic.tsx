@@ -32,7 +32,7 @@ import { syncSemanticRibbon } from "../../commands/ribbonState";
 export interface SemanticProps {
   onBack: () => void;
   onOpenSettings: () => void;
-  /** Hands a reviewed finding to the pending-changes flow on Document Governance. */
+  /** Hands a reviewed finding to the pending-changes flow on Deterministic Review. */
   onSendToPendingChanges: (finding: Finding) => void;
   /**
    * The instruction that brought the pane here, already consumed.
@@ -106,7 +106,7 @@ export function deriveSemanticAnnouncement(input: {
  *    nobody types into a number the next scan overwrites.
  * 3. **The semantic rewrite**, the one place a model proposes a change to the
  *    user's own prose. It proposes; it never applies. The result goes to the
- *    Document Governance review gate, so it meets the same approval and
+ *    Deterministic Review review gate, so it meets the same approval and
  *    precondition checks as every other change in the product.
  */
 export default function Semantic({
@@ -358,7 +358,7 @@ export default function Semantic({
     <div className="tf-card" data-page="semantic">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
         <button type="button" onClick={onBack}>
-          Back to Document Governance
+          Back to Deterministic Review
         </button>
       </nav>
 
@@ -453,7 +453,7 @@ export default function Semantic({
 
       {/*
         The rewrite. It proposes; it never applies. The finding goes to the
-        Document Governance review gate rather than having a private route into
+        Deterministic Review review gate rather than having a private route into
         the document.
       */}
       <section aria-labelledby="rewrite-heading" className="tf-card">
@@ -522,7 +522,7 @@ export default function Semantic({
               disabled={!proposal.actionable}
               onClick={() => onSendToPendingChanges(proposal)}
             >
-              Review in Document Governance
+              Review on Deterministic Review
             </button>
             {proposal.actionable === false && (
               <p className="tf-sub">This rewrite cannot be applied yet — see the reason above.</p>

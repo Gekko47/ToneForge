@@ -411,7 +411,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    *
    * The run itself â€” preflight, progress, cancellation, the abort handle â€” lives
    * on the Consistency Review page. This copy of the report stays here because
-   * Document Governance's findings list shows it too, and that list is on a
+   * Deterministic Review's findings list shows it too, and that list is on a
    * different tab. Keeping the report with the run would drop the findings the
    * moment the user navigated across to read them, which is the one thing
    * "Review in Findings" must not do.
@@ -1098,7 +1098,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   return (
     <main className="tf-card" tabIndex={0}>
       {/* `page`, not a literal: the header reports the destination the user is
-          actually on. Hardcoding "home" here left "Document Governance"
+          actually on. Hardcoding "home" here left "Deterministic Review"
           highlighted while the AI Review page was open. */}
       <TaskPaneHeader
         activePage={page}

@@ -1,5 +1,5 @@
 /**
- * The ignore list, at the bottom of Document Governance.
+ * The ignore list, at the bottom of Deterministic Review.
  *
  * A finding the user set aside has not been resolved, only stopped being
  * shown. Hiding that list made the ignore action irreversible from the UI and

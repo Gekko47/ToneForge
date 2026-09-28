@@ -259,7 +259,7 @@ describe("the Semantic tab", () => {
     await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
     await waitFor(() => expect(mocks.proposeSemanticRewrite).toHaveBeenCalled());
 
-    await userEvent.click(screen.getByRole("button", { name: /review in document governance/i }));
+    await userEvent.click(screen.getByRole("button", { name: /review on deterministic review/i }));
     expect(props.onSendToPendingChanges).toHaveBeenCalledTimes(1);
   });
 
@@ -277,7 +277,9 @@ describe("the Semantic tab", () => {
     await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /review in document governance/i })).toBeDisabled(),
+      expect(
+        screen.getByRole("button", { name: /review on deterministic review/i }),
+      ).toBeDisabled(),
     );
   });
 
@@ -450,7 +452,7 @@ describe("managing semantic profiles from the Semantic tab", () => {
     await userEvent.click(screen.getByRole("button", { name: /read current selection/i }));
     await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /review in document governance/i })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: /review on deterministic review/i })).toBeEnabled(),
     );
 
     await userEvent.click(screen.getByRole("button", { name: /use this one — second voice/i }));
@@ -458,7 +460,7 @@ describe("managing semantic profiles from the Semantic tab", () => {
     expect(mocks.setActiveSemanticProfile).toHaveBeenCalledWith(SECOND_ID);
     expect(mocks.loadSemanticProfileRecord).toHaveBeenLastCalledWith(SECOND_ID);
     // A rewrite matching the previous voice must not survive the switch.
-    expect(screen.queryByRole("button", { name: /review in document governance/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /review on deterministic review/i })).toBeNull();
   });
 
   it("marks the switched-to profile active rather than the one it came from", async () => {

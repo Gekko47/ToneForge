@@ -85,7 +85,7 @@
             </OfficeTab>
             <OfficeTab id="ToneForge">
               <Group id="ToneForgeGovernanceGroup">
-                <Label resid="ToneForge.GovernanceGroupLabel" />
+                <Label resid="ToneForge.DeterministicReviewGroupLabel" />
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16" />
                   <bt:Image size="32" resid="Icon.32x32" />
@@ -297,7 +297,7 @@
         <bt:String id="ToneForge.GroupLabel" DefaultValue="ToneForge" />
         <bt:String id="ToneForge.TaskpaneLabel" DefaultValue="ToneForge task pane" />
         <bt:String id="ToneForge.TabLabel" DefaultValue="ToneForge" />
-        <bt:String id="ToneForge.GovernanceGroupLabel" DefaultValue="Governance" />
+        <bt:String id="ToneForge.DeterministicReviewGroupLabel" DefaultValue="Deterministic Review" />
         <bt:String id="ToneForge.AIReviewGroupLabel" DefaultValue="AI Review" />
         <bt:String id="ToneForge.ProfileGroupLabel" DefaultValue="Profile" />
         <bt:String id="ToneForge.ChangesGroupLabel" DefaultValue="Changes" />
@@ -319,7 +319,7 @@
         <bt:String id="ToneForge.GovernancePolicyDesc" DefaultValue="Open the policy that decides which checks are mandatory, which are advisory, and which corrections ToneForge may apply without asking." />
         <bt:String id="ToneForge.PendingChangesDesc" DefaultValue="Open the proposed Word revisions waiting for your approval." />
         <bt:String id="ToneForge.TroubleshootingDesc" DefaultValue="Inspect this Word host's capabilities and the coverage of the last scan. These checks never change the document." />
-        <bt:String id="ToneForge.SemanticDesc" DefaultValue="Ask for a rewrite of the selected text that matches your semantic style. Nothing is changed until you approve it on Document Governance." />
+        <bt:String id="ToneForge.SemanticDesc" DefaultValue="Ask for a rewrite of the selected text that matches your semantic style. Nothing is changed until you approve it on Deterministic Review." />
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

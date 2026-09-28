@@ -112,7 +112,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     cause:
       "Automatic scanning is switched off. ToneForge is not watching the document, so nothing it has not already read can change.",
     remedy:
-      "Switch it back on, or press Re-scan now on Document Governance. The manual scan is not affected by this setting, and the findings and pending changes you already have are not affected either.",
+      "Switch it back on, or press Re-scan now on Deterministic Review. The manual scan is not affected by this setting, and the findings and pending changes you already have are not affected either.",
     remedyTarget: {
       label: "Settings → Scanning → Scan automatically as the document changes",
     },
@@ -142,7 +142,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     remedy:
       "Mark each finding you want applied with Review, then Apply becomes available for exactly those findings and no others.",
     remedyTarget: {
-      label: "Document Governance → Findings → Review on each finding you want applied",
+      label: "Deterministic Review → Findings → Review on each finding you want applied",
     },
   },
   {
@@ -163,7 +163,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     appliesTo: (input) => input.providerConfigured === false,
     situation: "The semantic rewrite and AI Review are unavailable",
     cause:
-      "No AI provider is configured. The deterministic checks and the whole Document Governance review still work; only the parts that send your text to a model are unavailable.",
+      "No AI provider is configured. The deterministic checks and the whole Deterministic Review review still work; only the parts that send your text to a model are unavailable.",
     remedy:
       "Add a provider and a key. Nothing is sent anywhere until you also allow it — the two permissions are separate and both are yours to grant.",
     remedyTarget: {

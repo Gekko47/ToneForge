@@ -30,7 +30,7 @@ import SettingsSectionCard from "./SettingsSectionCard";
  * scan still works, and that is the way back.
  */
 export const AUTO_SCAN_OFF_NOTE =
-  "ToneForge will stop scanning as you type. Re-scan now on Document Governance still works, " +
+  "ToneForge will stop scanning as you type. Re-scan now on Deterministic Review still works, " +
   "and the findings and pending changes you already have are not affected.";
 
 export default function ScanningSettingsSection(): React.ReactNode {

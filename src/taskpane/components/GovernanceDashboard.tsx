@@ -66,8 +66,8 @@ export default function GovernanceDashboard({
   const counts = Array.from(countCategories(findings).entries());
 
   return (
-    <section aria-label="Document Governance" style={{ marginTop: "1rem" }}>
-      <h2>Document Governance</h2>
+    <section aria-label="Deterministic Review" style={{ marginTop: "1rem" }}>
+      <h2>Deterministic Review</h2>
       {/*
         Visible but not live. The Dashboard speaks the scan phase from its single
         live region, and this used to be a second one: a scan completing updated

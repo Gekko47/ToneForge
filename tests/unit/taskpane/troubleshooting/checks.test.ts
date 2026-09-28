@@ -158,7 +158,7 @@ describe("the troubleshooting registry", () => {
     expect(notes.map((note) => note.remedyTarget.label)).toEqual([
       "Settings → Scanning → Scan automatically as the document changes",
       "Settings → Tracked editing → Allow ToneForge to apply tracked changes",
-      "Document Governance → Findings → Review on each finding you want applied",
+      "Deterministic Review → Findings → Review on each finding you want applied",
       "Semantic → Semantic profiles → Create empty profile",
       "Settings → Provider and privacy → Provider, then enter the key",
       "Troubleshooting → Analysis coverage diagnostics",

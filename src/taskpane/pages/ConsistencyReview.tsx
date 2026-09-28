@@ -16,7 +16,7 @@ export interface ConsistencyReviewProps {
   /**
    * The finished report, owned by the Dashboard.
    *
-   * The report lives above this page because Document Governance's findings list
+   * The report lives above this page because Deterministic Review's findings list
    * shows it too, and that list is on a different tab. Moving the report here
    * would make the handover lose the findings the moment the user navigated to
    * read them, which is the one thing "Review in Findings" must not do.
@@ -183,7 +183,7 @@ export default function ConsistencyReview({
     <div className="tf-card" data-page="consistency">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
         <button type="button" onClick={onBack}>
-          Back to Document Governance
+          Back to Deterministic Review
         </button>
       </nav>
       <AiReviewSection
