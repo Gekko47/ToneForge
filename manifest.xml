@@ -36,13 +36,20 @@
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
-                    xmlns:mso="http://schemas.microsoft.com/office/2009/07/customui"
                     xsi:type="VersionOverridesV1_0">
     <Requirements>
       <bt:Sets DefaultMinVersion="1.1">
         <bt:Set Name="AddinCommands" MinVersion="1.1" />
         <bt:Set Name="ContextMenuApi" MinVersion="1.1" />
         <bt:Set Name="RibbonApi" MinVersion="1.1" />
+        <!--
+          SharedRuntime 1.1 is what makes the long-lifetime Runtimes entry
+          below legal. Office.ribbon.requestUpdate and
+          Office.contextMenu.requestUpdate are only reachable from a shared
+          runtime, so a short-lived function file could never enable the
+          semantic control at runtime.
+        -->
+        <bt:Set Name="SharedRuntime" MinVersion="1.1" />
       </bt:Sets>
     </Requirements>
     <Hosts>
@@ -238,29 +245,44 @@
                 </Control>
               </Group>
             </OfficeTab>
-            <mso:officeMenu id="ContextMenuText">
-              <mso:control idQ="mso:ToneForgeSemantic" visible="true">
-                <mso:button
-                  idQ="mso:ToneForgeSemantic"
-                  label="Check Semantic Style"
-                  image="Icon.32x32"
-                  onAction="ToneForgeSemantic"
-                  visible="true" />
-              </mso:control>
-            </mso:officeMenu>
+          </ExtensionPoint>
+          <!--
+            The context-menu entry is its own ExtensionPoint. Nesting
+            `mso:officeMenu` inside PrimaryCommandSurface is Custom UI
+            markup, which this schema does not allow, and it is why the
+            context menu could be declared correctly and still never appear.
+          -->
+          <ExtensionPoint xsi:type="ContextMenu">
+            <OfficeMenu id="ContextMenuText">
+              <Control id="ToneForgeSemanticContextControl">
+                <Label resid="ToneForge.SemanticLabel" />
+                <Supertip>
+                  <Title resid="ToneForge.SemanticLabel" />
+                  <Description resid="ToneForge.SemanticDesc" />
+                </Supertip>
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Action xsi:type="ExecuteFunction">
+                  <FunctionName>ToneForgeSemantic</FunctionName>
+                </Action>
+              </Control>
+            </OfficeMenu>
           </ExtensionPoint>
         </DesktopFormFactor>
+        <!--
+          The schema-supported spelling of the shared runtime: a `Runtimes`
+          element on the Host, after DesktopFormFactor. `lifetime="long"` is
+          what makes it shared, and the resid must agree with the FunctionFile
+          it replaces, so this points at the same commands page.
+        -->
+        <Runtimes>
+          <Runtime resid="ToneForge.Commands.Url" lifetime="long" />
+        </Runtimes>
       </Host>
     </Hosts>
-    <Runtime>
-      <!--
-        lifetime="long" is what makes this a shared runtime. Office.ribbon
-        .requestUpdate and Office.contextMenu.requestUpdate are only reachable
-        from a shared runtime, so a short-lived function file could never
-        enable the semantic button.
-      -->
-      <SourceLocation resid="ToneForge.Commands.Url" />
-    </Runtime>
     <Resources>
       <bt:Images>
         <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3000/assets/icon-16.png" />

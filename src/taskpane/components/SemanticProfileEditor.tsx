@@ -25,6 +25,21 @@ const REGISTERS: IDropdownOption[] = [
   { key: "academic", text: "Academic" },
 ];
 
+/**
+ * Parse a reading-grade target, or `null` when the field holds no number.
+ *
+ * The caller decides what an unparseable value means. What it must not do is
+ * borrow a number from a *different* field: the old fallback was
+ * `semantic.formality`, so typing "abc" into reading grade silently saved
+ * formality's value there — an invalid entry that became a plausible wrong one
+ * and left the user with no reason to distrust it. The same field's stored
+ * value is a legitimate fallback; a neighbouring field's is not.
+ */
+function parseReadingGrade(value: string): number | null {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export interface SemanticProfileEditorProps {
   /** The semantic half of the profile being edited. */
   semantic: StyleProfile["semantic"];
@@ -54,6 +69,7 @@ export default function SemanticProfileEditor({
     String(semantic.preferredSentenceLength),
   );
   const [avoidWords, setAvoidWords] = React.useState(semantic.avoidWords.join("\n"));
+  const [error, setError] = React.useState<string | null>(null);
 
   // Re-seed when the parent swaps in a different profile. Without this the form
   // would keep showing the previously edited profile's values, and saving would
@@ -68,12 +84,22 @@ export default function SemanticProfileEditor({
     );
     setSentenceLength(String(semantic.preferredSentenceLength));
     setAvoidWords(semantic.avoidWords.join("\n"));
+    setError(null);
   }, [semantic]);
 
   function save(overrides: {
     vocabularyRegister?: StyleProfile["semantic"]["vocabularyRegister"];
     avoidWords?: string[];
   }): void {
+    const readingGradeTarget =
+      readingGrade.trim() === ""
+        ? null
+        : (parseReadingGrade(readingGrade) ?? semantic.readingGradeTarget);
+    if (readingGrade.trim() !== "" && readingGradeTarget === null) {
+      // Unparseable, and there is no stored value of this field to keep.
+      setError("Reading grade target must be a number. The value was not saved.");
+      return;
+    }
     const candidate = {
       ...semantic,
       tone: tone.trim() === "" ? semantic.tone : tone,
@@ -82,13 +108,23 @@ export default function SemanticProfileEditor({
       vocabularyRegister: overrides.vocabularyRegister ?? semantic.vocabularyRegister,
       avoidWords: overrides.avoidWords ?? semantic.avoidWords,
       formality: toNumber(formality, semantic.formality),
-      readingGradeTarget:
-        readingGrade.trim() === "" ? null : toNumber(readingGrade, semantic.formality),
+      readingGradeTarget,
       preferredSentenceLength: toNumber(sentenceLength, semantic.preferredSentenceLength),
     };
-    // Parsed before it leaves: a form value that does not satisfy the schema
-    // would otherwise be persisted and fail to load on the next session.
-    onSave(SemanticProfileSchema.parse(candidate));
+    /*
+     * Checked rather than parsed-and-thrown. This runs from a `onBlur` and a
+     * `Dropdown.onChange`, so a `ZodError` would escape an event handler with
+     * nothing to catch it: the value would not be saved and the user would be
+     * told nothing at all. A refusal that is invisible is the defect this
+     * replaces.
+     */
+    const parsed = SemanticProfileSchema.safeParse(candidate);
+    if (!parsed.success) {
+      setError("These values are not a valid semantic style profile, so nothing was saved.");
+      return;
+    }
+    setError(null);
+    onSave(parsed.data);
   }
 
   return (
@@ -156,6 +192,16 @@ export default function SemanticProfileEditor({
           onBlur={() => save({})}
         />
       </div>
+      {/*
+        The form's own error, in the same voice as the control it is about. A
+        value that did not save and a form that says nothing reads as the app
+        having lost the edit.
+      */}
+      {error !== null && (
+        <p className="tf-debug-warning" role="alert">
+          {error}
+        </p>
+      )}
 
       <TextField
         label="Words to avoid (one per line)"

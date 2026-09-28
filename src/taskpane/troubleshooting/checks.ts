@@ -60,6 +60,15 @@ export interface TroubleshootingInput {
   semanticProfileActive: boolean;
   /** A provider is configured and reachable enough to send a request to. */
   providerConfigured: boolean;
+  /**
+   * Raw-text consent, as currently saved.
+   *
+   * Read rather than assumed, because it is a decision the user can withdraw
+   * in Settings while every other prerequisite stays true. A panel that listed
+   * the missing provider but not the withdrawn consent would send someone to
+   * configure something they already have.
+   */
+  rawTextConsent: boolean;
   /** Changes queued in the plan, and how many of them the user has reviewed. */
   plannedCount: number;
   reviewedCount: number;
@@ -162,11 +171,24 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     },
   },
   {
+    id: "no-raw-text-consent",
+    appliesTo: (input) =>
+      input.rawTextConsent === false && input.providerConfigured && input.semanticProfileActive,
+    situation: "The semantic rewrite is unavailable even though everything else is set up",
+    cause:
+      "Sending your text to a provider is switched off. The provider and the semantic profile are both ready, so nothing else is missing — the rewrite is refused because that one permission has not been granted.",
+    remedy:
+      "Turn it on. Nothing is sent anywhere until you do, and you can withdraw it again in Settings at any time.",
+    remedyTarget: {
+      label: "Settings → Provider and privacy → Allow semantic analysis",
+    },
+  },
+  {
     id: "coverage-incomplete",
     appliesTo: (input) => input.coverage !== null && input.coverage.complete === false,
     situation: "There are fewer findings than I expected",
     cause:
-      "Only part of this document could be checked. The findings shown are an unknown subset of the problems present, not a shorter list of them.",
+      "Coverage is incomplete: some or all of the in-scope text was not checked, so the findings shown are an unknown subset of the problems present rather than a shorter list of them.",
     remedy:
       "Read Analysis coverage diagnostics below for exactly which parts were skipped and why. Anything listed under unsupported is a host limitation, not something a setting here will change.",
     remedyTarget: {

@@ -234,8 +234,12 @@ Deployment requirements the client depends on:
 Which provider supports what is fixed in
 `PROVIDER_OAUTH_SUPPORT` and is a product decision, not a deployment one:
 
-- **Anthropic — `supported`.** Developer/Console OAuth with authorization-code
-  and PKCE, refresh where officially enabled.
+- **Anthropic — `supported`.** The OAuth path is the provider's own
+  Developer/Console flow. Third-party authorization-code with PKCE, and token
+  refresh behaviour in particular, are **not established by Anthropic's public
+  API documentation**, so they must be confirmed with the provider before this
+  value is relied on for a production deployment. Treat it as a deployment
+  decision that needs provider confirmation, not as a documented capability.
 - **OpenAI — `featureGated`.** Official API documentation confirms API-key and
   workload-identity authentication for ordinary model requests, not a general
   third-party end-user OAuth equivalent. It therefore uses a

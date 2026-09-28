@@ -230,6 +230,10 @@ export default function Semantic({
     setRecord(created);
     setActiveId(created.id);
     refreshRecords();
+    // Same rule as `selectProfile` and `deleteProfile`: a proposal made against
+    // the previous profile says nothing about the blank one now on screen.
+    setProposal(null);
+    setStage("idle");
     setLearnStatus("Created an empty semantic profile. Set its voice below, or delete it here.");
   }
 
@@ -281,6 +285,15 @@ export default function Semantic({
         result.draft,
       );
       setRecord(created);
+      // The learned profile becomes the active one. Creating a profile that is
+      // not in effect left the Semantic tab showing nothing, and the ribbon
+      // button — which is enabled by the *active* profile's existence — stayed
+      // greyed out with no way to tell why.
+      setActiveSemanticProfile(created.id);
+      refreshRecords();
+      // A proposal is an answer about the previous voice, not this one.
+      setProposal(null);
+      setStage("idle");
       setLearnStatus(
         `Learned from ${result.evidence.source} sample (${result.evidence.wordCount} words).`,
       );
@@ -294,12 +307,24 @@ export default function Semantic({
   const consentMissing = settings.semanticOptIn !== true;
   const providerMissing = !isRemoteProviderConfigured(settings, state.providerConnections);
 
+  /**
+   * Read the current selection for a rewrite.
+   *
+   * Failing to read is a refusal, not a silent no-op: an unhandled rejection
+   * here left the button looking inert, with no message anywhere. Routed to
+   * `rewriteError` exactly as the arrival effect above does, so both paths
+   * speak the same way.
+   */
   async function readSelection(): Promise<void> {
-    const text = (await getSelectionText()).trim();
-    setSelection(text.length === 0 ? null : text);
-    setProposal(null);
-    setRewriteError(null);
-    setStage("idle");
+    try {
+      const text = (await getSelectionText()).trim();
+      setSelection(text.length === 0 ? null : text);
+      setRewriteError(null);
+      setProposal(null);
+      setStage("idle");
+    } catch (error: unknown) {
+      setRewriteError(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function proposeRewrite(): Promise<void> {

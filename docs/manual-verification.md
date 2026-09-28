@@ -81,9 +81,12 @@ in CI, but a local sideload does not read it — which is exactly why a control
 added to only one of the two files produces a build that passes every check and
 a Word that has never heard of it.
 
-If the ribbon or context menu is still missing after that, the manifest is
-being rejected rather than cached, and the reason is in Word's own log rather
-than anywhere in this repository. Check, in order:
+If the ribbon or context menu is still missing after that, the cause is not in
+this repository, and an absent control is not by itself evidence of a rejected
+manifest: Word can also fail to register a manifest it has already accepted, a
+control can fail to render, and a host can silently drop a command the platform
+does not support. Treat it as unknown until Word says otherwise, and use Word's
+own logs and UI diagnostics to establish the cause. Check, in order:
 
 1. **Both manifests.** `manifest.json` (unified, v1.30) and `manifest.xml` must
    declare the same controls. A control in one and not the other is the most

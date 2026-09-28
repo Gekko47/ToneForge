@@ -160,9 +160,10 @@ describe("ConsistencyReview page", () => {
     /*
      * Consent can be withdrawn in Settings between the disclosure and the send.
      * The engine's own gate is the backstop; this is the check that stops the
-     * document leaving at all.
+     * document leaving at all — so the withdrawal is made through the settings
+     * the page actually reads, not by having the engine reject on its behalf.
+     * Mocking the rejection tested the engine's message, not this check.
      */
-    mocks.runConsistencyReview.mockRejectedValue(new Error("consent is required in Settings"));
     render(
       <ConsistencyReview
         onBack={vi.fn()}
@@ -174,11 +175,14 @@ describe("ConsistencyReview page", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Check Consistency" }));
     await waitFor(() => expect(screen.getByTestId("stage")).toHaveTextContent("preflight"));
+
+    installSettings({ consistencyReviewConsent: false });
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
     await waitFor(() =>
       expect(screen.getByTestId("message")).toHaveTextContent(/consent is required/i),
     );
+    expect(mocks.runConsistencyReview).not.toHaveBeenCalled();
   });
 
   it("offers a route back to Document Governance", async () => {

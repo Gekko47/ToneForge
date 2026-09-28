@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import DebuggingPanel from "../../../../src/taskpane/components/DebuggingPanel";
 
 /*
@@ -35,7 +36,7 @@ vi.mock("../../../../src/taskpane/settings/providerComposition", () => ({
 /** A state with nothing standing in the way, so only the asked-for note shows. */
 function healthyState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    settings: { autoScan: true },
+    settings: { autoScan: true, semanticOptIn: true },
     activeSemanticProfileId: "rec-1",
     providerConnections: {},
     ...overrides,
@@ -90,5 +91,38 @@ describe("DebuggingPanel", () => {
     // ADR-0062 fixed on the Dashboard, recurring on a second surface.
     const { container } = render(<DebuggingPanel onBack={vi.fn()} />);
     expect(container.querySelectorAll('[aria-live="polite"], [role="status"]')).toHaveLength(1);
+  });
+
+  it("announces the diagnostic that ran last, not the first one to leave output", async () => {
+    /*
+     * Both output blocks persist, so deciding the announcement from "is there
+     * a probe result" named the probe even after the runtime diagnosis had run.
+     * The region then reported an action the user had just superseded.
+     */
+    mocks.prepareReformatHost.mockResolvedValue({ supportsRevisions: true });
+    render(<DebuggingPanel onBack={vi.fn()} />);
+    const status = screen.getByRole("status");
+
+    await userEvent.click(screen.getByRole("button", { name: /probe word capabilities/i }));
+    await waitFor(() => expect(status).toHaveTextContent(/capability probe finished/i));
+
+    await userEvent.click(screen.getByRole("button", { name: /diagnose office runtime/i }));
+    await waitFor(() => expect(status).toHaveTextContent(/office runtime diagnosis finished/i));
+  });
+
+  it("reports a withdrawn raw-text consent while the provider and profile are ready", () => {
+    // Both prerequisites hold, so the only explanation on offer elsewhere is
+    // one the user has already resolved.
+    mocks.loadState.mockReturnValue(
+      healthyState({
+        settings: { autoScan: true, semanticOptIn: false },
+      }),
+    );
+    render(<DebuggingPanel onBack={vi.fn()} />);
+
+    expect(
+      screen.getByText(/sending your text to a provider is switched off/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Allow semantic analysis/i)).toBeInTheDocument();
   });
 });

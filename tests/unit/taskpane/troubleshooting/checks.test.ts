@@ -13,6 +13,7 @@ function healthy(overrides: Partial<TroubleshootingInput> = {}): Troubleshooting
     coverage: null,
     semanticProfileActive: true,
     providerConfigured: true,
+    rawTextConsent: true,
     plannedCount: 0,
     reviewedCount: 0,
     ...overrides,
@@ -106,6 +107,30 @@ describe("the troubleshooting registry", () => {
     expect(notes[0]?.cause).toMatch(/deterministic checks.*still work/i);
   });
 
+  it("reports a withdrawn raw-text consent once everything else is ready", () => {
+    // The blocker the user cannot see: both prerequisites are true, so the only
+    // explanation on offer is the provider or the profile, and both are
+    // already configured.
+    const notes = diagnoseSituation(healthy({ rawTextConsent: false }));
+    expect(notes[0]?.id).toBe("no-raw-text-consent");
+    expect(notes[0]?.cause).toMatch(/switched off/i);
+  });
+
+  it("does not blame consent when a provider or a profile is missing too", () => {
+    // Naming the consent first would send someone to Settings for a toggle
+    // that will not unblock them while there is nothing to send to.
+    expect(
+      diagnoseSituation(healthy({ rawTextConsent: false, providerConfigured: false })).map(
+        (note) => note.id,
+      ),
+    ).not.toContain("no-raw-text-consent");
+    expect(
+      diagnoseSituation(healthy({ rawTextConsent: false, semanticProfileActive: false })).map(
+        (note) => note.id,
+      ),
+    ).not.toContain("no-raw-text-consent");
+  });
+
   it("names the exact control behind every remedy", () => {
     /*
      * The point of the registry. "Check your settings" is the non-answer the
@@ -118,6 +143,7 @@ describe("the troubleshooting registry", () => {
         trackedEditing: false,
         semanticProfileActive: false,
         providerConfigured: false,
+        rawTextConsent: false,
         plannedCount: 2,
         reviewedCount: 0,
         coverage: { complete: false } as never,
@@ -148,6 +174,7 @@ describe("the troubleshooting registry", () => {
       "nothing-reviewed",
       "no-semantic-profile",
       "no-provider",
+      "no-raw-text-consent",
       "coverage-incomplete",
     ]);
   });

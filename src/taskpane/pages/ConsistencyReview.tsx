@@ -90,28 +90,38 @@ export default function ConsistencyReview({
       );
       return;
     }
-    const snapshot = await getStructuredSnapshot();
-    const sections: string[] = [];
-    const blocks = snapshot.nodes.map((node) => {
-      const body = node.text ?? "";
-      if (node.type !== "heading") return body;
-      const title = body.trim();
-      if (title.length === 0) return "";
-      sections.push(title);
-      return `## ${title}`;
-    });
-    const text = blocks.join("\n\n");
-    setPreflight({
-      wordCount: text.split(/\s+/).filter((word) => word.length > 0).length,
-      statementCount: previewStatements(text).length,
-      text,
-      sections,
-      // The document's content hash is the run's identity, not its length: an
-      // edit that replaces a word with another of the same length leaves the
-      // length identical, and a guard keyed on length would report such a run as
-      // still current.
-      revision: snapshot.contentHash,
-    });
+    /*
+     * Read inside the try, not before it. A host that rejects the read left an
+     * unhandled rejection on the click handler, so the page said nothing at
+     * all and looked as though the button were inert. `start()` already routes
+     * a failure to `message`; the preflight needs the same.
+     */
+    try {
+      const snapshot = await getStructuredSnapshot();
+      const sections: string[] = [];
+      const blocks = snapshot.nodes.map((node) => {
+        const body = node.text ?? "";
+        if (node.type !== "heading") return body;
+        const title = body.trim();
+        if (title.length === 0) return "";
+        sections.push(title);
+        return `## ${title}`;
+      });
+      const text = blocks.join("\n\n");
+      setPreflight({
+        wordCount: text.split(/\s+/).filter((word) => word.length > 0).length,
+        statementCount: previewStatements(text).length,
+        text,
+        sections,
+        // The document's content hash is the run's identity, not its length: an
+        // edit that replaces a word with another of the same length leaves the
+        // length identical, and a guard keyed on length would report such a run
+        // as still current.
+        revision: snapshot.contentHash,
+      });
+    } catch (error: unknown) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   /**

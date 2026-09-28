@@ -142,8 +142,10 @@ export async function proposeSemanticRewrite(
    * Why this rewrite is not actionable, or null when it is.
    *
    * Stated as one reason rather than two independent fields, because the two
-   * causes are not equally actionable by the user: an unresolvable anchor is a
-   * dead end, while a low score is a judgement they may reasonably overrule.
+   * causes read differently to the user: an unresolvable anchor is a dead end,
+   * and a low score is a rewrite the product will not act on. Neither is
+   * something the review gate can turn into a pending change — `actionable` is
+   * false in both cases, so the text must not imply the user can accept one.
    */
   let advisoryReason: string | null = null;
   if (!resolution.ok) {
@@ -151,7 +153,7 @@ export async function proposeSemanticRewrite(
   } else if (!confident) {
     advisoryReason =
       `Below ${Math.round(REWRITE_ACTIONABLE_CONFIDENCE * 100)}% confidence, so this rewrite is ` +
-      "shown for you to accept rather than applied. " +
+      "shown for reference only and cannot be sent for review. " +
       rationale;
   }
 

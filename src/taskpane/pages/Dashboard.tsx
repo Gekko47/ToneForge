@@ -315,6 +315,21 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * the one present when the handler was created.
    */
   const pendingPlanRef = useRef<PendingPlan | null>(null);
+  /**
+   * The *unfiltered* preview plan, for the review gate to judge a finding
+   * against.
+   *
+   * Separate from `pendingPlanRef` because the two answer different questions.
+   * `pendingPlan` is what the user has already agreed to and is all Apply may
+   * write; this is everything the preview proposed. A finding under review is,
+   * by definition, not in the first one — resolving it against the narrowed
+   * plan meant the gate answered "the planner proposes no correction" for a
+   * finding that had one, and reviewing the first finding could never add
+   * anything.
+   */
+  const previewPlanRef = useRef<ChangePlan | null>(null);
+  /** The preview run's own findings, matched to a reviewed finding by key. */
+  const previewFindingsRef = useRef<readonly Finding[]>([]);
   /** Why a reviewed finding did not become a pending change, if it did not. */
   const [reviewNote, setReviewNote] = useState<string | null>(null);
   /*
@@ -745,7 +760,16 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * ones the gate reads.
    */
   function reviewOne(finding: Finding): void {
-    const decision = reviewFinding(finding, pendingPlanRef.current?.plan ?? null);
+    /*
+     * Resolved against the preview run's findings by `reviewKey`, not by id.
+     * The id the user clicked was issued by the observer's scan; the change
+     * names a finding from the preview that planned it. Without the key
+     * translation an observer finding matched nothing in the plan at all.
+     */
+    const key = reviewKey(finding);
+    const previewFinding =
+      previewFindingsRef.current.find((candidate) => reviewKey(candidate) === key) ?? finding;
+    const decision = reviewFinding(previewFinding, previewPlanRef.current);
     setReviewedKeys((previous) => {
       const next = new Set(previous).add(reviewKey(finding));
       persistReviewedKeys(next);
@@ -926,13 +950,19 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   const previewFindings = reformatResult?.report.findings ?? [];
   const reviewedOnly = resolvePendingPlan(reformatResult);
+  const narrowed =
+    reviewedOnly === null ? null : reviewedPlan(reviewedOnly.plan, reviewedKeys, previewFindings);
+  /*
+   * `null` when nothing is reviewed, and not the full plan as a fallback.
+   * Falling back meant a user who had reviewed nothing was handed the entire
+   * plan as "pending": Apply's own gate would refuse it, but the table listed
+   * every change and the count claimed they were all the user's to apply. The
+   * fallback also defeated the reason for narrowing at all.
+   */
   pendingPlanRef.current =
-    reviewedOnly === null
-      ? null
-      : {
-          ...reviewedOnly,
-          plan: reviewedPlan(reviewedOnly.plan, reviewedKeys, previewFindings) ?? reviewedOnly.plan,
-        };
+    reviewedOnly === null || narrowed === null ? null : { ...reviewedOnly, plan: narrowed };
+  previewPlanRef.current = reviewedOnly?.plan ?? null;
+  previewFindingsRef.current = previewFindings;
   const pendingPlan = pendingPlanRef.current;
   /**
    * How many changes exist in total, for the collapsed header.

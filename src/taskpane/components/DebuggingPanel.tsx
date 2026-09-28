@@ -41,6 +41,7 @@ function currentInput(
     coverage,
     semanticProfileActive: state.activeSemanticProfileId !== null,
     providerConfigured: isRemoteProviderConfigured(state.settings, state.providerConnections),
+    rawTextConsent: state.settings.semanticOptIn,
     plannedCount,
     reviewedCount,
   };
@@ -67,14 +68,24 @@ export default function DebuggingPanel({
   const [diagnostics, setDiagnostics] = useState<string | null>(null);
   const [trackedEditing, setTrackedEditing] = useState(isTrackedEditingEnabled);
   const [busy, setBusy] = useState(false);
+  /*
+   * Which diagnostic the user ran last, not which outputs happen to be on
+   * screen. Both outputs persist side by side, so deciding the announcement
+   * from "is there a probe result" named the wrong result the moment a second
+   * action ran — running the runtime diagnosis after the probe announced the
+   * probe, which is the opposite of what happened.
+   */
+  const [lastAction, setLastAction] = useState<"probe" | "diagnose" | null>(null);
 
   async function probeCapabilities(): Promise<void> {
     setBusy(true);
     setDiagnostics(null);
     try {
       setCapabilities(await prepareReformatHost());
+      setLastAction("probe");
     } catch {
       setCapabilities(null);
+      setLastAction("diagnose");
       setDiagnostics(
         "Capability probe did not complete. Confirm the add-in is running inside a supported Word host.",
       );
@@ -110,20 +121,25 @@ export default function DebuggingPanel({
         </button>
         <button
           type="button"
-          onClick={() => setDiagnostics(formatDiagnostics(probeOfficeRuntime()))}
+          onClick={() => {
+            setDiagnostics(formatDiagnostics(probeOfficeRuntime()));
+            setLastAction("diagnose");
+          }}
         >
           Diagnose Office runtime
         </button>
         {/*
           One live region, not one per output. Probing and then diagnosing
           leaves both blocks on screen, and two polite regions updating in one
-          session read in DOM order rather than in the order they were run — the
-          same defect ADR-0062 fixed on the Dashboard.
+          session read in DOM order rather than in the order they were run —
+          the same defect ADR-0062 fixed on the Dashboard. The text therefore
+          follows `lastAction`, so the announcement names the run that
+          actually happened last.
         */}
         <p className="sr-only" role="status" aria-live="polite">
-          {capabilities
+          {lastAction === "probe"
             ? "Capability probe finished. The result is below."
-            : diagnostics
+            : lastAction === "diagnose"
               ? "Office runtime diagnosis finished. The result is below."
               : ""}
         </p>
@@ -152,8 +168,8 @@ export default function DebuggingPanel({
         {notes.length === 0 ? (
           <p className="tf-sub">
             Nothing is currently standing in the way: automatic scanning is on, tracked editing is
-            enabled, a semantic profile is active, a provider is configured, and any analysis that
-            has run covered the whole document.
+            enabled, a semantic profile is active, a provider is configured, sending your text to
+            that provider is allowed, and any analysis that has run covered the whole document.
           </p>
         ) : (
           <ul className="tf-troubleshooting-list">

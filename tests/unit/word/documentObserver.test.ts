@@ -185,9 +185,12 @@ describe("documentObserver", () => {
     expect(last.stale).toBe(false);
   });
 
-  it("still reports staleness when a refresh fails", async () => {
-    // The banner is kept for the case it is actually for. Refusing to say
-    // anything is not the same as having nothing to say.
+  it("reports a failure, not staleness, when the first scan never succeeded", async () => {
+    /*
+     * Nothing has been accepted yet, so there is nothing for the findings to be
+     * stale *relative to*. Calling it "stale" pointed the user at a re-scan
+     * while the empty result read as a clean document.
+     */
     const onStatus = vi.fn();
     (globalThis as { Office?: unknown }).Office = {
       run: vi.fn().mockRejectedValue(new Error("the host said no")),
@@ -200,6 +203,33 @@ describe("documentObserver", () => {
     });
 
     observer.startObserver();
+    await vi.runAllTimersAsync();
+
+    const last = onStatus.mock.calls.at(-1)?.[0];
+    expect(last.phase).toBe("failed");
+    expect(last.stale).toBe(false);
+  });
+
+  it("still reports staleness when a refresh fails after findings were accepted", async () => {
+    // The banner is kept for the case it is actually for. Refusing to say
+    // anything is not the same as having nothing to say.
+    const onStatus = vi.fn();
+    const observer = createDocumentObserver({
+      debounceMs: 10,
+      onStatus,
+      profile: makeProfile(),
+    });
+
+    // One accepted run first, so the failure below is a refresh rather than the
+    // opening scan.
+    observer.startObserver();
+    await vi.runAllTimersAsync();
+    (globalThis as { Office?: unknown }).Office = {
+      run: vi.fn().mockRejectedValue(new Error("the host said no")),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+    };
+
+    observer.onDocumentChanged();
     await vi.runAllTimersAsync();
 
     const last = onStatus.mock.calls.at(-1)?.[0];

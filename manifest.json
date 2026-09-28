@@ -39,10 +39,6 @@
           {
             "name": "RibbonApi",
             "minVersion": "1.1"
-          },
-          {
-            "name": "ContextMenuApi",
-            "minVersion": "1.1"
           }
         ],
         "scopes": ["document"],
@@ -208,6 +204,14 @@
       ],
       "contextMenus": [
         {
+          "requirements": {
+            "capabilities": [
+              {
+                "name": "ContextMenuApi",
+                "minVersion": "1.1"
+              }
+            ]
+          },
           "menus": [
             {
               "entryPoint": "text",

@@ -153,8 +153,12 @@ describe("proposeSemanticRewrite", () => {
 
     expect(finding.actionable).toBe(false);
     // The reason is stated, not merely that it is low: the user can judge a
-    // judgement, but not a bare number.
-    expect(finding.advisoryReason).toMatch(/shown for you to accept rather than applied/);
+    // judgement, but not a bare number. It must also not offer an acceptance
+    // the review gate cannot honour — `actionable: false` means no pending
+    // change is ever created for this finding.
+    expect(finding.advisoryReason).toMatch(
+      /shown for reference only and cannot be sent for review/,
+    );
     expect(finding.advisoryReason).toContain(goodBody.rationale);
   });
 

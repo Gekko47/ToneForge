@@ -290,12 +290,14 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
         emitStatus();
         return;
       }
-      // The genuine stale case: the document changed and the refresh did not
-      // happen. `phase` is "stale" rather than "failed" because the scan did not
-      // fail for its own reasons — the host rejected it, and the remedy is
-      // different from the one for a host that has gone away.
-      state.phase = "stale";
-      state.stale = true;
+      // The genuine stale case: a refresh over a document that already had
+      // findings accepted did not happen. Before anything has been accepted
+      // there is nothing to be stale *relative to* — the first scan simply
+      // failed — and reporting it as "stale" pointed the user at a re-scan
+      // while the empty result looked like a clean document.
+      const hasAcceptedFindings = state.lastAcceptedRunId !== null;
+      state.phase = hasAcceptedFindings ? "stale" : "failed";
+      state.stale = hasAcceptedFindings;
       state.hostUnavailable = false;
       state.error = err instanceof Error ? err.message : String(err);
       emitStatus();
