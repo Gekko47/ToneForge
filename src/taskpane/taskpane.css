@@ -142,6 +142,21 @@ body {
   margin-top: 8px;
 }
 
+/*
+ * Whole-document actions.
+ *
+ * Distinct from `.tf-finding-actions` on purpose: these rewrite or re-read every
+ * finding, so they must not read as per-finding controls sitting in a card.
+ * Left-aligned with a gap, the same as the card actions, so the two read as
+ * related rows of the same pane.
+ */
+.tf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 button,
 input,
 select,

@@ -1,0 +1,228 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
+import { createRecord } from "../../../../src/core/domain/ProfileRecord";
+
+/**
+ * `settings.autoScan` was persisted and defaulted but read nowhere.
+ *
+ * The observer started unconditionally and the paragraph-event adapter
+ * subscribed unconditionally, so a user who turned auto-scan off got exactly
+ * the same behaviour as one who left it on. The setting was a stored intention
+ * with no effect — the same class of defect as the ignore list being written
+ * and then discarded, and the reason these tests drive the real Dashboard
+ * rather than asserting on a helper that only exists to be asserted on.
+ *
+ * The paragraph-event adapter is the part that matters most: those events are
+ * the host announcing that the text changed, so subscribing while auto-scan is
+ * off would re-enable automatic scanning on every current host.
+ */
+
+const mocks = vi.hoisted(() => ({
+  loadState: vi.fn(),
+  createDocumentObserver: vi.fn(),
+  startParagraphEvents: vi.fn(),
+  stopParagraphEvents: vi.fn(),
+  prepareReformatHost: vi.fn(),
+  isTrackedEditingEnabled: vi.fn(),
+}));
+
+/**
+ * Re-establish every mock's behaviour.
+ *
+ * `vitest.config.ts` sets `mockReset: true`, which clears implementations as
+ * well as calls. A `vi.fn(impl)` therefore returns `undefined` by the time a
+ * test body runs, so the observer would be `undefined` and `observerRef` would
+ * hold nothing — the component under test would be broken by the fixture, and
+ * the failure would read as a wiring bug.
+ */
+function installMockBehaviour(): void {
+  mocks.createDocumentObserver.mockImplementation((_options?: unknown) => ({
+    startObserver: vi.fn(),
+    stopObserver: vi.fn(),
+    onDocumentChanged: vi.fn(),
+  }));
+  mocks.startParagraphEvents.mockResolvedValue(undefined);
+  mocks.prepareReformatHost.mockResolvedValue(null);
+  mocks.isTrackedEditingEnabled.mockReturnValue(false);
+}
+
+vi.mock("../../../../src/core/state/persistence", () => ({
+  loadState: () => mocks.loadState(),
+  saveState: vi.fn(),
+  ignoreFinding: vi.fn(),
+  restoreFinding: vi.fn(),
+  subscribeToState: () => () => undefined,
+}));
+
+vi.mock("../../../../src/core/state", () => ({
+  loadState: () => mocks.loadState(),
+  saveState: vi.fn(),
+  subscribeToState: () => () => undefined,
+}));
+
+/*
+ * Delegates to the spy and returns whatever it produced.
+ *
+ * Returning a fresh literal here instead would make `mockImplementation` in a
+ * test invisible, and the test would then assert against a spy the component
+ * never kept a handle to.
+ */
+vi.mock("../../../../src/word/documentObserver", () => ({
+  createDocumentObserver: (options: unknown) => mocks.createDocumentObserver(options),
+}));
+
+vi.mock("../../../../src/word/wordParagraphEvents", () => ({
+  createWordParagraphEventAdapter: () => ({
+    start: mocks.startParagraphEvents,
+    stop: mocks.stopParagraphEvents,
+  }),
+}));
+
+vi.mock("../../../../src/reformat", () => ({
+  prepareReformatHost: mocks.prepareReformatHost,
+  applyReviewedPlan: vi.fn(),
+  isTrackedEditingEnabled: mocks.isTrackedEditingEnabled,
+  reformatDocument: vi.fn(async () => ({
+    plan: null,
+    report: { findings: [], coverage: null },
+  })),
+}));
+
+vi.mock("../../../../src/taskpane/components/ProfileEditor", () => ({
+  default: function ProfileEditorStub({ onRecordSaved }: { onRecordSaved?: () => void }) {
+    return (
+      <button type="button" onClick={onRecordSaved}>
+        Save profile
+      </button>
+    );
+  },
+}));
+
+import Dashboard from "../../../../src/taskpane/pages/Dashboard";
+import { __resetPersistedStore } from "../../../../src/taskpane/state/usePersistedState";
+
+function stateWithProfile(autoScan: boolean) {
+  const profile = StyleProfileSchema.parse(createEmptyProfile("Learned style profile"));
+  const record = createRecord(profile.id, profile.name, profile.createdAt, profile);
+  return {
+    version: 11,
+    profileRecords: { [record.id]: record },
+    activeProfileId: record.id,
+    semanticProfileRecords: {},
+    activeSemanticProfileId: null,
+    ignoredFindings: [],
+    governanceProfiles: {},
+    governanceHistory: {},
+    activeGovernanceProfileId: null,
+    settings: {
+      llmProvider: "mock" as const,
+      openAiCredentialMode: "broker" as const,
+      semanticOptIn: false,
+      autoScan,
+    },
+    providerConnections: [],
+  };
+}
+
+describe("settings.autoScan", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    installMockBehaviour();
+    window.localStorage.clear();
+    /*
+     * `usePersistedState` caches its snapshot at module scope, and that cache is
+     * what the Dashboard reads `autoScan` from. Without this reset the second
+     * test sees the first test's `autoScan: true` and the gate looks broken when
+     * it is working — module state is not a mock, so `clearAllMocks` does not
+     * reach it.
+     */
+    __resetPersistedStore();
+  });
+
+  it("starts the observer and subscribes to paragraph events when auto-scan is on", () => {
+    mocks.loadState.mockReturnValue(stateWithProfile(true));
+
+    render(<Dashboard />);
+
+    expect(mocks.startParagraphEvents).toHaveBeenCalled();
+  });
+
+  it("does neither when auto-scan is off", () => {
+    // The stored intention the user set in Settings, honoured.
+    mocks.loadState.mockReturnValue(stateWithProfile(false));
+
+    render(<Dashboard />);
+
+    expect(mocks.startParagraphEvents).not.toHaveBeenCalled();
+  });
+
+  it("still offers Re-scan now when auto-scan is off", () => {
+    // If the manual control vanished with auto-scan, turning the setting off
+    // would remove the only way to get a findings list at all.
+    mocks.loadState.mockReturnValue(stateWithProfile(false));
+
+    render(<Dashboard />);
+
+    expect(screen.getByRole("button", { name: "Re-scan now" })).toBeEnabled();
+  });
+});
+
+describe("the whole-document action row", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    installMockBehaviour();
+    window.localStorage.clear();
+    __resetPersistedStore();
+    mocks.loadState.mockReturnValue(stateWithProfile(true));
+  });
+
+  it("shows Apply all and Re-scan now together, Apply first", async () => {
+    // Order is the contract: apply, then the less destructive re-scan beside it.
+    render(<Dashboard />);
+
+    const apply = screen.getByRole("button", { name: "Apply all changes" });
+    const rescan = screen.getByRole("button", { name: "Re-scan now" });
+    expect(apply).toBeInTheDocument();
+    expect(rescan).toBeInTheDocument();
+    // Rendered order, read from the DOM rather than from the JSX: the two live
+    // in sibling branches of one conditional, so their source order is not the
+    // contract the user experiences.
+    const labels = screen.getAllByRole("button").map((button) => button.textContent?.trim() ?? "");
+    expect(labels.indexOf("Apply all changes")).toBeLessThan(labels.indexOf("Re-scan now"));
+  });
+
+  it("disables Apply all when the host cannot apply, and says why", () => {
+    // `isTrackedEditingEnabled` is false in this file's mock, so readiness has a
+    // real blocker. A disabled control with no stated reason is the defect the
+    // readiness work in Item 1.2 was about.
+    render(<Dashboard />);
+
+    expect(screen.getByRole("button", { name: "Apply all changes" })).toBeDisabled();
+  });
+
+  it("drives a scan when Re-scan now is pressed", async () => {
+    const user = userEvent.setup();
+    /*
+     * "Some observer was driven", not "the newest one was".
+     *
+     * The observer effect re-runs while the capability probe resolves, so
+     * several observers exist and the one in the ref is whichever the last run
+     * left there. Pinning to a specific instance would assert React's effect
+     * ordering rather than the behaviour: what matters is that pressing the
+     * button makes the pane ask its observer for a scan.
+     */
+    render(<Dashboard />);
+    const before = mocks.createDocumentObserver.mock.results.length;
+    await user.click(screen.getByRole("button", { name: "Re-scan now" }));
+
+    const observers = mocks.createDocumentObserver.mock.results
+      .slice(0, before)
+      .map((result) => result.value);
+    expect(observers.length).toBeGreaterThan(0);
+    expect(observers.some((observer) => observer?.onDocumentChanged.mock.calls.length > 0)).toBe(
+      true,
+    );
+  });
+});

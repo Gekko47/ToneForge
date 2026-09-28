@@ -250,6 +250,16 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   // toggle or provider connection saved in Settings is visible here in the same
   // render pass rather than after the user navigates away and back.
   const persisted = usePersistedState();
+  /**
+   * Whether the pane watches the document on its own.
+   *
+   * Persisted and defaulted on, but previously never read anywhere — the
+   * observer started unconditionally, so the setting was a stored intention
+   * with no effect. Turning it off now actually stops the automatic scans, and
+   * "Re-scan now" is the way back, which is why that control is never
+   * disabled by this flag.
+   */
+  const autoScan = persisted.settings.autoScan;
   const [page, setPage] = useState<DashboardPage>("home");
   /*
    * Open by default, and opened *for* the user when findings arrive.
@@ -324,6 +334,14 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const consistencyAbortRef = useRef<AbortController | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   /**
+   * True while a tracked apply is in flight.
+   *
+   * `applyPendingPlan` is awaited rather than fire-and-forget, so without this
+   * the button stays enabled and a second click would start a second apply
+   * against a document the first one is still writing to.
+   */
+  const [applying, setApplying] = useState(false);
+  /**
    * One live region for the whole pane.
    *
    * The observer, the apply path, and the consistency review each have their own
@@ -379,6 +397,13 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    *
    * `previewing` is a ref rather than state: it only gates this effect, and
    * using state would make setting it re-trigger the effect that sets it.
+   *
+   * Deliberately NOT gated on `settings.autoScan`. That preference governs
+   * *when the pane scans*; this governs what the pane does with a scan that
+   * already happened. Gating it would mean a user who turned auto-scan off and
+   * pressed "Re-scan now" got a findings list with no Pending Changes and an
+   * Apply button that could never enable — a dead end caused by the setting,
+   * not by anything about their document.
    */
   const previewingRef = useRef(false);
   useEffect(() => {
@@ -461,7 +486,14 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     // see a hash it thinks it has already previewed and build nothing.
     previewedDocHashRef.current = null;
     observerRef.current = observer;
-    observer.startObserver();
+    /*
+     * `startObserver` is gated on the preference rather than the observer being
+     * created: the observer object itself is what "Re-scan now" drives, so with
+     * auto-scan off the pane keeps a handle it can still scan with on demand,
+     * and simply does not subscribe to document events. Constructing it and
+     * never starting it would make the manual button inert too.
+     */
+    if (autoScan) observer.startObserver();
     // The change payload is forwarded rather than discarded. It is what lets the
     // observer examine only the paragraphs Word says changed, and it carries the
     // evidence the observer needs to refuse that narrowing when the host did not
@@ -469,13 +501,25 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     const paragraphEvents = createWordParagraphEventAdapter({
       onChange: (change) => observer.onDocumentChanged(change),
     });
-    void paragraphEvents.start();
+    /*
+     * Gated with the observer, not independently.
+     *
+     * These events are the host's own notification that the text changed, so
+     * subscribing to them while auto-scan is off would re-enable exactly the
+     * automatic scanning the preference turns off — the setting would appear
+     * inert for every host that reports paragraph events, which is every
+     * current one.
+     */
+    if (autoScan) void paragraphEvents.start();
     return () => {
       paragraphEvents.stop();
       observer.stopObserver();
       observerRef.current = null;
     };
-  }, [activeProfileKey, caps]);
+    // `autoScan` is a dependency, not a captured value: toggling the setting
+    // while the pane is open has to take effect, and without it this effect
+    // would never re-run.
+  }, [activeProfileKey, caps, autoScan]);
 
   useEffect(() => {
     const request = consumeTaskpaneTarget();
@@ -781,6 +825,40 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     }
   }
 
+  /**
+   * Apply every change in the previewed plan, tracked.
+   *
+   * Wraps `applyPendingPlan` in an in-flight flag so a second click cannot start
+   * a second apply while the first is still writing to the document.
+   */
+  async function applyAllChanges(): Promise<void> {
+    if (applying) return;
+    setApplying(true);
+    try {
+      await applyPendingPlan(pendingPlanRef.current);
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  /**
+   * Re-scan now, whether or not auto-scan is on.
+   *
+   * Two things have to be reset or the scan is skipped. `previewedDocHashRef`
+   * holds the hash the pane has already previewed, and the auto-preview guard
+   * compares against it, so a rescan of an unchanged document would build
+   * nothing. Any pending plan is dropped too: it was planned against the text
+   * as it was, and Apply refuses a plan whose hash no longer matches.
+   */
+  function rescanNow(): void {
+    previewedDocHashRef.current = null;
+    setReformatResult(null);
+    setPendingOpen(false);
+    setReviewNote(null);
+    observerRef.current?.onDocumentChanged();
+    announcement.announce("Re-scanning the document.");
+  }
+
   // The consistency report crosses into the ordinary finding model through the
   // same bridge every other engine uses, so the review results can hand its
   // findings to the Findings list rather than to a surface of their own. These
@@ -1035,6 +1113,29 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
               above, and a second one here would say it twice. */}
           {applyMessage && <p className="tf-readiness">{applyMessage}</p>}
         </section>
+      )}
+      {/*
+       * Apply All and Re-scan Now, on one row below the findings navigation.
+       *
+       * Both are decisions about the whole document rather than about the
+       * selected finding, so they sit outside the per-card actions: a user
+       * stepping through findings should not be offered a button that rewrites
+       * all of them. Re-scan Now is always available — it is the only way back
+       * to a fresh list when auto-scan is off.
+       */}
+      {page === "home" && (
+        <div className="tf-actions">
+          <button
+            type="button"
+            onClick={() => void applyAllChanges()}
+            disabled={readiness.reason !== null || pendingPlan === null || applying}
+          >
+            {applying ? "Applying…" : "Apply all changes"}
+          </button>
+          <button type="button" onClick={rescanNow} disabled={status?.phase === "scanning"}>
+            {status?.phase === "scanning" ? "Re-scanning…" : "Re-scan now"}
+          </button>
+        </div>
       )}
       {page === "ai-review" && (
         <AiReviewSection
