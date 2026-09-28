@@ -158,6 +158,70 @@ describe("documentObserver", () => {
     ).toBe(true);
   });
 
+  it("does not report findings as stale while a re-scan is already on its way", async () => {
+    /*
+     * The flash this removes. `stale` was set on the first change event, so
+     * "Findings are stale" appeared the instant a keystroke landed and vanished
+     * when the debounced scan caught up — a true statement at the moment when it
+     * was least useful, on every character typed.
+     */
+    const onStatus = vi.fn();
+    const observer = createDocumentObserver({
+      debounceMs: 1200,
+      onStatus,
+      profile: makeProfile(),
+    });
+
+    observer.startObserver();
+    await vi.runAllTimersAsync();
+    onStatus.mockClear();
+
+    observer.onDocumentChanged();
+    // Before the debounce elapses: the refresh is scheduled, so nothing is stale.
+    expect(onStatus).not.toHaveBeenCalled();
+
+    await vi.runAllTimersAsync();
+    const last = onStatus.mock.calls.at(-1)?.[0];
+    expect(last.stale).toBe(false);
+  });
+
+  it("still reports staleness when a refresh fails", async () => {
+    // The banner is kept for the case it is actually for. Refusing to say
+    // anything is not the same as having nothing to say.
+    const onStatus = vi.fn();
+    (globalThis as { Office?: unknown }).Office = {
+      run: vi.fn().mockRejectedValue(new Error("the host said no")),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+    };
+    const observer = createDocumentObserver({
+      debounceMs: 10,
+      onStatus,
+      profile: makeProfile(),
+    });
+
+    observer.startObserver();
+    await vi.runAllTimersAsync();
+
+    const last = onStatus.mock.calls.at(-1)?.[0];
+    expect(last.stale).toBe(true);
+    expect(last.phase).toBe("stale");
+  });
+
+  it("waits about a second after the last change before re-reading", async () => {
+    // Asserted through behaviour rather than by exporting the constant: what
+    // matters is that a burst of typing produces one scan, not that the number
+    // in the source is a particular value.
+    const onStatus = vi.fn();
+    const observer = createDocumentObserver({ onStatus, profile: makeProfile() });
+
+    observer.startObserver();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(onStatus).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(900);
+    expect(onStatus).toHaveBeenCalled();
+  });
+
   it("handles missing profile gracefully", () => {
     const onStatus = vi.fn();
     const observer = createDocumentObserver({

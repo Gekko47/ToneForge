@@ -88,7 +88,17 @@ interface ObserverState {
   scope: ScanScope | null;
 }
 
-const DEFAULT_DEBOUNCE_MS = 300;
+/**
+ * How long the pane waits after the last change before it re-reads the document.
+ *
+ * 300ms was far too short for the work that follows. A re-scan re-reads the whole
+ * body and rebuilds a plan from it, so firing three hundred milliseconds into a
+ * sentence means re-reading the document several times while one is still being
+ * typed — and showing the user a findings list that is replaced again a moment
+ * later. A second is long enough to mean "they have stopped", and short enough
+ * that the list still feels live while someone works.
+ */
+const DEFAULT_DEBOUNCE_MS = 1200;
 
 /**
  * Create a document observer that rescans on a debounced document change.
@@ -280,7 +290,11 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
         emitStatus();
         return;
       }
-      state.phase = "failed";
+      // The genuine stale case: the document changed and the refresh did not
+      // happen. `phase` is "stale" rather than "failed" because the scan did not
+      // fail for its own reasons — the host rejected it, and the remedy is
+      // different from the one for a host that has gone away.
+      state.phase = "stale";
       state.stale = true;
       state.hostUnavailable = false;
       state.error = err instanceof Error ? err.message : String(err);
@@ -315,7 +329,19 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     }
   }
 
-  /** Schedule a scan, replacing an obsolete run only once per debounce burst. */
+  /**
+   * Schedule a scan, replacing an obsolete run only once per debounce burst.
+   *
+   * The findings are *not* marked stale here. They used to be, on the first
+   * change event, which meant "Findings are stale" appeared the instant a
+   * keystroke landed and vanished a fraction of a second later when the scan
+   * caught up — a flash on every character. It is a true statement at the wrong
+   * moment: a refresh is already scheduled and is about to answer it.
+   *
+   * Stale now means what a user would act on — the document changed and the
+   * refresh did not happen, or the last one failed. That is set where it is
+   * earned, in the failure path, and nowhere else.
+   */
   function scheduleScan(): void {
     if (!state.running) return;
     if (state.scanInFlight && state.replacementPending) {
@@ -331,8 +357,6 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     state.runId = next.runId;
     state.documentVersion = next.documentVersion;
     state.scanScheduled = true;
-    state.stale = state.lastAcceptedRunId !== null;
-    if (state.stale) state.phase = "stale";
     debouncedScan();
   }
 

@@ -409,6 +409,13 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * not by anything about their document.
    */
   const previewingRef = useRef(false);
+  /**
+   * The narrowed run the full-rescan follow-up was already requested for.
+   *
+   * A ref, not state: it is a guard for the preview effect rather than anything
+   * the user sees, and rendering on it would re-trigger the effect that sets it.
+   */
+  const narrowFollowUpRef = useRef<string | null>(null);
   useEffect(() => {
     if (status === null) return;
     const decision = decidePreview({
@@ -421,11 +428,28 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       previewing: previewingRef.current,
     });
     if (decision.kind === "skip") {
-      // The narrowed case is the only skip worth telling the user about; the
-      // rest are quiet no-ops that would otherwise re-announce on every scan.
-      if (!isFullScan(status.coverage)) setPreviewNote(decision.reason);
+      /*
+       * A narrowed scan cannot produce a whole-document plan, so the preview is
+       * declined — and without this the previous plan simply sat there
+       * describing text that no longer existed, which reads as "the pane stopped
+       * updating". Rather than build a plan from a partial read, ask the observer
+       * for the full scan that can.
+       *
+       * Once per narrowed run: the follow-up is itself a full scan, so the
+       * `isFullScan` guard above stops the next attempt. The ref is the belt to
+       * that braces, so a host that keeps reporting a narrow scope cannot spin
+       * the observer.
+       */
+      if (!isFullScan(status.coverage)) {
+        setPreviewNote(decision.reason);
+        if (narrowFollowUpRef.current !== status.documentVersion) {
+          narrowFollowUpRef.current = status.documentVersion;
+          observerRef.current?.onDocumentChanged();
+        }
+      }
       return;
     }
+    narrowFollowUpRef.current = null;
     setPreviewNote(null);
     previewingRef.current = true;
     void (async () => {
@@ -462,7 +486,8 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
 
   useEffect(() => {
     const observer = createDocumentObserver({
-      debounceMs: 300,
+      // No `debounceMs`: the observer's own default is the single place this is
+      // decided, and a second copy here is one more number to forget to change.
       onStatus: setStatus,
       profile: activeProfile,
       capabilities: caps ?? {

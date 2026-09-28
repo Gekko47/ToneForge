@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
@@ -22,6 +22,7 @@ import { createRecord } from "../../../../src/core/domain/ProfileRecord";
 const mocks = vi.hoisted(() => ({
   loadState: vi.fn(),
   createDocumentObserver: vi.fn(),
+  emitStatus: null as ((status: unknown) => void) | null,
   startParagraphEvents: vi.fn(),
   stopParagraphEvents: vi.fn(),
   prepareReformatHost: vi.fn(),
@@ -38,11 +39,18 @@ const mocks = vi.hoisted(() => ({
  * the failure would read as a wiring bug.
  */
 function installMockBehaviour(): void {
-  mocks.createDocumentObserver.mockImplementation((_options?: unknown) => ({
-    startObserver: vi.fn(),
-    stopObserver: vi.fn(),
-    onDocumentChanged: vi.fn(),
-  }));
+  mocks.createDocumentObserver.mockImplementation(
+    (options?: { onStatus?: (s: unknown) => void }) => {
+      // Keep the status callback so a test can drive a scan result, which is the
+      // only way to exercise the preview decision without a real Word host.
+      mocks.emitStatus = options?.onStatus ?? null;
+      return {
+        startObserver: vi.fn(),
+        stopObserver: vi.fn(),
+        onDocumentChanged: vi.fn(),
+      };
+    },
+  );
   mocks.startParagraphEvents.mockResolvedValue(undefined);
   mocks.prepareReformatHost.mockResolvedValue(null);
   mocks.isTrackedEditingEnabled.mockReturnValue(false);
@@ -189,6 +197,43 @@ describe("the whole-document action row", () => {
 
     expect(screen.queryByRole("button", { name: /apply all/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Re-scan now" })).toBeEnabled();
+  });
+
+  it("asks for the full scan a narrowed run cannot plan from", async () => {
+    /*
+     * After an edit the observer narrows the scan, and a narrowed scan cannot
+     * produce a whole-document plan — so the preview is declined. Without a
+     * follow-up the previous plan just sat there describing text that no longer
+     * existed, which is what "pending changes stopped updating" looked like.
+     */
+    render(<Dashboard />);
+    const before = mocks.createDocumentObserver.mock.results.length;
+    const emit = mocks.emitStatus;
+    expect(emit).not.toBeNull();
+
+    await act(async () => {
+      emit?.({
+        phase: "fresh",
+        lastScan: "2026-01-01T00:00:00.000Z",
+        dirtyCount: 1,
+        stale: false,
+        hostUnavailable: false,
+        findings: [],
+        coverage: { complete: true, acquisition: { incremental: true } },
+        currentRunId: "r1",
+        lastAcceptedRunId: "r1",
+        documentVersion: "v1",
+        supersededRuns: 0,
+        error: null,
+      });
+    });
+
+    const observers = mocks.createDocumentObserver.mock.results
+      .slice(0, before)
+      .map((result) => result.value);
+    expect(observers.some((observer) => observer?.onDocumentChanged.mock.calls.length > 0)).toBe(
+      true,
+    );
   });
 
   it("offers no Apply while nothing has been reviewed", async () => {
