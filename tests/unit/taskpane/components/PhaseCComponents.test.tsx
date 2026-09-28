@@ -3,7 +3,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { v4 as uuidv4 } from "uuid";
 import { FindingSchema, type Finding } from "../../../../src/core/domain/Finding";
 import { ChangePlanSchema, type ChangePlan } from "../../../../src/core/domain/ChangePlan";
-import GovernanceDashboard from "../../../../src/taskpane/components/GovernanceDashboard";
 import FindingCard from "../../../../src/taskpane/components/FindingCard";
 import FindingsList from "../../../../src/taskpane/components/FindingsList";
 import PendingChanges from "../../../../src/taskpane/components/PendingChanges";
@@ -63,24 +62,21 @@ function plan(): ChangePlan {
   });
 }
 
+/*
+ * `GovernanceDashboard` used to be tested here and has been deleted.
+ *
+ * It had no production importer: the review surface renders its own findings
+ * list, counts and banners, so the component was reachable only from this
+ * test. It also carried two of the three hardcoded colour literals in the
+ * codebase. Deleting it was the fix rather than converting its colours to
+ * tokens — a theme rule for a component no user can reach is a rule with
+ * nothing to keep consistent.
+ *
+ * The test went with it. A test that renders a deleted component is the only
+ * thing that kept the file alive, and keeping it would have meant keeping a
+ * suite asserting behaviour that cannot occur.
+ */
 describe("Phase C task-pane components", () => {
-  it("shows mandatory and advisory governance counts without a compliance score", () => {
-    render(
-      <GovernanceDashboard
-        findings={[finding({ severity: "error" }), finding({ category: "houseStyle.bannedTerm" })]}
-        lastScan="2026-01-01T00:00:00.000Z"
-        stale={false}
-        onViewFindings={vi.fn()}
-        onRescan={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Mandatory")).toBeInTheDocument();
-    expect(screen.getByText("Advisory")).toBeInTheDocument();
-    expect(screen.queryByText(/compliance score/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "View findings" })).toBeInTheDocument();
-  });
-
   it("labels deterministic and AI findings by review context", () => {
     render(
       <FindingsList

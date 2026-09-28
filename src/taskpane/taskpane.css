@@ -219,28 +219,36 @@ body {
 }
 
 button,
-input,
-select,
-textarea {
+/*
+ * Native controls, and only native controls.
+ *
+ * Every Fluent component renders a real `<input>`, `<select>` or `<textarea>`
+ * underneath, carrying an `ms-` class. An unscoped `input { background-color }`
+ * therefore also lands on Fluent's own fields, and a bare-element rule and a
+ * class rule resolve on specificity in a way that depends on which declaration
+ * a given Fluent version happens to emit — which is the observed symptom:
+ * Dropdowns and TextFields on the profile pages rendering light-on-dark while
+ * the surrounding surface followed the theme.
+ *
+ * Fluent is painted by the theme object, which knows the palette. These rules
+ * exist only for the controls Fluent does *not* paint, and `:not([class*="ms-"])`
+ * is what keeps the two apart. Word's own rendering still has to be confirmed by
+ * hand: jsdom cannot compute styles, so no test here can stand in for it.
+ */
+input:not([class*="ms-"]),
+select:not([class*="ms-"]),
+textarea:not([class*="ms-"]) {
   font: inherit;
-}
-
-/* Native controls are not Fluent components, so they are never painted by the
-   theme object. Without these two properties they keep the user agent's light
-   background and read as white boxes inside a dark surface. */
-input,
-select,
-textarea {
   background-color: var(--tf-surface);
   color: var(--tf-text);
 }
 
-select {
+select:not([class*="ms-"]) {
   color-scheme: inherit;
 }
 
-input::placeholder,
-textarea::placeholder {
+input:not([class*="ms-"])::placeholder,
+textarea:not([class*="ms-"])::placeholder {
   color: var(--tf-muted);
   opacity: 1;
 }

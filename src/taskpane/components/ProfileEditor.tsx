@@ -82,8 +82,17 @@ interface ProfileValidation {
 // The `term: replacement` parser lives in `settings/terminologyText` so the
 // governance policy editor cannot ship a second, subtly different one.
 
+/**
+ * Section frame.
+ *
+ * The border was a literal `#edebe9` — the light theme's own neutral, pasted
+ * in — so this editor's frames stayed that one colour in the dark theme while
+ * every other surface followed the token. `var(--tf-border)` is the same
+ * declaration the stylesheet already uses, resolved per theme by the class on
+ * the document element.
+ */
 const sectionStyle: React.CSSProperties = {
-  border: "1px solid #edebe9",
+  border: "1px solid var(--tf-border)",
   borderRadius: 4,
   marginBottom: 20,
   padding: 16,

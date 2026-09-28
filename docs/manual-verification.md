@@ -346,9 +346,33 @@ With a screen reader running, open the task pane and run a scan.
 
 ### 4. Dark theme contrast
 
+**This section previously overclaimed.** It said the inline hex values had
+been replaced "for exactly this", while two components still carried them — and
+both of those had no production caller, so nothing rendered them and nothing
+looked wrong. That is now fixed and enforced by a lint rule rather than by a
+claim; the check below is what the lint rule cannot do.
+
 1. Switch to dark theme. Confirm no component falls back to a hardcoded light
-   palette — Phase 5 replaced the inline hex values with tokens for exactly this.
-2. Confirm focus indicators remain visible in both themes.
+   palette. `npm run lint` rejects a colour literal in any file under
+   `src/taskpane/`, with `src/taskpane/fluentTheme.ts` exempt because it
+   _defines_ the palette. Run it before looking, so what you are judging is
+   rendering and not a literal someone has not committed yet.
+2. **Dropdowns and text fields must not render light-on-dark.** This is the
+   reported defect and the one no test can settle. Every Fluent component
+   renders a real `<input>` underneath carrying an `ms-` class, and
+   `taskpane.css` used to style bare `input, select, textarea` — so the rule
+   landed on Fluent's own fields as well as on the native ones. The rules are
+   now scoped with `:not([class*="ms-"])`. Open the Deterministic Style
+   Profile tab in dark theme and confirm every Dropdown and TextField is
+   legible, including the ones inside a collapsed section.
+3. Open the Semantic tab in dark theme. Confirm the section frames follow the
+   theme; one of them was a literal `#edebe9`, the light theme's own neutral,
+   so its border stayed light while every other surface followed the token.
+4. Confirm focus indicators remain visible in both themes. Focus rings
+   deliberately still apply to Fluent's inputs — they are an outline, not a
+   palette, and a keyboard focus indicator is not something Fluent should own.
+5. Repeat the whole section in light theme. A rule that only works because the
+   page happens to be light is not a themed rule.
 
 ### 5. Reduced motion
 

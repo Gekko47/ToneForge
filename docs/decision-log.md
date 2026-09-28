@@ -1690,6 +1690,44 @@ of "y"`. The prose parser remains for unanchored findings.
     host and had no test. It now probes the namespace that exists, and
     `supportsRibbonUpdate` was added for the same reason.
 
+## ADR-0077: One palette, one exemption, and no rule that reaches into Fluent
+
+- Amends: ADR-0057 (a Fluent theme is inverted; the token scope is the document
+  element)
+- Status: Accepted (2026-09-28)
+- **Context**: Drop boxes and input sections were reported as not following the
+  global theme. The palette was never wrong: `taskpane.css` declares a complete
+  token set under two theme classes, and `createDefaultTheme` sets
+  `isInverted`. Three things had gone wrong around it. `ProfileEditor` had a
+  literal `#edebe9` — the light theme's own neutral, pasted in — so its section
+  frames stayed light in dark mode. An unscoped `input, select, textarea` rule
+  carrying `background-color` also applied to Fluent's own fields, because
+  every Fluent component renders a real `<input>` underneath carrying an `ms-`
+  class. And two components still held hardcoded colours.
+- **Decision**: `npm run lint` rejects any colour literal under
+  `src/taskpane/`, with `fluentTheme.ts` exempt because it _defines_ the values
+  the tokens carry. The native-control rules are scoped with
+  `:not([class*="ms-"])`. `ReformatPanel` and `GovernanceDashboard` are
+  deleted rather than restyled.
+- **Consequences**:
+  - Deleting rather than restyling is the point for the two components. Neither
+    had a production importer — `GovernanceDashboard` was reachable only from
+    its own test — and both carried hardcoded colours. A theme rule for a
+    component no user can reach is a rule with nothing to keep consistent, and
+    the fact that nothing rendered them is why nothing looked wrong.
+  - `manual-verification.md` previously claimed the inline hex values had
+    already been replaced. That claim was false and is now corrected, because a
+    verification document asserting something untrue is worse than one with no
+    claim.
+  - Focus rings deliberately still apply to Fluent's inputs. They are an
+    outline rather than a palette, and keyboard focus is not something Fluent
+    should be the only owner of.
+  - **This does not establish that the rendering is correct.** jsdom cannot
+    compute styles, so whether Word paints a Dropdown dark is a manual
+    verification step and is recorded as one. What the tests pin is that the
+    token sets match, the scoped selectors are present, and the lint rule is
+    still scoped to the files it is meant to cover.
+
 ## ADR-0076: The semantic tab owns the semantic profile and its measured context
 
 - Amends: ADR-0068 (semantic profiles are managed on the tab that edits them)

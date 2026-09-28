@@ -55,6 +55,40 @@ export default [
     },
   },
   {
+    /*
+     * No colour literals in components.
+     *
+     * `taskpane.css` owns the palette, in tokens that flip with the theme. A
+     * hex or rgb() pasted into a component bypasses that entirely: it cannot
+     * follow the theme, and it is invisible to anyone changing the palette.
+     * Two of the three that had accumulated were in components with no
+     * production caller, which is how they survived — nothing rendered them,
+     * so nothing looked wrong.
+     *
+     * `src/taskpane/fluentTheme.ts` is exempt because it *is* the palette: it
+     * defines the tokens, so a literal there is the definition rather than a
+     * bypass. The CSS file is not linted by this rule at all, since tokens are
+     * written there by design.
+     */
+    files: ["src/taskpane/**/*.tsx", "src/taskpane/**/*.ts"],
+    ignores: ["src/taskpane/fluentTheme.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value=/^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/]",
+          message:
+            "Use a theme token such as var(--tf-border) instead of a colour literal; tokens are defined in src/taskpane/taskpane.css and flip with the theme.",
+        },
+        {
+          selector: "Literal[value=/^rgba?\\(/]",
+          message:
+            "Use a theme token such as var(--tf-surface) instead of a colour literal; tokens are defined in src/taskpane/taskpane.css and flip with the theme.",
+        },
+      ],
+    },
+  },
+  {
     // Enforces docs/architecture.md: core/domain may only import zod and
     // shared/utils — never word, ai, ui, or Office (see ADR-0013).
     files: ["src/core/domain/**/*.ts"],
