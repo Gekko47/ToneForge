@@ -576,6 +576,35 @@ button:disabled {
   border-top: 1px solid var(--tf-border);
 }
 
+/* The "what to check" list. Each item is a situation, its cause, and its
+   remedy, so the three sit as one block rather than as three loose paragraphs
+   that a reader has to group themselves. */
+.tf-troubleshooting-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tf-troubleshooting-list > li {
+  padding: 10px 12px;
+  border: 1px solid var(--tf-border);
+  border-left: 3px solid var(--tf-warning-border);
+  border-radius: 4px;
+  background: var(--tf-surface-subtle);
+}
+
+.tf-troubleshooting-list p {
+  margin: 0 0 4px;
+}
+
+.tf-troubleshooting-list p:last-child {
+  margin-bottom: 0;
+  color: var(--tf-muted);
+  font-size: 12px;
+}
+
 .tf-debug-warning {
   padding: 0.75rem;
   border: 1px solid var(--tf-warning-border);
