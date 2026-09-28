@@ -190,6 +190,66 @@ Do not paste the key into Settings. The broker is development-only. The
 production broker/authentication architecture and formal threat model remain
 open; this repository does not claim a supported production browser-held key.
 
+### Deploying the OAuth path
+
+**The gateway is not in this repository.** ToneForge's add-in is a client of a
+broker it does not contain. What follows is the contract that client expects,
+so whoever deploys the broker knows what to build. It is not a deployment guide
+and not a security review.
+
+The rule the whole design rests on: **the add-in never runs the
+authorization-code exchange.** It owns no client secret, generates no PKCE
+verifier, and holds no token. The browser legitimately cannot keep a secret —
+anything in the bundle is in every user's browser — so the exchange, the
+encryption at rest, and the refresh all belong to the broker. The add-in
+receives an opaque connection reference and non-secret metadata, and stores
+only that. See `src/ai/gateway/oauthState.ts` and ADR-0049/ADR-0050.
+
+Three endpoints, all relative to the broker base URL configured in
+**Settings → Provider and privacy**:
+
+| Endpoint                    | Method | Request                         | Response                    |
+| --------------------------- | ------ | ------------------------------- | --------------------------- |
+| `/v1/connections/authorize` | POST   | `{ provider }`                  | `{ authorizationUrl }`      |
+| `/v1/connections/callback`  | POST   | `{ provider, callbackUrl }`     | opaque `ProviderConnection` |
+| `/v1/connections/api-key`   | POST   | `{ provider, apiKey, baseUrl }` | opaque `ProviderConnection` |
+
+Deployment requirements the client depends on:
+
+1. **`authorizationUrl` is the provider's real authorization endpoint**, on the
+   provider's origin. The add-in opens it; the user authenticates there.
+2. **The callback lands somewhere the broker can observe**, and the broker
+   completes the exchange before returning. The add-in posts the URL it
+   received and receives a finished connection, never a code to redeem.
+3. **`state` and `nonce` are minted, validated, and consumed server-side**, per
+   attempt. A replayed callback must be rejected. This is enforced in the
+   client's state machine too, but the client cannot be the only thing checking
+   it.
+4. **The callback origin is validated against what the broker expects.** An
+   unexpected origin is refused.
+5. **Refresh is the broker's job.** The add-in never holds a refresh token, so
+   it cannot refresh one, and a connection the broker has revoked fails at the
+   broker rather than in the browser.
+
+Which provider supports what is fixed in
+`PROVIDER_OAUTH_SUPPORT` and is a product decision, not a deployment one:
+
+- **Anthropic — `supported`.** Developer/Console OAuth with authorization-code
+  and PKCE, refresh where officially enabled.
+- **OpenAI — `featureGated`.** Official API documentation confirms API-key and
+  workload-identity authentication for ordinary model requests, not a general
+  third-party end-user OAuth equivalent. It therefore uses a
+  deployment-managed connection by default. Enabling user OAuth requires
+  official registration _and_ a verified production flow, and is a deployment
+  decision, not a user setting. A ChatGPT subscription login, an MCP connector,
+  workload identity, or an API key is never relabelled as "OpenAI OAuth".
+- **OpenRouter — `unsupported`.** API key through the broker, once.
+- **Mock — `notApplicable`.** Offline, no authentication.
+
+Do not build a broker that presents a feature-gated provider as a working
+option. The client's `canStartOAuth` refuses it, and a UI that offers the
+button anyway is the defect the gate exists to prevent.
+
 ## Verification
 
 ```bash
