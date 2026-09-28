@@ -145,7 +145,7 @@ describe("ProfileEditor", () => {
     const { container } = render(<ProfileEditor />);
 
     expect(inputByValue(container, "Saved profile")).toBeInTheDocument();
-    expect(inputByValue(container, "neutral")).toBeInTheDocument();
+    expect(inputByValue(container, "utilize")).toBeInTheDocument();
     expect(within(container).getByText("Measured style")).toBeInTheDocument();
     expect(within(container).queryAllByText("Not available").length).toBeGreaterThan(0);
     expect(
@@ -166,14 +166,18 @@ describe("ProfileEditor", () => {
   it("validates edits, previews the diff, and saves through updateDraft", async () => {
     const user = userEvent.setup();
     const { container } = render(<ProfileEditor />);
-    const toneInput = inputByValue(container, "neutral");
+    const bannedInput = inputByValue(container, "utilize");
 
-    await user.clear(toneInput);
-    await user.type(toneInput, "conversational");
+    await user.clear(bannedInput);
+    await user.type(bannedInput, "leverage");
 
     expect(lastByRole("button", { name: "Save profile" })).toBeEnabled();
     expect(screen.getByText("Unsaved profile changes")).toBeInTheDocument();
-    expect(screen.getByText("conversational")).toBeInTheDocument();
+    // The banned-terms box is a multiline field, so the edit is asserted on its
+    // value rather than on rendered text.
+    expect(
+      within(container).getByRole("textbox", { name: (name) => name.startsWith("Banned terms") }),
+    ).toHaveValue("leverage");
 
     await user.click(lastByRole("button", { name: "Save profile" }));
 
@@ -181,7 +185,7 @@ describe("ProfileEditor", () => {
       expect(mocks.saveProfileRecord).toHaveBeenCalledTimes(1);
     });
     const saved = mocks.saveProfileRecord.mock.calls[0]?.[0] as ProfileRecord;
-    expect(saved.draft?.semantic.tone).toBe("conversational");
+    expect(saved.draft?.houseStyle.bannedTerms).toEqual(["leverage"]);
     expect(saved.id).toBe(profile.id);
     // The record assigns the next revision; the editor never invents one.
     expect(saved.draft?.revision).toBe(2);
@@ -193,9 +197,9 @@ describe("ProfileEditor", () => {
   it("shows an accessible error and does not persist an invalid draft", async () => {
     const user = userEvent.setup();
     const { container } = render(<ProfileEditor />);
-    const toneInput = inputByValue(container, "neutral");
+    const nameInput = inputByValue(container, "Saved profile");
 
-    await user.clear(toneInput);
+    await user.clear(nameInput);
     await user.click(lastByRole("button", { name: "Save profile" }));
 
     expect(await within(container).findByTestId("profile-editor-error")).toHaveTextContent(
@@ -207,13 +211,13 @@ describe("ProfileEditor", () => {
   it("resets dirty fields to the loaded profile", async () => {
     const user = userEvent.setup();
     const { container } = render(<ProfileEditor />);
-    const toneInput = inputByValue(container, "neutral");
+    const bannedInput = inputByValue(container, "utilize");
 
-    await user.clear(toneInput);
-    await user.type(toneInput, "conversational");
+    await user.clear(bannedInput);
+    await user.type(bannedInput, "leverage");
     await user.click(lastByRole("button", { name: "Reset changes" }));
 
-    expect(inputByValue(container, "neutral")).toBeInTheDocument();
+    expect(inputByValue(container, "utilize")).toBeInTheDocument();
     expect(lastByRole("button", { name: "Save profile" })).toBeDisabled();
     expect(screen.getByText("No unsaved profile changes.")).toBeInTheDocument();
   });
@@ -236,9 +240,11 @@ describe("ProfileEditor", () => {
     render(<ProfileEditor />);
 
     await user.click(lastByRole("button", { name: "New profile" }));
-    const toneInput = inputByValue(document.body, "neutral");
-    await user.clear(toneInput);
-    await user.type(toneInput, "conversational");
+    // A fresh profile has no banned terms, so the name is the field that
+    // distinguishes it from the default the button already produced.
+    const nameInput = inputByValue(document.body, "Untitled style profile");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Second profile");
     await user.click(lastByRole("button", { name: "Save profile" }));
 
     await waitFor(() => {
@@ -269,12 +275,12 @@ describe("ProfileEditor", () => {
   it("disables Save and Reset after a change is reverted", async () => {
     const user = userEvent.setup();
     const { container } = render(<ProfileEditor />);
-    const toneInput = inputByValue(container, "neutral");
+    const bannedInput = inputByValue(container, "utilize");
 
-    await user.clear(toneInput);
-    await user.type(toneInput, "conversational");
-    await user.clear(toneInput);
-    await user.type(toneInput, "neutral");
+    await user.clear(bannedInput);
+    await user.type(bannedInput, "leverage");
+    await user.clear(bannedInput);
+    await user.type(bannedInput, "utilize");
 
     expect(lastByRole("button", { name: "Save profile" })).toBeDisabled();
     expect(lastByRole("button", { name: "Reset changes" })).toBeDisabled();
@@ -335,15 +341,11 @@ describe("ProfileEditor", () => {
       expect(mocks.setActiveProfile).toHaveBeenCalledWith(other.id);
     });
     expect(inputByValue(document.body, "Other profile")).toBeInTheDocument();
-    expect(inputByValue(document.body, "formal")).toBeInTheDocument();
   });
 
   it("restores an earlier revision as an unsaved draft without writing to persistence", async () => {
     const user = userEvent.setup();
-    const previous: StyleProfile = {
-      ...profile,
-      semantic: { ...profile.semantic, tone: "formal" },
-    };
+    const previous: StyleProfile = { ...profile, name: "Earlier profile" };
     // r1 is the earlier snapshot; r2 is the current draft.
     installRecords([makeRecord(profile, [previous])]);
 
@@ -352,7 +354,7 @@ describe("ProfileEditor", () => {
 
     expect(mocks.saveProfileRecord).not.toHaveBeenCalled();
     expect(mocks.setActiveProfile).not.toHaveBeenCalled();
-    expect(inputByValue(document.body, "formal")).toBeInTheDocument();
+    expect(inputByValue(document.body, "Earlier profile")).toBeInTheDocument();
     expect(lastByRole("button", { name: "Save profile" })).toBeEnabled();
     expect(lastByRole("button", { name: "Reset changes" })).toBeEnabled();
   });
@@ -361,7 +363,8 @@ describe("ProfileEditor", () => {
     const user = userEvent.setup();
     const previous: StyleProfile = {
       ...profile,
-      semantic: { ...profile.semantic, tone: "formal", rhetoricalStyle: "narrative" },
+      name: "Earlier profile",
+      typography: { ...profile.typography, doubleQuotes: "straight" },
     };
     // r1 is the earlier snapshot; r2 is the current draft.
     installRecords([makeRecord(profile, [previous])]);
@@ -369,8 +372,7 @@ describe("ProfileEditor", () => {
     const { container } = render(<ProfileEditor />);
     await user.click(within(document.body).getByRole("button", { name: /Restore r1/ }));
 
-    expect(inputByValue(container, "formal")).toBeInTheDocument();
-    expect(inputByValue(container, "narrative")).toBeInTheDocument();
+    expect(inputByValue(container, "Earlier profile")).toBeInTheDocument();
     await waitFor(() => {
       expect(
         within(container).getByText((content) =>
@@ -388,8 +390,7 @@ describe("ProfileEditor", () => {
     expect(saved.id).toBe(profile.id);
     // The restored content is saved as a new revision, never as a rewind.
     expect(saved.draft?.revision).toBe(3);
-    expect(saved.draft?.semantic.tone).toBe("formal");
-    expect(saved.draft?.semantic.rhetoricalStyle).toBe("narrative");
+    expect(saved.draft?.name).toBe("Earlier profile");
     expect(mocks.setActiveProfile).toHaveBeenCalledWith(profile.id);
   });
 
@@ -397,7 +398,8 @@ describe("ProfileEditor", () => {
     const user = userEvent.setup();
     const previous: StyleProfile = {
       ...profile,
-      semantic: { ...profile.semantic, tone: "formal", rhetoricalStyle: "narrative" },
+      name: "Earlier profile",
+      typography: { ...profile.typography, doubleQuotes: "straight" },
     };
     installRecords([makeRecord(profile, [previous])]);
 
@@ -405,8 +407,8 @@ describe("ProfileEditor", () => {
     await user.click(within(document.body).getByRole("button", { name: /Restore r1/ }));
     await user.click(lastByRole("button", { name: "Reset changes" }));
 
-    expect(inputByValue(container, "neutral")).toBeInTheDocument();
-    expect(inputByValue(container, "direct")).toBeInTheDocument();
+    expect(inputByValue(container, "Saved profile")).toBeInTheDocument();
+    expect(inputByValue(container, "utilize")).toBeInTheDocument();
     expect(within(container).getByRole("textbox", { name: "Revision" })).toHaveValue("r2");
     expect(lastByRole("button", { name: "Save profile" })).toBeDisabled();
     expect(lastByRole("button", { name: "Reset changes" })).toBeDisabled();
@@ -414,26 +416,29 @@ describe("ProfileEditor", () => {
     expect(mocks.setActiveProfile).not.toHaveBeenCalled();
   });
 
-  it("renders a visible caret icon on the tone, voice, and rhetorical style combo boxes", () => {
+  it("renders a visible caret icon on the deterministic dropdowns", () => {
     const { container } = render(<ProfileEditor />);
-    const toneField = within(container).getByRole("combobox", {
-      name: (name) => name.startsWith("Tone"),
+    /*
+     * These are Fluent `Dropdown`s, not the `ComboBox`es this test used to
+     * cover. A ComboBox puts a caret *button* beside the input; a Dropdown puts
+     * the caret `<i>` *inside* the combobox element alongside the title, and
+     * that element is itself the `role="combobox"` node. So there is no ancestor
+     * walk and no button to find — querying the combobox directly is correct.
+     *
+     * Names are prefix-matched because Fluent builds the accessible name from
+     * the label plus the selected option ("Double quotes Curly"), and "Em dash"
+     * would additionally match "Em dash spacing", which throws on two matches.
+     */
+    ["Double quotes", "Apostrophes", "Spelling variant"].forEach((label) => {
+      const field = within(container).getByRole("combobox", {
+        name: (name) => name.startsWith(label),
+      });
+      const caret = field.querySelector("i.ms-Dropdown-caretDown");
+      expect(caret).toBeTruthy();
+      expect(caret?.getAttribute("data-icon-name")).toBe("ChevronDown");
+      // Decorative: the combobox announces its own value, so the caret must not
+      // be an extra node a screen reader reads out.
+      expect(caret?.getAttribute("aria-hidden")).toBe("true");
     });
-    const voiceField = within(container).getByRole("combobox", {
-      name: (name) => name.startsWith("Voice"),
-    });
-    const rhetoricField = within(container).getByRole("combobox", {
-      name: (name) => name.startsWith("Rhetorical style"),
-    });
-
-    for (const field of [toneField, voiceField, rhetoricField]) {
-      const wrapper = field.parentElement;
-      expect(wrapper).toBeTruthy();
-      const caretButton = wrapper?.querySelector("button.ms-ComboBox-CaretDown-button");
-      expect(caretButton).toBeTruthy();
-      const icon = caretButton?.querySelector("i.ms-Icon");
-      expect(icon).toBeTruthy();
-      expect(icon?.getAttribute("data-icon-name")).toBe("ChevronDown");
-    }
   });
 });

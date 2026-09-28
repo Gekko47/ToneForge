@@ -1,9 +1,7 @@
 import React from "react";
 import {
-  ComboBox,
   DefaultButton,
   Dropdown,
-  type IComboBoxOption,
   type IDropdownOption,
   MessageBar,
   MessageBarType,
@@ -33,16 +31,17 @@ import { diffProfiles } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
 import { parseTerminology } from "../settings/terminologyText";
 
+/**
+ * The deterministic style fields this editor owns.
+ *
+ * There is deliberately no `semantic` here. This tab is the deterministic style
+ * profile; semantic style is authored on the Semantic tab. `buildCandidate`
+ * carries `baseProfile.semantic` through untouched rather than rebuilding it,
+ * so editing a dash rule cannot silently reset the profile's learned tone and
+ * voice to whatever a hidden form field happened to hold.
+ */
 interface ProfileFormValues {
   name: string;
-  tone: string;
-  voice: string;
-  formality: string;
-  readingGradeTarget: string;
-  preferredSentenceLength: string;
-  vocabularyRegister: SemanticProfile["vocabularyRegister"];
-  rhetoricalStyle: string;
-  avoidWords: string;
   emDash: TypographyRules["emDash"];
   emDashSpacing: TypographyRules["emDashSpacing"];
   enDashSpacing: TypographyRules["enDashSpacing"];
@@ -82,7 +81,6 @@ interface ProfileValidation {
 
 // The `term: replacement` parser lives in `settings/terminologyText` so the
 // governance policy editor cannot ship a second, subtly different one.
-type SemanticProfile = StyleProfile["semantic"];
 
 const sectionStyle: React.CSSProperties = {
   border: "1px solid #edebe9",
@@ -113,38 +111,10 @@ const buttonStyle: React.CSSProperties = {
   marginTop: 16,
 };
 
-const vocabularyRegisters = ["simple", "standard", "technical", "academic"] as const;
 const spellingVariants = ["en-US", "en-GB", "au"] as const;
-const toneSuggestions = [
-  "neutral",
-  "formal",
-  "conversational",
-  "friendly",
-  "authoritative",
-  "empathetic",
-  "persuasive",
-  "instructional",
-] as const;
-const voiceSuggestions = ["first-person", "second-person", "third-person", "impersonal"] as const;
-const rhetoricalStyleSuggestions = [
-  "direct",
-  "narrative",
-  "analytical",
-  "descriptive",
-  "argumentative",
-  "explanatory",
-] as const;
 
 function dropdownValue(option: IDropdownOption | undefined): string | null {
   return option && typeof option.key === "string" ? option.key : null;
-}
-
-function comboBoxOptions(values: readonly string[]): IComboBoxOption[] {
-  return values.map((value) => ({ key: value, text: value }));
-}
-
-function comboBoxValue(option: IComboBoxOption | undefined, value: string | undefined): string {
-  return value ?? (option && typeof option.key === "string" ? option.key : "");
 }
 
 function parseLines(value: string): string[] {
@@ -154,28 +124,9 @@ function parseLines(value: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function numberOrNaN(value: string): number {
-  return value.trim().length === 0 ? Number.NaN : Number(value.trim());
-}
-
-function nullableNumber(value: string): number | null {
-  return value.trim().length === 0 ? null : Number(value.trim());
-}
-
 function profileToValues(profile: StyleProfile): ProfileFormValues {
   return {
     name: profile.name,
-    tone: profile.semantic.tone,
-    voice: profile.semantic.voice,
-    formality: String(profile.semantic.formality),
-    readingGradeTarget:
-      profile.semantic.readingGradeTarget === null
-        ? ""
-        : String(profile.semantic.readingGradeTarget),
-    preferredSentenceLength: String(profile.semantic.preferredSentenceLength),
-    vocabularyRegister: profile.semantic.vocabularyRegister,
-    rhetoricalStyle: profile.semantic.rhetoricalStyle,
-    avoidWords: profile.semantic.avoidWords.join("\n"),
     emDash: profile.typography.emDash,
     emDashSpacing: profile.typography.emDashSpacing,
     enDashSpacing: profile.typography.enDashSpacing,
@@ -201,16 +152,6 @@ function buildCandidate(values: ProfileFormValues, baseProfile: StyleProfile): S
   return {
     ...baseProfile,
     name: values.name,
-    semantic: {
-      tone: values.tone,
-      voice: values.voice,
-      formality: numberOrNaN(values.formality),
-      readingGradeTarget: nullableNumber(values.readingGradeTarget),
-      preferredSentenceLength: numberOrNaN(values.preferredSentenceLength),
-      vocabularyRegister: values.vocabularyRegister,
-      rhetoricalStyle: values.rhetoricalStyle,
-      avoidWords: parseLines(values.avoidWords),
-    },
     typography: {
       emDash: values.emDash,
       emDashSpacing: values.emDashSpacing,
@@ -595,93 +536,52 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
         </p>
       </section>
 
+      {/*
+        Semantic style is not edited here, and this says so rather than leaving
+        a gap. It is not silently carried either: `buildCandidate` spreads
+        `baseProfile`, so the profile's learned tone, voice and vocabulary are
+        preserved exactly and a deterministic edit cannot reset them. Editing
+        them is on the Semantic tab.
+      */}
       <section aria-labelledby="semantic-heading" style={sectionStyle}>
         <h2 id="semantic-heading" style={sectionHeadingStyle}>
           Semantic style
         </h2>
-        <div style={gridStyle}>
-          <ComboBox
-            label="Tone"
-            required
-            text={values.tone}
-            allowFreeform
-            autoComplete="on"
-            options={comboBoxOptions(toneSuggestions)}
-            errorMessage={fieldErrors["semantic.tone"] ?? ""}
-            onInputValueChange={(value) => patch({ tone: value ?? "" })}
-            onChange={(_event, optionValue, _index, value) =>
-              patch({ tone: comboBoxValue(optionValue, value) })
-            }
-          />
-          <ComboBox
-            label="Voice"
-            required
-            text={values.voice}
-            allowFreeform
-            autoComplete="on"
-            options={comboBoxOptions(voiceSuggestions)}
-            errorMessage={fieldErrors["semantic.voice"] ?? ""}
-            onInputValueChange={(value) => patch({ voice: value ?? "" })}
-            onChange={(_event, optionValue, _index, value) =>
-              patch({ voice: comboBoxValue(optionValue, value) })
-            }
-          />
-          <TextField
-            label="Formality (0–100)"
-            required
-            type="number"
-            value={values.formality}
-            errorMessage={fieldErrors["semantic.formality"] ?? ""}
-            onChange={(_event, value) => patch({ formality: value ?? "" })}
-          />
-          <TextField
-            label="Reading grade target (0–20, optional)"
-            type="number"
-            value={values.readingGradeTarget}
-            errorMessage={fieldErrors["semantic.readingGradeTarget"] ?? ""}
-            onChange={(_event, value) => patch({ readingGradeTarget: value ?? "" })}
-          />
-          <TextField
-            label="Preferred sentence length (5–60)"
-            required
-            type="number"
-            value={values.preferredSentenceLength}
-            errorMessage={fieldErrors["semantic.preferredSentenceLength"] ?? ""}
-            onChange={(_event, value) => patch({ preferredSentenceLength: value ?? "" })}
-          />
-          <Dropdown
-            label="Vocabulary register"
-            selectedKey={values.vocabularyRegister}
-            options={vocabularyRegisters.map((value) => option(value, value))}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue) {
-                patch({ vocabularyRegister: nextValue as ProfileFormValues["vocabularyRegister"] });
-              }
-            }}
-          />
-          <ComboBox
-            label="Rhetorical style"
-            required
-            text={values.rhetoricalStyle}
-            allowFreeform
-            autoComplete="on"
-            options={comboBoxOptions(rhetoricalStyleSuggestions)}
-            errorMessage={fieldErrors["semantic.rhetoricalStyle"] ?? ""}
-            onInputValueChange={(value) => patch({ rhetoricalStyle: value ?? "" })}
-            onChange={(_event, optionValue, _index, value) =>
-              patch({ rhetoricalStyle: comboBoxValue(optionValue, value) })
-            }
-          />
-          <TextField
-            label="Avoid words (one per line)"
-            multiline
-            rows={4}
-            value={values.avoidWords}
-            errorMessage={fieldErrors["semantic.avoidWords"] ?? ""}
-            onChange={(_event, value) => patch({ avoidWords: value ?? "" })}
-          />
-        </div>
+        <p className="tf-sub">
+          Tone, voice, vocabulary register, rhetorical style and avoid-words are edited on the
+          Semantic tab. This profile keeps its current values, and saving a deterministic change
+          here does not alter them.
+        </p>
+        <dl style={measuredGridStyle}>
+          <div>
+            <dt>Tone</dt>
+            <dd>{baseProfile.semantic.tone}</dd>
+          </div>
+          <div>
+            <dt>Voice</dt>
+            <dd>{baseProfile.semantic.voice}</dd>
+          </div>
+          <div>
+            <dt>Vocabulary register</dt>
+            <dd>{baseProfile.semantic.vocabularyRegister}</dd>
+          </div>
+          <div>
+            <dt>Rhetorical style</dt>
+            <dd>{baseProfile.semantic.rhetoricalStyle}</dd>
+          </div>
+          <div>
+            <dt>Formality</dt>
+            <dd>{formatMetric(baseProfile.semantic.formality)}</dd>
+          </div>
+          <div>
+            <dt>Preferred sentence length</dt>
+            <dd>{formatMetric(baseProfile.semantic.preferredSentenceLength)}</dd>
+          </div>
+          <div>
+            <dt>Reading grade target</dt>
+            <dd>{formatMetric(baseProfile.semantic.readingGradeTarget)}</dd>
+          </div>
+        </dl>
       </section>
 
       <section aria-labelledby="typography-heading" style={sectionStyle}>

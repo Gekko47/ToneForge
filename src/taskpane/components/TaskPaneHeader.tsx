@@ -16,7 +16,7 @@ const DESTINATIONS: readonly {
 }[] = [
   { key: "home", label: "Document Governance" },
   { key: "ai-review", label: "AI Review" },
-  { key: "profile", label: "Style profile" },
+  { key: "profile", label: "Deterministic Style Profile" },
   { key: "settings", label: "Settings" },
   { key: "troubleshooting", label: "Troubleshooting" },
 ];

@@ -105,8 +105,11 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
           Back to Document Governance
         </button>
       </nav>
-      <h1 className="tf-title">Style profile</h1>
-      <p className="tf-sub">Manage the active profile, its revision, and applied document scope.</p>
+      <h1 className="tf-title">Deterministic Style Profile</h1>
+      <p className="tf-sub">
+        The rules ToneForge checks deterministically: typography, house style, and the measured
+        metrics they were derived from. Semantic style is authored on the Semantic tab.
+      </p>
       <section aria-labelledby="learn-style-heading" className="tf-collapsible">
         <h2 id="learn-style-heading">Learn Style</h2>
         <p className="tf-sub">

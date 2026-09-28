@@ -42,7 +42,8 @@ function twicePublished(): ProfileRecord {
 }
 
 describe("ProfileRecordSection", () => {
-  it("reports an empty state truthfully when nothing is published", () => {
+  it("reports an empty state truthfully when nothing is published", async () => {
+    const user = userEvent.setup();
     render(<ProfileRecordSection record={record()} onChange={vi.fn()} />);
 
     expect(screen.getByTestId("record-summary")).toHaveTextContent("Draft: revision 1");
@@ -50,6 +51,9 @@ describe("ProfileRecordSection", () => {
     // The empty state must say what the user can actually do about it, and the
     // audit trail must offer the way back that publishing alone could not.
     expect(screen.getByText(/No published versions yet\./)).toBeInTheDocument();
+    // The trail is collapsed by default, so the route back is one click away
+    // rather than rendered in full.
+    await user.click(screen.getByRole("button", { name: /Show all revisions/ }));
     expect(
       screen.getByRole("button", { name: /recall revision 1 as a new draft/i }),
     ).toBeInTheDocument();
@@ -154,9 +158,26 @@ describe("ProfileRecordSection", () => {
     expect(next.published).toEqual(rec.published);
   });
 
-  it("lists the audit trail newest first with each action spelled out", () => {
+  it("keeps the audit trail collapsed until it is asked for", () => {
+    // The trail is collapsed by default: a long-lived record accumulates a
+    // revision per save, and rendering all of them pushed the editor's own
+    // controls below the fold.
+    render(<ProfileRecordSection record={published()} onChange={vi.fn()} />);
+
+    const toggle = screen.getByRole("button", { name: /Show all revisions/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("list", { name: "Revision audit trail" })).toBeNull();
+    // The count is stated even while collapsed, so hiding the rows never
+    // hides the fact that there are any.
+    expect(toggle).toHaveTextContent("2");
+  });
+
+  it("lists the audit trail newest first with each action spelled out", async () => {
+    const user = userEvent.setup();
     const rec = published();
     render(<ProfileRecordSection record={rec} onChange={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /Show all revisions/ }));
 
     const trail = within(screen.getByRole("list", { name: "Revision audit trail" })).getAllByRole(
       "listitem",

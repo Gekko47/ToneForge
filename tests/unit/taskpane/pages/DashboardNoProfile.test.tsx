@@ -68,7 +68,7 @@ describe("Dashboard first-run state", () => {
     // Profile and AI Review need the profile this gate is asking for, so the
     // click resolves back to setup rather than rendering a page that cannot work.
     await userEvent.click(screen.getByRole("button", { name: "Open navigation" }));
-    await userEvent.click(screen.getByRole("button", { name: "Style profile" }));
+    await userEvent.click(screen.getByRole("button", { name: "Deterministic Style Profile" }));
     expect(await screen.findByText("Profile setup editor")).toBeInTheDocument();
   });
 });

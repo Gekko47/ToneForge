@@ -34,6 +34,15 @@ export default function ProfileRecordSection({
 }: ProfileRecordSectionProps): React.ReactNode {
   const [announcement, setAnnouncement] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  /**
+   * Whether the full revision audit trail is expanded.
+   *
+   * Collapsed by default. A long-lived record accumulates a revision per save,
+   * and rendering all of them pushed the editor's own controls below the fold.
+   * Collapsed is the right default because the draft and the active published
+   * version — the two things a user came to this tab for — are above it.
+   */
+  const [showAllRevisions, setShowAllRevisions] = React.useState(false);
 
   const active = effectiveProfile(record);
   const published = record.published;
@@ -172,9 +181,27 @@ export default function ProfileRecordSection({
           Every recorded revision keeps a full copy of the profile. Recall copies one back into a
           new draft; it does not activate anything, so publishing stays an explicit second step.
         </p>
+        {/*
+          The trail is collapsed by default and the count is stated before it is
+          hidden. A record with twenty revisions pushed the Typography and House
+          style controls below the fold, and a list nobody scrolls to is the
+          same as a list that is not there — so the count is always visible even
+          when the rows are not.
+        */}
+        {revisions.length > 0 && (
+          <button
+            type="button"
+            className="tf-collapsible-header"
+            aria-expanded={showAllRevisions}
+            onClick={() => setShowAllRevisions((open) => !open)}
+          >
+            {showAllRevisions ? "Hide revisions" : "Show all revisions"}{" "}
+            <span>{revisions.length}</span>
+          </button>
+        )}
         {revisions.length === 0 ? (
           <p className="tf-sub">No revisions recorded yet.</p>
-        ) : (
+        ) : !showAllRevisions ? null : (
           <ol aria-label="Revision audit trail" className="tf-revision-list">
             {revisions.map((entry) => {
               const isCurrentDraft = record.draft?.revision === entry.revision;
