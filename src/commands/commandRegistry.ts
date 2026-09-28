@@ -3,6 +3,7 @@ import type { TaskpaneTarget } from "../shared/office/taskpaneNavigation";
 import commandDefinitionData from "./commandDefinitions.json";
 import {
   openFindings,
+  openGovernancePolicy,
   openPendingChanges,
   openProfile,
   openTroubleshooting,
@@ -38,6 +39,7 @@ const CommandDefinitionSchema = z.object({
     "findings",
     "ai-review",
     "profile",
+    "governance-policy",
     "pending-changes",
     "debugging",
   ]),
@@ -49,6 +51,7 @@ const handlers: Readonly<Record<(typeof commandDefinitions)[number]["id"], Comma
   ToneForgeFindings: openFindings,
   ToneForgeReview: reviewForConsistency,
   ToneForgeProfile: openProfile,
+  ToneForgeGovernancePolicy: openGovernancePolicy,
   ToneForgePendingChanges: openPendingChanges,
   ToneForgeTroubleshooting: openTroubleshooting,
 };

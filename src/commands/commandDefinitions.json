@@ -32,6 +32,14 @@
     "xmlNavigationTarget": "default"
   },
   {
+    "id": "ToneForgeGovernancePolicy",
+    "label": "Governance Policy",
+    "jsonAction": "executeFunction",
+    "xmlAction": "ShowTaskpane",
+    "navigationTarget": "governance-policy",
+    "xmlNavigationTarget": "default"
+  },
+  {
     "id": "ToneForgePendingChanges",
     "label": "Pending Changes",
     "jsonAction": "executeFunction",

@@ -1,9 +1,7 @@
 import React from "react";
 import ProfileEditor from "../components/ProfileEditor";
 import ProfileRecordSection from "../components/ProfileRecordSection";
-import GovernancePolicySection from "../components/GovernancePolicySection";
-import { selectGovernancePolicy } from "../../core/state/profileSelectors";
-import type { GovernanceProfile } from "../../core/domain/GovernanceProfile";
+import { readActiveGovernanceContext } from "../activeGovernance";
 import { getDocumentSnapshot, getSelectionText } from "../../word/documentReader";
 import {
   createRegistryFromSettings,
@@ -13,7 +11,6 @@ import { captureSample } from "../../style/sampleCapture";
 import { learnStyleDraft } from "../../style/learnStyle";
 import {
   createProfileRecord,
-  loadProfileRecord,
   loadState,
   saveProfileRecord,
   setActiveProfile,
@@ -28,16 +25,15 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
   const [learnStatus, setLearnStatus] = React.useState<string | null>(null);
   const [learnError, setLearnError] = React.useState<string | null>(null);
   const [learning, setLearning] = React.useState(false);
-  const [record, setRecord] = React.useState<ProfileRecord | null>(null);
-  const [policy, setPolicy] = React.useState<GovernanceProfile | null>(null);
+  const [record, setRecord] = React.useState<ProfileRecord | null>(
+    readActiveGovernanceContext().record,
+  );
 
-  // Re-read together: the record decides which policy governs it, and reading
-  // them separately could pair a fresh record with a stale policy.
+  // Re-read rather than patch local state. `saveProfileRecord` rewrites the
+  // governance profile's wrapped style, so a record held in a React copy would
+  // go stale the moment anything else touched the store.
   function refreshFromStore(): void {
-    const state = loadState();
-    const active = state.activeProfileId ? loadProfileRecord(state.activeProfileId) : null;
-    setRecord(active);
-    setPolicy(active ? selectGovernancePolicy(state, active.id) : null);
+    setRecord(readActiveGovernanceContext().record);
   }
 
   React.useEffect(() => {
@@ -133,12 +129,10 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
       </section>
       {record && <ProfileRecordSection record={record} onChange={applyRecord} />}
       {/*
-        Governance policy sits after the record and before the editor because it
-        governs the profile the editor edits. It appears only once a record
-        exists: `saveProfileRecord` is what seeds a policy, so there is nothing
-        to author before then.
+        The governance policy is not on this tab. It answers a different question
+        — which corrections ToneForge may apply without asking — and it now lives
+        on the Governance Policy tab, reached from the navigation.
       */}
-      {record && policy && <GovernancePolicySection policy={policy} onPolicySaved={setPolicy} />}
       <ProfileEditor onRecordSaved={refreshRecord} />
     </div>
   );

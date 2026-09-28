@@ -161,6 +161,22 @@
                     <SourceLocation resid="Taskpane.Url" />
                   </Action>
                 </Control>
+                <Control xsi:type="Button" id="ToneForgeGovernancePolicy">
+                  <Label resid="ToneForge.GovernancePolicyLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.GovernancePolicyLabel" />
+                    <Description resid="ToneForge.GovernancePolicyDesc" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
               </Group>
               <Group id="ToneForgeChangesGroup">
                 <Label resid="ToneForge.ChangesGroupLabel" />
@@ -229,6 +245,7 @@
         <bt:String id="ToneForge.FindingsLabel" DefaultValue="Findings" />
         <bt:String id="ToneForge.ReviewLabel" DefaultValue="Review for Consistency" />
         <bt:String id="ToneForge.ProfileLabel" DefaultValue="Style Profile" />
+        <bt:String id="ToneForge.GovernancePolicyLabel" DefaultValue="Governance Policy" />
         <bt:String id="ToneForge.PendingChangesLabel" DefaultValue="Pending Changes" />
         <bt:String id="ToneForge.TroubleshootingLabel" DefaultValue="Troubleshooting" />
       </bt:ShortStrings>
@@ -237,7 +254,8 @@
         <bt:String id="ToneForge.ScanDescription" DefaultValue="Run the deterministic style checks against this document now and show the results." />
         <bt:String id="ToneForge.FindingsDescription" DefaultValue="Open the findings already recorded for this document." />
         <bt:String id="ToneForge.ReviewDesc" DefaultValue="Check whether different parts of this document disagree with each other. You choose when to run it, after seeing exactly what would be sent." />
-        <bt:String id="ToneForge.ProfileDesc" DefaultValue="Open the style profile this document is checked against: view it, edit its draft, and manage its published versions." />
+        <bt:String id="ToneForge.ProfileDesc" DefaultValue="Open the deterministic style profile this document is checked against: typography, house style, and the measured metrics they came from." />
+        <bt:String id="ToneForge.GovernancePolicyDesc" DefaultValue="Open the policy that decides which checks are mandatory, which are advisory, and which corrections ToneForge may apply without asking." />
         <bt:String id="ToneForge.PendingChangesDesc" DefaultValue="Open the proposed Word revisions waiting for your approval." />
         <bt:String id="ToneForge.TroubleshootingDesc" DefaultValue="Inspect this Word host's capabilities and the coverage of the last scan. These checks never change the document." />
       </bt:LongStrings>

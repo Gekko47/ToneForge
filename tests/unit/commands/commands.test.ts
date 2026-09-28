@@ -79,6 +79,13 @@ describe("command entry points", () => {
         navigationTarget: "profile",
       },
       {
+        id: "ToneForgeGovernancePolicy",
+        label: "Governance Policy",
+        jsonAction: "executeFunction",
+        xmlAction: "ShowTaskpane",
+        navigationTarget: "governance-policy",
+      },
+      {
         id: "ToneForgePendingChanges",
         label: "Pending Changes",
         jsonAction: "executeFunction",

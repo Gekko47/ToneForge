@@ -61,13 +61,15 @@ import type { PersistedState } from "../../core/state/persistence";
 
 const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
+const GovernancePolicy = lazy(() => import("./GovernancePolicy"));
 
 const REVIEWED_FINDINGS_KEY = "ToneForge.ReviewedFindingFingerprints.v1";
 
 /** Lets the findings toolbar's `aria-controls` point at the rendered list. */
 const FINDINGS_LIST_ID = "tf-findings-list";
 
-type DashboardPage = "home" | "ai-review" | "profile" | "settings" | "troubleshooting";
+type DashboardPage =
+  "home" | "ai-review" | "profile" | "governance-policy" | "settings" | "troubleshooting";
 
 /** Destinations reachable before a profile exists. */
 type SetupDestination = "home" | "settings" | "troubleshooting";
@@ -532,6 +534,10 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       setPage("profile");
       return;
     }
+    if (request.target === "governance-policy") {
+      setPage("governance-policy");
+      return;
+    }
     if (request.target === "ai-review") {
       setPage("ai-review");
       return;
@@ -874,7 +880,13 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     [consistencyResult],
   );
 
-  if (page === "settings" || page === "profile" || page === "troubleshooting") {
+  if (
+    page === "settings" ||
+    page === "profile" ||
+    page === "governance-policy" ||
+    page === "troubleshooting"
+  ) {
+    const back = () => navigate("home");
     return (
       <main className="tf-card" tabIndex={0}>
         <TaskPaneHeader
@@ -885,11 +897,13 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         />
         <Suspense fallback={<div role="status">Loading…</div>}>
           {page === "settings" ? (
-            <Settings onBack={() => navigate("home")} />
+            <Settings onBack={back} />
           ) : page === "profile" ? (
-            <Profile onBack={() => navigate("home")} />
+            <Profile onBack={back} />
+          ) : page === "governance-policy" ? (
+            <GovernancePolicy onBack={back} />
           ) : (
-            <DebuggingPanel onBack={() => navigate("home")} coverage={status?.coverage ?? null} />
+            <DebuggingPanel onBack={back} coverage={status?.coverage ?? null} />
           )}
         </Suspense>
       </main>

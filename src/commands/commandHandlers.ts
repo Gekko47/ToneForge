@@ -41,6 +41,17 @@ export async function openProfile(): Promise<void> {
   await showTaskpane("profile");
 }
 
+/**
+ * Open the Governance Policy tab and wait.
+ *
+ * Policy authoring touches protected-setting flags, so this deliberately does
+ * not start anything: the page must render the current policy before a person
+ * can change what Apply is permitted to do.
+ */
+export async function openGovernancePolicy(): Promise<void> {
+  await showTaskpane("governance-policy");
+}
+
 export async function openPendingChanges(): Promise<void> {
   await showTaskpane("pending-changes");
 }

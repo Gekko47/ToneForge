@@ -117,7 +117,22 @@
                       ],
                       "supertip": {
                         "title": "Style Profile",
-                        "description": "Open the style profile this document is checked against: view it, edit its draft, and manage its published versions."
+                        "description": "Open the deterministic style profile this document is checked against: typography, house style, and the measured metrics they came from."
+                      }
+                    },
+                    {
+                      "id": "ToneForgeGovernancePolicyControl",
+                      "type": "button",
+                      "label": "Governance Policy",
+                      "actionId": "ToneForgeGovernancePolicy",
+                      "icons": [
+                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
+                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
+                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Governance Policy",
+                        "description": "Open the policy that decides which checks are mandatory, which are advisory, and which corrections ToneForge may apply without asking."
                       }
                     }
                   ]
@@ -191,6 +206,7 @@
             { "id": "ToneForgeFindings", "type": "executeFunction" },
             { "id": "ToneForgeReview", "type": "executeFunction" },
             { "id": "ToneForgeProfile", "type": "executeFunction" },
+            { "id": "ToneForgeGovernancePolicy", "type": "executeFunction" },
             { "id": "ToneForgePendingChanges", "type": "executeFunction" },
             { "id": "ToneForgeTroubleshooting", "type": "executeFunction" }
           ]

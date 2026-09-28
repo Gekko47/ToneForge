@@ -17,7 +17,13 @@
 export const TASKPANE_NAVIGATION_KEY = "ToneForge.TaskpaneNavigation";
 
 export type TaskpaneTarget =
-  "governance" | "debugging" | "findings" | "ai-review" | "profile" | "pending-changes";
+  | "governance"
+  | "debugging"
+  | "findings"
+  | "ai-review"
+  | "profile"
+  | "governance-policy"
+  | "pending-changes";
 
 export interface TaskpaneNavigation {
   target: TaskpaneTarget;
@@ -36,6 +42,7 @@ const TARGETS: readonly TaskpaneTarget[] = [
   "findings",
   "ai-review",
   "profile",
+  "governance-policy",
   "pending-changes",
 ];
 
