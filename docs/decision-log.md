@@ -1526,3 +1526,166 @@ of "y"`. The prose parser remains for unanchored findings.
   stays advisory, which is the correct answer rather than a crash.
 - The prompt states the quoting rule explicitly, including that a deviation the
   model cannot quote is one it should not report.
+
+## ADR-0065: Apply writes only the findings the user has reviewed
+
+- **Status**: Accepted (2026-09-28)
+- **Context**: `reviewOne()` added a finding id to `reviewedFindingIds` and
+  changed nothing else. The plan handed to Apply was the whole auto-previewed
+  plan, so Review was decorative: the user could mark three of forty findings
+  and Apply would write all forty. Worse, the marking was invisible — the
+  pending-changes table did not indicate which rows had been reviewed, so the
+  control read as a no-op.
+- **Decision**: Apply receives a plan filtered to reviewed findings, and the
+  button says so: `Apply {n} reviewed change{s}`. The duplicate "Apply all
+  changes" path is removed rather than kept as a shortcut, because a shortcut
+  around the review gate is the exact affordance the gate exists to prevent.
+- **Consequences**:
+  - A finding id cannot be the review key. The observer's scan and the preview
+    that builds the plan are separate runs issuing separate UUIDs, so an id
+    recorded against one is absent from the other. `reviewKey` is
+    `fingerprint@range.start` instead, which both runs compute identically.
+  - Offsets are compared exactly, not with the 400-character
+    `POSITION_TOLERANCE` that `isIgnoredFinding` uses. The difference is
+    deliberate: an ignore should survive the user typing above the finding, but
+    a review was given for specific text in a specific plan, and carrying it to
+    different text at a different offset is not the same consent.
+  - A re-scan invalidates reviews whose text has moved. That is correct — the
+    plan it was given for no longer exists — but it means reviewing is work
+    that a scan can undo, which is stated on the empty state rather than left
+    to be discovered.
+
+## ADR-0066: Coverage completeness is a discovery claim, not a type requirement
+
+- **Status**: Accepted (2026-09-28)
+- **Context**: `buildCoverage` defaulted `requiredNodeTypes` to
+  `["body", "paragraph/heading"]` and required at least one acquired node of
+  each, reporting `Required in-scope node type inaccessible: paragraph/heading`
+  otherwise. A document consisting entirely of list items therefore reported
+  itself incomplete forever, and because an incomplete plan blocks Apply, the
+  document could never be written to. The `body` alternative made it worse: it
+  is satisfied by every document, so the check could only ever produce a false
+  alarm, never a true one.
+- **Decision**: `requiredNodeTypes` defaults to `[]` — callers declare node
+  types they specifically need, and nothing is inferred. Completeness is
+  instead decided by a shape-independent question: were any in-scope nodes with
+  actual text acquired? Zero means the acquisition failed, which is the only
+  condition the check can honestly detect.
+- **Consequences**:
+  - A caller that genuinely needs a node type must now say so. This is the
+    honest direction: the previous default asserted a requirement nobody had
+    established.
+  - The check can no longer detect "we read the document but skipped a
+    construct we should have handled". That is a per-rule concern, not a
+    coverage one, and is reported by the rule's own diagnostics.
+  - Three existing tests encoded the old default. They were retargeted rather
+    than deleted, because they were testing real behaviour — the type
+    requirement still works when declared.
+
+## ADR-0067: Staleness is not declared while a re-scan is already scheduled
+
+- **Status**: Accepted (2026-09-28)
+- **Context**: `scheduleScan()` set `stale = true` on the first change event,
+  before the debounce elapsed. With a 300 ms debounce the findings list flashed
+  "findings are stale" on essentially every keystroke, then cleared — a banner
+  that appears and vanishes faster than it can be read and that described a
+  transient state rather than a problem.
+- **Decision**: Scheduling a scan does not mark findings stale. Staleness is
+  declared only when a refresh genuinely fails, in which case the phase becomes
+  `stale` rather than `failed`: the document did not break, the refresh did.
+  The debounce is raised to 1200 ms, and the Dashboard no longer overrides it.
+- **Consequences**:
+  - The banner now means one thing — the findings you are looking at cannot be
+    refreshed — instead of two, one of which was self-cancelling.
+  - A failed refresh is reported as staleness rather than failure because the
+    findings on screen remain valid; they are simply not current. Calling it a
+    failure implied the scan had produced nothing.
+  - A narrowed incremental scan that cannot plan from its own scope now triggers
+    a follow-up full scan. Previously the user could be left with findings from
+    a partial scope and no plan, which read as the product having found nothing.
+
+## ADR-0068: Semantic profiles are managed on the tab that edits them
+
+- **Status**: Accepted (2026-09-28)
+- **Context**: `selectKindRecordList`, `setActiveSemanticProfile`,
+  `createSemanticProfileRecord`, and `removeSemanticProfile` all existed in the
+  persistence layer and none had a caller. The Semantic tab could display the
+  one profile Learn Style had just created, so there was no way to hold a
+  second voice, no way to start from a blank profile, and no way to remove one.
+  Learn Style requires a sample passing the quality gate, so a user whose
+  document is too short had no route onto the tab at all.
+- **Decision**: `SemanticProfilePicker` manages the list on the Semantic tab:
+  switch, create empty, delete. Create-empty takes no sample and no provider.
+- **Consequences**:
+  - The picker holds the record list and the active id as state rather than
+    deriving them from the page's one-time state snapshot. Deriving left the
+    list showing a deleted profile and still marking the previous one active
+    after a switch — telling the user their rewrite matched a voice they had
+    just left.
+  - Each row's control names its target in the accessible name. Three buttons
+    all reading "Use this one" is not a list a screen reader user can navigate.
+  - Switching or deleting drops any pending proposal. A rewrite made against
+    the previous profile must not survive a switch, and nothing is silently
+    re-pointed at a profile the user did not choose.
+  - Consent does not gate this. Declining semantic consent withholds sending
+    text to a provider; typing a tone into a local field sends nothing, so
+    disabling the editor locked out exactly the user who had declined. The
+    editor's `disabled` prop was removed.
+
+## ADR-0069: Every refusal names the control that resolves it
+
+- **Status**: Accepted (2026-09-28)
+- **Context**: Blockers were explained in prose, or not at all. Apply refused
+  by an unreviewed plan rendered as a disabled button with no reason anywhere
+  near it. The troubleshooting page answered "what does this host support" and
+  could only be consulted if the user had already found it, and its diagnostics
+  function was private to it, so no other surface could reuse or contradict it.
+- **Decision**: `src/taskpane/troubleshooting/checks.ts` is a pure registry —
+  state in, notes out — and every remedy carries a `remedyTarget` naming the
+  actual control by its on-screen label and the page it lives on, e.g.
+  "Settings → Scanning → Scan automatically as the document changes". Only
+  situations that are currently true are returned.
+- **Consequences**:
+  - A target is a label, not a navigation destination. The pane's destinations
+    and the command layer's targets are different unions with no mapping
+    between them, and a link landing the user one screen early — where they
+    must still find the control — is not better advice than naming it.
+  - Returning only true situations is what keeps the one relevant line
+    distinguishable on a page people arrive at _because_ something is wrong.
+  - Because the registry reads no store, no two surfaces can state a different
+    reason for the same blocker. The Dashboard passes the live plan and review
+    counts it already holds, rather than the panel re-deriving them.
+  - A test pins every remedy label, so renaming a control without updating the
+    remedy that points at it fails the build.
+
+## ADR-0070: A manifest change requires re-registration, and the two manifests must agree
+
+- **Status**: Accepted (2026-09-28)
+- **Context**: The ribbon tab and context-menu entry were both absent from a
+  live Word after being added correctly to both `manifest.json` and
+  `manifest.xml`. The likely explanation at the time was a missing LLM
+  configuration, which is wrong: both are declared statically and exist whether
+  or not a provider is set. The real causes are documented in
+  `manual-verification.md` and are properties of Word, not of this repository.
+- **Decision**: Record the procedure rather than change the code. `npm run stop`
+  then close every Word window then `npm run sideload`, in that order, because
+  both npm scripts operate on `manifest.xml` and a background Word process
+  holds the old registration.
+- **Consequences**:
+  - `npm run sideload` reads `manifest.xml`, not the unified `manifest.json`.
+    The JSON is the deployment manifest, validated in CI, and a local sideload
+    never sees it — so a control added to only one file passes every check in
+    this repository and produces a Word that has never heard of it. This is the
+    single most likely cause and it fails silently.
+  - The semantic ribbon button ships `enabled: false` and is enabled at runtime
+    through `Office.ribbon.requestUpdate`, which needs the shared runtime
+    (`SharedRuntime`, `RibbonApi`, `ContextMenuApi`, with `CommandsRuntime` at
+    `lifetime: "long"`). If any of that is shortened or dropped, the call
+    rejects and the button stays greyed out with no error shown — which looks
+    identical to a missing tab, and is why the shared-runtime requirement is
+    stated explicitly rather than left to the manifest.
+  - `probeWordCapabilities` previously checked `Office.contextMenus` and
+    `Office.ui.contextMenus`, neither of which exists; the runtime API is
+    `Office.contextMenu.requestUpdate`. The probe answered `false` on every
+    host and had no test. It now probes the namespace that exists, and
+    `supportsRibbonUpdate` was added for the same reason.
