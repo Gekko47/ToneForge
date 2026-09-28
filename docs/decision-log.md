@@ -1690,6 +1690,69 @@ of "y"`. The prose parser remains for unanchored findings.
     host and had no test. It now probes the namespace that exists, and
     `supportsRibbonUpdate` was added for the same reason.
 
+## ADR-0074: A protection exclusion is not an acquisition failure
+
+- Amends: ADR-0066 (coverage completeness is a discovery claim) and
+  ADR-0065 (Apply writes only reviewed findings)
+- Status: Accepted (2026-09-28)
+- **Context**: Apply was permanently unavailable, with
+  `Coverage is incomplete; apply is blocked` and
+  `Unprocessed: No in-scope document content was acquired` — on a document the
+  pane was visibly reading, since the findings list beside it was full.
+  `buildCoverage` asked whether any node was both in scope and non-empty.
+  `analysisAcquisition` sets `includedInGovernance: false` on any paragraph
+  containing a double-quoted span, so a document that discusses quotations — a
+  style guide, an editorial memo, anything about typography — has every
+  paragraph protected, no in-scope content exists, and a policy setting was
+  reported as a read that never happened. `complete` is derived from
+  `unprocessed` and it gates Apply, so the misclassification denied the one
+  action the product exists to offer.
+- **Decision**: `complete` reflects _acquisition_, not governance eligibility.
+  An `unprocessed` gap is raised only when no content was acquired at all. A
+  document whose every paragraph is protected is reported as `protectedOnly`,
+  which is complete and carries its exclusions with their reasons in
+  `excluded`, exactly as before.
+- **Consequences**:
+  - A document nothing was read from is still incomplete and still refused. The
+    two states remain distinguishable, and the distinction is the fix: one means
+    "we read nothing" and the other means "we read it and excluded it".
+  - The plan such a document produces is legitimately empty. An empty plan
+    beside a refusal read as two contradictory answers to the same question, so
+    the refusal is the part that had to go.
+  - A caller that genuinely needs in-scope content can still ask for it, through
+    the existing `requiredNodeTypes` option, which is opt-in precisely because
+    the unconditional version of this question is the bug.
+
+## ADR-0075: The preview plans against probed capabilities, never a fallback
+
+- Amends: ADR-0056 (acquisition is gated on probed capabilities)
+- Status: Accepted (2026-09-28)
+- **Context**: The auto-preview called `reformatDocument` with no
+  `capabilities`, so the orchestrator used `FALLBACK_CAPABILITIES` — every flag
+  false. The resulting report listed `styles, styleBuiltin, isListItem,
+listItem, alignment, lineSpacing, spaceAfter, spaceBefore, font` as
+  unsupported for a Word host serving every one of them. The pane was asserting
+  its own ignorance as the host's, in the document shown to the user as
+  diagnostics. A second copy of the same claim had already been hand-written at
+  the other call site.
+- **Decision**: `toAnalysisCapabilities` narrows the probe result to the shape
+  acquisition consumes, and the preview passes it. Before the probe answers,
+  one shared `UNPROBED_CAPABILITIES` constant stands in for all of them — every
+  flag false, because nothing has been probed and no capability may be claimed.
+- **Consequences**:
+  - A preview built before the probe resolves is provisional. It does not claim
+    the document's preview hash, so the corrected plan is built when the probe
+    lands. Claiming the hash would have made the fallback permanent rather than
+    momentary, through the same guard that prevents needless replanning.
+  - The narrowing drops `supportsRibbonUpdate`, which is a ribbon concern with
+    no meaning to acquisition. Declaring the drop is the point: adding a
+    capability is a deliberate act in two places rather than an accident in one.
+  - The consistency report referenced its own hand-maintained copy of the
+    coverage schema. It now references `CoverageReportSchema` directly. Two
+    copies of a schema that gates Apply is the wrong shape — the first field
+    added to one and not the other is silently dropped on the way through the
+    report, and the report is what the gate reads.
+
 ## ADR-0071: The first run reports; it does not lock
 
 - Amends: ADR-0069 (every refusal names the control that resolves it)

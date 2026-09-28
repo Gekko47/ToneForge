@@ -101,7 +101,7 @@ export function buildCoverage(options: CoverageOptions): CoverageReport {
   });
 
   /*
-   * Did we acquire anything governance can act on?
+   * Did we acquire anything at all?
    *
    * The question is deliberately about *content*, not about a list of node
    * types. Asking "is there a node typed exactly paragraph or heading" reports
@@ -109,17 +109,41 @@ export function buildCoverage(options: CoverageOptions): CoverageReport {
    * and since `complete` drives the Apply gate, that permanently denies Apply
    * on a document ToneForge had in fact read end to end.
    *
-   * This is the only check that should be able to say "we acquired no scope".
-   * The narrower structural case — the host would not expose a paragraph
-   * collection at all — is reported separately below, from the acquisition
-   * diagnostics, which is the artefact that actually knows.
+   * It is also deliberately about acquisition, not about *governance
+   * eligibility*. Those are different questions and conflating them is what
+   * denied Apply on a readable document. `analysisAcquisition` marks a
+   * paragraph `includedInGovernance: false` when it contains a double-quoted
+   * span, so a document that discusses quotations — a style guide, an editorial
+   * memo, a paper about typography — has every paragraph protected. The old
+   * check asked for in-scope content, found none, and reported
+   * `No in-scope document content was acquired` as though nothing had been
+   * read. It had been read end to end: the rules scan the analysis text and
+   * produce findings from it, which is why the findings list filled up while
+   * Apply refused and cited a document ToneForge was demonstrably reading.
+   *
+   * A protection exclusion is a policy outcome, not a processing gap. It is
+   * already reported in `excluded` with its reason and locations, and it must
+   * not also appear in `unprocessed`, because `complete` is derived from
+   * `unprocessed` and it gates Apply. A document the user has deliberately
+   * excluded from governance is one they can still correct in the parts they
+   * did not exclude.
+   */
+  const acquiredContent = nodes.filter((node) => (node.text?.length ?? 0) > 0);
+  if (acquiredContent.length === 0) {
+    unprocessed.push("No document content was acquired");
+  }
+
+  /**
+   * Everything acquired was excluded by policy.
+   *
+   * A distinct state, not a flavour of failure. It is worth naming because the
+   * plan it produces is legitimately empty, and an empty plan next to a
+   * refusal reads as two contradictory answers to the same question.
    */
   const inScopeContent = nodes.filter(
     (node) => node.includedInGovernance && (node.text?.length ?? 0) > 0,
   );
-  if (inScopeContent.length === 0) {
-    unprocessed.push("No in-scope document content was acquired");
-  }
+  const protectedOnly = acquiredContent.length > 0 && inScopeContent.length === 0;
 
   requiredNodeTypes.forEach((requiredType) => {
     const alternatives = requiredType.split("/");
@@ -188,6 +212,7 @@ export function buildCoverage(options: CoverageOptions): CoverageReport {
     appliedChangeCount,
     changedNodeIds,
     complete,
+    protectedOnly,
     ...(acquisitionDiagnostics ? { acquisition: acquisitionDiagnostics } : {}),
   });
 }

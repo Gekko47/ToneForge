@@ -117,6 +117,17 @@ export const CoverageReportSchema = z.object({
   appliedChangeCount: z.number().int().nonnegative().default(0),
   changedNodeIds: z.array(z.string()).default([]),
   complete: z.boolean().default(true),
+  /**
+   * Everything acquired was excluded from governance by policy.
+   *
+   * Not a failure and not an `unprocessed` entry. It is the state a document
+   * reaches when every paragraph is protected — most often because each one
+   * contains a double-quoted span, which a style guide or an editorial memo
+   * has throughout. The distinction matters because `complete` gates Apply, and
+   * reporting a policy outcome as a processing gap denied Apply on documents
+   * that were read end to end.
+   */
+  protectedOnly: z.boolean().default(false),
 });
 
 export type CoverageReport = z.infer<typeof CoverageReportSchema>;

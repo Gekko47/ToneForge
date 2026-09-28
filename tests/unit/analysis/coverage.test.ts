@@ -65,12 +65,12 @@ describe("buildCoverage", () => {
     expect(report.unprocessed).toContain("Required in-scope node type inaccessible: paragraph");
   });
 
-  it("marks incomplete when no in-scope content was acquired at all", () => {
+  it("marks incomplete when no content was acquired at all", () => {
     // The one condition that genuinely means "we read nothing". A body node
     // with no text, and nothing else, is the shape of a failed acquisition.
     const report = buildCoverage({ nodes: [makeNode("body", "")], text: "" });
     expect(report.complete).toBe(false);
-    expect(report.unprocessed).toContain("No in-scope document content was acquired");
+    expect(report.unprocessed).toContain("No document content was acquired");
   });
 
   it("handles empty nodes array", () => {
@@ -78,7 +78,62 @@ describe("buildCoverage", () => {
     expect(report.counts).toEqual([]);
     expect(report.processedCharacterCount).toBe(0);
     expect(report.complete).toBe(false);
-    expect(report.unprocessed).toContain("No in-scope document content was acquired");
+    expect(report.unprocessed).toContain("No document content was acquired");
+  });
+
+  /*
+   * Regression: a protection exclusion is not an acquisition failure.
+   *
+   * Apply was permanently unavailable and the banner said
+   * `No in-scope document content was acquired` — on a document the pane was
+   * visibly reading, because the findings list beside it was full.
+   *
+   * The chain: `analysisAcquisition` marks a paragraph
+   * `includedInGovernance: false` when it contains a double-quoted span, so a
+   * document that discusses quotations — a style guide, an editorial memo,
+   * anything about typography — has every paragraph protected. The coverage
+   * check asked for *in-scope* content, found none, and reported a processing
+   * gap. `complete` is derived from `unprocessed` and it gates Apply, so a
+   * deliberate policy setting denied the user the one action the product
+   * exists to offer, while claiming a read that had plainly happened.
+   *
+   * The two states are genuinely different and stay distinguishable: a
+   * document nothing was read from is still incomplete and still refused.
+   */
+  it("does not call a fully protected document an acquisition failure", () => {
+    const nodes = [
+      makeNode("body", ""),
+      makeNode("paragraph", "Use an em dash, not a hyphen.", "body/paragraph/0", false),
+      makeNode("paragraph", 'She said "quote me" and left.', "body/paragraph/1", false),
+    ];
+    const report = buildCoverage({ nodes, text: nodes.map((n) => n.text).join("\n") });
+
+    expect(report.unprocessed).toEqual([]);
+    expect(report.complete).toBe(true);
+    // Still reported, and still with its reason: the exclusions are visible in
+    // the report rather than silently dropped to make the gate pass.
+    expect(report.excluded).toHaveLength(2);
+    expect(report.protectedOnly).toBe(true);
+  });
+
+  it("keeps the protected-only distinction off an ordinary document", () => {
+    const nodes = [
+      makeNode("body", ""),
+      makeNode("paragraph", "An ordinary paragraph."),
+      makeNode("paragraph", "A quoted one.", "body/paragraph/1", false),
+    ];
+    const report = buildCoverage({ nodes, text: nodes.map((n) => n.text).join("\n") });
+
+    expect(report.protectedOnly).toBe(false);
+    expect(report.complete).toBe(true);
+  });
+
+  it("still refuses a document that was never read", () => {
+    const report = buildCoverage({ nodes: [makeNode("body", "")], text: "" });
+    expect(report.complete).toBe(false);
+    // Distinguishable from the protected case, which is the whole point: one
+    // means "we read nothing" and the other means "we read it and excluded it".
+    expect(report.protectedOnly).toBe(false);
   });
 
   /*

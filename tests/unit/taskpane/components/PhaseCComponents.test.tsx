@@ -258,6 +258,7 @@ describe("Phase C task-pane components", () => {
           appliedChangeCount: 0,
           changedNodeIds: [],
           complete: false,
+          protectedOnly: false,
         }}
       />,
     );

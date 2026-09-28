@@ -34,7 +34,7 @@ import type { StyleProfile } from "../core/domain/StyleProfile";
 import { resolveResolvedPolicy, type ResolvedPolicy } from "../core/domain/ResolvedPolicy";
 import type { DeviationOptions } from "./deviationEngine";
 import type { LlmSemanticProvider } from "../ai/providers/LlmProvider";
-import type { DocumentNode } from "../core/domain/DocumentSnapshot";
+import { CoverageReportSchema, type DocumentNode } from "../core/domain/DocumentSnapshot";
 
 /** Lightweight FNV-1a hash used when the caller does not supply one. */
 function hashText(text: string): string {
@@ -72,51 +72,18 @@ export const ConsistencyReportSchema = z.object({
   docHash: z.string().trim().min(1),
   semanticStatus: z.enum(["ok", "skipped", "degraded"]).default("ok"),
   semanticError: z.string().optional(),
-  coverage: z
-    .object({
-      runId: z.string().uuid(),
-      counts: z
-        .array(
-          z.object({
-            nodeType: z.string(),
-            count: z.number().int().nonnegative(),
-            processedCharacterCount: z.number().int().nonnegative(),
-            revisedCharacterCount: z.number().int().nonnegative(),
-            excluded: z
-              .array(z.object({ reason: z.string(), locations: z.array(z.string()).max(10) }))
-              .default([]),
-          }),
-        )
-        .default([]),
-      processedCharacterCount: z.number().int().nonnegative(),
-      revisedCharacterCount: z.number().int().nonnegative(),
-      examinedNodeIds: z.array(z.string()).default([]),
-      excluded: z
-        .array(z.object({ reason: z.string(), locations: z.array(z.string()).max(10) }))
-        .default([]),
-      unsupported: z.array(z.string()).default([]),
-      unprocessed: z.array(z.string()).default([]),
-      plannedChangeCount: z.number().int().nonnegative().default(0),
-      appliedChangeCount: z.number().int().nonnegative().default(0),
-      changedNodeIds: z.array(z.string()).default([]),
-      acquisition: z
-        .object({
-          acquisitionReadCount: z.number().int().nonnegative(),
-          syncCount: z.number().int().nonnegative(),
-          analyzedCharacterCount: z.number().int().nonnegative(),
-          completeDocumentCharacterCount: z.number().int().nonnegative(),
-          fullBodyReadCount: z.number().int().nonnegative(),
-          paragraphCollectionRead: z.boolean(),
-          // Mirrors `CoverageReportSchema`. It was `z.literal(false)`, which made
-          // an honestly narrowed run unrepresentable and turned every
-          // incremental scan into a schema failure.
-          incremental: z.boolean(),
-          incrementalReason: z.string().trim().min(1),
-        })
-        .optional(),
-      complete: z.boolean().default(true),
-    })
-    .optional(),
+  /**
+   * The canonical coverage report, referenced rather than restated.
+   *
+   * This used to be a second, hand-maintained copy of every field in
+   * `CoverageReportSchema`, kept in step by eye. Two copies of a schema that
+   * gates Apply is the wrong shape: the first field added to the canonical one
+   * and not to this one is silently dropped on the way through the report, and
+   * the report is what the Apply gate reads. The `incremental` literal that
+   * once lived here is the same story — a field the two copies disagreed about,
+   * which made every narrowed scan fail its own parse.
+   */
+  coverage: CoverageReportSchema.optional(),
 });
 
 export type ConsistencyReport = z.infer<typeof ConsistencyReportSchema>;

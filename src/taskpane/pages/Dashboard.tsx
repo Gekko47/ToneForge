@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { type WordCapabilities } from "../../word/capabilityProbe";
+import { toAnalysisCapabilities, type WordCapabilities } from "../../word/capabilityProbe";
+import type { AnalysisCapabilities } from "../../analysis/analysisContext";
 import {
   createGovernanceProfile,
   type GovernanceProfile,
@@ -66,6 +67,34 @@ const Home = lazy(() => import("./Home"));
 
 /** Lets the findings toolbar's `aria-controls` point at the rendered list. */
 const FINDINGS_LIST_ID = "tf-findings-list";
+
+/**
+ * What the pane knows about the host before the probe has answered.
+ *
+ * Every flag false is the only honest answer here: nothing has been probed, so
+ * no capability may be claimed. It is a single shared constant because the
+ * alternative — an inline literal at each call site — is how two copies of the
+ * same claim drifted apart, one of which then described a Word host that serves
+ * every one of these as supporting nothing.
+ */
+const UNPROBED_CAPABILITIES: AnalysisCapabilities = {
+  supportsInsertText: false,
+  supportsReplaceText: false,
+  supportsInsertParagraph: false,
+  supportsInsertBreak: false,
+  supportsStyles: false,
+  supportsParagraphFormat: false,
+  supportsCharacterFormat: false,
+  supportsResetCharacterFormatting: false,
+  supportsListLevel: false,
+  supportsRevisions: false,
+  supportsSelection: false,
+  supportsParagraphResolution: false,
+  supportsHighlight: false,
+  supportsContextMenu: false,
+  hostName: "unknown",
+  hostVersion: null,
+};
 
 /**
  * The pane's pages. `landing` and `review` are the two that used to be one
@@ -544,10 +573,38 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           // preview describe a document state the findings never saw.
           includeRawText: false,
           policy: resolveGovernanceProfile(persisted, activeProfile),
+          /*
+           * The probed capabilities, not a fallback.
+           *
+           * This call passed no `capabilities`, so the orchestrator used
+           * `FALLBACK_CAPABILITIES` — every flag false — and the preview
+           * therefore planned against a host that supports nothing. That is
+           * what put `styles, styleBuiltin, isListItem, listItem, alignment,
+           * lineSpacing, spaceAfter, spaceBefore, font` in the unsupported list
+           * of a report describing a Word host that serves all of them. The
+           * pane was asserting its own ignorance rather than the host's.
+           *
+           * `caps` is `null` until the probe resolves, and the observer already
+           * handles that with the same all-false set, so preview and scan can
+           * never disagree about what the host offers.
+           */
+          ...(caps === null ? {} : { capabilities: toAnalysisCapabilities(caps) }),
         });
-        // Set the held hash even on a plan with zero changes: an unchanged
-        // document is a settled answer, not a reason to re-plan on every scan.
-        previewedDocHashRef.current = decision.docHash;
+        /*
+         * The held hash is claimed only once the host has been probed.
+         *
+         * A preview built before the probe answered planned against a host that
+         * supports nothing, so it is provisional by construction. Claiming the
+         * hash for it would make `decidePreview` treat the document as already
+         * previewed, and the corrected plan would never be built — the fallback
+         * would be permanent rather than momentary. Waiting costs one extra
+         * planning pass per document and removes a class of wrong report.
+         *
+         * Zero changes still claims the hash once capabilities are known: an
+         * unchanged document is a settled answer, not a reason to re-plan on
+         * every scan.
+         */
+        if (caps !== null) previewedDocHashRef.current = decision.docHash;
         setReformatResult(result);
         setPendingOpen(true);
       } catch (error: unknown) {
@@ -558,7 +615,10 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         previewingRef.current = false;
       }
     })();
-  }, [status, activeProfile]);
+    // `caps` is a dependency so the corrected preview runs when the probe
+    // lands. It is compared by identity, and `setCaps` receives one object per
+    // probe, so this re-runs once per probe rather than per render.
+  }, [status, activeProfile, caps]);
 
   useEffect(() => {
     void prepareReformatHost()
@@ -572,25 +632,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       // decided, and a second copy here is one more number to forget to change.
       onStatus: setStatus,
       profile: activeProfile,
-      capabilities: caps ?? {
-        supportsInsertText: false,
-        supportsReplaceText: false,
-        supportsInsertParagraph: false,
-        supportsInsertBreak: false,
-        supportsStyles: false,
-        supportsParagraphFormat: false,
-        supportsCharacterFormat: false,
-        supportsResetCharacterFormatting: false,
-        supportsListLevel: false,
-        supportsRevisions: false,
-        supportsSelection: false,
-        supportsParagraphResolution: false,
-        supportsHighlight: false,
-        supportsContextMenu: false,
-        supportsRibbonUpdate: false,
-        hostName: "unknown",
-        hostVersion: null,
-      },
+      capabilities: caps === null ? UNPROBED_CAPABILITIES : toAnalysisCapabilities(caps),
     });
     // A plan built under the previous profile cannot answer for this one, so
     // the auto-preview guard is released here. Otherwise the next scan would

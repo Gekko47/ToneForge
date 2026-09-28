@@ -14,6 +14,10 @@
 
 import { runInWord } from "../shared/office/officeHelpers";
 import { getCachedHostInfo } from "../shared/office/hostInfo";
+// A direct type-only import, not the `analysis` barrel: the barrel re-exports
+// modules that reach back toward this boundary, and a type import should not be
+// able to introduce a cycle.
+import type { AnalysisCapabilities } from "../analysis/analysisContext";
 
 export interface WordCapabilities {
   supportsInsertText: boolean;
@@ -34,6 +38,42 @@ export interface WordCapabilities {
   supportsRibbonUpdate: boolean;
   hostName: "Word" | "Excel" | "PowerPoint" | "unknown";
   hostVersion: string | null;
+}
+
+/**
+ * Narrow a probe result to the shape the analysis layer consumes.
+ *
+ * The two interfaces are field-for-field identical except for
+ * `supportsRibbonUpdate`, which is a ribbon concern and has no meaning to
+ * acquisition. Passing the probe result through whole is fine at runtime and
+ * wrong on paper: a reader cannot tell which fields acquisition is entitled to
+ * rely on. Declaring the narrowing here means adding a capability is a
+ * deliberate act in two places rather than an accident in one.
+ *
+ * The alternative was worse in practice. Callers that had no probe result built
+ * the object by hand, and the hand-built copy they wrote was all-false — so a
+ * caller with no capabilities claimed to describe a host that supports nothing,
+ * and every property it gated on was reported as unsupported.
+ */
+export function toAnalysisCapabilities(capabilities: WordCapabilities): AnalysisCapabilities {
+  return {
+    supportsInsertText: capabilities.supportsInsertText,
+    supportsReplaceText: capabilities.supportsReplaceText,
+    supportsInsertParagraph: capabilities.supportsInsertParagraph,
+    supportsInsertBreak: capabilities.supportsInsertBreak,
+    supportsStyles: capabilities.supportsStyles,
+    supportsParagraphFormat: capabilities.supportsParagraphFormat,
+    supportsCharacterFormat: capabilities.supportsCharacterFormat,
+    supportsResetCharacterFormatting: capabilities.supportsResetCharacterFormatting,
+    supportsListLevel: capabilities.supportsListLevel,
+    supportsRevisions: capabilities.supportsRevisions,
+    supportsSelection: capabilities.supportsSelection,
+    supportsParagraphResolution: capabilities.supportsParagraphResolution,
+    supportsHighlight: capabilities.supportsHighlight,
+    supportsContextMenu: capabilities.supportsContextMenu,
+    hostName: capabilities.hostName,
+    hostVersion: capabilities.hostVersion,
+  };
 }
 
 const DEFAULT_CAPABILITIES: WordCapabilities = {

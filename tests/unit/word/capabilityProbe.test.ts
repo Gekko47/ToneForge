@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { probeWordCapabilities } from "../../../src/word/capabilityProbe";
+import { probeWordCapabilities, toAnalysisCapabilities } from "../../../src/word/capabilityProbe";
 
 function setOffice(office: unknown) {
   (globalThis as unknown as { Office?: unknown }).Office = office;
@@ -267,5 +267,80 @@ describe("probeWordCapabilities", () => {
   it("reports no ribbon update API on a host that lacks it", async () => {
     setOffice(fullOffice());
     expect((await probeWordCapabilities()).supportsRibbonUpdate).toBe(false);
+  });
+});
+
+/*
+ * The narrowing that every acquisition decision depends on.
+ *
+ * The preview used to call the orchestrator with no `capabilities` at all, so
+ * it planned against `FALLBACK_CAPABILITIES` — every flag false — and its
+ * report listed `styles, styleBuiltin, isListItem, listItem, alignment,
+ * lineSpacing, spaceAfter, spaceBefore, font` as unsupported for a Word host
+ * that serves every one. The pane was reporting its own ignorance as the
+ * host's. This is the function that stops the gap reopening, and the assertion
+ * that a probed `true` survives the crossing — a narrowing that quietly dropped
+ * a flag would reproduce the original bug in a new shape.
+ */
+describe("toAnalysisCapabilities", () => {
+  it("carries every probed capability across", () => {
+    const probed = {
+      supportsInsertText: true,
+      supportsReplaceText: true,
+      supportsInsertParagraph: true,
+      supportsInsertBreak: true,
+      supportsStyles: true,
+      supportsParagraphFormat: true,
+      supportsCharacterFormat: true,
+      supportsResetCharacterFormatting: true,
+      supportsListLevel: true,
+      supportsRevisions: true,
+      supportsSelection: true,
+      supportsParagraphResolution: true,
+      supportsHighlight: true,
+      supportsContextMenu: true,
+      supportsRibbonUpdate: true,
+      hostName: "Word" as const,
+      hostVersion: "16.0",
+    };
+    const narrowed = toAnalysisCapabilities(probed);
+
+    expect(narrowed.supportsStyles).toBe(true);
+    expect(narrowed.supportsParagraphFormat).toBe(true);
+    expect(narrowed.supportsRevisions).toBe(true);
+    expect(narrowed.hostName).toBe("Word");
+    expect(narrowed.hostVersion).toBe("16.0");
+  });
+
+  it("does not invent support the probe did not claim", () => {
+    const probed = {
+      ...toAnalysisCapabilities({
+        supportsInsertText: true,
+        supportsReplaceText: false,
+        supportsInsertParagraph: false,
+        supportsInsertBreak: false,
+        supportsStyles: false,
+        supportsParagraphFormat: false,
+        supportsCharacterFormat: false,
+        supportsResetCharacterFormatting: false,
+        supportsListLevel: false,
+        supportsRevisions: false,
+        supportsSelection: false,
+        supportsParagraphResolution: false,
+        supportsHighlight: false,
+        supportsContextMenu: false,
+        supportsRibbonUpdate: false,
+        hostName: "unknown" as const,
+        hostVersion: null,
+      }),
+      supportsRibbonUpdate: true,
+    };
+    const narrowed = toAnalysisCapabilities(probed);
+
+    // The one flag the probe had true, carried. The rest stay false rather than
+    // being filled in, because a narrowing is not an opportunity to guess.
+    expect(narrowed.supportsInsertText).toBe(true);
+    expect(narrowed.supportsStyles).toBe(false);
+    expect(narrowed.supportsRevisions).toBe(false);
   });
 });
