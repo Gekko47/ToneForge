@@ -53,6 +53,62 @@ require a separately approved import/restructure project and is not part of
 this evidence record. See
 [`plans/dependency-remediation-plan.md`](../plans/dependency-remediation-plan.md).
 
+### After changing a manifest
+
+A manifest change behaves nothing like a code change, and this has cost real
+debugging time: the ribbon tab and the context-menu entry were both absent from
+a live Word after being added, correctly, to both
+[`manifest.json`](../manifest.json) and [`manifest.xml`](../manifest.xml).
+
+**A manifest change requires a full Word restart, not a pane refresh.** Word
+reads and caches the manifest when the add-in is first registered. Closing the
+task pane, reloading the webview, or restarting the Webpack dev server changes
+none of that — Word is still holding the manifest it read at registration.
+
+The order matters, because stopping after the wrong step leaves a stale
+registration behind:
+
+```text
+npm run stop          # unregister first, or Word keeps the old manifest
+# close every Word window — a background Word process keeps the registration
+npm run sideload      # re-register with the new manifest
+```
+
+Both npm scripts operate on [`manifest.xml`](../manifest.xml), which is the
+manifest the Office Add-in debugging tool registers. The unified
+[`manifest.json`](../manifest.json) is the deployment manifest and is validated
+in CI, but a local sideload does not read it — which is exactly why a control
+added to only one of the two files produces a build that passes every check and
+a Word that has never heard of it.
+
+If the ribbon or context menu is still missing after that, the manifest is
+being rejected rather than cached, and the reason is in Word's own log rather
+than anywhere in this repository. Check, in order:
+
+1. **Both manifests.** `manifest.json` (unified, v1.30) and `manifest.xml` must
+   declare the same controls. A control in one and not the other is the most
+   common cause, and it fails silently.
+2. **`npm run validate`.** `scripts/validate-manifest.mjs` checks the JSON
+   against the schema and verifies referenced files exist. The schema check in
+   `tests/unit/commands/commandContracts.test.ts` catches the shape errors that
+   a real Word only reports as "the add-in did not load".
+3. **The shared runtime.** `Office.ribbon.requestUpdate` and
+   `Office.contextMenu.requestUpdate` — which is what enables and disables the
+   semantic button at runtime — require a shared runtime. The manifest declares
+   the `SharedRuntime`, `RibbonApi`, and `ContextMenuApi` capabilities, and the
+   runtime that carries the commands (`CommandsRuntime`) is `lifetime: "long"`.
+   If that lifetime is ever shortened, or a capability is dropped, those calls
+   reject and the control stays at whatever state it was declared in — the
+   semantic button ships `enabled: false` and is turned on at runtime, so it
+   would remain greyed out with no error shown to the user.
+4. **Word's add-in log.** On Windows this is under
+   `%LOCALAPPDATA%\\Microsoft\\Office\\16.0\\Wef\\`.
+
+None of this involves a provider. The ribbon tab and the context-menu entry are
+declared statically in the manifest and are present whether or not an LLM is
+configured; a missing model affects only the requests that would have been made
+after a control is pressed.
+
 ## Host matrix
 
 | Host                     | Version | Browser/engine    | Sideload | Task pane | Probe   | Current evidence                                                                                                                                               |
