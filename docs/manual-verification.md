@@ -182,7 +182,11 @@ For each host:
 - Full-document AI review, live provider/broker behavior, observer change-range
   behavior, keyboard/screen-reader behavior, and long-document measurements: no
   live evidence yet. The development broker is not production evidence.
-- The consistency seam is reserved and no C1–C10 engine is present.
+- The C1–C10 consistency engines are implemented and unit tested, but none has
+  been run against a real document in Word. The unit tests prove the comparison
+  logic; only a host run can show that a real document produces the conflicts the
+  engine claims it would, and that the model adjudication behaves as reported
+  when it is genuinely consulted.
 
 ## Open gate — incremental scan scope (ADR-0063)
 
