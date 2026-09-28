@@ -143,6 +143,112 @@ function renderPage(overrides: Partial<React.ComponentProps<typeof Semantic>> = 
   return { ...render(<Semantic {...props} />), props };
 }
 
+/**
+ * The semantic tab owns the semantic profile: its settings, and the measured
+ * context that gives those settings something to be judged against.
+ *
+ * The deterministic profile editor used to render both, read-only, which made
+ * the deterministic tab look like it owned a semantic profile it could not
+ * edit. Removing those blocks is only half the fix: the deterministic tab
+ * showed all eight measured metrics and this one showed four, so a move that
+ * did not also move the other four would have deleted em dash, en dash and
+ * curly quote frequency and capitalization consistency from the interface
+ * altogether — numbers the engine still used and nobody could see.
+ */
+describe("the semantic profile surface", () => {
+  it("shows every measured metric, not a selection of them", async () => {
+    const learned = createRecord(
+      FIRST_ID,
+      "Learned semantic style",
+      "2026-01-01T00:00:00.000Z",
+      {
+        ...createEmptyProfile("Learned semantic style"),
+        measured: {
+          avgSentenceLength: 18.4,
+          sentenceLengthStdDev: 5.2,
+          emDashFrequency: 3.1,
+          enDashFrequency: 1.4,
+          curlyQuoteFrequency: 22.7,
+          paragraphLengthAvg: 61.3,
+          // A proportion of 0 to 1, as `computeMeasuredProfile` produces it —
+          // not 96.5. The formatter divides by nothing and multiplies by 100.
+          capitalizationConsistency: 0.965,
+          sampleWordCount: 4820,
+        },
+      },
+      "semantic",
+    );
+    mocks.loadState.mockReturnValue({
+      ...semanticState(),
+      semanticProfileRecords: { [FIRST_ID]: learned },
+    });
+    mocks.loadSemanticProfileRecord.mockReturnValue(learned);
+
+    renderPage();
+
+    const measured = await screen.findByRole("heading", { name: "Measured style" });
+    const list = measured.closest("section") as HTMLElement;
+    [
+      "Average sentence length",
+      "Sentence length spread",
+      "Average paragraph length",
+      "Em dash frequency",
+      "En dash frequency",
+      "Curly quote frequency",
+      "Capitalization consistency",
+      "Sample size",
+    ].forEach((label) => {
+      expect(within(list).getByText(label)).toBeInTheDocument();
+    });
+    // The four that were only ever on the deterministic tab, with real values,
+    // so a regression to "not measured yet" is visible as a failure here.
+    expect(within(list).getByText("3.1 per 100 words")).toBeInTheDocument();
+    // Stored as a proportion of 0 to 1, so 0.965 has to render as 97% rather
+    // than being rounded as though it were already a percentage.
+    expect(within(list).getByText("97%")).toBeInTheDocument();
+  });
+
+  it("saves an edited semantic value to the semantic record", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const tone = await screen.findByLabelText("Tone");
+    await user.clear(tone);
+    await user.type(tone, "Measured");
+    await user.tab();
+
+    await waitFor(() => expect(mocks.saveSemanticProfileRecord).toHaveBeenCalled());
+    const saved = mocks.saveSemanticProfileRecord.mock.calls.at(-1)?.[0];
+    // Through the semantic writer. A write to the deterministic record under
+    // the same id would leave the two namespaces silently divergent: the
+    // rewrite would reason about a voice the editor no longer shows.
+    expect(saved?.kind).toBe("semantic");
+    expect(saved?.draft?.semantic.tone).toBe("Measured");
+  });
+
+  it("hands the rewrite the profile it just edited", async () => {
+    const user = userEvent.setup();
+    mocks.getSelectionText.mockResolvedValue("Some selected words.");
+    mocks.proposeSemanticRewrite.mockResolvedValue(sampleFinding({ actionable: true }));
+    renderPage();
+
+    const tone = await screen.findByLabelText("Tone");
+    await user.clear(tone);
+    await user.type(tone, "Clipped");
+    await user.tab();
+
+    await user.click(await screen.findByRole("button", { name: "Read current selection" }));
+    await user.click(await screen.findByRole("button", { name: "Propose rewrite" }));
+
+    await waitFor(() => expect(mocks.proposeSemanticRewrite).toHaveBeenCalled());
+    // `proposeSemanticRewrite(selection, profile, options, nodes)`: the profile
+    // is the second argument.
+    const [, profile] = mocks.proposeSemanticRewrite.mock.calls.at(-1) ?? [];
+    // The engine reasons about this profile, so the edit has to be in it.
+    expect(profile?.semantic.tone).toBe("Clipped");
+  });
+});
+
 describe("the Semantic announcement", () => {
   it("speaks an error in preference to a success", () => {
     // A learn finishing while a rewrite error is still on screen must not let

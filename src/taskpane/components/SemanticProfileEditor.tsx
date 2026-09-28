@@ -8,10 +8,12 @@
  * A field whose state is never read is a live default, not a read-only view.
  *
  * Here the opposite rule applies: these fields are the point of the tab, and
- * they are saved explicitly. Measured style is displayed read-only on the
- * Deterministic Style Profile tab, where it belongs, because it is *derived* —
- * showing a derived number next to an editable one invites editing the number
- * that will be overwritten on the next scan.
+ * they are saved explicitly. The measured metrics sit directly above this
+ * editor, on this tab, read-only — they are *derived*, and a derived number
+ * placed next to an editable one invites editing the number that the next scan
+ * will overwrite. They moved here rather than being deleted when the
+ * deterministic editor shed them, so that the tab owning the semantic profile
+ * also owns the context needed to judge it.
  */
 
 import React from "react";
@@ -132,8 +134,9 @@ export default function SemanticProfileEditor({
       <h2 id="semantic-heading">Semantic style</h2>
       <p className="tf-sub">
         How the writing sounds rather than how it is punctuated. These values are what the
-        consistency check and semantic rewrite reason about; the measured metrics on the
-        Deterministic Style Profile tab are derived from text and cannot be edited here.
+        consistency check and semantic rewrite reason about. The measured metrics above are derived
+        from text and are shown for comparison, not edited; the rules they were measured from are on
+        the Deterministic Style Profile tab.
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>

@@ -422,11 +422,25 @@ export default function Semantic({
         </section>
       ) : (
         <>
+          {/*
+            Every measured metric, not a selection of them.
+
+            The deterministic profile editor used to render all eight of these
+            as a read-only list, and the Semantic tab rendered four. Moving the
+            block here without moving the other four would have deleted them
+            from the interface entirely — em dash, en dash and curly quote
+            frequency and capitalization consistency would have become
+            invisible numbers the engine still used and no one could see.
+
+            Read-only, and labelled as derived: the next scan overwrites
+            anything typed here, so an editable-looking field here would be a
+            value that silently does not stick.
+          */}
           <section aria-labelledby="measured-heading" className="tf-card">
             <h2 id="measured-heading">Measured style</h2>
             <p className="tf-sub">
-              Derived from your writing on every scan. Shown for reference; the rules themselves are
-              edited on the Deterministic Style Profile tab.
+              Derived from your writing on every scan, so it is shown rather than edited. The rules
+              these numbers were measured from are on the Deterministic Style Profile tab.
             </p>
             <dl>
               <dt>Average sentence length</dt>
@@ -435,6 +449,14 @@ export default function Semantic({
               <dd>{count(profile.measured.sentenceLengthStdDev, "words")}</dd>
               <dt>Average paragraph length</dt>
               <dd>{count(profile.measured.paragraphLengthAvg, "words")}</dd>
+              <dt>Em dash frequency</dt>
+              <dd>{rate(profile.measured.emDashFrequency)}</dd>
+              <dt>En dash frequency</dt>
+              <dd>{rate(profile.measured.enDashFrequency)}</dd>
+              <dt>Curly quote frequency</dt>
+              <dd>{rate(profile.measured.curlyQuoteFrequency)}</dd>
+              <dt>Capitalization consistency</dt>
+              <dd>{percent(profile.measured.capitalizationConsistency)}</dd>
               <dt>Sample size</dt>
               <dd>{count(profile.measured.sampleWordCount, "words")}</dd>
             </dl>
@@ -543,4 +565,28 @@ export default function Semantic({
  */
 function count(value: number | null, unit: string): string {
   return value === null ? "not measured yet" : `${Math.round(value)} ${unit}`;
+}
+
+/**
+ * A per-100-words rate, to one decimal.
+ *
+ * `count` rounds to a whole number, which is right for a sentence length and
+ * wrong here: these rates are typically single digits, so rounding 3.1 to 3
+ * throws away a third of the value and 0.4 to 0 reports a real occurrence as
+ * none at all.
+ */
+function rate(value: number | null): string {
+  return value === null ? "not measured yet" : `${value.toFixed(1)} per 100 words`;
+}
+
+/**
+ * A proportion, as a percentage.
+ *
+ * `capitalizationConsistency` is `capitalized / sentences.length` — a value
+ * between 0 and 1, not between 0 and 100. It needs its own formatter precisely
+ * because it does not share a scale with anything else on this list, and
+ * rounding it as though it were one turns 96.5% into "1".
+ */
+function percent(value: number | null): string {
+  return value === null ? "not measured yet" : `${Math.round(value * 100)}%`;
 }

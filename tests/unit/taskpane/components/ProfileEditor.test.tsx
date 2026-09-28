@@ -141,16 +141,36 @@ describe("ProfileEditor", () => {
     vi.restoreAllMocks();
   });
 
-  it("loads the active profile and renders measured metrics as read-only text", () => {
+  /**
+   * The deterministic editor owns the deterministic rules and nothing else.
+   *
+   * It used to render measured style and semantic style as read-only lists,
+   * which made this tab look like it owned a semantic profile and a metrics
+   * view it can neither edit nor change. Both now live on the Semantic tab,
+   * which shows all eight measured metrics and hosts the semantic editor.
+   *
+   * The assertion is about absence *and* about the pointer. Removing the
+   * sections without leaving a route to them reads as data loss, which is the
+   * failure this change most needed to avoid.
+   */
+  it("leaves measured and semantic style to the semantic tab, and says so", () => {
     const { container } = render(<ProfileEditor />);
 
     expect(inputByValue(container, "Saved profile")).toBeInTheDocument();
     expect(inputByValue(container, "utilize")).toBeInTheDocument();
-    expect(within(container).getByText("Measured style")).toBeInTheDocument();
-    expect(within(container).queryAllByText("Not available").length).toBeGreaterThan(0);
+    expect(within(container).queryByText("Measured style")).not.toBeInTheDocument();
+    expect(within(container).queryByText("Semantic style")).not.toBeInTheDocument();
+    // Still a sentence naming where they went, not a silent removal.
     expect(
-      screen.queryByRole("textbox", { name: "Average sentence length" }),
-    ).not.toBeInTheDocument();
+      within(container).getByText(/Measured style and semantic style are on the Semantic tab/),
+    ).toBeInTheDocument();
+  });
+
+  it("does not title itself over the page heading", () => {
+    // The page owns the h1. A second one directly under it, naming the same
+    // thing less precisely, gave the tab two competing headings.
+    const { container } = render(<ProfileEditor />);
+    expect(container.querySelector("h1")).toBeNull();
   });
 
   it("shows the assigned revision as a read-only field", () => {

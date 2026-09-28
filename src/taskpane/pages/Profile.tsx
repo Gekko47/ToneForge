@@ -48,8 +48,8 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
       </nav>
       <h1 className="tf-title">Deterministic Style Profile</h1>
       <p className="tf-sub">
-        The rules ToneForge checks deterministically: typography, house style, and the measured
-        metrics they were derived from. Semantic style is authored on the Semantic tab, and the
+        The rules ToneForge checks deterministically: typography and house style. Semantic style and
+        the measured metrics these rules were derived from are shown on the Semantic tab, and the
         policy that decides which of these may be applied without asking is on the Governance Policy
         tab.
       </p>

@@ -1690,6 +1690,43 @@ of "y"`. The prose parser remains for unanchored findings.
     host and had no test. It now probes the namespace that exists, and
     `supportsRibbonUpdate` was added for the same reason.
 
+## ADR-0076: The semantic tab owns the semantic profile and its measured context
+
+- Amends: ADR-0068 (semantic profiles are managed on the tab that edits them)
+- Status: Accepted (2026-09-28)
+- **Context**: The deterministic profile editor rendered a read-only **Measured
+  style** list of all eight metrics and a read-only **Semantic style** list,
+  under its own `<h1>Style Profile</h1>`, directly beneath the page's `<h1>
+Deterministic Style Profile</h1>`. Neither list was editable, so the
+  deterministic tab looked like it owned a semantic profile and a metrics view
+  it could not change. The Semantic tab already owned the semantic editor but
+  displayed only four of the eight measured metrics.
+- **Decision**: Measured style moves to the Semantic tab, complete — all eight
+  metrics, not the four it already showed. The deterministic editor keeps a
+  sentence naming where they went, and gives up its own heading; the page owns
+  the one `h1`.
+- **Consequences**:
+  - A move is not a deletion. Removing those blocks from the deterministic tab
+    without moving the other four metrics would have left em dash, en dash and
+    curly quote frequency and capitalization consistency displayed nowhere —
+    numbers the engine still uses and no one could see. A test pins all eight
+    by label, so a partial move fails the build.
+  - The two surfaces never both showed the same list, so there was no second
+    copy to keep in step. That is the reason this was safe to do at all, and
+    the reason a test asserting the count matters.
+  - Measured values are still _written_ by `learnStyleDraft`, which computes
+    them from the sample and stores them on the semantic record the editor
+    reads. A blank profile has none, and says "not measured yet" rather than
+    printing a zero.
+  - `capitalizationConsistency` is a proportion between 0 and 1, not a
+    percentage. It needs a formatter of its own: rendering it with the
+    integer-rounding used for word counts printed `1` for 96.5%, and the
+    per-100-words rates need one decimal or 0.4 reads as none at all.
+  - The semantic settings are saved through `saveSemanticProfileRecord`, and
+    the rewrite and the ribbon command both read that same record, so an edit
+    is the input the engine reasons about. A write to the deterministic record
+    under the same id would leave the two namespaces silently divergent.
+
 ## ADR-0074: A protection exclusion is not an acquisition failure
 
 - Amends: ADR-0066 (coverage completeness is a discovery claim) and

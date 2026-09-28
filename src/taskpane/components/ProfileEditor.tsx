@@ -100,13 +100,6 @@ const gridStyle: React.CSSProperties = {
   gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
 };
 
-const measuredGridStyle: React.CSSProperties = {
-  display: "grid",
-  gap: "8px 24px",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  margin: 0,
-};
-
 const buttonStyle: React.CSSProperties = {
   marginTop: 16,
 };
@@ -230,13 +223,6 @@ function initialContext(): ProfileEditorState {
     fieldErrors: {},
     error: null,
   };
-}
-
-function formatMetric(value: number | null): string {
-  if (value === null) {
-    return "Not available";
-  }
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 function sameEditableSnapshot(left: StyleProfile, right: StyleProfile): boolean {
@@ -429,10 +415,18 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
 
   return (
     <div className="tf-card">
-      <h1 className="tf-title">Style Profile</h1>
+      {/*
+        No heading here.
+
+        The editor used to open with its own `<h1>Style Profile</h1>`, directly
+        under the page's `<h1>Deterministic Style Profile</h1>`. Two competing
+        h1s on one screen, the second naming the same thing less precisely, and
+        a page header that is the one the navigation and the tests address. The
+        page owns the heading; a component embedded in it does not add another.
+      */}
       <p className="tf-sub">
-        Edit the active profile. Measured metrics are read-only because they are derived from the
-        captured writing sample.
+        Edit the deterministic rules below. They are measured against the captured writing sample,
+        so a change here changes what every later check compares against.
       </p>
 
       {renderMessageBar()}
@@ -468,6 +462,15 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
         />
       </div>
 
+      {/*
+        One place that talks about revisions.
+
+        The revision number, the count of recorded revisions, and the history
+        list were three separate statements of the same fact, in three places,
+        with the count and the number disagreeing in wording. They are now one
+        disclosure: the sentence carries the state, the list carries the
+        history, and the field above carries the number.
+      */}
       <p className="tf-sub" style={{ marginTop: 12 }}>
         {hasHistory
           ? `${historyCount} revision(s) recorded. Saving assigns the next revision.`
@@ -491,98 +494,26 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
         </details>
       )}
 
-      <section aria-labelledby="measured-heading" style={sectionStyle}>
-        <h2 id="measured-heading" style={sectionHeadingStyle}>
-          Measured style
-        </h2>
-        <dl style={measuredGridStyle}>
-          <div>
-            <dt>Average sentence length</dt>
-            <dd>{formatMetric(baseProfile.measured.avgSentenceLength)}</dd>
-          </div>
-          <div>
-            <dt>Sentence length standard deviation</dt>
-            <dd>{formatMetric(baseProfile.measured.sentenceLengthStdDev)}</dd>
-          </div>
-          <div>
-            <dt>Em dash frequency / 100 words</dt>
-            <dd>{formatMetric(baseProfile.measured.emDashFrequency)}</dd>
-          </div>
-          <div>
-            <dt>En dash frequency / 100 words</dt>
-            <dd>{formatMetric(baseProfile.measured.enDashFrequency)}</dd>
-          </div>
-          <div>
-            <dt>Curly quote frequency / 100 words</dt>
-            <dd>{formatMetric(baseProfile.measured.curlyQuoteFrequency)}</dd>
-          </div>
-          <div>
-            <dt>Average paragraph length</dt>
-            <dd>{formatMetric(baseProfile.measured.paragraphLengthAvg)}</dd>
-          </div>
-          <div>
-            <dt>Capitalization consistency</dt>
-            <dd>{formatMetric(baseProfile.measured.capitalizationConsistency)}</dd>
-          </div>
-          <div>
-            <dt>Sample word count</dt>
-            <dd>{formatMetric(baseProfile.measured.sampleWordCount)}</dd>
-          </div>
-        </dl>
-        <p className="tf-sub">
-          {baseProfile.sourceSampleIds.length === 0
-            ? "No source samples are linked to this profile."
-            : `${baseProfile.sourceSampleIds.length} source sample(s) linked.`}
-        </p>
-      </section>
-
       {/*
-        Semantic style is not edited here, and this says so rather than leaving
-        a gap. It is not silently carried either: `buildCandidate` spreads
-        `baseProfile`, so the profile's learned tone, voice and vocabulary are
-        preserved exactly and a deterministic edit cannot reset them. Editing
-        them is on the Semantic tab.
+        Measured style and Semantic style are not shown here.
+
+        Both were rendered as read-only definition lists, which made the
+        deterministic tab look like it owned a semantic profile and a metrics
+        view it cannot edit and does not own. The Semantic tab displays the
+        measured values and hosts the editable semantic editor; the Governance
+        Policy tab decides which rules may be applied without asking.
+
+        The values are still carried, not dropped: `buildCandidate` spreads
+        `baseProfile`, so a deterministic edit here cannot reset the learned
+        tone, voice, vocabulary or metrics. This note says so, because a
+        section that disappeared with no explanation reads as data loss.
       */}
-      <section aria-labelledby="semantic-heading" style={sectionStyle}>
-        <h2 id="semantic-heading" style={sectionHeadingStyle}>
-          Semantic style
-        </h2>
-        <p className="tf-sub">
-          Tone, voice, vocabulary register, rhetorical style and avoid-words are edited on the
-          Semantic tab. This profile keeps its current values, and saving a deterministic change
-          here does not alter them.
-        </p>
-        <dl style={measuredGridStyle}>
-          <div>
-            <dt>Tone</dt>
-            <dd>{baseProfile.semantic.tone}</dd>
-          </div>
-          <div>
-            <dt>Voice</dt>
-            <dd>{baseProfile.semantic.voice}</dd>
-          </div>
-          <div>
-            <dt>Vocabulary register</dt>
-            <dd>{baseProfile.semantic.vocabularyRegister}</dd>
-          </div>
-          <div>
-            <dt>Rhetorical style</dt>
-            <dd>{baseProfile.semantic.rhetoricalStyle}</dd>
-          </div>
-          <div>
-            <dt>Formality</dt>
-            <dd>{formatMetric(baseProfile.semantic.formality)}</dd>
-          </div>
-          <div>
-            <dt>Preferred sentence length</dt>
-            <dd>{formatMetric(baseProfile.semantic.preferredSentenceLength)}</dd>
-          </div>
-          <div>
-            <dt>Reading grade target</dt>
-            <dd>{formatMetric(baseProfile.semantic.readingGradeTarget)}</dd>
-          </div>
-        </dl>
-      </section>
+      <p className="tf-sub" style={{ marginTop: 12 }}>
+        {baseProfile.sourceSampleIds.length === 0
+          ? "No source samples are linked to this profile."
+          : `${baseProfile.sourceSampleIds.length} source sample(s) linked.`}{" "}
+        Measured style and semantic style are on the Semantic tab; saving here does not change them.
+      </p>
 
       <section aria-labelledby="typography-heading" style={sectionStyle}>
         <h2 id="typography-heading" style={sectionHeadingStyle}>
