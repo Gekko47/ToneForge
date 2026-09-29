@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   consumeTaskpaneTarget,
   setTaskpaneTarget,
+  subscribeToTaskpaneTarget,
   TASKPANE_NAVIGATION_KEY,
 } from "../../../../src/shared/office/taskpaneNavigation";
 
@@ -23,8 +24,47 @@ describe("taskpane navigation instructions", () => {
   });
 
   it("keeps the scan action working, so the second action did not displace it", () => {
-    setTaskpaneTarget("governance", "scan");
-    expect(consumeTaskpaneTarget()).toEqual({ target: "governance", action: "scan" });
+    setTaskpaneTarget("review", "scan");
+    expect(consumeTaskpaneTarget()).toEqual({ target: "review", action: "scan" });
+  });
+
+  /**
+   * A command used while the pane is already open.
+   *
+   * `consumeTaskpaneTarget` was the only reader, and it ran once on mount, so a
+   * ribbon or context-menu command used afterwards wrote its instruction and
+   * nothing read it. The button did nothing, silently, and the next mount picked
+   * up a stale instruction from whenever the user reopened the pane. The
+   * commands run in a different document, which is the case `storage` events
+   * exist for.
+   */
+  it("delivers a command that arrives after mount", () => {
+    const seen: unknown[] = [];
+    const unsubscribe = subscribeToTaskpaneTarget((navigation) => seen.push(navigation));
+    try {
+      // Written by the "other document", then announced. The event carries the
+      // key, which the listener checks before consuming.
+      setTaskpaneTarget("findings");
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: TASKPANE_NAVIGATION_KEY, newValue: "{}" }),
+      );
+      expect(seen).toEqual([{ target: "findings" }]);
+      // Consumed, so the same instruction cannot re-fire on the next mount.
+      expect(consumeTaskpaneTarget()).toBeNull();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("ignores a storage event for an unrelated key", () => {
+    const seen: unknown[] = [];
+    const unsubscribe = subscribeToTaskpaneTarget((navigation) => seen.push(navigation));
+    try {
+      window.dispatchEvent(new StorageEvent("storage", { key: "SomeOtherKey" }));
+      expect(seen).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("drops an action it does not recognise rather than passing it on", () => {

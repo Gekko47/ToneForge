@@ -36,7 +36,7 @@ const CommandDefinitionSchema = z.object({
   xmlAction: z.literal("ShowTaskpane"),
   xmlNavigationTarget: z.literal("default"),
   navigationTarget: z.enum([
-    "governance",
+    "review",
     "findings",
     "ai-review",
     "profile",

@@ -17,7 +17,15 @@
 export const TASKPANE_NAVIGATION_KEY = "ToneForge.TaskpaneNavigation";
 
 export type TaskpaneTarget =
-  | "governance"
+  /**
+   * The deterministic review surface.
+   *
+   * Named `review`, not `governance`, because the destination it names is the
+   * one the header calls Deterministic Review. The old name survived the rename
+   * and then stopped being handled: the arrival mapping had no `governance`
+   * branch, so the "Scan Now" command ran its scan and opened no page at all.
+   */
+  | "review"
   | "debugging"
   | "findings"
   | "ai-review"
@@ -46,7 +54,7 @@ export interface TaskpaneNavigation {
 const ACTIONS: readonly TaskpaneAction[] = ["scan", "read-selection"];
 
 const TARGETS: readonly TaskpaneTarget[] = [
-  "governance",
+  "review",
   "debugging",
   "findings",
   "ai-review",
@@ -83,6 +91,32 @@ export function consumeTaskpaneTarget(): TaskpaneNavigation | null {
   const raw = storage.getItem(TASKPANE_NAVIGATION_KEY);
   storage.removeItem(TASKPANE_NAVIGATION_KEY);
   return parseNavigation(raw);
+}
+
+/**
+ * Deliver a command issued while the pane is already open.
+ *
+ * Consuming only on mount meant a ribbon or context-menu command used after the
+ * pane had loaded wrote its instruction to storage and nothing read it — the
+ * button did nothing, with no error, and the next mount would pick up a stale
+ * instruction from whenever the user happened to reopen the pane. The commands
+ * run in a different document from the task pane, which is exactly the case
+ * `storage` events exist for: the event fires in the *other* same-origin
+ * document, so the pane learns about the command without polling.
+ *
+ * Returns an unsubscribe function. The listener checks the key itself, because
+ * `storage` fires for every key the other document writes.
+ */
+export function subscribeToTaskpaneTarget(
+  listener: (navigation: TaskpaneNavigation) => void,
+): () => void {
+  const onStorage = (event: StorageEvent): void => {
+    if (event.key !== null && event.key !== TASKPANE_NAVIGATION_KEY) return;
+    const request = consumeTaskpaneTarget();
+    if (request !== null) listener(request);
+  };
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
 }
 
 function isTarget(value: unknown): value is TaskpaneTarget {

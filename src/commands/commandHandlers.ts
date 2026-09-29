@@ -19,11 +19,11 @@ async function showTaskpane(target: TaskpaneTarget, action?: TaskpaneAction): Pr
 }
 
 export async function openTaskpane(): Promise<void> {
-  await showTaskpane("governance");
+  await showTaskpane("review");
 }
 
 export async function openGovernance(): Promise<void> {
-  await showTaskpane("governance");
+  await showTaskpane("review");
 }
 
 export async function openFindings(): Promise<void> {
@@ -68,7 +68,7 @@ export async function openPendingChanges(): Promise<void> {
  * request travels with the navigation, and the pane runs it on arrival.
  */
 export async function scanNow(): Promise<void> {
-  await showTaskpane("governance", "scan");
+  await showTaskpane("review", "scan");
 }
 
 export async function openTroubleshooting(): Promise<void> {

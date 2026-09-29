@@ -57,7 +57,7 @@ describe("command entry points", () => {
         label: "Scan Now",
         jsonAction: "executeFunction",
         xmlAction: "ShowTaskpane",
-        navigationTarget: "governance",
+        navigationTarget: "review",
       },
       {
         id: "ToneForgeFindings",
@@ -168,7 +168,7 @@ describe("command entry points", () => {
   it("asks the pane to scan, not merely to open, for Scan Now", async () => {
     setOffice({ addin: { showAsTaskpane: vi.fn().mockResolvedValue(undefined) } });
     await scanNow();
-    expect(consumeTaskpaneTarget()).toEqual({ target: "governance", action: "scan" });
+    expect(consumeTaskpaneTarget()).toEqual({ target: "review", action: "scan" });
   });
 
   it("falls back safely when Office is unavailable", async () => {

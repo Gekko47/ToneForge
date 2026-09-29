@@ -1733,6 +1733,36 @@ of "y"`. The prose parser remains for unanchored findings.
   - A throw is reported as a fault and a refusal as a refusal. Collapsing the two
     is what left the old flow with a button that failed silently.
 
+## ADR-0079: A ribbon command is delivered whenever it is pressed
+
+- Amends: ADR-0063 (incremental scanning narrows scope) and the target list in
+  ADR-0071 (the first run reports rather than locks)
+- Status: Accepted (2026-09-28)
+- **Context**: The task pane read its navigation instruction once, on mount. A
+  ribbon or context-menu command pressed while the pane was already open wrote
+  its instruction to storage and nothing read it: the button did nothing, with no
+  error, and the next mount picked up a stale instruction from whenever the user
+  happened to reopen the pane. Separately, the instruction the "Scan Now" command
+  wrote named a target the arrival mapping no longer handled, so that command ran
+  its scan and opened no page at all.
+- **Decision**: `subscribeToTaskpaneTarget` listens for the `storage` event and
+  consumes on delivery, and the mount-time consumption and the subscription share
+  one `applyArrival`. The target is named `review`, matching the destination the
+  header calls Deterministic Review.
+- **Consequences**:
+  - The commands run in a different document from the task pane, which is
+    exactly the case `storage` events exist for: the event fires in the _other_
+    same-origin document, so the pane learns of a command without polling. A
+    `setInterval` would have been a second thing to keep running and to stop.
+  - The listener checks the key, because `storage` fires for every key the other
+    document writes.
+  - Sharing one `applyArrival` is what stops the two from drifting again. Two
+    copies of a mapping is how a renamed destination ended up handled in one and
+    not the other, and the failure is silent by construction: an unmatched
+    target simply opens nothing.
+  - The consumed instruction is still cleared, so a delivered command cannot
+    re-fire on the next mount.
+
 ## ADR-0077: One palette, one exemption, and no rule that reaches into Fluent
 
 - Amends: ADR-0057 (a Fluent theme is inverted; the token scope is the document

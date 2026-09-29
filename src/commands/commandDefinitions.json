@@ -4,7 +4,7 @@
     "label": "Scan Now",
     "jsonAction": "executeFunction",
     "xmlAction": "ShowTaskpane",
-    "navigationTarget": "governance",
+    "navigationTarget": "review",
     "xmlNavigationTarget": "default"
   },
   {

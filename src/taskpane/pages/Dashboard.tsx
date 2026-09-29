@@ -15,6 +15,7 @@ import {
 } from "../../reformat";
 import {
   consumeTaskpaneTarget,
+  subscribeToTaskpaneTarget,
   type TaskpaneNavigation,
 } from "../../shared/office/taskpaneNavigation";
 import DebuggingPanel from "../components/DebuggingPanel";
@@ -679,45 +680,75 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const [arrival, setArrival] = useState<TaskpaneNavigation | null>(null);
 
   useEffect(() => {
-    const request = consumeTaskpaneTarget();
-    if (!request) return;
-    setArrival(request);
-    if (request.target === "debugging") {
-      setPage("troubleshooting");
-      return;
-    }
-    if (request.target === "semantic") {
-      setPage("semantic");
-      return;
-    }
-    if (request.target === "profile") {
-      setPage("profile");
-      return;
-    }
-    if (request.target === "governance-policy") {
-      setPage("governance-policy");
-      return;
-    }
-    if (request.target === "ai-review") {
-      setPage("consistency");
-      return;
-    }
-    if (request.target === "findings") {
-      setPage("review");
-      setFindingsOpen(true);
-    }
-    if (request.target === "pending-changes") {
-      setPage("review");
-      setPendingOpen(true);
-    }
-    /*
-     * "Scan Now" carries its action with it. Opening the governance page and
-     * stopping there meant a user who pressed a button labelled "Scan Now" got
-     * a page and had to press Scan a second time.
+    /**
+     * Act on one command.
+     *
+     * Shared by mount-time consumption and the live subscription, so a command
+     * that arrives after the pane is open behaves exactly like one that opened
+     * it. Two copies of this mapping is how the `governance` target came to be
+     * unhandled: the rename changed the destination, this table kept the old
+     * name, and "Scan Now" ran its scan and opened nothing.
      */
-    if (request.action === "scan") {
-      observerRef.current?.onDocumentChanged();
+    function applyArrival(request: TaskpaneNavigation): void {
+      setArrival(request);
+      switch (request.target) {
+        case "debugging":
+          setPage("troubleshooting");
+          return;
+        case "semantic":
+          setPage("semantic");
+          return;
+        case "profile":
+          setPage("profile");
+          return;
+        case "governance-policy":
+          setPage("governance-policy");
+          return;
+        case "ai-review":
+          setPage("consistency");
+          return;
+        case "findings":
+          setPage("review");
+          setFindingsOpen(true);
+          break;
+        case "pending-changes":
+          setPage("review");
+          setPendingOpen(true);
+          break;
+        case "review":
+          setPage("review");
+          break;
+      }
+      /*
+       * "Scan Now" carries its action with it. Opening the review page and
+       * stopping there meant a user who pressed a button labelled "Scan Now" got
+       * a page and had to press Scan a second time.
+       */
+      if (request.action === "scan") {
+        observerRef.current?.onDocumentChanged();
+      }
     }
+
+    /*
+     * Whatever opened the pane, acted on now.
+     *
+     * A command that was pressed before the pane loaded left its instruction in
+     * storage, and this is the only thing that ever read it.
+     */
+    const pending = consumeTaskpaneTarget();
+    if (pending !== null) applyArrival(pending);
+
+    /*
+     * And a command pressed while the pane is already open.
+     *
+     * Consumed only on mount before, so a ribbon or context-menu command used
+     * after the pane had loaded wrote its instruction and nothing read it — the
+     * button did nothing, silently, and the next mount picked up a stale
+     * instruction from whenever the user happened to reopen the pane. The
+     * commands run in a different document, which is the case `storage` events
+     * exist for.
+     */
+    return subscribeToTaskpaneTarget(applyArrival);
   }, []);
 
   /*
