@@ -284,6 +284,66 @@ function validateCommandParity(manifest, xml, definitions, errors) {
   }
 }
 
+/**
+ * Microsoft's cap on a manifest resource identifier.
+ *
+ * "A resid attribute, and the id attribute of the corresponding resource in the
+ * Resources section, cannot be more than 32 characters." An over-length one is
+ * not a warning the host tolerates: Word refuses the manifest, registration
+ * fails, and the add-in reports "This add-in is no longer available" rather than
+ * naming the manifest at all. That silence is why this is enforced here — the
+ * repository's own checks all passed while sideloading was impossible.
+ */
+const MAX_RESOURCE_ID_LENGTH = 32;
+
+/**
+ * Reject any resource identifier in the XML manifest that exceeds the cap.
+ *
+ * Both sides are checked because either alone is a broken manifest: a `resid`
+ * with no matching resource never resolves, and a resource nobody references is
+ * dead weight the host has no way to use. Only the length is enforced, not the
+ * naming convention — the limit is Microsoft's, and the convention is ours.
+ */
+function validateResourceIdLength(xml, errors) {
+  const attributes = [
+    ...xml.matchAll(/\bresid="([^"]*)"/g),
+    ...xml.matchAll(/<bt:(?:Image|Url|String)\b[^>]*\bid="([^"]*)"/g),
+  ];
+  const reported = new Set();
+  for (const attribute of attributes) {
+    const id = attribute[1];
+    if (id === undefined || id.length <= MAX_RESOURCE_ID_LENGTH) continue;
+    // A resource used in many places is one defect, not one per usage.
+    if (reported.has(id)) continue;
+    reported.add(id);
+    errors.push(
+      `manifest.xml resource id "${id}" is ${id.length} characters; the host limit is ${MAX_RESOURCE_ID_LENGTH} and an over-length id prevents the add-in from registering`,
+    );
+  }
+}
+
+/**
+ * Reject a `Control` that omits its required `xsi:type`.
+ *
+ * Microsoft documents `xsi:type` as required on `Control` — Button, Menu, or
+ * MobileButton. Word does not treat a missing one as a problem with that single
+ * control: it fails to parse the manifest and rejects the whole add-in, so
+ * every ribbon entry disappears at once. The context-menu `Control` added in
+ * commit 8a4878f shipped without it, and the symptom reported to the user was
+ * "This add-in is no longer available" — which names a manifest at no point.
+ */
+function validateControlType(xml, errors) {
+  const controls = /<Control\b[^>]*>/g;
+  for (const match of xml.matchAll(controls)) {
+    const tag = match[0];
+    if (/\bxsi:type="/.test(tag)) continue;
+    const id = /\bid="([^"]*)"/.exec(tag)?.[1] ?? "(no id)";
+    errors.push(
+      `manifest.xml Control ${id} is missing the required xsi:type attribute (Button, Menu, or MobileButton); Word rejects the entire manifest without it, not just this control`,
+    );
+  }
+}
+
 function validateXmlFallback(xmlPath, jsonId, errors) {
   if (!existsSync(xmlPath)) {
     errors.push("manifest.xml (XML fallback) is missing");
@@ -354,7 +414,14 @@ export async function validateManifests({
 
   validateUnifiedStructure(manifest, errors);
   const xml = suppliedXml ?? validateXmlFallback(xmlManifestPath, manifest.id, errors);
-  if (xml) validateCommandParity(manifest, xml, definitions, errors);
+  if (xml) {
+    // Here, not inside validateXmlFallback: a caller supplying the XML directly
+    // bypasses that function entirely, and a check that only runs on one of the
+    // two paths is a check the test suite cannot exercise.
+    validateResourceIdLength(xml, errors);
+    validateControlType(xml, errors);
+    validateCommandParity(manifest, xml, definitions, errors);
+  }
 
   if (runOfficialValidator) {
     const schema = readPublishedSchema(errors);

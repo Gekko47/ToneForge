@@ -2050,3 +2050,68 @@ listItem, alignment, lineSpacing, spaceAfter, spaceBefore, font` as
   - This does not fix the underlying hazard that a manifest change requires
     re-registration before Word will show it. That remains a Word-side property
     documented in `manual-verification.md` under ADR-0070.
+
+## ADR-0080: The sideloadable manifest is checked against the host's rules, not only for internal consistency
+
+- **Status**: Accepted
+- **Context**: Sideloading stopped working and reported only "This add-in is no
+  longer available" — a dialog naming no file and no field, which reads as a
+  broken procedure. The procedure was correct. Two separate defects in
+  `manifest.xml` each made Word reject the entire manifest at registration, and
+  neither was visible to any check in this repository.
+
+  The first, from commit `c240784`, replaced `ToneForge.GovernanceGroupLabel`
+  with `ToneForge.DeterministicReviewGroupLabel` — 39 characters against
+  Microsoft's 32-character cap on a `resid` and the resource `id` it resolves
+  to. The second, from commit `8a4878f`, declared a context-menu
+  `<Control id="ToneForgeSemanticContextControl">` with no `xsi:type`, which is
+  required (`Button`, `Menu`, or `MobileButton`).
+
+  The second is the one that kept the add-in broken after the first was fixed.
+  Its significance is disproportionate to its size: Word does not fail that one
+  control, it fails to parse the manifest and refuses the whole add-in, so every
+  ribbon control disappeared at once. A fault introduced to add a context-menu
+  entry removed the entire ribbon.
+
+  Nothing caught either one. ADR-0073's parity check compares the two manifests
+  against each other, and both were edited together, so it passed on both
+  changes. The published v1.30 schema validation covers `manifest.json` — the
+  deployment manifest — while every `sideload` and `start:*` script reads
+  `manifest.xml`, which nothing schema-validated. `npm run verify` stayed green
+  throughout.
+
+- **Decision**:
+  - A resource id is an internal identifier with a hard host limit, and a
+    user-visible label is free text. The two are never the same string; the
+    label lives in `DefaultValue` and the id stays short.
+  - `scripts/validate-manifest.mjs` now checks the XML manifest against host
+    rules rather than only against itself: `validateResourceIdLength` rejects
+    any `resid` or `bt:*` resource `id` over 32 characters, and
+    `validateControlType` rejects any `Control` missing `xsi:type`. Both run in
+    `validateManifests`, not inside `validateXmlFallback`, because a caller
+    supplying XML directly bypasses that function — the first draft of the
+    length guard was placed there and its own test proved the point by failing.
+  - No equivalent guards are added for `manifest.json`. Its identifiers and
+    required properties are schema-validated against the published v1.30
+    schema, so duplicating them would be a second thing to keep correct. The
+    XML manifest is the unvalidated one; that is where the checks belong.
+- **Consequences**:
+  - Word's diagnostic is the authority on what Word will accept, and it is
+    readable: `%LOCALAPPDATA%\Temp\OfficeAddins.log.txt` recorded
+    "Add-in manifest parsing encountered an unexpected child node, Line=266,
+    CharPosition=16" while the user saw a dialog naming nothing. That log is
+    now the documented second step in `docs/onboarding.md`, after
+    `npm run validate` and before a cache clear, because it converts a guess
+    into a line number.
+  - A manifest defect is total, not partial. One bad element removes every
+    command, so a symptom reported as "the context menu is missing" is a
+    manifest-wide failure wearing a local costume. The remedy for a missing
+    control is to validate the manifest, not to re-declare the control.
+  - Parity between the manifests, from ADR-0073, is necessary and not
+    sufficient. Two files agreeing they are internally consistent says nothing
+    about whether a host will load them, and only one of the two is
+    schema-checked at all.
+  - The two checks encode specific limits, not a general schema. The next host
+    rule to be exceeded will still reach the log before it reaches this
+    repository; the log is the feedback channel, and adding a check is the
+    response.

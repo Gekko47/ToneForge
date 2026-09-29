@@ -92,6 +92,68 @@ describe("command and manifest contracts", () => {
     ).toContain("manifest.xml is missing destination resource Taskpane.Url for ToneForgeScan");
   });
 
+  it("rejects a resource id the host would refuse, which fails registration silently", async () => {
+    /*
+     * Microsoft caps a `resid` and its resource `id` at 32 characters. Over that
+     * the host rejects the manifest outright: the add-in never registers and Word
+     * reports only "This add-in is no longer available", naming nothing. The
+     * published-schema check below does not catch it, because the unified JSON
+     * manifest is schema-validated and the XML fallback — the file every sideload
+     * script actually reads — is not. A 39-character group label shipped in
+     * commit c240784 and passed every check in this repository.
+     */
+    const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as unknown;
+    const overLength = readFileSync(repositoryPath("manifest.xml"), "utf8").replace(
+      /resid="ToneForge\.DetReviewGroupLabel"/g,
+      'resid="ToneForge.DeterministicReviewGroupLabel"',
+    );
+    expect(overLength).not.toBe(readFileSync(repositoryPath("manifest.xml"), "utf8"));
+
+    const errors = await validateManifests({
+      manifest,
+      xml: overLength,
+      runOfficialValidator: false,
+    });
+    expect(errors).toContain(
+      'manifest.xml resource id "ToneForge.DeterministicReviewGroupLabel" is 39 characters; the host limit is 32 and an over-length id prevents the add-in from registering',
+    );
+  });
+
+  it("rejects a Control without the required xsi:type, which voids the whole manifest", async () => {
+    /*
+     * `xsi:type` is required on Control. Word does not fail that one control — it
+     * fails to parse the manifest and refuses the entire add-in, so every ribbon
+     * entry disappears together. The context-menu Control added in commit
+     * 8a4878f omitted it; Word's own runtime log recorded
+     * "Add-in manifest parsing encountered an unexpected child node, Line=266"
+     * and the user saw only "This add-in is no longer available".
+     */
+    const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as unknown;
+    const broken = readFileSync(repositoryPath("manifest.xml"), "utf8").replace(
+      '<Control xsi:type="Button" id="ToneForgeSemanticContextControl">',
+      '<Control id="ToneForgeSemanticContextControl">',
+    );
+    const errors = await validateManifests({ manifest, xml: broken, runOfficialValidator: false });
+    expect(errors).toContain(
+      "manifest.xml Control ToneForgeSemanticContextControl is missing the required xsi:type attribute (Button, Menu, or MobileButton); Word rejects the entire manifest without it, not just this control",
+    );
+  });
+
+  it("keeps every real resource id within the host limit", async () => {
+    // The assertion that would have failed before the rename. It reads the
+    // manifest rather than trusting the validator, so a future edit that
+    // lengthens an id cannot quietly reintroduce the defect.
+    const xml = readFileSync(repositoryPath("manifest.xml"), "utf8");
+    const ids = [
+      ...xml.matchAll(/\bresid="([^"]*)"/g),
+      ...xml.matchAll(/<bt:(?:Image|Url|String)\b[^>]*\bid="([^"]*)"/g),
+    ].map((match) => match[1] ?? "");
+    expect(ids.length).toBeGreaterThan(0);
+    // Named in the failure so a regression says which id, and how long.
+    const overLength = ids.filter((id) => id.length > 32).map((id) => `${id} (${id.length})`);
+    expect(overLength).toEqual([]);
+  });
+
   it("passes the published v1.30 schema check, which the manifest stage runs in CI", async () => {
     // The stage is skipped on Windows, where the official validator is not run.
     // Asserting it here keeps the manifest from silently losing schema

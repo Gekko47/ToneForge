@@ -85,7 +85,16 @@
             </OfficeTab>
             <OfficeTab id="ToneForge">
               <Group id="ToneForgeGovernanceGroup">
-                <Label resid="ToneForge.DeterministicReviewGroupLabel" />
+                <!--
+                  The resource id is NOT the label text. Microsoft caps a `resid`
+                  attribute and the corresponding resource `id` at 32 characters,
+                  and an over-length one makes Word refuse the manifest outright:
+                  the add-in fails to register and reports "This add-in is no
+                  longer available". "ToneForge.DeterministicReviewGroupLabel" is
+                  39 characters, so the label wording lives in DefaultValue only.
+                  `npm run validate` enforces the 32-character limit.
+                -->
+                <Label resid="ToneForge.DetReviewGroupLabel" />
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16" />
                   <bt:Image size="32" resid="Icon.32x32" />
@@ -254,7 +263,17 @@
           -->
           <ExtensionPoint xsi:type="ContextMenu">
             <OfficeMenu id="ContextMenuText">
-              <Control id="ToneForgeSemanticContextControl">
+              <!--
+                `xsi:type` is REQUIRED on Control (Button, Menu, or
+                MobileButton), not optional. Omitting it makes Word reject the
+                whole manifest at parse time — "Add-in manifest parsing
+                encountered an unexpected child node" — so every control in the
+                add-in disappears, not just this one. The context menu then
+                looks like a context-menu problem and registers as "This add-in
+                is no longer available", which is a manifest problem. Check
+                %LOCALAPPDATA%\Temp\OfficeAddins.log.txt for the exact line.
+              -->
+              <Control xsi:type="Button" id="ToneForgeSemanticContextControl">
                 <Label resid="ToneForge.SemanticLabel" />
                 <Supertip>
                   <Title resid="ToneForge.SemanticLabel" />
@@ -297,7 +316,7 @@
         <bt:String id="ToneForge.GroupLabel" DefaultValue="ToneForge" />
         <bt:String id="ToneForge.TaskpaneLabel" DefaultValue="ToneForge task pane" />
         <bt:String id="ToneForge.TabLabel" DefaultValue="ToneForge" />
-        <bt:String id="ToneForge.DeterministicReviewGroupLabel" DefaultValue="Deterministic Review" />
+        <bt:String id="ToneForge.DetReviewGroupLabel" DefaultValue="Deterministic Review" />
         <bt:String id="ToneForge.AIReviewGroupLabel" DefaultValue="AI Review" />
         <bt:String id="ToneForge.ProfileGroupLabel" DefaultValue="Profile" />
         <bt:String id="ToneForge.ChangesGroupLabel" DefaultValue="Changes" />

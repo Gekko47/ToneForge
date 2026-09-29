@@ -278,16 +278,65 @@ credential-custody review remain human evidence gates; see
 
 ## Troubleshooting
 
-| Symptom                                   | Likely cause                                                                                   | Fix                                                                                                |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Dev server will not start over HTTPS      | Development certificate is not trusted                                                         | Run `npx office-addin-dev-certs install --machine` and restart Word.                               |
-| Add-in is not in the ribbon               | Manifest was not sideloaded or Office cached the old manifest                                  | Run `npm run sideload`; if needed run `npm run stop`, close Word, and retry.                       |
-| Add-in remains after closing Word         | The debug session was not explicitly stopped                                                   | Run `npm run stop`; closing Word alone does not reliably unregister the add-in.                    |
-| Blank task pane                           | Office.js failed to load, the dev server is unavailable, or the task-pane HTML/bundle is stale | Verify `https://localhost:3000/taskpane.html`, inspect the browser/developer console, and rebuild. |
-| `Office` is undefined in a normal browser | Expected outside Word                                                                          | Use the task pane inside Word; use the runtime diagnostics button for evidence.                    |
-| Capability probe reports unsupported      | The host does not expose the inspected object model                                            | Treat the result as truthful; use the documented safe no-op/fallback.                              |
-| TypeScript errors mention `Office`        | Local Office declarations are missing or not included                                          | Confirm `src/types/office.d.ts` and `tsconfig.json`.                                               |
-| Tests emit warnings                       | Tests intentionally exercise refusal, stale, retry, and redaction paths                        | Review the warning and test assertion; do not suppress operational guard evidence globally.        |
+| Symptom                                   | Likely cause                                                                                    | Fix                                                                                                                                                                                                      |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dev server will not start over HTTPS      | Development certificate is not trusted                                                          | Run `npx office-addin-dev-certs install --machine` and restart Word.                                                                                                                                     |
+| Add-in is not in the ribbon               | Manifest was not sideloaded or Office cached the old manifest                                   | Run `npm run sideload`; if needed run `npm run stop`, close Word, and retry.                                                                                                                             |
+| **"This add-in is no longer available"**  | Usually the manifest, not the cache. Word refuses a manifest it cannot parse and says only this | Run `npm run validate`, then read `%LOCALAPPDATA%\Temp\OfficeAddins.log.txt`, which names the line. Only if both are clean: `npx office-addin-cache clear`, close every Word window, `npm run sideload`. |
+| Add-in remains after closing Word         | The debug session was not explicitly stopped                                                    | Run `npm run stop`; closing Word alone does not reliably unregister the add-in.                                                                                                                          |
+| Blank task pane                           | Office.js failed to load, the dev server is unavailable, or the task-pane HTML/bundle is stale  | Verify `https://localhost:3000/taskpane.html`, inspect the browser/developer console, and rebuild.                                                                                                       |
+| `Office` is undefined in a normal browser | Expected outside Word                                                                           | Use the task pane inside Word; use the runtime diagnostics button for evidence.                                                                                                                          |
+| Capability probe reports unsupported      | The host does not expose the inspected object model                                             | Treat the result as truthful; use the documented safe no-op/fallback.                                                                                                                                    |
+| TypeScript errors mention `Office`        | Local Office declarations are missing or not included                                           | Confirm `src/types/office.d.ts` and `tsconfig.json`.                                                                                                                                                     |
+| Tests emit warnings                       | Tests intentionally exercise refusal, stale, retry, and redaction paths                         | Review the warning and test assertion; do not suppress operational guard evidence globally.                                                                                                              |
+
+### "This add-in is no longer available"
+
+This dialog is Word reporting that a manifest it was asked to register is not
+usable. It names neither the file nor the field, so it reads like a sideloading
+procedure fault when it is usually a manifest fault. The two have different
+remedies and the wrong one costs an afternoon.
+
+**1. Check the manifest, not the cache.** Two defects in
+[`manifest.xml`](../manifest.xml) have each produced this exact dialog, and
+neither was visible to any check in the repository at the time:
+
+- a `resid` or resource `id` longer than **32 characters** — commit `c240784`
+  produced `ToneForge.DeterministicReviewGroupLabel` at 39;
+- a `<Control>` with no `xsi:type` — commit `8a4878f` added a context-menu
+  control without it, and `xsi:type` is required (`Button`, `Menu`, or
+  `MobileButton`).
+
+`npm run validate` now checks both. The second is worth understanding on its
+own: Word does not fail the one bad control, it fails to parse the manifest and
+refuses the **entire** add-in. A fault introduced to add a context-menu entry
+removed the whole ribbon, and the only symptom was a control that went missing.
+
+**2. Read Word's own log.** It names the line, which the dialog never does:
+
+```
+type "%LOCALAPPDATA%\Temp\OfficeAddins.log.txt"
+```
+
+```
+Unexpected  Manifest  Add-in manifest parsing encountered an unexpected child
+                         node, Line=266, CharPosition=16
+```
+
+Runtime logging is enabled by the `RuntimeLogging` value under
+`HKCU\Software\Microsoft\Office\16.0\WEF\Developer`. This is the step that turns
+a guess into a specific line, and it is what identified the missing `xsi:type`
+after the resource-id fix alone had not restored the add-in.
+
+**3. Only then clear the cache.** Once `npm run validate` passes and the log is
+clean, a stale registration is the remaining explanation:
+
+```bash
+npx office-addin-cache clear
+npm run stop
+# close every Word window — a background Word process holds the registration
+npm run sideload
+```
 
 ## Project layout
 
