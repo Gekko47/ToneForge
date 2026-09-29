@@ -3,6 +3,7 @@ import { cleanup, render, within } from "@testing-library/react";
 import { createEmptyProfile, type StyleProfile } from "../../../../src/core/domain/StyleProfile";
 import { createGovernanceProfile } from "../../../../src/core/domain/GovernanceProfile";
 import VersionDiff from "../../../../src/taskpane/components/VersionDiff";
+import { sampleTypography } from "../../../fixtures/sampleDocs";
 
 function makeProfile(overrides: Partial<StyleProfile> = {}): StyleProfile {
   return {
@@ -19,18 +20,9 @@ function makeProfile(overrides: Partial<StyleProfile> = {}): StyleProfile {
       avoidWords: [],
       ...overrides.semantic,
     },
-    typography: {
-      emDash: "em",
-      emDashSpacing: "spaced",
-      enDashSpacing: "spaced",
-      doubleQuotes: "curly",
-      singleQuotes: "curly",
-      apostrophes: "curly",
-      decimalSeparator: "dot",
-      thousandsSeparator: "none",
-      ellipsis: "ellipsis",
-      ...overrides.typography,
-    },
+    // Defaults from the schema, so a typography field added later is present
+    // here without this test having to be amended to stay type-correct.
+    typography: sampleTypography(overrides.typography ?? {}),
     houseStyle: {
       preferredTerminology: {},
       bannedTerms: [],

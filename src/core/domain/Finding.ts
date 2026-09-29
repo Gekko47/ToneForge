@@ -56,6 +56,66 @@ export const FindingTransformationSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+/**
+ * What a deterministic finding knows about the profile that produced it.
+ *
+ * **Why this is metadata and not a field on the finding itself.** A finding
+ * carries `expected` and `actual` as strings, which is all the task pane needs
+ * to render "before → after". The profile *path* that produced them is not
+ * display: it is what makes a finding explainable ("this is
+ * `houseStyle.terminology`, not a spelling rule") and groupable (`occurrence
+ * group key` and `safe batch key` both derive from it). Putting it on the
+ * finding as three more scalar fields would let a rule set `expected` without
+ * saying which profile field produced it, and a finding that cannot name its
+ * origin cannot be audited against the profile.
+ *
+ * `correctionAvailable` is separate from the finding's own `actionable` flag on
+ * purpose. `actionable: false` means the *engine* declined to write, which
+ * covers a semantic finding with no anchored span. `correctionAvailable: false`
+ * with a `correctionReason` means the engine found a real deviation and is
+ * saying the adapter cannot safely fix it in this host — a different fact, and
+ * the one spec §14.7 asks the UI to state in those words.
+ */
+export const DeterministicFindingMetadataSchema = z.object({
+  /**
+   * The profile field that produced this finding, e.g.
+   * `houseStyle.terminology.program` or `formatting.headings.2.styleName`.
+   */
+  profilePath: z.string().trim().min(1).default(""),
+  /** The profile's configured value. `undefined` when the profile is silent. */
+  expected: z.unknown().optional(),
+  /** What the document actually has. `undefined` when nothing was acquired. */
+  actual: z.unknown().optional(),
+  /**
+   * Findings sharing this key describe the same deviation of the same field.
+   *
+   * Grouping is by this rather than by category, because a category can hold
+   * both "em dash spacing is tight" and "em dash spacing is loose" — two
+   * different corrections that must never be batch-approved together.
+   */
+  occurrenceGroupKey: z.string().trim().min(1).optional(),
+  /**
+   * The key two findings must share to be batch-approvable together.
+   *
+   * Distinct from `occurrenceGroupKey` on purpose: this one is a *safety* key,
+   * and the engine sets it only when the correction is identical and provably
+   * semantically neutral. A group may hold many occurrences and still refuse
+   * batch approval, which is the common case for a formatting finding.
+   */
+  safeBatchKey: z.string().trim().min(1).optional(),
+  /** Whether a safe correction exists for this finding in this host. */
+  correctionAvailable: z.boolean().optional(),
+  /**
+   * Why no correction is offered, in the user's words.
+   *
+   * Spec §14.7: "Detected, but ToneForge cannot safely correct this property in
+   * this Word host." The engine's own sentence, quoted by the UI rather than
+   * paraphrased, so the reason a control is missing is never a reworded guess.
+   */
+  correctionReason: z.string().trim().min(1).optional(),
+});
+export type DeterministicFindingMetadata = z.infer<typeof DeterministicFindingMetadataSchema>;
+
 export const FindingSchema = z.object({
   id: z.string().uuid(),
   kind: FindingKindSchema,
@@ -81,6 +141,11 @@ export const FindingSchema = z.object({
   explanation: z.string().optional(),
   transformation: FindingTransformationSchema.optional(),
   precondition: ChangePreconditionSchema.optional(),
+  /**
+   * Deterministic-rule provenance. Absent on semantic and consistency findings,
+   * which have no profile field to name.
+   */
+  deterministic: DeterministicFindingMetadataSchema.optional(),
 });
 
 export type Finding = z.infer<typeof FindingSchema>;

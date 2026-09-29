@@ -149,12 +149,23 @@ function profileToValues(profile: StyleProfile): ProfileFormValues {
   };
 }
 
+/**
+ * Build the edited profile from the form values.
+ *
+ * The typography block is rebuilt from `baseProfile.typography` rather than
+ * enumerated field by field, so a setting this form does not yet expose keeps
+ * whatever the profile already had instead of being reset to the schema default
+ * by an unrelated edit. That was a real failure mode once: adding a typography
+ * field to the schema meant every save through this editor silently reverted it
+ * until someone remembered to add a control for it.
+ */
 function buildCandidate(values: ProfileFormValues, baseProfile: StyleProfile): StyleProfile {
   const terminology = parseTerminology(values.preferredTerminology);
   return {
     ...baseProfile,
     name: values.name,
     typography: {
+      ...baseProfile.typography,
       emDash: values.emDash,
       emDashSpacing: values.emDashSpacing,
       enDashSpacing: values.enDashSpacing,
@@ -166,9 +177,11 @@ function buildCandidate(values: ProfileFormValues, baseProfile: StyleProfile): S
       ellipsis: values.ellipsis,
     },
     houseStyle: {
+      ...baseProfile.houseStyle,
       preferredTerminology: terminology.values,
       bannedTerms: parseLines(values.bannedTerms),
       capitalization: {
+        ...baseProfile.houseStyle.capitalization,
         sentenceCase: values.capitalizationSentenceCase,
         titleCaseWords: parseLines(values.titleCaseWords),
       },

@@ -43,9 +43,480 @@ export const TypographyRulesSchema = z.object({
   decimalSeparator: z.enum(["dot", "comma"]).default("dot"),
   thousandsSeparator: z.enum(["none", "space", "comma"]).default("none"),
   ellipsis: z.enum(["ellipsis", "three-dots", "spaced-dots"]).default("ellipsis"),
+
+  // ── Spec §5 additions ──────────────────────────────────────────────
+  // Every field below is read by a rule in `src/rules/typography.ts`. The
+  // registry's orphan-setting assertion (spec §11) fails if one is added
+  // without a rule, so an inert field cannot be introduced here.
+
+  /**
+   * Whether runs of spaces and trailing spaces are deviations.
+   *
+   * Previously the whitespace check ran unconditionally, which meant a profile
+   * could not accept a document with a double space — a real requirement in
+   * text that quotes tabular figures. Default true preserves the behaviour a
+   * profile had before this field existed.
+   */
+  normaliseWhitespace: z.boolean().default(true),
+  /**
+   * Whether a tab is a deviation, or is merely left alone.
+   *
+   * Separate from `normaliseWhitespace` because a document pasted from a
+   * spreadsheet legitimately contains tabs and the author may want them.
+   */
+  flagTabs: z.boolean().default(true),
+  /**
+   * How a non-breaking space is treated.
+   *
+   * `preserve` is a real answer: a non-breaking space is how a house style
+   * keeps `10 kg` together, so treating every one as an error would fight the
+   * profile's own units rule.
+   */
+  nonBreakingSpace: z.enum(["flag", "preserve"]).default("flag"),
+  /**
+   * Spacing around a solidus: `and/or` against `and / or`.
+   *
+   * `none` means the profile has no opinion and the rule does not run, which
+   * is distinct from `tight` (an opinion that forbids spaces).
+   */
+  slashSpacing: z.enum(["none", "spaced", "tight"]).default("none"),
+  /**
+   * Spacing before a percent sign.
+   *
+   * The number profile's own `percentageSpacing` is the normative one; this
+   * exists so a typography-only profile can express the rule without also
+   * configuring a number convention. The two are reconciled by the rule, which
+   * prefers the number profile's value when it differs.
+   */
+  percentageSpacing: z.enum(["none", "spaced", "tight"]).default("none"),
+  /**
+   * Spacing between a currency symbol and its amount.
+   *
+   * `none` defers to the currency profile, which is the normative source for
+   * money. The typography rule runs only when this is set, so a profile that
+   * configures neither stays silent rather than guessing.
+   */
+  currencySpacing: z.enum(["none", "spaced", "tight"]).default("none"),
+  /**
+   * Whether a space is required before an opening bracket, as `word (paren)`.
+   *
+   * Off by default because the convention runs the other way in most house
+   * styles, and a rule that fires on correct text trains the reader to ignore
+   * it.
+   */
+  spaceBeforeParenthesis: z.boolean().default(false),
+  /**
+   * Whether a space is required after a hyphenated compound, as `state -of -art`.
+   *
+   * Off by default: the field exists because a few house styles do space
+   * compounds, and without it the rule cannot be expressed at all.
+   */
+  spaceAfterHyphen: z.boolean().default(false),
 });
 
 export type TypographyRules = z.infer<typeof TypographyRulesSchema>;
+
+/**
+ * One configured house substitution.
+ *
+ * Spec §4.2. The flat `preferredTerminology` record this replaces could express
+ * a term and its replacement and nothing else: no severity, no case sensitivity,
+ * no whole-word control, and no way to say a term is only wrong in a particular
+ * section. Each of those is a real editorial decision, and a schema that cannot
+ * record it forces the decision to be made by how the user happened to type the
+ * term.
+ *
+ * `id` is required rather than derived, because two rules can legitimately name
+ * the same term in different scopes, and a derived key would collapse them.
+ */
+export const TerminologyRuleSchema = z.object({
+  id: z.string().trim().min(1),
+  /** The term as it appears in the document. */
+  source: z.string().trim().min(1),
+  /**
+   * The replacement, or absent for a banned term.
+   *
+   * Absent rather than an empty string, because "replace with nothing" and
+   * "remove this term entirely" are the same instruction here and a rule that
+   * wants deletion says so by omitting the field. A `replacement: ""` would
+   * parse, and the planner would build a `deleteRange` for a rule that did not
+   * ask for one.
+   */
+  replacement: z.string().trim().min(1).optional(),
+  /**
+   * When false, `source` matches regardless of case and the replacement takes
+   * the *source's* casing, so `Programme` is not rewritten to `programme` in a
+   * sentence that opens it.
+   */
+  caseSensitive: z.boolean().default(false),
+  /**
+   * When true, `color` will not match inside `colorful`.
+   *
+   * Default true: a house substitution that fires inside a longer word is
+   * almost always wrong, and the case where it is right is rare enough to be
+   * worth turning the flag off deliberately.
+   */
+  wholeWord: z.boolean().default(true),
+  /** `mandatory` maps to error, `advisory` to warning. */
+  severity: z.enum(["mandatory", "advisory"]).default("advisory"),
+  /**
+   * Restricts the rule to one section or style, or applies it everywhere.
+   *
+   * Both are checked: a heading can begin a section, and a paragraph can carry
+   * a style. A rule that matched on either alone would fire in the wrong place
+   * half the time.
+   */
+  scope: z
+    .object({
+      /** Match only inside a heading whose text contains this. */
+      withinSectionContaining: z.string().trim().min(1).optional(),
+      /** Match only on a paragraph carrying this Word style. */
+      withinStyle: z.string().trim().min(1).optional(),
+    })
+    .default({}),
+});
+export type TerminologyRule = z.infer<typeof TerminologyRuleSchema>;
+
+/** Spec §4.2 capitalisation. */
+export const CapitalisationProfileSchema = z.object({
+  /** Whether a sentence should open with an upper-case letter. */
+  sentenceCase: z.boolean().default(true),
+  /**
+   * Words that are always upper case, as proper nouns are.
+   *
+   * Distinct from the legacy `titleCaseWords`, which meant "capitalise this word
+   * wherever it appears" and so fired on a common noun at the start of a
+   * clause. A proper noun is a closed list the author maintains; a word to
+   * capitalise everywhere is a much broader and riskier instruction, and the
+   * two do not belong in one field.
+   */
+  properNouns: z.array(z.string().trim().min(1)).default([]),
+  /** Words that must never appear capitalised outside a proper noun. */
+  prohibitedCapitalised: z.array(z.string().trim().min(1)).default([]),
+  /**
+   * Heading case convention.
+   *
+   * `undefined` rather than a default, because no convention is a real answer
+   * distinct from "sentence case": a profile that has not chosen must not be
+   * reported as having chosen.
+   */
+  headingCase: z.enum(["sentence", "title", "upper"]).optional(),
+});
+export type CapitalisationProfile = z.infer<typeof CapitalisationProfileSchema>;
+
+/** Spec §4.2 abbreviations. */
+export const AbbreviationProfileSchema = z.object({
+  /** Short form → long form, when the long form is the preferred rendering. */
+  approved: z.record(z.string().trim().min(1), z.string().trim().min(1)).default({}),
+  /** Long form → the short form to use in running text. */
+  preferredExpanded: z.record(z.string().trim().min(1), z.string().trim().min(1)).default({}),
+  /**
+   * Whether the first use of an approved abbreviation must carry its expansion.
+   *
+   * `undefined` means "not configured". It is distinct from `false`, which is a
+   * decision that the expansion is not required — a distinction a profile
+   * cannot express if the field defaults to `false`.
+   */
+  requireFirstUseExpansion: z.boolean().optional(),
+  /** Short or long forms that must never appear. */
+  prohibitedVariants: z.array(z.string().trim().min(1)).default([]),
+});
+export type AbbreviationProfile = z.infer<typeof AbbreviationProfileSchema>;
+
+/** Spec §4.2 numbers. */
+export const NumberProfileSchema = z.object({
+  decimalSeparator: z.enum(["dot", "comma"]).default("dot"),
+  thousandsSeparator: z.enum(["none", "space", "comma", "period"]).default("none"),
+  /** Space before a percent sign, as `50 %` or `50%`. */
+  percentageSpacing: z.enum(["space", "tight"]).default("tight"),
+  /**
+   * Spell out numbers at or below this value. `null` means never.
+   *
+   * A `null` rather than `0` default, because 0 would be a rule ("spell out
+   * every number") that no profile has chosen.
+   */
+  numberWordThreshold: z.number().int().nonnegative().nullable().default(null),
+  /** How a negative number is written. */
+  negativeNumber: z.enum(["minus", "parenthesis"]).default("minus"),
+  /** Whether ranges use an en dash, a hyphen, or `to`. */
+  rangeStyle: z.enum(["enDash", "hyphen", "to"]).default("enDash"),
+});
+export type NumberProfile = z.infer<typeof NumberProfileSchema>;
+
+/**
+ * One recognised date pattern.
+ *
+ * A `format` string rather than a named pattern, because the recognised set is
+ * open — `31 May 2026`, `31/05/2026` and `2026-05-31` are the common ones, but a
+ * house style can call for a pattern none of them names. A closed enum would
+ * make a fourth pattern inexpressible rather than merely uncommon.
+ */
+export const DateFormatSchema = z.object({
+  id: z.string().trim().min(1),
+  /** A `strftime`-style pattern, e.g. `%d %B %Y`. */
+  format: z.string().trim().min(1),
+  /** Whether this is the form new dates should be written in. */
+  preferred: z.boolean().default(false),
+});
+export type DateFormat = z.infer<typeof DateFormatSchema>;
+
+/**
+ * Spec §4.2 dates.
+ *
+ * Deterministic parsing only. A date rule reports the *shape* it found and the
+ * shape the profile wants; it never decides what a date means, which day a
+ * period refers to, or whether two dates contradict. That is Semantic Review's
+ * job, and a deterministic rule that answered it would be guessing.
+ */
+export const DateProfileSchema = z.object({
+  formats: z.array(DateFormatSchema).default([]),
+  /** When true, two dates written the same way must name the same day. */
+  requireUnambiguous: z.boolean().default(true),
+});
+export type DateProfile = z.infer<typeof DateProfileSchema>;
+
+/** Spec §4.2 currency. */
+export const CurrencyProfileSchema = z.object({
+  /** `symbol` writes `£100`; `code` writes `GBP 100`. */
+  representation: z.enum(["symbol", "code"]).default("symbol"),
+  /** Space between the symbol or code and the amount. */
+  symbolSpacing: z.enum(["space", "tight"]).default("tight"),
+  thousandsSeparator: z.enum(["none", "space", "comma", "period"]).default("none"),
+  decimalSeparator: z.enum(["dot", "comma"]).default("dot"),
+  /** How large amounts are abbreviated: `4.2m` versus `4,200,000`. */
+  magnitude: z.enum(["full", "thousands", "millions"]).default("full"),
+});
+export type CurrencyProfile = z.infer<typeof CurrencyProfileSchema>;
+
+/** Spec §4.2 units. */
+export const UnitProfileSchema = z.object({
+  /** Space between the value and the unit, as `10 kg` or `10kg`. */
+  valueSpacing: z.enum(["space", "tight"]).default("space"),
+  /** A unit written with a lower-case name uses a lower-case symbol. */
+  capitalisation: z.enum(["lower", "asWritten"]).default("lower"),
+  /** Symbol preferred for a named unit, e.g. `kilogram` → `kg`. */
+  symbols: z.record(z.string().trim().min(1), z.string().trim().min(1)).default({}),
+});
+export type UnitProfile = z.infer<typeof UnitProfileSchema>;
+
+/**
+ * Spec §4.2 language conventions: everything about the words themselves.
+ *
+ * A section of its own rather than an extension of `HouseStyle`, because the
+ * two answer different questions. `houseStyle` is the legacy flat record the
+ * existing rules read; `language` is the expanded schema spec §4.2 asks for.
+ * Both are kept during the transition so a profile authored under the old
+ * editor still produces the findings it did before.
+ */
+export const LanguageConventionProfileSchema = z.object({
+  terminology: z.array(TerminologyRuleSchema).default([]),
+  /**
+   * The legacy term map, read alongside `terminology`.
+   *
+   * Additive rather than a migration: a record written by the old editor has
+   * entries here and none in `terminology`, and both must fire until the editor
+   * writes the new form. T10 removes the duplication from the rule side.
+   */
+  legacyPreferredTerminology: z.record(z.string(), z.string()).default({}),
+  bannedTerms: z.array(z.string().trim().min(1)).default([]),
+  capitalisation: CapitalisationProfileSchema.default({}),
+  abbreviations: AbbreviationProfileSchema.default({}),
+  numbers: NumberProfileSchema.default({}),
+  dates: DateProfileSchema.default({}),
+  currency: CurrencyProfileSchema.default({}),
+  units: UnitProfileSchema.default({}),
+  /**
+   * The locale used only as metadata for the above.
+   *
+   * Not a spelling dictionary. Spec §4.3 removes the generic US/UK variant
+   * table precisely because it duplicated Word's spellchecker, and a locale
+   * that drove one would reintroduce the same duplication through a different
+   * door. Nothing reads this field today; it is recorded so a future
+   * house-specific rule has it available.
+   */
+  locale: z.string().trim().min(1).default("en-US"),
+});
+export type LanguageConventionProfile = z.infer<typeof LanguageConventionProfileSchema>;
+
+/**
+ * Character properties a paragraph style standard may require.
+ *
+ * Every field optional, and that is the point: a standard that names only the
+ * style and the font is a real and common configuration, and requiring the rest
+ * would make a partial standard unrepresentable.
+ */
+export const CharacterStandardSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  size: z.number().positive().max(200).optional(),
+  color: z.string().trim().min(1).optional(),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
+});
+export type CharacterStandard = z.infer<typeof CharacterStandardSchema>;
+
+/** Paragraph properties a style standard may require. Spacing is in points. */
+export const ParagraphStandardSchema = z.object({
+  alignment: z.enum(["left", "center", "right", "justified"]).optional(),
+  lineSpacing: z.number().positive().max(10).optional(),
+  spaceBefore: z.number().min(0).max(100).optional(),
+  spaceAfter: z.number().min(0).max(100).optional(),
+  leftIndent: z.number().min(-100).max(200).optional(),
+  rightIndent: z.number().min(0).max(200).optional(),
+  firstLineIndent: z.number().min(-100).max(200).optional(),
+  keepWithNext: z.boolean().optional(),
+  keepLinesTogether: z.boolean().optional(),
+  pageBreakBefore: z.boolean().optional(),
+});
+export type ParagraphStandard = z.infer<typeof ParagraphStandardSchema>;
+
+/** Spec §6: one Word style, and what a paragraph using it must look like. */
+export const ParagraphStyleStandardSchema = z.object({
+  styleName: z.string().trim().min(1),
+  font: CharacterStandardSchema.optional(),
+  paragraph: ParagraphStandardSchema.optional(),
+  /**
+   * Whether appearance must come from the style rather than from direct
+   * formatting.
+   *
+   * This is the flag spec §10.3 turns on. A direct override is only a
+   * deviation when the profile says the style owns that property; without it,
+   * a bold run is the author's emphasis and clearing it would erase intent.
+   */
+  styleControlledFormatting: z.boolean().default(false),
+});
+export type ParagraphStyleStandard = z.infer<typeof ParagraphStyleStandardSchema>;
+
+/** Spec §6 lists. */
+export const ListFormattingStandardSchema = z.object({
+  /** The Word style a list paragraph should carry, e.g. `List Paragraph`. */
+  styleName: z.string().trim().min(1).optional(),
+  /** The level a list item of this depth should carry. */
+  level: z.number().int().min(0).max(8).optional(),
+  /** Whether list level is a property this review can verify at all. */
+  supported: z.boolean().default(false),
+});
+export type ListFormattingStandard = z.infer<typeof ListFormattingStandardSchema>;
+
+/**
+ * Spec §6 and §8.3 tables.
+ *
+ * Only properties Word can both acquire and, where a correction is offered,
+ * mutate. Anything outside that is named in the coverage report as
+ * unsupported rather than guessed at, which is why this has no cell-padding or
+ * column-width field: an unrepresentable standard is better than one the
+ * analyzer cannot check and the planner cannot satisfy.
+ */
+export const TableFormattingStandardSchema = z.object({
+  styleName: z.string().trim().min(1).optional(),
+  /** Whether the first row should carry the configured header style. */
+  headerRow: z.boolean().optional(),
+  /** The Word style a cell's paragraphs should carry. */
+  cellStyleName: z.string().trim().min(1).optional(),
+  /** How many leading rows are header rows. */
+  headerRowCount: z.number().int().min(0).max(10).optional(),
+  /**
+   * Whether table properties are readable in this host.
+   *
+   * The analyzer reads this before comparing anything, so a profile that
+   * configures a table standard on a host without table support reports a
+   * coverage limitation rather than a clean table.
+   */
+  supported: z.boolean().default(false),
+});
+export type TableFormattingStandard = z.infer<typeof TableFormattingStandardSchema>;
+
+/** Spec §6 and §8.4 headers and footers. */
+export const HeaderFooterStandardSchema = z.object({
+  styleName: z.string().trim().min(1).optional(),
+  font: CharacterStandardSchema.optional(),
+  /** Whether a header or footer is required to exist. */
+  required: z.boolean().default(false),
+  supported: z.boolean().default(false),
+});
+export type HeaderFooterStandard = z.infer<typeof HeaderFooterStandardSchema>;
+
+/** Spec §6 and §8.5 page setup. Margins in points; sizes in twips. */
+export const PageStandardSchema = z.object({
+  /** Margin in points, named by edge as Word names them. */
+  margins: z
+    .object({
+      top: z.number().min(0).max(500).optional(),
+      bottom: z.number().min(0).max(500).optional(),
+      left: z.number().min(0).max(500).optional(),
+      right: z.number().min(0).max(500).optional(),
+    })
+    .optional(),
+  orientation: z.enum(["portrait", "landscape"]).optional(),
+  /** Page width and height in twips, as Word measures them. */
+  width: z.number().int().positive().max(31680).optional(),
+  height: z.number().int().positive().max(31680).optional(),
+  supported: z.boolean().default(false),
+});
+export type PageStandard = z.infer<typeof PageStandardSchema>;
+
+/**
+ * Spec §6: the whole document's formatting standard.
+ *
+ * `headings` is keyed 1–9 rather than a record, because a heading level is a
+ * closed set in Word and an open one would let a profile name a level that
+ * cannot exist. `bodyStyle` is required because a document standard with no
+ * body standard is not a standard, and every comparison needs somewhere to
+ * start.
+ */
+export const DocumentFormattingProfileSchema = z
+  .object({
+    bodyStyle: ParagraphStyleStandardSchema,
+    titleStyle: ParagraphStyleStandardSchema.optional(),
+    subtitleStyle: ParagraphStyleStandardSchema.optional(),
+    headings: z
+      .object({
+        "1": ParagraphStyleStandardSchema.optional(),
+        "2": ParagraphStyleStandardSchema.optional(),
+        "3": ParagraphStyleStandardSchema.optional(),
+        "4": ParagraphStyleStandardSchema.optional(),
+        "5": ParagraphStyleStandardSchema.optional(),
+        "6": ParagraphStyleStandardSchema.optional(),
+        "7": ParagraphStyleStandardSchema.optional(),
+        "8": ParagraphStyleStandardSchema.optional(),
+        "9": ParagraphStyleStandardSchema.optional(),
+      })
+      .default({}),
+    captions: ParagraphStyleStandardSchema.optional(),
+    lists: ListFormattingStandardSchema.optional(),
+    tables: TableFormattingStandardSchema.optional(),
+    headersFooters: HeaderFooterStandardSchema.optional(),
+    page: PageStandardSchema.optional(),
+  })
+  .default({ bodyStyle: { styleName: "Normal" } });
+export type DocumentFormattingProfile = z.infer<typeof DocumentFormattingProfileSchema>;
+
+/**
+ * Spec §4.1 and §10.2: rules about the *shape* of the document.
+ *
+ * Separate from `formatting` because a structure rule reasons about the
+ * document as a whole — whether a heading level was skipped, whether a table
+ * has a header row — while a formatting rule compares one paragraph against a
+ * style standard. The review UI groups them separately (spec §22) for the same
+ * reason.
+ */
+export const DocumentStructureProfileSchema = z.object({
+  /**
+   * Whether a heading may jump levels.
+   *
+   * True is a real editorial policy — a short report may legitimately go from
+   * H2 to H4 — and it is distinct from not having an opinion, which is
+   * `undefined`.
+   */
+  allowSkippedHeadingLevels: z.boolean().optional(),
+  /** The deepest heading level in use, so a deeper one is a deviation. */
+  maxHeadingLevel: z.number().int().min(1).max(9).optional(),
+  /** Whether an empty heading is a deviation or merely untidy. */
+  reportEmptyHeadings: z.boolean().default(true),
+  /** Whether an unknown or unrecognised Word style is a deviation. */
+  reportUnknownStyles: z.boolean().default(true),
+});
+export type DocumentStructureProfile = z.infer<typeof DocumentStructureProfileSchema>;
 
 export const HouseStyleSchema = z.object({
   preferredTerminology: z.record(z.string(), z.string()).default({}),
@@ -103,6 +574,35 @@ export type MeasuredProfile = z.infer<typeof MeasuredProfileSchema>;
 export const ProfileKindSchema = z.enum(["deterministic", "semantic"]);
 export type ProfileKind = z.infer<typeof ProfileKindSchema>;
 
+/**
+ * Spec §4.1: the four sections Deterministic Review compares against.
+ *
+ * Assembled here rather than stored as one object so a consumer can reach a
+ * single section without parsing the rest. `semantic` is deliberately absent:
+ * semantic review is a separate product with a separate profile namespace, and
+ * a "deterministic style profile" carrying a tone and a register would be the
+ * blending spec §0 rules out.
+ */
+export const DeterministicStyleProfileSchema = z.object({
+  language: LanguageConventionProfileSchema.default({}),
+  typography: TypographyRulesSchema.default({}),
+  formatting: DocumentFormattingProfileSchema.default({
+    bodyStyle: { styleName: "Normal" },
+  }),
+  structure: DocumentStructureProfileSchema.default({}),
+});
+export type DeterministicStyleProfile = z.infer<typeof DeterministicStyleProfileSchema>;
+
+/** The four sections a deterministic review compares against, read off a profile. */
+export function deterministicProfileOf(profile: StyleProfile): DeterministicStyleProfile {
+  return {
+    language: profile.language,
+    typography: profile.typography,
+    formatting: profile.formatting,
+    structure: profile.structure,
+  };
+}
+
 export const StyleProfileSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1),
@@ -113,6 +613,20 @@ export const StyleProfileSchema = z.object({
   semantic: SemanticProfileSchema,
   typography: TypographyRulesSchema,
   houseStyle: HouseStyleSchema,
+  /**
+   * Spec §4.1: the expanded deterministic sections.
+   *
+   * Additive with a full default, so a record written before these fields
+   * existed parses to a profile whose standards are the Word defaults rather
+   * than to a parse failure. A profile that says nothing is a profile that has
+   * not chosen a document standard, and the analyzer must be able to tell that
+   * apart from one that chose `Normal` deliberately.
+   */
+  language: LanguageConventionProfileSchema.default({}),
+  formatting: DocumentFormattingProfileSchema.default({
+    bodyStyle: { styleName: "Normal" },
+  }),
+  structure: DocumentStructureProfileSchema.default({}),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   sourceSampleIds: z.array(z.string().uuid()).default([]),
@@ -142,6 +656,9 @@ export function createEmptyProfile(
     semantic: {},
     typography: {},
     houseStyle: {},
+    language: {},
+    formatting: { bodyStyle: { styleName: "Normal" } },
+    structure: {},
     createdAt: now,
     updatedAt: now,
     sourceSampleIds: [],

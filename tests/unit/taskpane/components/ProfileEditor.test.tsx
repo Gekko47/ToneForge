@@ -9,6 +9,7 @@ import {
   type ProfileRecord,
 } from "../../../../src/core/domain/ProfileRecord";
 import ProfileEditor from "../../../../src/taskpane/components/ProfileEditor";
+import { sampleTypography } from "../../../fixtures/sampleDocs";
 
 const STAMP = "2024-01-01T00:00:00.000Z";
 
@@ -51,17 +52,7 @@ function makeProfile(): StyleProfile {
       rhetoricalStyle: "direct",
       avoidWords: ["very"],
     },
-    typography: {
-      emDash: "em",
-      emDashSpacing: "spaced",
-      enDashSpacing: "spaced",
-      doubleQuotes: "curly",
-      singleQuotes: "curly",
-      apostrophes: "curly",
-      decimalSeparator: "dot",
-      thousandsSeparator: "none",
-      ellipsis: "ellipsis",
-    },
+    typography: sampleTypography(),
     houseStyle: {
       preferredTerminology: { client: "customer" },
       bannedTerms: ["utilize"],
@@ -330,7 +321,7 @@ describe("ProfileEditor", () => {
         rhetoricalStyle: "analytical",
         avoidWords: [],
       },
-      typography: {
+      typography: sampleTypography({
         emDash: "hyphen",
         emDashSpacing: "tight",
         enDashSpacing: "tight",
@@ -340,7 +331,7 @@ describe("ProfileEditor", () => {
         decimalSeparator: "comma",
         thousandsSeparator: "space",
         ellipsis: "three-dots",
-      },
+      }),
       houseStyle: {
         preferredTerminology: { api: "interface" },
         bannedTerms: [],

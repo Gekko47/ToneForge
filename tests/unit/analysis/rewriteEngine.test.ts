@@ -241,3 +241,4 @@ describe("proposeSemanticRewrite", () => {
     expect(rewrite).toHaveBeenCalledTimes(1);
   });
 });
+// timing probe

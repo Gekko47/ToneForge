@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { TypographyRulesSchema } from "../../../src/core/domain/StyleProfile";
 import type { TypographyRules } from "../../../src/core/domain/StyleProfile";
 import { findTypographyIssues } from "../../../src/rules/typography";
 
-const defaultRules: TypographyRules = {
-  emDash: "em",
-  emDashSpacing: "spaced",
-  enDashSpacing: "spaced",
-  doubleQuotes: "curly",
-  singleQuotes: "curly",
-  apostrophes: "curly",
-  decimalSeparator: "dot",
-  thousandsSeparator: "none",
-  ellipsis: "ellipsis",
-};
+/**
+ * Built through the schema, not written out field by field.
+ *
+ * A hand-written literal has to be amended every time a setting is added, and
+ * the amend is mechanical — which is how a new typography field ends up absent
+ * from its own test and therefore untested. Parsing an empty object makes the
+ * schema's defaults the single source of truth for "the default profile", so a
+ * new field is exercised here the moment it has one.
+ */
+const defaultRules: TypographyRules = TypographyRulesSchema.parse({});
 
 describe("findTypographyIssues", () => {
   it("returns an empty array for empty input", () => {

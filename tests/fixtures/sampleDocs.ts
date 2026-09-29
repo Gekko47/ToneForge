@@ -1,5 +1,6 @@
 import { FindingSchema, type Finding } from "../../src/core/domain/Finding";
 import { DocumentNodeSchema } from "../../src/core/domain/DocumentSnapshot";
+import { TypographyRulesSchema } from "../../src/core/domain/StyleProfile";
 
 /**
  * Build a valid `Finding` for a component or integration test.
@@ -54,6 +55,20 @@ export const SAMPLE_PARAGRAPHS = [
 ];
 
 export const SAMPLE_TEXT = SAMPLE_PARAGRAPHS.join("\n\n");
+
+/**
+ * A full, valid typography rules object.
+ *
+ * Tests that need one field set almost always need the rest at their defaults,
+ * and spelling out nineteen fields to change one is how a new field ends up
+ * absent from the test that would have covered it. Parsing the partial input
+ * makes the schema the single source of truth for the defaults.
+ */
+export function sampleTypography(
+  overrides: Record<string, unknown> = {},
+): ReturnType<typeof TypographyRulesSchema.parse> {
+  return TypographyRulesSchema.parse(overrides);
+}
 
 export const SAMPLE_PROFILE = {
   id: "11111111-1111-1111-1111-111111111111",
