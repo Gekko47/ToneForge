@@ -1793,6 +1793,30 @@ of "y"`. The prose parser remains for unanchored findings.
     a second selection change to the place they are already at. `reportHostMoved`
     exists so a click elsewhere in the document releases that.
 
+## ADR-0081: A style can be learned from pasted text, attributed as pasted
+
+- Status: Accepted (2026-09-28)
+- **Context**: Learn Style read the open document. A document too short to pass
+  the sample-quality gate therefore left someone with no way to create a profile
+  from their own writing at all: the one control on the tab that could create a
+  profile was the one that could not fire. `createSemanticProfileRecord`
+  already offered an empty-profile route, but that is an empty profile — the
+  user still had no way to get their own measured metrics in.
+- **Decision**: The Semantic tab gains a paste box beside Learn Style. It is the
+  same `learnStyleDraft` call with a sample from `captureFromText`, so the
+  quality gate, the profiler and the provider consent are identical.
+- **Consequences**:
+  - Pasting is not a way around the quality gate or around consent. The control
+    is disabled with an empty box, so the empty case never reaches the gate and
+    reports a confusing "sample too short" instead.
+  - `CapturedSample["source"]` gained `pasted`, and `captureFromText` now
+    defaults to it. The default was `document`, which is a different claim: text
+    the user pasted is neither their selection nor the document they have open,
+    and the learned profile is attributed to this value in the evidence it
+    shows. That is the record of where a profile came from, not a label.
+  - The source is a parameter rather than a post-hoc assignment, so a caller
+    cannot attribute a sample to a source the function did not read it from.
+
 ## ADR-0077: One palette, one exemption, and no rule that reaches into Fluent
 
 - Amends: ADR-0057 (a Fluent theme is inverted; the token scope is the document

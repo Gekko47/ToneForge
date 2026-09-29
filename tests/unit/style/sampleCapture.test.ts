@@ -64,9 +64,17 @@ describe("captureFromText", () => {
   it("builds a sample from plain text", () => {
     const result = captureFromText(SAMPLE_TEXT);
     expect(result.text).toBe(SAMPLE_TEXT);
-    expect(result.source).toBe("document");
+    // Not "document". A string handed to this function is pasted text, and the
+    // learned profile is attributed to this value in the evidence it shows — so
+    // a wrong default is a wrong record of where the profile came from.
+    expect(result.source).toBe("pasted");
     expect(result.paragraphs).toHaveLength(2);
     expect(result.wordCount).toBeGreaterThan(0);
+  });
+
+  it("attributes the sample to the source the caller declares", () => {
+    expect(captureFromText(SAMPLE_TEXT, { source: "selection" }).source).toBe("selection");
+    expect(captureFromText(SAMPLE_TEXT, { source: "document" }).source).toBe("document");
   });
 
   it("trims surrounding whitespace", () => {

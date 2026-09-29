@@ -159,6 +159,41 @@ function renderPage(overrides: Partial<React.ComponentProps<typeof Semantic>> = 
  * curly quote frequency and capitalization consistency from the interface
  * altogether — numbers the engine still used and nobody could see.
  */
+/**
+ * The other route onto this tab.
+ *
+ * Learn Style reads the open document, and a document too short to pass the
+ * sample-quality gate left someone with no way to create a profile from their
+ * own writing: the one control that could create one was the one that could
+ * not fire. Pasting is that route, and it must be the same call rather than a
+ * shortcut past the quality gate or the provider consent.
+ */
+describe("learning a style from pasted text", () => {
+  it("learns from the box without reading the document", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(
+      await screen.findByLabelText(/paste a sample of your writing/i),
+      "A short but complete sentence that carries enough words to pass.",
+    );
+    await user.click(screen.getByRole("button", { name: /learn from pasted text/i }));
+
+    await waitFor(() => expect(mocks.learnStyleDraft).toHaveBeenCalled());
+    // The same gate and the same profiler: a paste is not a way around either.
+    expect(mocks.getDocumentSnapshot).not.toHaveBeenCalled();
+    const [sample] = mocks.learnStyleDraft.mock.calls.at(-1) ?? [];
+    expect(sample).toMatchObject({ source: "pasted" });
+  });
+
+  it("cannot fire with an empty box, rather than reporting a bad sample", () => {
+    renderPage();
+    // Disabled with nothing typed, so the empty case never reaches the quality
+    // gate and produces a confusing "sample too short".
+    expect(screen.getByRole("button", { name: /learn from pasted text/i })).toBeDisabled();
+  });
+});
+
 describe("the semantic profile surface", () => {
   it("shows every measured metric, not a selection of them", async () => {
     const learned = createRecord(

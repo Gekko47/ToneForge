@@ -21,7 +21,7 @@ import {
   createRegistryFromSettings,
   isRemoteProviderConfigured,
 } from "../settings/providerComposition";
-import { captureSample } from "../../style/sampleCapture";
+import { captureFromText, captureSample } from "../../style/sampleCapture";
 import { learnStyleDraft } from "../../style/learnStyle";
 import { updateDraft, effectiveProfile, type ProfileRecord } from "../../core/domain/ProfileRecord";
 import { proposeSemanticRewrite } from "../../analysis/rewriteEngine";
@@ -160,6 +160,7 @@ export default function Semantic({
   const [learnStatus, setLearnStatus] = React.useState<string | null>(null);
   const [learnError, setLearnError] = React.useState<string | null>(null);
   const [learning, setLearning] = React.useState(false);
+  const [pastedSample, setPastedSample] = React.useState("");
 
   const [selection, setSelection] = React.useState<string | null>(null);
   const [stage, setStage] = React.useState<RewriteStage>("idle");
@@ -314,6 +315,53 @@ export default function Semantic({
     }
   }
 
+  /**
+   * Learn from text the user pasted.
+   *
+   * The only other route onto this tab was Learn Style reading the current
+   * document, and a document too short to pass the sample-quality gate left
+   * someone with no way to create a profile from their own writing at all.
+   * Pasting is that route, and it is the same call the document path makes, so
+   * the quality gate, the profiler and the provider consent are identical —
+   * pasted text is not a way around any of them.
+   */
+  async function learnFromPastedText(): Promise<void> {
+    const text = pastedSample.trim();
+    if (text === "") return;
+    setLearning(true);
+    setLearnError(null);
+    setLearnStatus(null);
+    try {
+      const includeSemantic =
+        settings.semanticOptIn && isRemoteProviderConfigured(settings, state.providerConnections);
+      const result = await learnStyleDraft(captureFromText(text, { source: "pasted" }), {
+        name: "Learned semantic style",
+        includeSemantic,
+        ...(includeSemantic
+          ? { registry: createRegistryFromSettings(settings, state.providerConnections) }
+          : {}),
+      });
+      const created = createSemanticProfileRecord(
+        result.draft.name,
+        new Date().toISOString(),
+        result.draft,
+      );
+      setRecord(created);
+      setActiveSemanticProfile(created.id);
+      refreshRecords();
+      setPastedSample("");
+      setProposal(null);
+      setStage("idle");
+      setLearnStatus(
+        `Learned from pasted text (${result.evidence.wordCount} words). The box has been cleared.`,
+      );
+    } catch (error: unknown) {
+      setLearnError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLearning(false);
+    }
+  }
+
   const consentMissing = settings.semanticOptIn !== true;
   const providerMissing = !isRemoteProviderConfigured(settings, state.providerConnections);
 
@@ -449,6 +497,41 @@ export default function Semantic({
         <button type="button" onClick={() => void learnFromCurrentDocument()} disabled={learning}>
           {learning ? "Learning style…" : "Learn from current document"}
         </button>
+
+        {/*
+          The other route onto this tab.
+
+          Learn Style above reads the open document, and a document too short to
+          pass the sample-quality gate left someone with no way to create a
+          profile from their own writing at all — the one control that could
+          create one was the one that could not fire. Pasting is that route.
+
+          It is the same `learnStyleDraft` call, so the quality gate, the
+          profiler and the provider consent are identical. Pasting is not a way
+          around any of them, and the copy says so rather than implying a
+          shortcut.
+        */}
+        <div>
+          <label htmlFor="tf-learn-pasted">Or paste a sample of your writing</label>
+          <textarea
+            id="tf-learn-pasted"
+            value={pastedSample}
+            rows={5}
+            onChange={(event) => setPastedSample(event.target.value)}
+            placeholder="Paste a few paragraphs you have written."
+          />
+          <button
+            type="button"
+            onClick={() => void learnFromPastedText()}
+            disabled={learning || pastedSample.trim() === ""}
+          >
+            Learn from pasted text
+          </button>
+          <p className="tf-sub">
+            The same quality checks apply, and pasted text is only sent to a provider if you have
+            given consent.
+          </p>
+        </div>
       </section>
       {/*
   The tab's one live region. Rendered near the top so it precedes the

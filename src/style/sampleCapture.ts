@@ -18,6 +18,14 @@ export interface SampleCaptureOptions {
   preferSelection?: boolean;
   /** Cap the sample to this many characters. */
   maxChars?: number;
+  /**
+   * How to attribute the sample. Defaults to `selection`.
+   *
+   * A parameter rather than a post-hoc assignment because `source` is the
+   * evidence the learned profile is attributed to, and a sample whose origin is
+   * patched after the fact is one a caller can get wrong without any check.
+   */
+  source?: CapturedSample["source"];
 }
 
 export interface CapturedSample {
@@ -25,7 +33,16 @@ export interface CapturedSample {
   paragraphs: string[];
   sentences: string[];
   wordCount: number;
-  source: "selection" | "document";
+  /**
+   * Where the text came from.
+   *
+   * `pasted` is separate rather than folded into `document` because the
+   * evidence is shown to the user as the basis for a learned profile. Text the
+   * user pasted is neither their selection nor the document they have open, and
+   * a profile attributed to the wrong source is a claim the evidence cannot
+   * support.
+   */
+  source: "selection" | "document" | "pasted";
   documentId?: string;
   capturedAt?: string;
 }
@@ -62,7 +79,16 @@ export function captureSample(
   };
 }
 
-/** Build a captured sample from a plain text string (clipboard fallback). */
+/**
+ * Build a captured sample from a plain text string (clipboard fallback).
+ *
+ * The source defaults to `pasted`, which is what a string handed to this
+ * function actually is. It used to say `document`, which is a different claim:
+ * text the user pasted is neither their selection nor the document they have
+ * open, and the learned profile is attributed to this value in the evidence it
+ * shows. A wrong default here is not a naming slip — it is the record of where
+ * a profile came from.
+ */
 export function captureFromText(text: string, opts: SampleCaptureOptions = {}): CapturedSample {
   const maxChars = opts.maxChars ?? 500_000;
   const trimmed = text.trim();
@@ -72,6 +98,6 @@ export function captureFromText(text: string, opts: SampleCaptureOptions = {}): 
     paragraphs: splitParagraphs(bounded),
     sentences: splitSentences(bounded),
     wordCount: countWords(bounded),
-    source: "document",
+    source: opts.source ?? "pasted",
   };
 }
