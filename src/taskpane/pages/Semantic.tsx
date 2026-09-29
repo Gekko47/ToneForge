@@ -42,6 +42,17 @@ export interface SemanticProps {
    * here has not started a request.
    */
   navigation?: TaskpaneNavigation | null;
+  /**
+   * Told whether the tab currently holds a paragraph to rewrite.
+   *
+   * Reported rather than read back. The Troubleshooting registry has to be able
+   * to say why Propose rewrite is greyed out, and that question can only be
+   * answered from here — but re-reading the selection from a panel that never
+   * touched it would ask Word for a second answer and could disagree with the
+   * one already on screen. `null` means "never established", which is different
+   * from `false`.
+   */
+  onSelectionCaptured?: (captured: boolean) => void;
 }
 
 type RewriteStage = "idle" | "proposing" | "proposed" | "failed";
@@ -122,6 +133,7 @@ export default function Semantic({
   onBack,
   onOpenSettings,
   navigation,
+  onSelectionCaptured,
 }: SemanticProps): React.ReactNode {
   /*
    * One read of the store, in a lazy initialiser. Reading it again in an effect
@@ -185,12 +197,15 @@ export default function Semantic({
     void (async () => {
       try {
         const text = (await getSelectionText()).trim();
-        setSelection(text.length === 0 ? null : text);
+        const captured = text.length > 0;
+        setSelection(captured ? text : null);
+        onSelectionCaptured?.(captured);
       } catch (error: unknown) {
+        onSelectionCaptured?.(false);
         setRewriteError(error instanceof Error ? error.message : String(error));
       }
     })();
-  }, [navigation]);
+  }, [navigation, onSelectionCaptured]);
 
   /*
    * Keep the ribbon button honest. It is declared disabled in the manifest and
@@ -376,11 +391,17 @@ export default function Semantic({
   async function readSelection(): Promise<void> {
     try {
       const text = (await getSelectionText()).trim();
-      setSelection(text.length === 0 ? null : text);
+      const captured = text.length > 0;
+      setSelection(captured ? text : null);
+      onSelectionCaptured?.(captured);
       setRewriteError(null);
       setProposal(null);
       setStage("idle");
     } catch (error: unknown) {
+      // A failed read leaves no paragraph, and says so. Reporting the failure
+      // alone would leave the parent's last `true` standing for a read that
+      // never happened.
+      onSelectionCaptured?.(false);
       setRewriteError(error instanceof Error ? error.message : String(error));
     }
   }

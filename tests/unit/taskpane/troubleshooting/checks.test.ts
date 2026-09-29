@@ -16,6 +16,12 @@ function healthy(overrides: Partial<TroubleshootingInput> = {}): Troubleshooting
     rawTextConsent: true,
     plannedCount: 0,
     reviewedCount: 0,
+    // A paragraph in hand, a complete run with a model behind it, and a host
+    // with the context-menu API. `null` here would mean "not established", which
+    // is its own case and is exercised separately below.
+    semanticSelectionCaptured: true,
+    consistency: { usedModel: true, complete: true, limitations: [] },
+    contextMenuApi: true,
     ...overrides,
   };
 }
@@ -147,9 +153,12 @@ describe("the troubleshooting registry", () => {
         plannedCount: 2,
         reviewedCount: 0,
         coverage: { complete: false } as never,
+        semanticSelectionCaptured: false,
+        consistency: { usedModel: false, complete: true, limitations: [] },
+        contextMenuApi: false,
       }),
     );
-    expect(notes).toHaveLength(6);
+    expect(notes).toHaveLength(9);
     notes.forEach((note) => {
       expect(note.remedyTarget.label.length).toBeGreaterThan(0);
       // Every label names a page and a control, not just a page.
@@ -162,7 +171,91 @@ describe("the troubleshooting registry", () => {
       "Semantic → Semantic profiles → Create empty profile",
       "Settings → Provider and privacy → Provider, then enter the key",
       "Troubleshooting → Analysis coverage diagnostics",
+      "Semantic → Semantic rewrite → Read current selection",
+      "Settings → Provider and privacy → Provider, then enter the key",
+      "Add-ins ribbon → Deterministic Review group",
     ]);
+  });
+
+  it("explains a rewrite that cannot run because no paragraph was ever read", () => {
+    /*
+     * The button is disabled for this reason alone and says nothing about it.
+     * Without the note, the user has three settings to check that are all fine.
+     */
+    const notes = diagnoseSituation(healthy({ semanticSelectionCaptured: false }));
+    expect(notes[0]?.id).toBe("semantic-rewrite-has-no-paragraph");
+    expect(notes[0]?.remedyTarget.label).toBe(
+      "Semantic → Semantic rewrite → Read current selection",
+    );
+  });
+
+  it("does not blame an unread paragraph when the Semantic tab was never opened", () => {
+    // `null` is "not established". Reporting a blocker on the strength of the
+    // user never having visited a tab would put a fault on a pane that has none.
+    const notes = diagnoseSituation(healthy({ semanticSelectionCaptured: null }));
+    expect(notes.map((note) => note.id)).not.toContain("semantic-rewrite-has-no-paragraph");
+  });
+
+  it("distinguishes a consistency run with no model from an incomplete one", () => {
+    // Two different causes behind one situation, and the remedy differs: one is
+    // a missing provider, the other is a bound on the engine that no setting
+    // raises. Naming the provider for the second would send the user to a
+    // setting that cannot change the answer.
+    const noModel = diagnoseSituation(
+      healthy({ consistency: { usedModel: false, complete: true, limitations: [] } }),
+    );
+    expect(noModel[0]?.id).toBe("consistency-review-partial");
+    expect(noModel[0]?.remedyTarget.label).toBe(
+      "Settings → Provider and privacy → Provider, then enter the key",
+    );
+
+    const bounded = diagnoseSituation(
+      healthy({
+        consistency: {
+          usedModel: true,
+          complete: false,
+          limitations: [
+            "Compared 200 statements in windows, so 18,100 pair comparisons were not made.",
+          ],
+        },
+      }),
+    );
+    expect(bounded[0]?.remedyTarget.label).toBe(
+      "Consistency Review → Results → the coverage line above the findings",
+    );
+    // The engine's own count is quoted, not paraphrased or dropped.
+    expect(bounded[0]?.cause).toContain("18,100");
+  });
+
+  it("says nothing about a consistency review that has not run", () => {
+    expect(diagnoseSituation(healthy({ consistency: null })).map((note) => note.id)).not.toContain(
+      "consistency-review-partial",
+    );
+  });
+
+  it("says nothing about the context menu before the probe has run", () => {
+    // `null` is "not established". Claiming the menu is missing on the strength
+    // of not having looked is the same defect as the probe reporting `false`
+    // for a capability it never tested.
+    expect(diagnoseSituation(healthy({ contextMenuApi: null }))).toEqual([]);
+  });
+
+  it("reports an absent context menu as a host limitation, not a setting", () => {
+    const notes = diagnoseSituation(healthy({ contextMenuApi: false }));
+    expect(notes[0]?.id).toBe("context-menu-api-absent");
+    expect(notes[0]?.remedy).toMatch(/ribbon/i);
+    // A note implying a missing menu is fixable inside the add-in sends the
+    // user looking for a control that does not exist.
+    expect(notes[0]?.remedy).toMatch(/no control in ToneForge turns the context menu on/i);
+  });
+
+  it("distinguishes the two absent API checks from each other", () => {
+    // Both were `false` from one probe, and they have nothing to do with one
+    // another: only the context-menu check may fire when the rewrite is fine.
+    const notes = diagnoseSituation(
+      healthy({ contextMenuApi: false, semanticSelectionCaptured: true }),
+    );
+    expect(notes.map((note) => note.id)).toEqual(["context-menu-api-absent"]);
   });
 
   it("keeps every registered id reachable, so a check cannot be added unreachable", () => {
@@ -176,6 +269,9 @@ describe("the troubleshooting registry", () => {
       "no-provider",
       "no-raw-text-consent",
       "coverage-incomplete",
+      "semantic-rewrite-has-no-paragraph",
+      "consistency-review-partial",
+      "context-menu-api-absent",
     ]);
   });
 

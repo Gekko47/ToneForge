@@ -23,7 +23,7 @@ const FULL_CAPABILITIES: WordCapabilities = {
   supportsSelection: true,
   supportsParagraphResolution: true,
   supportsHighlight: true,
-  supportsContextMenu: true,
+  supportsContextMenuApi: true,
   supportsRibbonUpdate: true,
   hostName: "Word",
   hostVersion: "16.0",

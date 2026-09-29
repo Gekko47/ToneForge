@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import ConsistencyReviewPreflight from "../../../../src/taskpane/components/ConsistencyReviewPreflight";
 import ConsistencyReviewProgress from "../../../../src/taskpane/components/ConsistencyReviewProgress";
 import ConsistencyReviewResults from "../../../../src/taskpane/components/ConsistencyReviewResults";
@@ -581,5 +582,119 @@ describe("consistency results", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /review in findings/i })).toBeDisabled();
+  });
+});
+
+describe("stepping through the consistency results", () => {
+  function conflict(tag: string) {
+    return {
+      checkId: "C1" as const,
+      fingerprint: `C1:${tag}`,
+      title: `Conflict ${tag}`,
+      detail: "The same term is used two ways.",
+      severity: "warning" as const,
+      confidence: 0.9,
+      actionable: true,
+      nodeIds: [],
+      evidence: {
+        left: `${tag} is manual.`,
+        right: `${tag} is automated.`,
+        sectionLeft: "Intro",
+        sectionRight: "Appendix",
+      },
+    };
+  }
+
+  function renderResults(tags: string[]) {
+    return render(
+      <ConsistencyReviewResults
+        report={report({ issues: tags.map(conflict) })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+  }
+
+  it("offers no stepper when there is nothing to step through", () => {
+    // Controls for a zero-length list are two dead buttons next to a position
+    // count that can only ever read "of 0".
+    renderResults([]);
+    expect(screen.queryByRole("navigation", { name: /issue navigation/i })).toBeNull();
+  });
+
+  it("moves the position and speaks the destination", async () => {
+    const user = userEvent.setup();
+    renderResults(["one", "two", "three"]);
+
+    expect(screen.getByText("Contradiction 1 of 3")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /next contradiction/i }));
+    expect(screen.getByText("Contradiction 2 of 3")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /previous contradiction/i }));
+    expect(screen.getByText("Contradiction 1 of 3")).toBeInTheDocument();
+  });
+
+  it("wraps rather than stopping at either end", async () => {
+    /*
+     * Clamping leaves a user who overshot with no way forward but to walk back
+     * one at a time, and these are conflicts to read rather than pages to lose a
+     * place in.
+     */
+    const user = userEvent.setup();
+    renderResults(["one", "two"]);
+    await user.click(screen.getByRole("button", { name: /previous contradiction/i }));
+    expect(screen.getByText("Contradiction 2 of 2")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /next contradiction/i }));
+    expect(screen.getByText("Contradiction 1 of 2")).toBeInTheDocument();
+  });
+
+  it("reports only the last destination of a burst", async () => {
+    /*
+     * The S8 contract for this surface: three clicks are one gesture, so the
+     * live region says where the user landed, not where they passed through.
+     */
+    const user = userEvent.setup();
+    renderResults(["one", "two", "three", "four"]);
+    const next = screen.getByRole("button", { name: /next contradiction/i });
+    await user.click(next);
+    await user.click(next);
+    await user.click(next);
+
+    const region = screen.getByText(/^Contradiction \d of 4$/);
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toHaveTextContent("Contradiction 4 of 4");
+  });
+
+  it("names the position in each control, not only in the status beside them", () => {
+    /*
+     * A screen-reader user tabbing the controls hears where they are and where
+     * they will land without navigating away to the status text and back.
+     */
+    renderResults(["one", "two"]);
+    expect(
+      screen.getByRole("button", { name: "Next contradiction, at 1 of 2" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Previous contradiction, at 1 of 2" }),
+    ).toBeInTheDocument();
+  });
+
+  it("starts again at the first contradiction when a new report replaces the old", async () => {
+    /*
+     * A new report is a new list. Carrying the index over would show "3 of 2"
+     * or land on a contradiction the user never chose.
+     */
+    const user = userEvent.setup();
+    const { rerender } = renderResults(["one", "two", "three"]);
+    await user.click(screen.getByRole("button", { name: /next contradiction/i }));
+    expect(screen.getByText("Contradiction 2 of 3")).toBeInTheDocument();
+
+    rerender(
+      <ConsistencyReviewResults
+        report={report({ issues: [conflict("fresh")] })}
+        onReviewFindings={() => undefined}
+        onDismiss={() => undefined}
+      />,
+    );
+    expect(screen.getByText("Contradiction 1 of 1")).toBeInTheDocument();
   });
 });

@@ -92,4 +92,67 @@ describe("TaskPaneHeader", () => {
 
     await vi.waitFor(() => expect(trigger).toHaveFocus());
   });
+
+  describe("the scan time", () => {
+    it("says when the document was last scanned, without an observer there is none", () => {
+      /*
+       * On the stale banner the time could only appear when something was
+       * already wrong, so the moment it was worth most — just after a
+       * successful scan, with no banner rendered — it was nowhere on screen.
+       */
+      const { rerender } = render(
+        <TaskPaneHeader
+          activePage="review"
+          profileName="Corporate editorial"
+          profileRevision={7}
+          onNavigate={vi.fn()}
+          lastScan="2026-09-26T09:30:00.000Z"
+        />,
+      );
+      expect(screen.getByText(/^Last scan:/)).toBeInTheDocument();
+
+      // `undefined` means no observer is running on this page. Printing a time
+      // there would be a claim about a scan that never happened.
+      rerender(
+        <TaskPaneHeader
+          activePage="settings"
+          profileName="Corporate editorial"
+          profileRevision={7}
+          onNavigate={vi.fn()}
+        />,
+      );
+      expect(screen.queryByText(/^Last scan:/)).not.toBeInTheDocument();
+    });
+
+    it("says never rather than a date when nothing has been scanned", () => {
+      render(
+        <TaskPaneHeader
+          activePage="review"
+          profileName="Corporate editorial"
+          profileRevision={7}
+          onNavigate={vi.fn()}
+          lastScan={null}
+        />,
+      );
+      expect(screen.getByText("Last scan: never")).toBeInTheDocument();
+    });
+
+    it("is plain text, not a second live region", () => {
+      /*
+       * The pane speaks from one live region. A second one here would read the
+       * scan time over whatever the pane was actually announcing.
+       */
+      render(
+        <TaskPaneHeader
+          activePage="review"
+          profileName="Corporate editorial"
+          profileRevision={7}
+          onNavigate={vi.fn()}
+          lastScan="2026-09-26T09:30:00.000Z"
+        />,
+      );
+      expect(screen.getByText(/^Last scan:/)).not.toHaveAttribute("aria-live");
+      expect(screen.getByText(/^Last scan:/)).not.toHaveAttribute("role", "status");
+    });
+  });
 });

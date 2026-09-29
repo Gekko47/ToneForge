@@ -25,7 +25,11 @@ export interface AnalysisCapabilities {
   supportsSelection: boolean;
   supportsParagraphResolution: boolean;
   supportsHighlight: boolean;
-  supportsContextMenu: boolean;
+  /**
+   * Whether `Office.contextMenu.requestUpdate` exists. Not whether Word renders
+   * the declared menu — see the note on `WordCapabilities.supportsContextMenuApi`.
+   */
+  supportsContextMenuApi: boolean;
   hostName: "Word" | "Excel" | "PowerPoint" | "unknown";
   hostVersion: string | null;
 }

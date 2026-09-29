@@ -251,12 +251,12 @@ describe("probeWordCapabilities", () => {
    */
   it("detects the context menu API on the namespace that actually exists", async () => {
     setOffice({ ...fullOffice(), contextMenu: { requestUpdate: vi.fn() } });
-    expect((await probeWordCapabilities()).supportsContextMenu).toBe(true);
+    expect((await probeWordCapabilities()).supportsContextMenuApi).toBe(true);
   });
 
   it("reports no context menu API on a host that lacks it", async () => {
     setOffice(fullOffice());
-    expect((await probeWordCapabilities()).supportsContextMenu).toBe(false);
+    expect((await probeWordCapabilities()).supportsContextMenuApi).toBe(false);
   });
 
   it("detects the ribbon update API, which enabling a control depends on", async () => {
@@ -298,7 +298,7 @@ describe("toAnalysisCapabilities", () => {
       supportsSelection: true,
       supportsParagraphResolution: true,
       supportsHighlight: true,
-      supportsContextMenu: true,
+      supportsContextMenuApi: true,
       supportsRibbonUpdate: true,
       hostName: "Word" as const,
       hostVersion: "16.0",
@@ -328,7 +328,7 @@ describe("toAnalysisCapabilities", () => {
         supportsSelection: false,
         supportsParagraphResolution: false,
         supportsHighlight: false,
-        supportsContextMenu: false,
+        supportsContextMenuApi: false,
         supportsRibbonUpdate: false,
         hostName: "unknown" as const,
         hostVersion: null,

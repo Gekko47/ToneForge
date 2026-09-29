@@ -18,7 +18,7 @@ const CAPABILITIES: AnalysisCapabilities = {
   supportsSelection: true,
   supportsParagraphResolution: true,
   supportsHighlight: true,
-  supportsContextMenu: true,
+  supportsContextMenuApi: true,
   hostName: "Word",
   hostVersion: "16.0",
 };

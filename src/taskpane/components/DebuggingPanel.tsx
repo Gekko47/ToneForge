@@ -18,6 +18,24 @@ interface DebuggingPanelProps {
   /** Pending and reviewed counts, so the Apply blocker can be reported here too. */
   plannedCount?: number;
   reviewedCount?: number;
+  /**
+   * How much of the document the last Consistency Review actually compared.
+   *
+   * Passed in rather than derived here because the report belongs to the
+   * Dashboard and is shared with the Deterministic Review findings list. Reading
+   * it a second time in this panel would produce a second copy of a report the
+   * user can already see on the other tab, and could disagree with it.
+   */
+  consistency?: {
+    usedModel: boolean;
+    complete: boolean;
+    limitations: readonly string[];
+  } | null;
+  /**
+   * Whether the Semantic tab is holding a paragraph to rewrite, `null` if it
+   * has not been opened. Held by the Dashboard for the same reason.
+   */
+  semanticSelectionCaptured?: boolean | null;
 }
 
 /**
@@ -28,22 +46,28 @@ interface DebuggingPanelProps {
  * semantic rewrite both know their own blockers, and neither should have to
  * re-derive them to explain themselves.
  */
-function currentInput(
-  trackedEditing: boolean,
-  coverage: CoverageReport | null,
-  plannedCount: number,
-  reviewedCount: number,
-): TroubleshootingInput {
+function currentInput(input: {
+  trackedEditing: boolean;
+  coverage: CoverageReport | null;
+  plannedCount: number;
+  reviewedCount: number;
+  consistency: { usedModel: boolean; complete: boolean; limitations: readonly string[] } | null;
+  semanticSelectionCaptured: boolean | null;
+  contextMenuApi: boolean | null;
+}): TroubleshootingInput {
   const state = loadState();
   return {
     autoScan: state.settings.autoScan,
-    trackedEditing,
-    coverage,
+    trackedEditing: input.trackedEditing,
+    coverage: input.coverage,
     semanticProfileActive: state.activeSemanticProfileId !== null,
     providerConfigured: isRemoteProviderConfigured(state.settings, state.providerConnections),
     rawTextConsent: state.settings.semanticOptIn,
-    plannedCount,
-    reviewedCount,
+    plannedCount: input.plannedCount,
+    reviewedCount: input.reviewedCount,
+    consistency: input.consistency,
+    semanticSelectionCaptured: input.semanticSelectionCaptured,
+    contextMenuApi: input.contextMenuApi,
   };
 }
 
@@ -61,6 +85,8 @@ export default function DebuggingPanel({
   coverage = null,
   plannedCount = 0,
   reviewedCount = 0,
+  consistency = null,
+  semanticSelectionCaptured = null,
 }: DebuggingPanelProps): React.ReactNode {
   const [capabilities, setCapabilities] = useState<Awaited<
     ReturnType<typeof prepareReformatHost>
@@ -99,7 +125,18 @@ export default function DebuggingPanel({
   }
 
   const notes = diagnoseSituation(
-    currentInput(trackedEditing, coverage, plannedCount, reviewedCount),
+    currentInput({
+      trackedEditing,
+      coverage,
+      plannedCount,
+      reviewedCount,
+      consistency,
+      semanticSelectionCaptured,
+      // From this panel's own probe rather than passed in: the probe has not
+      // run at this point in most sessions, and `null` is the honest answer —
+      // "not yet established" rather than "the host does not have it".
+      contextMenuApi: capabilities === null ? null : capabilities.supportsContextMenuApi,
+    }),
   );
 
   return (
@@ -166,10 +203,19 @@ export default function DebuggingPanel({
           situations that are true right now are listed.
         </p>
         {notes.length === 0 ? (
+          /*
+           * Enumerated rather than "nothing is wrong", because this registry
+           * only sees what it is given and a run of unchecked situations reads
+           * as a clean bill of health. Every situation below has a check above;
+           * adding one here is the cost of a new input field.
+           */
           <p className="tf-sub">
             Nothing is currently standing in the way: automatic scanning is on, tracked editing is
             enabled, a semantic profile is active, a provider is configured, sending your text to
-            that provider is allowed, and any analysis that has run covered the whole document.
+            that provider is allowed, every finding waiting to be applied has been reviewed, the
+            Semantic tab is holding a paragraph if one was wanted, any consistency review that has
+            run compared everything it set out to compare, the host exposes the context-menu API,
+            and any analysis that has run covered the whole document.
           </p>
         ) : (
           <ul className="tf-troubleshooting-list">

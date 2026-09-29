@@ -72,6 +72,39 @@ export interface TroubleshootingInput {
   /** Changes queued in the plan, and how many of them the user has reviewed. */
   plannedCount: number;
   reviewedCount: number;
+  /**
+   * Whether the Semantic tab currently holds a paragraph to rewrite.
+   *
+   * `null` when the tab has not reported one either way. A check that fired on
+   * `null` would report a blocker the pane has not established: the Semantic tab
+   * simply has not been opened, which is not a fault.
+   */
+  semanticSelectionCaptured: boolean | null;
+  /**
+   * The last Consistency Review's own account of how much of the document it
+   * compared, or `null` when no report has been produced.
+   *
+   * A projection of the report rather than the report itself. The registry is
+   * pure and takes state, not engine objects, and every field it needs is here:
+   * whether a model was consulted, whether the comparison was exhaustive, and
+   * the engine's own sentences about what it left out — quoted rather than
+   * reworded, so the number of skipped comparisons is the engine's number.
+   */
+  consistency: {
+    usedModel: boolean;
+    /** False when some cross-window pairs were never compared. */
+    complete: boolean;
+    /** The engine's own limitation sentences, verbatim. */
+    limitations: readonly string[];
+  } | null;
+  /**
+   * Whether `Office.contextMenu.requestUpdate` was reachable in the last probe.
+   *
+   * `null` until the probe has run. This is the runtime API and nothing more —
+   * it cannot establish that Word rendered a declared menu, so a check built on
+   * it must say which of the two it is talking about.
+   */
+  contextMenuApi: boolean | null;
 }
 
 /**
@@ -84,25 +117,43 @@ export interface TroubleshootingInput {
  */
 type CheckText = string | ((input: TroubleshootingInput) => string);
 
+/**
+ * The control a remedy sends the user to, when the control depends on the state.
+ *
+ * A cross-report review that was *skipped* and one that *failed* are the same
+ * situation with two different causes, and the two causes sit behind two
+ * different controls. Naming one of them for both would satisfy rule 1 while
+ * sending the user to a setting that cannot unblock them.
+ */
+type CheckTarget = RemedyTarget | ((input: TroubleshootingInput) => RemedyTarget);
+
 interface TroubleshootingCheck {
   id: string;
   appliesTo: (input: TroubleshootingInput) => boolean;
   situation: string;
   cause: CheckText;
   remedy: CheckText;
-  remedyTarget: RemedyTarget;
+  remedyTarget: CheckTarget;
 }
 
 function resolve(text: CheckText, input: TroubleshootingInput): string {
   return typeof text === "string" ? text : text(input);
 }
 
+function resolveTarget(target: CheckTarget, input: TroubleshootingInput): RemedyTarget {
+  return typeof target === "function" ? target(input) : target;
+}
+
 /**
  * Ordered by how often it turns out to be the answer, not by id.
  *
  * The first two account for most visits: the pane looks idle, or the one
- * button that writes to the document is greyed out. Coverage last, because it
- * is the only one that is a property of the document rather than of a setting.
+ * button that writes to the document is greyed out. The last three are the
+ * situations that were missing: a rewrite that produced nothing, a consistency
+ * review that reported without having consulted a model, and a context-menu
+ * entry that never appeared. They follow the settings checks because each of
+ * them is usually the *consequence* of one of those, and the setting is what
+ * actually has to change.
  */
 const CHECKS: readonly TroubleshootingCheck[] = [
   {
@@ -195,6 +246,66 @@ const CHECKS: readonly TroubleshootingCheck[] = [
       label: "Troubleshooting → Analysis coverage diagnostics",
     },
   },
+  {
+    id: "semantic-rewrite-has-no-paragraph",
+    appliesTo: (input) => input.semanticSelectionCaptured === false,
+    situation: "Propose rewrite is greyed out, and pressing Read current selection changes nothing",
+    cause:
+      "The rewrite works on one paragraph, not on the document, and no paragraph has been read yet. The button is disabled for that reason alone — everything else it needs, the profile, the provider and your permission to send text, is in place.",
+    remedy:
+      "Select the text you want rewritten in Word itself, then press Read current selection on the Semantic tab and the paragraph appears above the button. The same paragraph can be pasted into the Learn Style box instead if you would rather not select it.",
+    remedyTarget: {
+      label: "Semantic → Semantic rewrite → Read current selection",
+    },
+  },
+  {
+    id: "consistency-review-partial",
+    appliesTo: (input) =>
+      input.consistency !== null &&
+      (input.consistency.complete === false || input.consistency.usedModel === false),
+    situation:
+      "The consistency review found nothing, but that is not the same as it having checked everything",
+    cause: (input) => {
+      const run = input.consistency;
+      if (run === null) return "";
+      const parts: string[] = [];
+      if (run.usedModel === false) {
+        parts.push(
+          "No model was consulted, so every result came from the deterministic comparisons alone — a document whose contradictions depend on meaning rather than on dates and totals would pass this review cleanly.",
+        );
+      }
+      if (run.complete === false) {
+        parts.push(
+          `Some comparisons were never made: ${run.limitations.join(" ") || "the engine reported an incomplete pass without saying which pairs it left out."}`,
+        );
+      }
+      return parts.join(" ");
+    },
+    remedy: (input) => {
+      const run = input.consistency;
+      if (run === null) return "";
+      if (run.usedModel === false) {
+        return "Configure a provider so the cross-report checks have a model to consult. They are separate from the deterministic comparisons, which have already run and are unaffected; the deterministic results you have are not thrown away.";
+      }
+      return "This is a bound on the engine, not a setting you can raise. Every statement was still examined — what was skipped is a counted set of comparisons between statements in different windows, and the exact count is stated above the findings.";
+    },
+    remedyTarget: (input) =>
+      input.consistency?.usedModel === false
+        ? { label: "Settings → Provider and privacy → Provider, then enter the key" }
+        : { label: "Consistency Review → Results → the coverage line above the findings" },
+  },
+  {
+    id: "context-menu-api-absent",
+    appliesTo: (input) => input.contextMenuApi === false,
+    situation: "ToneForge does not appear in the right-click menu",
+    cause:
+      "This Word build does not expose the context-menu API, so the entries ToneForge declares in its manifest cannot be installed. The same actions are on the ribbon, and the whole of Deterministic Review works; only the right-click route is absent.",
+    remedy:
+      "Use the ribbon instead. This is a host limitation rather than a setting: no control in ToneForge turns the context menu on, and a menu that is absent here cannot be restored from inside the add-in.",
+    remedyTarget: {
+      label: "Add-ins ribbon → Deterministic Review group",
+    },
+  },
 ];
 
 /** The situations currently true, most likely first. */
@@ -204,7 +315,7 @@ export function diagnoseSituation(input: TroubleshootingInput): TroubleshootingN
     situation: check.situation,
     cause: resolve(check.cause, input),
     remedy: resolve(check.remedy, input),
-    remedyTarget: check.remedyTarget,
+    remedyTarget: resolveTarget(check.remedyTarget, input),
   }));
 }
 

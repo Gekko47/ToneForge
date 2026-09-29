@@ -13,14 +13,12 @@ export interface StaleBannerProps {
   stale: boolean;
   /** The Word host went away; the document itself did not change. */
   hostUnavailable?: boolean;
-  lastScan: string | null;
   onRescan: () => void;
 }
 
 export default function StaleBanner({
   stale,
   hostUnavailable = false,
-  lastScan,
   onRescan,
 }: StaleBannerProps): React.ReactNode {
   if (!stale && !hostUnavailable) {
@@ -39,11 +37,12 @@ export default function StaleBanner({
     >
       <h3 className="tf-banner-heading">{heading}</h3>
       <p>{body}</p>
-      {!hostUnavailable && (
-        <p className="tf-sub">
-          Last scan: {lastScan ? new Date(lastScan).toLocaleString() : "never"}
-        </p>
-      )}
+      {/*
+        No scan time here. It moved to the pane header, which is on screen in
+        every state rather than only in this one, so the banner no longer has to
+        restate it to be self-explanatory — and two copies of a timestamp that
+        disagree after a rescan is worse than one.
+      */}
       <button type="button" onClick={onRescan}>
         {hostUnavailable ? "Scan again" : "Re-scan now"}
       </button>

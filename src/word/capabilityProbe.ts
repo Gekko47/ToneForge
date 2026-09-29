@@ -33,7 +33,18 @@ export interface WordCapabilities {
   supportsSelection: boolean;
   supportsParagraphResolution: boolean;
   supportsHighlight: boolean;
-  supportsContextMenu: boolean;
+  /**
+   * Whether `Office.contextMenu.requestUpdate` is reachable at runtime.
+   *
+   * Named for what it tests, and only what it tests. This says the runtime API
+   * exists; it cannot say that Word installed the entries the manifest declares,
+   * nor that the host rendered them. Those are separate facts with separate
+   * causes — a sideloaded add-in can be missing the manifest, and a compliant
+   * host can still hide an entry — and a probe that claimed them would report
+   * "the menu works" from having looked at one property. Menu availability is
+   * a Word-host question and is verified in Word, not here.
+   */
+  supportsContextMenuApi: boolean;
   /** Whether `Office.ribbon.requestUpdate` is reachable (RibbonApi 1.1). */
   supportsRibbonUpdate: boolean;
   hostName: "Word" | "Excel" | "PowerPoint" | "unknown";
@@ -70,7 +81,7 @@ export function toAnalysisCapabilities(capabilities: WordCapabilities): Analysis
     supportsSelection: capabilities.supportsSelection,
     supportsParagraphResolution: capabilities.supportsParagraphResolution,
     supportsHighlight: capabilities.supportsHighlight,
-    supportsContextMenu: capabilities.supportsContextMenu,
+    supportsContextMenuApi: capabilities.supportsContextMenuApi,
     hostName: capabilities.hostName,
     hostVersion: capabilities.hostVersion,
   };
@@ -90,7 +101,7 @@ const DEFAULT_CAPABILITIES: WordCapabilities = {
   supportsSelection: false,
   supportsParagraphResolution: false,
   supportsHighlight: false,
-  supportsContextMenu: false,
+  supportsContextMenuApi: false,
   supportsRibbonUpdate: false,
   hostName: "unknown",
   hostVersion: null,
@@ -304,6 +315,9 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
   // in the Office.js surface, so the probe reported `false` on every host
   // including ones that fully support the feature. A capability probe that
   // always says no is worse than no probe, because callers treat it as evidence.
+  //
+  // The field is `supportsContextMenuApi` rather than `supportsContextMenu` for
+  // the reason on the interface: this establishes the API and nothing beyond it.
   const office = (
     globalThis as {
       Office?: {
@@ -312,7 +326,7 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
       };
     }
   ).Office;
-  caps.supportsContextMenu = typeof office?.contextMenu?.requestUpdate === "function";
+  caps.supportsContextMenuApi = typeof office?.contextMenu?.requestUpdate === "function";
   caps.supportsRibbonUpdate = typeof office?.ribbon?.requestUpdate === "function";
 
   for (const [key, probe] of probes) {

@@ -246,20 +246,27 @@ describe("StaleBanner", () => {
   it("does not claim the document changed when the host is what went away", () => {
     // The observer set `stale` for an Office outage, so this banner told the
     // user to re-scan a document that had not moved.
-    render(<StaleBanner stale={false} hostUnavailable lastScan={null} onRescan={vi.fn()} />);
+    render(<StaleBanner stale={false} hostUnavailable onRescan={vi.fn()} />);
     expect(screen.getByText("Word is unavailable")).toBeInTheDocument();
     expect(screen.getByText(/document has not changed/)).toBeInTheDocument();
     expect(screen.queryByText("Findings are stale")).not.toBeInTheDocument();
   });
 
-  it("still reports genuine staleness with the last scan time", () => {
-    render(<StaleBanner stale lastScan="2026-01-01T00:00:00.000Z" onRescan={vi.fn()} />);
+  it("still reports genuine staleness, and leaves the scan time to the header", () => {
+    /*
+     * The scan time moved to the pane header, which is on screen in every state.
+     * On the banner it could only ever appear when something was already wrong,
+     * so the moment the answer was worth most — just after a successful scan,
+     * with no banner rendered — it was nowhere on screen.
+     */
+    render(<StaleBanner stale onRescan={vi.fn()} />);
     expect(screen.getByText("Findings are stale")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Re-scan now" })).toBeInTheDocument();
+    expect(screen.queryByText(/Last scan/)).not.toBeInTheDocument();
   });
 
   it("renders nothing when findings are current", () => {
-    const { container } = render(<StaleBanner stale={false} lastScan={null} onRescan={vi.fn()} />);
+    const { container } = render(<StaleBanner stale={false} onRescan={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });
 });

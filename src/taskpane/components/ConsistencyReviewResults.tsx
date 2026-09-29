@@ -61,7 +61,14 @@ const LOCATABLE_NOTE = "Located in the document.";
  * has one; `groupConsistencyIssues` already worked out whether the group as a
  * whole is locatable, and that is the fact being reported here.
  */
-function ConflictCard({ group }: { group: ConsistencyIssueGroup }): React.ReactNode {
+function ConflictCard({
+  group,
+  active,
+}: {
+  group: ConsistencyIssueGroup;
+  /** True for the conflict the stepper is on. Marks it, it does not hide it. */
+  active: boolean;
+}): React.ReactNode {
   const lead = group.issues[0];
   if (lead === undefined) return null;
   // A real uuid, not the group key: `FindingSchema` requires one, and the key is
@@ -69,8 +76,37 @@ function ConflictCard({ group }: { group: ConsistencyIssueGroup }): React.ReactN
   // be stable across re-renders.
   const finding = toFinding(lead, () => crypto.randomUUID());
 
+  /*
+   * Scroll into view, not re-render.
+   *
+   * Stepping exists so a user can move through a long report without scrolling
+   * it by hand, so moving the stepper without moving the page would leave the
+   * control claiming "contradiction 7 of 20" while contradiction 2 sits at the
+   * top of the screen. `nearest` rather than `center`: it should move only when
+   * the target is off screen, so a step within the viewport does not throw the
+   * reader back to the top of a card they were part-way through.
+   */
+  const cardRef = React.useRef<HTMLElement | null>(null);
+  React.useEffect(() => {
+    if (!active) return;
+    /*
+     * Guarded on the method existing, not on the ref. `scrollIntoView` is a
+     * real DOM API that jsdom does not implement and that a host WebView may
+     * lack, and an unguarded call here takes down the entire results pane —
+     * every conflict, not just the one being stepped to. Scrolling is a
+     * convenience; the position is still announced and the card is still
+     * marked, so losing it degrades rather than breaks.
+     */
+    cardRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [active]);
+
   return (
-    <article className="tf-finding-card" aria-label={`Consistency issue: ${group.title}`}>
+    <article
+      className="tf-finding-card"
+      aria-label={`Consistency issue: ${group.title}`}
+      ref={cardRef}
+      data-active={active ? "true" : undefined}
+    >
       <FindingDetail
         finding={finding}
         evidence={{
@@ -104,6 +140,41 @@ export default function ConsistencyReviewResults({
   const { coverage, issues } = report;
   const groups = groupConsistencyIssues(issues);
   const collapsed = collapsedCount(groups);
+
+  /*
+   * Stepping, and one announcement for it.
+   *
+   * `position` is the conflict the user is on, and `announced` is what the live
+   * region says. They are separate because a burst of clicks would otherwise
+   * update the region once per click and a screen reader would read three
+   * positions for one gesture. The request counter means only the last click in
+   * a burst has anything to say — the intermediate ones were never destinations,
+   * and reporting them would report movement the user never asked to be told
+   * about. The same rule the navigation guard applies to host moves.
+   */
+  const [position, setPosition] = React.useState(0);
+  const requests = React.useRef(0);
+  // What the live region says, and the request it was said for. Rendering only
+  // when `announced.at === requests.current` is what makes a burst collapse to
+  // its last click: React coalesces the three state updates into one render, and
+  // only the final counter value reaches the DOM.
+  const [announced, setAnnounced] = React.useState<{ at: number; index: number } | null>(null);
+
+  // A new report is a new list. Keeping the old index would step into a
+  // different conflict than the one the position count claims to be on.
+  React.useEffect(() => {
+    setPosition(0);
+    requests.current += 1;
+    setAnnounced(null);
+  }, [report]);
+
+  function step(delta: number): void {
+    if (groups.length === 0) return;
+    requests.current += 1;
+    const next = (position + delta + groups.length) % groups.length;
+    setPosition(next);
+    setAnnounced({ at: requests.current, index: next });
+  }
 
   return (
     <section aria-label="Consistency review result">
@@ -159,8 +230,52 @@ export default function ConsistencyReviewResults({
         </p>
       )}
 
-      {groups.map((group) => (
-        <ConflictCard key={group.key} group={group} />
+      {/*
+        Stepping, in the same vocabulary as the findings list so the two
+        surfaces read as one. Wrapping rather than clamping: a finding list that
+        stops at the end leaves a user who overshot with no way forward except
+        eleven clicks back, and these are conflicts to read, not pages to lose
+        a place in.
+      */}
+      {groups.length > 0 && (
+        <nav className="tf-finding-actions" aria-label="Consistency issue navigation">
+          <button
+            type="button"
+            onClick={() => step(-1)}
+            aria-label={`Previous contradiction, at ${position + 1} of ${groups.length}`}
+          >
+            Previous contradiction
+          </button>
+          <button
+            type="button"
+            onClick={() => step(1)}
+            aria-label={`Next contradiction, at ${position + 1} of ${groups.length}`}
+          >
+            Next contradiction
+          </button>
+          {/*
+            One element, doing both jobs: showing where you are, and announcing
+            that you moved. Splitting them was the wrong instinct — two elements
+            each holding the count means two things to keep in step and two
+            counts on screen.
+
+            `announced` is null until the first step, and falls back to
+            `position` so the count is visible on first render rather than
+            appearing only once the user moves. A live region populated at
+            insertion is not announced by a screen reader — only subsequent
+            mutations are — so this speaks on arrival, not on mount. After a
+            step the two are the same index, and on a burst only the last click's
+            counter reaches the DOM, which is what collapses three announcements
+            into one.
+          */}
+          <span className="tf-sub" aria-live="polite">
+            {`Contradiction ${(announced?.index ?? position) + 1} of ${groups.length}`}
+          </span>
+        </nav>
+      )}
+
+      {groups.map((group, index) => (
+        <ConflictCard key={group.key} group={group} active={index === position} />
       ))}
 
       <div style={{ display: "flex", gap: "0.5rem" }}>

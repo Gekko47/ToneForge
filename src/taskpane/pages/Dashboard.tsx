@@ -92,7 +92,7 @@ const UNPROBED_CAPABILITIES: AnalysisCapabilities = {
   supportsSelection: false,
   supportsParagraphResolution: false,
   supportsHighlight: false,
-  supportsContextMenu: false,
+  supportsContextMenuApi: false,
   hostName: "unknown",
   hostVersion: null,
 };
@@ -443,6 +443,16 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   const [consistencyResult, setConsistencyResult] = useState<ConsistencyReport | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
+  /*
+   * Whether the Semantic tab is holding a paragraph, `null` until it says.
+   *
+   * Held here rather than in Semantic because the page that needs it is a
+   * different one: Troubleshooting has to explain a greyed-out Propose rewrite,
+   * and the Semantic tab is unmounted by the time anyone reads that. `null` is
+   * distinct from `false` — the tab not having been opened is not a fault, and
+   * reporting it as one would put a blocker on a page that has none.
+   */
+  const [semanticSelectionCaptured, setSemanticSelectionCaptured] = useState<boolean | null>(null);
   /*
    * The in-flight flag lives in `PendingChanges`, beside the button it disables.
    *
@@ -996,6 +1006,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             <Semantic
               onBack={back}
               onOpenSettings={() => navigate("settings")}
+              onSelectionCaptured={setSemanticSelectionCaptured}
               /*
                * Straight through the existing review gate, not a private route
                * into the document. A proposed rewrite therefore meets the same
@@ -1018,6 +1029,21 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
               coverage={status?.coverage ?? null}
               plannedCount={reformatResult?.plan.changes.length ?? 0}
               reviewedCount={reviewedKeys.size}
+              // The report's own account of what it compared, passed through
+              // rather than recomputed. The engine distinguishes "no model was
+              // consulted" from "some pairs were skipped" and the remedy
+              // differs between them, so collapsing both to "did not run" would
+              // send the user to the wrong setting half the time.
+              consistency={
+                consistencyResult === null
+                  ? null
+                  : {
+                      usedModel: consistencyResult.usedModel,
+                      complete: consistencyResult.coverage.complete,
+                      limitations: consistencyResult.coverage.limitations,
+                    }
+              }
+              semanticSelectionCaptured={semanticSelectionCaptured}
             />
           )}
         </Suspense>
@@ -1172,6 +1198,10 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         profileName={activeProfile.name}
         profileRevision={activeProfile.revision}
         onNavigate={navigate}
+        // Only where an observer is actually running. On the pages that have
+        // none, a "Last scan" reading the profile's own revision would be a
+        // claim about a scan that never happened.
+        lastScan={status === null ? undefined : (status.lastScan ?? null)}
       />
 
       {/*
@@ -1273,93 +1303,24 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           Findings <span>{findings.length}</span>
         </button>
       )}
-      {page === "review" && !pendingOpen ? (
-        <button
-          type="button"
-          className="tf-collapsible-header"
-          onClick={() => setPendingOpen(true)}
-          aria-expanded={false}
-        >
-          Pending changes <span>{totalPlannedChanges}</span>
-        </button>
-      ) : (
-        <section className="tf-collapsible" aria-label="Pending changes section">
-          <button
-            type="button"
-            className="tf-collapsible-header"
-            onClick={() => setPendingOpen(false)}
-            aria-expanded
-          >
-            Pending changes <span>{totalPlannedChanges}</span>
-          </button>
-          <PendingChanges
-            plan={pendingPlan?.plan ?? null}
-            emptyReason={pendingEmptyReason}
-            totalCount={totalPlannedChanges}
-            reviewedCount={reviewedChangeCount}
-            /*
-             * The preview's findings, not the observer's, and deliberately so.
-             * Each change carries a `findingId` from the run that planned it, so
-             * the annotation is only found in that same run's findings. Passing
-             * the observer's would look up ids that were never issued and print
-             * every change as unexplained.
-             */
-            findings={reformatResult?.report.findings ?? findings}
-            coverage={pendingPlan?.coverage ?? null}
-            exportCoverage={reformatResult?.report.coverage ?? null}
-            applyDisabledReason={readiness.reason}
-            onOpenSettings={() => setPage("settings")}
-            onApply={() => applyPendingPlan(pendingPlan)}
-            onReject={() => {
-              setReformatResult(null);
-              setPendingOpen(false);
-              setApplyMessage("Changes rejected. Nothing was applied to the document.");
-            }}
-          />
-          {/* Visible but not live: the pane speaks this from the single region
-              above, and a second one here would say it twice. */}
-          {applyMessage && <p className="tf-readiness">{applyMessage}</p>}
-        </section>
-      )}
       {/*
-       * Apply All and Re-scan Now, on one row below the findings navigation.
+       * The rest of the review page, in the order the work is done: findings,
+       * coverage, set aside, then the change list.
        *
-       * Both are decisions about the whole document rather than about the
-       * selected finding, so they sit outside the per-card actions: a user
-       * stepping through findings should not be offered a button that rewrites
-       * all of them. Re-scan Now is always available â€” it is the only way back
-       * to a fresh list when auto-scan is off.
+       * This is a reorder, not a redesign. The same four things render in the
+       * same components. It previously read Findings then Pending changes then
+       * Coverage then Set aside, which put the qualification of the findings
+       * after the list itself, dropped a partial-review warning underneath the
+       * Apply button it was warning about, and left the set-aside entries last
+       * even though their purpose is to explain an absence from the list above.
+       * Stale, host readiness and the rescan control are conditions of the page
+       * rather than sections within it, so they stay at the top of the block.
        */}
-      {page === "review" && (
-        <div className="tf-actions">
-          {/*
-            Only Re-scan now. The row used to carry an "Apply all changes" button
-            that applied the whole plan, which is the exact behaviour the
-            reviewed-only list exists to prevent â€” and it sat beside a Pending
-            Changes section that Apply already owned, so the two disagreed about
-            what "all" meant. One Apply, in the section that lists what it will
-            do, is the only version a user can read before pressing it.
-          */}
-          <button type="button" onClick={rescanNow} disabled={status?.phase === "scanning"}>
-            {status?.phase === "scanning" ? "Re-scanningâ€¦" : "Re-scan now"}
-          </button>
-        </div>
-      )}
-      {/*
-        Page order follows the work: what was found, how complete the analysis
-        was, what the user set aside, and only then the change list. Safe
-        reformat is gone as a section â€” it duplicated the findings and pending
-        changes above it, and the preview it produced is now built automatically
-        by the scan. The tracked-editing control it also owned is a host
-        capability toggle and lives in Settings, so `STAGE_01_PASSED` is not
-        stranded with nothing able to set it.
-      */}
       {page === "review" && (
         <>
           <StaleBanner
             stale={status?.stale ?? false}
             hostUnavailable={status?.hostUnavailable ?? false}
-            lastScan={status?.lastScan ?? null}
             onRescan={() => observerRef.current?.onDocumentChanged()}
           />
           {/*
@@ -1418,6 +1379,78 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           entries={persisted.ignoredFindings ?? []}
           onRestore={(occurrence) => restoreFinding(occurrence)}
         />
+      )}
+      {/*
+       * Apply All and Re-scan Now, on one row below the findings navigation.
+       *
+       * Both are decisions about the whole document rather than about the
+       * selected finding, so they sit outside the per-card actions: a user
+       * stepping through findings should not be offered a button that rewrites
+       * all of them. Re-scan Now is always available â€” it is the only way back
+       * to a fresh list when auto-scan is off.
+       */}
+      {page === "review" && (
+        <div className="tf-actions">
+          {/*
+            Only Re-scan now. The row used to carry an "Apply all changes" button
+            that applied the whole plan, which is the exact behaviour the
+            reviewed-only list exists to prevent â€” and it sat beside a Pending
+            Changes section that Apply already owned, so the two disagreed about
+            what "all" meant. One Apply, in the section that lists what it will
+            do, is the only version a user can read before pressing it.
+          */}
+          <button type="button" onClick={rescanNow} disabled={status?.phase === "scanning"}>
+            {status?.phase === "scanning" ? "Re-scanningâ€¦" : "Re-scan now"}
+          </button>
+        </div>
+      )}
+      {page === "review" && !pendingOpen ? (
+        <button
+          type="button"
+          className="tf-collapsible-header"
+          onClick={() => setPendingOpen(true)}
+          aria-expanded={false}
+        >
+          Pending changes <span>{totalPlannedChanges}</span>
+        </button>
+      ) : (
+        <section className="tf-collapsible" aria-label="Pending changes section">
+          <button
+            type="button"
+            className="tf-collapsible-header"
+            onClick={() => setPendingOpen(false)}
+            aria-expanded
+          >
+            Pending changes <span>{totalPlannedChanges}</span>
+          </button>
+          <PendingChanges
+            plan={pendingPlan?.plan ?? null}
+            emptyReason={pendingEmptyReason}
+            totalCount={totalPlannedChanges}
+            reviewedCount={reviewedChangeCount}
+            /*
+             * The preview's findings, not the observer's, and deliberately so.
+             * Each change carries a `findingId` from the run that planned it, so
+             * the annotation is only found in that same run's findings. Passing
+             * the observer's would look up ids that were never issued and print
+             * every change as unexplained.
+             */
+            findings={reformatResult?.report.findings ?? findings}
+            coverage={pendingPlan?.coverage ?? null}
+            exportCoverage={reformatResult?.report.coverage ?? null}
+            applyDisabledReason={readiness.reason}
+            onOpenSettings={() => setPage("settings")}
+            onApply={() => applyPendingPlan(pendingPlan)}
+            onReject={() => {
+              setReformatResult(null);
+              setPendingOpen(false);
+              setApplyMessage("Changes rejected. Nothing was applied to the document.");
+            }}
+          />
+          {/* Visible but not live: the pane speaks this from the single region
+              above, and a second one here would say it twice. */}
+          {applyMessage && <p className="tf-readiness">{applyMessage}</p>}
+        </section>
       )}
     </main>
   );

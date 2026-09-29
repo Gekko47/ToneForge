@@ -18,6 +18,17 @@ interface TaskPaneHeaderProps {
   profileName: string;
   profileRevision: number;
   onNavigate: (destination: TaskPaneDestination) => void;
+  /**
+   * When the document was last scanned, as an ISO timestamp; `null` for never,
+   * and `undefined` where there is no observer to ask.
+   *
+   * In the header rather than under the findings, because it answers "is what I
+   * am looking at current?" before the user has found the list, not after. It
+   * used to live on the stale banner, which renders nothing at all unless
+   * something is wrong — so the one time the answer is worth having most, the
+   * moment a scan has just happened and there is no banner, it was absent.
+   */
+  lastScan?: string | null | undefined;
 }
 
 const DESTINATIONS: readonly {
@@ -39,6 +50,7 @@ export default function TaskPaneHeader({
   profileName,
   profileRevision,
   onNavigate,
+  lastScan,
 }: TaskPaneHeaderProps): React.ReactNode {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLDivElement | null>(null);
@@ -93,6 +105,13 @@ export default function TaskPaneHeader({
           <strong>{profileName}</strong>
           <span>r{profileRevision}</span>
         </p>
+        {/* Plain text, not live: the pane speaks from one live region, and a
+            second one here would read the scan time over the announcement. */}
+        {lastScan !== undefined && (
+          <p className="tf-sub tf-last-scan">
+            Last scan: {lastScan === null ? "never" : new Date(lastScan).toLocaleString()}
+          </p>
+        )}
       </div>
       {isOpen && (
         <div

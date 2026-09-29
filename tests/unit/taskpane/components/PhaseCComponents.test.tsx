@@ -269,7 +269,7 @@ describe("Phase C task-pane components", () => {
     expect(screen.getByText(/Incomplete/)).toBeInTheDocument();
     expect(screen.getByText("Required node inaccessible")).toBeInTheDocument();
 
-    rerender(<StaleBanner stale lastScan={null} onRescan={vi.fn()} />);
+    rerender(<StaleBanner stale onRescan={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Findings are stale" })).toBeInTheDocument();
   });
 });
