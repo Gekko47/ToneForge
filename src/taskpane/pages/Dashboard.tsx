@@ -294,12 +294,7 @@ function DashboardWithoutProfile({
       <main className="tf-card" tabIndex={0}>
         {header}
         <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
-          <Semantic
-            onBack={back}
-            onOpenSettings={() => navigate("settings")}
-            onSendToPendingChanges={() => undefined}
-            navigation={null}
-          />
+          <Semantic onBack={back} onOpenSettings={() => navigate("settings")} navigation={null} />
         </Suspense>
       </main>
     );
@@ -976,7 +971,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                * preconditions, the same approval, and the same refusal
                * messages as every other change in the product.
                */
-              onSendToPendingChanges={reviewOne}
               navigation={arrival}
             />
           ) : (

@@ -15,6 +15,7 @@ import {
   saveSemanticProfileRecord,
   setActiveSemanticProfile,
 } from "../../core/state/persistence";
+import { applySemanticRewrite } from "../../reformat/semanticApply";
 import { selectKindRecordList } from "../../core/state/profileSelectors";
 import {
   createRegistryFromSettings,
@@ -32,8 +33,6 @@ import { syncSemanticRibbon } from "../../commands/ribbonState";
 export interface SemanticProps {
   onBack: () => void;
   onOpenSettings: () => void;
-  /** Hands a reviewed finding to the pending-changes flow on Deterministic Review. */
-  onSendToPendingChanges: (finding: Finding) => void;
   /**
    * The instruction that brought the pane here, already consumed.
    *
@@ -46,6 +45,16 @@ export interface SemanticProps {
 }
 
 type RewriteStage = "idle" | "proposing" | "proposed" | "failed";
+
+/**
+ * What applying the proposal did.
+ *
+ * Three outcomes the user must be able to tell apart: it was written, it was
+ * refused, or it is being written right now. A single boolean cannot carry all
+ * three, and collapsing "refused" into "nothing happened" is what made the old
+ * flow a dead end — a button that reported failure with nothing to act on.
+ */
+type ApplyStage = "idle" | "applying" | "applied" | "refused";
 
 /** The one message this pane speaks, and whether it is an error. */
 export interface SemanticAnnouncement {
@@ -112,7 +121,6 @@ export function deriveSemanticAnnouncement(input: {
 export default function Semantic({
   onBack,
   onOpenSettings,
-  onSendToPendingChanges,
   navigation,
 }: SemanticProps): React.ReactNode {
   /*
@@ -157,6 +165,8 @@ export default function Semantic({
   const [stage, setStage] = React.useState<RewriteStage>("idle");
   const [proposal, setProposal] = React.useState<Finding | null>(null);
   const [rewriteError, setRewriteError] = React.useState<string | null>(null);
+  const [applyStage, setApplyStage] = React.useState<ApplyStage>("idle");
+  const [applyMessage, setApplyMessage] = React.useState<string | null>(null);
 
   const state = initial.state;
   const settings = state.settings;
@@ -344,6 +354,67 @@ export default function Semantic({
     } catch (error: unknown) {
       setRewriteError(error instanceof Error ? error.message : String(error));
       setStage("failed");
+    }
+  }
+
+  /**
+   * Ask the model again, with the same paragraph and the same profile.
+   *
+   * There is no new prompt and no new selection: `proposeRewrite` closes over
+   * the current `selection` and `profile`, so pressing this sends exactly what
+   * the previous press sent. That is the point — "regenerate" that quietly
+   * re-read the selection, or that prompted differently, would be a second
+   * request the user did not ask for and could not reproduce.
+   */
+  function regenerateReview(): void {
+    // The apply outcome is about the previous proposal. Leaving it on screen
+    // while a new one is fetched would read as a verdict on the new one.
+    setApplyStage("idle");
+    setApplyMessage(null);
+    void proposeRewrite();
+  }
+
+  /**
+   * Write the proposed paragraph into the document, as a tracked change.
+   *
+   * The document is re-read here rather than reusing the hash from when the
+   * proposal was made: the model call and this click are separated by however
+   * long the user spent reading the result, and the precondition is only
+   * meaningful against the document as it is now.
+   */
+  async function applyRevision(): Promise<void> {
+    if (proposal === null) return;
+    setApplyStage("applying");
+    setApplyMessage(null);
+    try {
+      const snapshot = await getStructuredSnapshot();
+      const result = await applySemanticRewrite({
+        finding: proposal,
+        documentId: snapshot.documentId,
+        currentDocHash: snapshot.contentHash,
+      });
+      if (result.verified) {
+        setApplyStage("applied");
+        setApplyMessage(
+          "The revision was written as a tracked change. Reject it in Word to undo it.",
+        );
+        // The proposal described text that no longer exists, so it must not
+        // survive the write: pressing Apply again would re-apply it.
+        setProposal(null);
+        setStage("idle");
+        return;
+      }
+      setApplyStage("refused");
+      setApplyMessage(result.refusal ?? "The revision was not written. Nothing has been changed.");
+    } catch (error: unknown) {
+      // A throw is a fault, not a refusal, and says so. Collapsing the two is
+      // what left the old flow with a button that failed silently.
+      setApplyStage("refused");
+      setApplyMessage(
+        `The revision could not be written: ${
+          error instanceof Error ? error.message : String(error)
+        }. Nothing has been changed.`,
+      );
     }
   }
 
@@ -539,17 +610,84 @@ export default function Semantic({
                 proposal.advisoryReason ?? ""
               }`}
             />
-            <button
-              type="button"
-              disabled={!proposal.actionable}
-              onClick={() => onSendToPendingChanges(proposal)}
-            >
-              Review on Deterministic Review
-            </button>
+
+            {/*
+              Side by side, which is the whole comparison.
+
+              The original and the proposal are two paragraphs of the user's own
+              writing, and the decision is whether the second says what they
+              meant. A before/after table the reader has to hold in their head
+              cannot support that; the model's rationale below it says why it
+              changed the words, not whether it should have.
+            */}
+            <section aria-labelledby="rewrite-comparison-heading">
+              <h3 id="rewrite-comparison-heading" className="tf-sub">
+                Your paragraph and the proposed revision
+              </h3>
+              <div className="tf-evidence-split">
+                <div>
+                  <h4 className="tf-sub">Yours</h4>
+                  <p>{proposal.actual ?? proposal.evidence}</p>
+                </div>
+                <div>
+                  <h4 className="tf-sub">Proposed</h4>
+                  <p>{proposal.expected ?? ""}</p>
+                </div>
+              </div>
+            </section>
+
+            {/*
+              Two controls, and both are decisions the user can make here.
+
+              Apply writes the revision as a tracked change. Regenerate asks the
+              model again with the same paragraph and the same profile — it is
+              not a retry of a failed call, it is a second sample from the same
+              request, which is how a user who dislikes the first answer gets
+              another without re-selecting and re-prompting.
+
+              There is no handoff to the deterministic review. That gate resolves
+              a finding against a deterministic plan, and a semantic proposal is
+              not in one, so it refused every rewrite with "the planner proposes
+              no correction for this finding" — leaving a paragraph the user had
+              asked for and could neither use nor refine.
+            */}
+            <div className="tf-pending-actions">
+              <button
+                type="button"
+                disabled={!proposal.actionable || applyStage === "applying"}
+                onClick={() => void applyRevision()}
+              >
+                {applyStage === "applying" ? "Applying…" : "Apply revision"}
+              </button>
+              <button
+                type="button"
+                disabled={stage === "proposing" || applyStage === "applying"}
+                onClick={regenerateReview}
+              >
+                {stage === "proposing" ? "Asking again…" : "Regenerate review"}
+              </button>
+            </div>
+
             {proposal.actionable === false && (
-              <p className="tf-sub">This rewrite cannot be applied yet — see the reason above.</p>
+              <p className="tf-sub">
+                This rewrite cannot be applied — see the reason above. Regenerating asks the model
+                again.
+              </p>
             )}
           </article>
+        )}
+
+        {/*
+          Outside the proposal, deliberately.
+
+          A successful apply clears the proposal, because it described text that
+          no longer exists. The confirmation lived inside the proposal card, so
+          clearing it removed the only sentence saying the write had happened —
+          and the user was left with a paragraph disappearing and no outcome at
+          all. The outcome outlives the thing it is about.
+        */}
+        {applyMessage !== null && (
+          <p className={applyStage === "refused" ? "tf-debug-warning" : "tf-sub"}>{applyMessage}</p>
         )}
       </section>
     </div>

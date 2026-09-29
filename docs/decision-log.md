@@ -1690,6 +1690,49 @@ of "y"`. The prose parser remains for unanchored findings.
     host and had no test. It now probes the namespace that exists, and
     `supportsRibbonUpdate` was added for the same reason.
 
+## ADR-0078: The semantic rewrite is applied on its own path, sharing only the writer
+
+- Amends: ADR-0005 (one mutation path) and ADR-0065 (Apply writes only reviewed
+  findings)
+- Status: Accepted (2026-09-28)
+- **Context**: The Semantic tab offered one control — hand the proposal to the
+  deterministic review gate. That gate resolves a finding against a deterministic
+  plan, and a semantic proposal is not in one, so it refused every rewrite with
+  "the planner proposes no correction for this finding". The user received a
+  paragraph they could neither apply nor refine, and no message naming a control
+  that would have worked.
+- **Decision**: `src/reformat/semanticApply.ts` builds the single `replaceText`
+  change a rewrite is and hands it to the same `applyReviewedPlan` the
+  deterministic flow uses. The tab shows the original and the proposal side by
+  side, with **Apply revision** and **Regenerate review**. Regenerate re-sends
+  the identical prompt and selection — it closes over the same state rather
+  than re-reading anything.
+- **Consequences**:
+  - The review experience is separate; the writer is not. ADR-0005 admits exactly
+    one writer, and `taskpane/` may not import `word/revisionAdapter`, so
+    sharing `applyReviewedPlan` is a requirement rather than a convenience. What
+    is kept apart is the gate, the projection, and the pending-changes section —
+    none of which can express a prose rewrite.
+  - The change's range and its exact text precondition both come from the
+    verified proposal. Recomputing either would discard the anchor check that
+    makes an AI-supplied offset safe to use, and the precondition is what stops a
+    user who edited the paragraph in between from having the rewrite written into
+    whatever now occupies those offsets.
+  - The `target` rides inside `range`, not beside it. `ChangeSchema` has no
+    top-level `target` field, so a sibling key is not rejected — it is stripped.
+    The anchored node would have silently never reached the plan, and the write
+    would have fallen back to offsets alone.
+  - Apply re-reads the document rather than reusing the hash from when the model
+    was asked. The two are separated by however long the user spent reading the
+    result, and the precondition is only meaningful against the document as it is
+    now.
+  - The confirmation outlives the proposal. A successful apply clears the
+    proposal, because it described text that no longer exists; the message was
+    first rendered inside the proposal card, so clearing it removed the only
+    sentence saying the write had happened.
+  - A throw is reported as a fault and a refusal as a refusal. Collapsing the two
+    is what left the old flow with a button that failed silently.
+
 ## ADR-0077: One palette, one exemption, and no rule that reaches into Fluent
 
 - Amends: ADR-0057 (a Fluent theme is inverted; the token scope is the document

@@ -19,6 +19,11 @@ const mocks = vi.hoisted(() => ({
   removeSemanticProfile: vi.fn(),
   learnStyleDraft: vi.fn(),
   proposeSemanticRewrite: vi.fn(),
+  applySemanticRewrite: vi.fn(),
+}));
+
+vi.mock("../../../../src/reformat/semanticApply", () => ({
+  applySemanticRewrite: mocks.applySemanticRewrite,
 }));
 
 vi.mock("../../../../src/word/documentReader", () => ({
@@ -137,7 +142,6 @@ function renderPage(overrides: Partial<React.ComponentProps<typeof Semantic>> = 
   const props = {
     onBack: vi.fn(),
     onOpenSettings: vi.fn(),
-    onSendToPendingChanges: vi.fn(),
     ...overrides,
   };
   return { ...render(<Semantic {...props} />), props };
@@ -356,17 +360,87 @@ describe("the Semantic tab", () => {
     expect(screen.getByRole("button", { name: /read current selection/i })).toBeDisabled();
   });
 
-  it("hands the proposal to the review gate rather than writing it", async () => {
-    const { props } = renderPage();
-
-    await userEvent.click(screen.getByRole("button", { name: /read current selection/i }));
+  /*
+   * The dead end this replaces.
+   *
+   * The tab used to hand the proposal to the deterministic review gate, which
+   * resolves a finding against a deterministic plan. A semantic proposal is not
+   * in one, so the gate refused every rewrite with "the planner proposes no
+   * correction for this finding" — the user got a paragraph they could neither
+   * apply nor refine. The two decisions the tab can actually offer are made on
+   * the tab.
+   */
+  it("offers apply and regenerate on the tab, with no hand-off to the review gate", async () => {
+    renderPage();
     mocks.getSelectionText.mockResolvedValue("A sentence worth rewriting.");
     await userEvent.click(screen.getByRole("button", { name: /read current selection/i }));
     await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
-    await waitFor(() => expect(mocks.proposeSemanticRewrite).toHaveBeenCalled());
 
-    await userEvent.click(screen.getByRole("button", { name: /review on deterministic review/i }));
-    expect(props.onSendToPendingChanges).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("button", { name: "Apply revision" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /regenerate review/i })).toBeEnabled();
+    // The old hand-off, by its old label. Matched precisely rather than on
+    // "Deterministic Review", which is also the breadcrumb above it.
+    expect(screen.queryByRole("button", { name: /review on deterministic review/i })).toBeNull();
+  });
+
+  it("shows the original and the proposal side by side", async () => {
+    renderPage();
+    mocks.getSelectionText.mockResolvedValue("A sentence worth rewriting.");
+    await userEvent.click(screen.getByRole("button", { name: /read current selection/i }));
+    await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
+
+    const comparison = (
+      await screen.findByRole("heading", { name: /your paragraph and the proposed revision/i })
+    ).closest("section") as HTMLElement;
+    expect(within(comparison).getByText("Yours")).toBeInTheDocument();
+    expect(within(comparison).getByText("Proposed")).toBeInTheDocument();
+  });
+
+  it("writes the revision through the semantic apply path", async () => {
+    renderPage();
+    mocks.getSelectionText.mockResolvedValue("A sentence worth rewriting.");
+    mocks.getStructuredSnapshot.mockResolvedValue({
+      documentId: "doc-1",
+      contentHash: "hash-now",
+      nodes: [],
+    });
+    mocks.applySemanticRewrite.mockResolvedValue({
+      applied: true,
+      verified: true,
+      stale: false,
+      results: [],
+      tracking: { managed: true },
+      plan: { changes: [] },
+      refusal: null,
+    });
+    await userEvent.click(screen.getByRole("button", { name: /read current selection/i }));
+    await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Apply revision" }));
+
+    await waitFor(() => expect(mocks.applySemanticRewrite).toHaveBeenCalledTimes(1));
+    // Re-read the document at apply time rather than reusing the hash from when
+    // the model was asked: the two are separated by however long the user spent
+    // reading the result.
+    expect(mocks.applySemanticRewrite.mock.calls.at(-1)?.[0]).toMatchObject({
+      documentId: "doc-1",
+      currentDocHash: "hash-now",
+    });
+    expect(await screen.findByText(/written as a tracked change/i)).toBeInTheDocument();
+  });
+
+  it("asks again with the same paragraph when regenerate is pressed", async () => {
+    renderPage();
+    mocks.getSelectionText.mockResolvedValue("A sentence worth rewriting.");
+    await userEvent.click(screen.getByRole("button", { name: /read current selection/i }));
+    await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
+    await waitFor(() => expect(mocks.proposeSemanticRewrite).toHaveBeenCalledTimes(1));
+    await userEvent.click(await screen.findByRole("button", { name: /regenerate review/i }));
+
+    await waitFor(() => expect(mocks.proposeSemanticRewrite).toHaveBeenCalledTimes(2));
+    // The same paragraph, sent again. A regenerate that re-read the selection
+    // or prompted differently would be a request the user did not ask for.
+    const [first, second] = mocks.proposeSemanticRewrite.mock.calls;
+    expect(second?.[0]).toBe(first?.[0]);
   });
 
   it("refuses the hand-off when the engine could not resolve the anchor", async () => {
@@ -383,9 +457,7 @@ describe("the Semantic tab", () => {
     await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: /review on deterministic review/i }),
-      ).toBeDisabled(),
+      expect(screen.getByRole("button", { name: "Apply revision" })).toBeDisabled(),
     );
   });
 
@@ -558,7 +630,7 @@ describe("managing semantic profiles from the Semantic tab", () => {
     await userEvent.click(screen.getByRole("button", { name: /read current selection/i }));
     await userEvent.click(screen.getByRole("button", { name: /propose rewrite/i }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /review on deterministic review/i })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Apply revision" })).toBeEnabled(),
     );
 
     await userEvent.click(screen.getByRole("button", { name: /use this one — second voice/i }));
@@ -566,7 +638,7 @@ describe("managing semantic profiles from the Semantic tab", () => {
     expect(mocks.setActiveSemanticProfile).toHaveBeenCalledWith(SECOND_ID);
     expect(mocks.loadSemanticProfileRecord).toHaveBeenLastCalledWith(SECOND_ID);
     // A rewrite matching the previous voice must not survive the switch.
-    expect(screen.queryByRole("button", { name: /review on deterministic review/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Apply revision" })).toBeNull();
   });
 
   it("marks the switched-to profile active rather than the one it came from", async () => {
