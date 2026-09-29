@@ -26,7 +26,7 @@
 
 import React, { useState } from "react";
 import type { Finding } from "../../core/domain/Finding";
-import { navigateToFinding } from "../../word/sourceLocator";
+import { goToFinding } from "../findingNavigation";
 import EvidenceSplit from "./EvidenceSplit";
 
 /** The two statements a cross-report finding compared. */
@@ -94,8 +94,22 @@ export default function FindingDetail({
   async function handleGoToText(): Promise<void> {
     setNavigationState({ status: "working" });
     try {
-      const result = await navigateToFinding({ finding });
-      setNavigationState({ status: "message", message: result.message });
+      /*
+       * Through the shared guard, not the locator.
+       *
+       * Every card calling `navigateToFinding` itself meant two quick clicks
+       * started two host navigations, and whichever finished last won — so the
+       * card that said "selected" was the one that happened to resolve last,
+       * not the one the user most recently asked for. `office.run` cannot be
+       * cancelled, so the guard supersedes rather than interrupts.
+       */
+      const result = await goToFinding(finding);
+      setNavigationState({
+        status: "message",
+        message: result.superseded
+          ? "A newer request replaced this one; the document was not moved here."
+          : result.message,
+      });
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : String(error);
       setNavigationState({

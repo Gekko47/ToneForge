@@ -1763,6 +1763,36 @@ of "y"`. The prose parser remains for unanchored findings.
   - The consumed instruction is still cleared, so a delivered command cannot
     re-fire on the next mount.
 
+## ADR-0080: One navigation guard, owned by the pane, shared by every surface
+
+- Amends: ADR-0064 (semantic findings are anchored to a verified span)
+- Status: Accepted (2026-09-28)
+- **Context**: `navigationGuard` documented five rules — one attempt in flight,
+  one queued and replaceable, the superseded attempt aborted and forbidden from
+  claiming the result, a repeated jump coalesced, a replayed attempt id stale —
+  and had a full test suite. It had **no callers**. Every finding card called
+  `navigateToFinding` itself, so clicking one card and then another started two
+  host navigations, and because `office.run` cannot be cancelled whichever
+  finished last won: the card that reported "selected" was the one that happened
+  to resolve last, not the one the user had most recently asked for.
+- **Decision**: `src/taskpane/findingNavigation.ts` owns one guard for the whole
+  pane. Every surface — Deterministic Review's findings, Consistency Review's
+  results, the Semantic tab's proposal — goes through `goToFinding`.
+- **Consequences**:
+  - One guard, not one per card. A guard per surface would have left two cards
+    on the same page racing each other, which is the original defect.
+  - It is module state rather than context, because the guarantee is about a
+    host shared between components: a card that unmounts mid-navigation must
+    not cancel it, and a card that mounts must not get a guard that knows
+    nothing about the attempt already running.
+  - The superseded caller is told it was superseded. Reporting success would
+    contradict what the pane had just done, and reporting a failure would blame
+    the host for a decision the pane made.
+  - Two sequential jumps to the _same_ finding are still coalesced, and that is
+    the guard working rather than a missing call — the user gains nothing from
+    a second selection change to the place they are already at. `reportHostMoved`
+    exists so a click elsewhere in the document releases that.
+
 ## ADR-0077: One palette, one exemption, and no rule that reaches into Fluent
 
 - Amends: ADR-0057 (a Fluent theme is inverted; the token scope is the document

@@ -8,13 +8,21 @@ import FindingsList from "../../../../src/taskpane/components/FindingsList";
 import PendingChanges from "../../../../src/taskpane/components/PendingChanges";
 import CoverageBanner from "../../../../src/taskpane/components/CoverageBanner";
 import StaleBanner from "../../../../src/taskpane/components/StaleBanner";
-import { navigateToFinding } from "../../../../src/word/sourceLocator";
+import { goToFinding } from "../../../../src/taskpane/findingNavigation";
 
-vi.mock("../../../../src/word/sourceLocator", () => ({
-  navigateToFinding: vi.fn(async () => ({
-    navigated: true,
-    method: "offsets" as const,
+/*
+ * The shared owner, not the locator.
+ *
+ * Finding cards used to call `navigateToFinding` themselves, so each one owned
+ * a host call and two quick clicks raced. They now go through one guard, and
+ * mocking the locator here would no longer intercept anything — the card would
+ * reach the real guard and the real host.
+ */
+vi.mock("../../../../src/taskpane/findingNavigation", () => ({
+  goToFinding: vi.fn(async () => ({
+    moved: true,
     message: "Selected the finding range.",
+    superseded: false,
   })),
 }));
 
@@ -98,7 +106,7 @@ describe("Phase C task-pane components", () => {
     render(<FindingCard finding={item} onReview={onReview} onIgnore={onIgnore} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Go to text" }));
-    expect(navigateToFinding).toHaveBeenCalledWith({ finding: item });
+    expect(goToFinding).toHaveBeenCalledWith(item);
     expect(await screen.findByText("Selected the finding range.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     fireEvent.click(screen.getByRole("button", { name: "Ignore" }));
@@ -109,7 +117,7 @@ describe("Phase C task-pane components", () => {
 
   it("leaves the working state and reports a failure when navigation rejects", async () => {
     const item = finding();
-    vi.mocked(navigateToFinding).mockRejectedValueOnce(new Error("host unavailable"));
+    vi.mocked(goToFinding).mockRejectedValueOnce(new Error("host unavailable"));
     render(<FindingCard finding={item} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Go to text" }));
