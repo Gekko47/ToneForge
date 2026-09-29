@@ -195,8 +195,12 @@ export default [
     },
   },
   {
-    // Explicit scope for coverage engine — pure, no Office/AI/UI imports.
-    files: ["src/analysis/coverage.ts"],
+    // Explicit scope for the coverage engines — pure, no Office/AI/UI imports.
+    //
+    // Both files are listed rather than one: deterministic review has its own
+    // coverage projection beside the shared one, and omitting it would mean the
+    // rule that makes coverage honest applies to half of it.
+    files: ["src/analysis/coverage.ts", "src/analysis/deterministic/coverage.ts"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -206,6 +210,44 @@ export default [
               group: ["**/word/*", "**/ai/*", "**/taskpane/*", "**/commands/*"],
               message:
                 "coverage must stay pure: allowed imports are core/domain and shared/utils only.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The deterministic review engine is deterministic by definition.
+    //
+    // Deterministic Review makes zero LLM calls and takes its evidence from the
+    // AnalysisContext the Word boundary hands it, so it may reach neither `ai/`
+    // nor `word/`. The general `src/analysis/**` block above permits both, which
+    // is right for the rest of the directory and wrong here, so this narrower
+    // block is declared after it. In flat config the last matching block wins,
+    // which is the same ordering the consistency engine's exception relies on.
+    files: ["src/analysis/deterministic/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              // Each bare form is listed alongside its subpath form, for the
+              // same reason the consistency block lists both: a directory import
+              // resolves through its index and would otherwise pass straight
+              // through this restriction.
+              group: [
+                "**/ai",
+                "**/ai/*",
+                "**/word",
+                "**/word/*",
+                "**/taskpane",
+                "**/taskpane/*",
+                "**/commands",
+                "**/commands/*",
+              ],
+              message:
+                "analysis/deterministic/ must stay deterministic: no provider, no Word, no UI. It consumes an AnalysisContext (architecture.md).",
             },
           ],
         },
