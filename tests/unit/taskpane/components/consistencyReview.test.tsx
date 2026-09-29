@@ -626,7 +626,15 @@ describe("stepping through the consistency results", () => {
     const user = userEvent.setup();
     renderResults(["one", "two", "three"]);
 
-    expect(screen.getByText("Contradiction 1 of 3")).toBeInTheDocument();
+    /*
+     * Before a step there is nothing announced yet, so the position is asserted
+     * where it is actually reported: the controls' own labels. Asserting the
+     * live region here would pass on the `position` fallback and read as though
+     * an announcement had been made.
+     */
+    expect(
+      screen.getByRole("button", { name: "Next contradiction, at 1 of 3" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /next contradiction/i }));
     expect(screen.getByText("Contradiction 2 of 3")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /previous contradiction/i }));
@@ -695,6 +703,10 @@ describe("stepping through the consistency results", () => {
         onDismiss={() => undefined}
       />,
     );
-    expect(screen.getByText("Contradiction 1 of 1")).toBeInTheDocument();
+    // A new report is a fresh start, so nothing is announced; the position is
+    // read from the controls rather than from a live region with nothing in it.
+    expect(
+      screen.getByRole("button", { name: "Next contradiction, at 1 of 1" }),
+    ).toBeInTheDocument();
   });
 });

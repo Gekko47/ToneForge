@@ -128,6 +128,11 @@ export default function DebuggingPanel({
     }
   }
 
+  // From this panel's own probe rather than passed in: the probe has not run at
+  // this point in most sessions, and `null` is the honest answer — "not yet
+  // established" rather than "the host does not have it".
+  const contextMenuApi = capabilities === null ? null : capabilities.supportsContextMenuApi;
+
   const notes = diagnoseSituation(
     currentInput({
       trackedEditing,
@@ -136,10 +141,7 @@ export default function DebuggingPanel({
       reviewedCount,
       consistency,
       semanticSelectionCaptured,
-      // From this panel's own probe rather than passed in: the probe has not
-      // run at this point in most sessions, and `null` is the honest answer —
-      // "not yet established" rather than "the host does not have it".
-      contextMenuApi: capabilities === null ? null : capabilities.supportsContextMenuApi,
+      contextMenuApi,
     }),
   );
 
@@ -219,9 +221,21 @@ export default function DebuggingPanel({
             Nothing is currently standing in the way: automatic scanning is on, tracked editing is
             enabled, a semantic profile is active, a provider is configured, sending your text to
             that provider is allowed, every finding waiting to be applied has been reviewed, the
-            Semantic tab is holding a paragraph if one was wanted, any consistency review that has
-            run compared everything it set out to compare, the host exposes the context-menu API,
-            and any analysis that has run covered the whole document.
+            Semantic tab is holding a paragraph if one was wanted, and any analysis that has run
+            covered the whole document.
+            {/*
+              Only the checks that have actually run. This sentence is a claim
+              about the host and about past runs, and "no review has been run"
+              is not the same as "every review that ran was complete" — a
+              registry that only sees what it is handed cannot tell the user the
+              second thing from the first.
+            */}
+            {consistency === null
+              ? " No consistency review has been run in this session, so this panel cannot say whether one would be complete."
+              : " Any consistency review that has run compared everything it set out to compare."}
+            {contextMenuApi === null
+              ? " The context-menu capability has not been probed on this host yet, so this panel cannot say whether the host supports it."
+              : " The host exposes the context-menu API."}
           </p>
         ) : (
           <ul className="tf-troubleshooting-list">

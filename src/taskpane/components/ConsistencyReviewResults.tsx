@@ -64,10 +64,16 @@ const LOCATABLE_NOTE = "Located in the document.";
 function ConflictCard({
   group,
   active,
+  scrollRequest,
 }: {
   group: ConsistencyIssueGroup;
   /** True for the conflict the stepper is on. Marks it, it does not hide it. */
   active: boolean;
+  /**
+   * Counts navigation requests. Zero until the stepper has been used, so
+   * mounting the first card does not move the page.
+   */
+  scrollRequest: number;
 }): React.ReactNode {
   const lead = group.issues[0];
   if (lead === undefined) return null;
@@ -88,7 +94,12 @@ function ConflictCard({
    */
   const cardRef = React.useRef<HTMLElement | null>(null);
   React.useEffect(() => {
-    if (!active) return;
+    /*
+     * Only after a step. Scrolling on `active` alone also fired on mount, which
+     * threw a reader who arrived at the results — or who had scrolled up to read
+     * the coverage lines — back to the first card without being asked to move.
+     */
+    if (!active || scrollRequest === 0) return;
     /*
      * Guarded on the method existing, not on the ref. `scrollIntoView` is a
      * real DOM API that jsdom does not implement and that a host WebView may
@@ -98,7 +109,7 @@ function ConflictCard({
      * marked, so losing it degrades rather than breaks.
      */
     cardRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [active]);
+  }, [active, scrollRequest]);
 
   return (
     <article
@@ -159,6 +170,12 @@ export default function ConsistencyReviewResults({
   // its last click: React coalesces the three state updates into one render, and
   // only the final counter value reaches the DOM.
   const [announced, setAnnounced] = React.useState<{ at: number; index: number } | null>(null);
+  /*
+   * Navigation requests, for the scroll. State rather than the request counter
+   * because the counter also moves on a new report, and a report arriving is not
+   * the reader asking to be taken somewhere.
+   */
+  const [scrollRequests, setScrollRequests] = React.useState(0);
 
   // A new report is a new list. Keeping the old index would step into a
   // different conflict than the one the position count claims to be on.
@@ -166,6 +183,9 @@ export default function ConsistencyReviewResults({
     setPosition(0);
     requests.current += 1;
     setAnnounced(null);
+    // A new list has nothing the reader asked to be scrolled to, so the first
+    // card of a fresh report is reached by reading, not by being moved to.
+    setScrollRequests(0);
   }, [report]);
 
   function step(delta: number): void {
@@ -173,6 +193,7 @@ export default function ConsistencyReviewResults({
     requests.current += 1;
     const next = (position + delta + groups.length) % groups.length;
     setPosition(next);
+    setScrollRequests((count) => count + 1);
     setAnnounced({ at: requests.current, index: next });
   }
 
@@ -275,7 +296,12 @@ export default function ConsistencyReviewResults({
       )}
 
       {groups.map((group, index) => (
-        <ConflictCard key={group.key} group={group} active={index === position} />
+        <ConflictCard
+          key={group.key}
+          group={group}
+          active={index === position}
+          scrollRequest={scrollRequests}
+        />
       ))}
 
       <div style={{ display: "flex", gap: "0.5rem" }}>

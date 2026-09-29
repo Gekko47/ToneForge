@@ -202,10 +202,14 @@ describe("the troubleshooting registry", () => {
     // raises. Naming the provider for the second would send the user to a
     // setting that cannot change the answer.
     const noModel = diagnoseSituation(
-      healthy({ consistency: { usedModel: false, complete: true, limitations: [] } }),
+      healthy({
+        consistency: { usedModel: false, complete: true, limitations: [] },
+        providerConfigured: false,
+      }),
     );
-    expect(noModel[0]?.id).toBe("consistency-review-partial");
-    expect(noModel[0]?.remedyTarget.label).toBe(
+    // Selected by id: a missing provider is its own note and is reported first.
+    const noModelNote = noModel.find((note) => note.id === "consistency-review-partial");
+    expect(noModelNote?.remedyTarget.label).toBe(
       "Settings → Provider and privacy → Provider, then enter the key",
     );
 
@@ -225,6 +229,23 @@ describe("the troubleshooting registry", () => {
     );
     // The engine's own count is quoted, not paraphrased or dropped.
     expect(bounded[0]?.cause).toContain("18,100");
+  });
+
+  it("does not send a fully configured user to a provider setting for a model-free run", () => {
+    /*
+     * `usedModel: false` is a fact about the run, not proof that a setting is
+     * missing. With a provider configured and consent already granted there is
+     * nothing in Settings to change, so the target is the run's own reported
+     * limitation instead.
+     */
+    const notes = diagnoseSituation(
+      healthy({ consistency: { usedModel: false, complete: true, limitations: [] } }),
+    );
+    expect(notes[0]?.id).toBe("consistency-review-partial");
+    expect(notes[0]?.remedyTarget.label).toBe(
+      "Consistency Review → Results → the coverage line above the findings",
+    );
+    expect(notes[0]?.remedy).not.toMatch(/configure a provider/i);
   });
 
   it("says nothing about a consistency review that has not run", () => {
@@ -247,6 +268,10 @@ describe("the troubleshooting registry", () => {
     // A note implying a missing menu is fixable inside the add-in sends the
     // user looking for a control that does not exist.
     expect(notes[0]?.remedy).toMatch(/no control in ToneForge turns the context menu on/i);
+    // The probe establishes that one API is unavailable, not what happened to
+    // the manifest entries, so the note reports only the former.
+    expect(notes[0]?.cause).toMatch(/Office\.contextMenu\.requestUpdate/);
+    expect(notes[0]?.cause).not.toMatch(/manifest/i);
   });
 
   it("distinguishes the two absent API checks from each other", () => {

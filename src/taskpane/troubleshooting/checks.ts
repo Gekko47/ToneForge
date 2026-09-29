@@ -140,6 +140,18 @@ function resolve(text: CheckText, input: TroubleshootingInput): string {
   return typeof text === "string" ? text : text(input);
 }
 
+/**
+ * Whether a setting could still give the next run a model.
+ *
+ * A run that consulted no model is only explained by a missing provider or a
+ * withdrawn consent. When both are already in place, there is nothing in
+ * Settings that accounts for it, and naming a setting sends the user looking
+ * for a cause that is not there.
+ */
+function modelBlockedBySettings(input: TroubleshootingInput): boolean {
+  return input.providerConfigured !== true || input.rawTextConsent !== true;
+}
+
 function resolveTarget(target: CheckTarget, input: TroubleshootingInput): RemedyTarget {
   return typeof target === "function" ? target(input) : target;
 }
@@ -251,9 +263,9 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     appliesTo: (input) => input.semanticSelectionCaptured === false,
     situation: "Propose rewrite is greyed out, and pressing Read current selection changes nothing",
     cause:
-      "The rewrite works on one paragraph, not on the document, and no paragraph has been read yet. The button is disabled for that reason alone — everything else it needs, the profile, the provider and your permission to send text, is in place.",
+      "The rewrite works on one paragraph, not on the document, and no paragraph has been read yet, so the button is disabled. Anything else the rewrite needs is reported separately, if it is also missing.",
     remedy:
-      "Select the text you want rewritten in Word itself, then press Read current selection on the Semantic tab and the paragraph appears above the button. The same paragraph can be pasted into the Learn Style box instead if you would rather not select it.",
+      "Select the text you want rewritten in Word itself, then press Read current selection on the Semantic tab and the paragraph appears above the button.",
     remedyTarget: {
       label: "Semantic → Semantic rewrite → Read current selection",
     },
@@ -264,7 +276,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
       input.consistency !== null &&
       (input.consistency.complete === false || input.consistency.usedModel === false),
     situation:
-      "The consistency review found nothing, but that is not the same as it having checked everything",
+      "The consistency review carried a limit on what it compared, which is not the same as it having checked everything",
     cause: (input) => {
       const run = input.consistency;
       if (run === null) return "";
@@ -284,13 +296,19 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     remedy: (input) => {
       const run = input.consistency;
       if (run === null) return "";
-      if (run.usedModel === false) {
+      if (run.usedModel === false && modelBlockedBySettings(input)) {
         return "Configure a provider so the cross-report checks have a model to consult. They are separate from the deterministic comparisons, which have already run and are unaffected; the deterministic results you have are not thrown away.";
+      }
+      if (run.usedModel === false) {
+        // A provider is configured and consent is granted, so there is no setting
+        // to change. Saying so is the useful half; the other half is that the
+        // review still carries a limit, and reading it is what the run offers.
+        return "A provider is configured and sending your text is already allowed, so nothing in Settings accounts for this run consulting no model. The cross-report checks were left unadjudicated on this pass; the deterministic comparisons ran and are unaffected. Read the limitation stated with the results before treating the review as a clean bill of health.";
       }
       return "This is a bound on the engine, not a setting you can raise. Every statement was still examined — what was skipped is a counted set of comparisons between statements in different windows, and the exact count is stated above the findings.";
     },
     remedyTarget: (input) =>
-      input.consistency?.usedModel === false
+      input.consistency?.usedModel === false && modelBlockedBySettings(input)
         ? { label: "Settings → Provider and privacy → Provider, then enter the key" }
         : { label: "Consistency Review → Results → the coverage line above the findings" },
   },
@@ -299,7 +317,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     appliesTo: (input) => input.contextMenuApi === false,
     situation: "ToneForge does not appear in the right-click menu",
     cause:
-      "This Word build does not expose the context-menu API, so the entries ToneForge declares in its manifest cannot be installed. The same actions are on the ribbon, and the whole of Deterministic Review works; only the right-click route is absent.",
+      "The host probe found that this Word build does not expose Office.contextMenu.requestUpdate, so the add-in cannot add a right-click entry from inside itself. The same actions are on the ribbon, and the whole of Deterministic Review works.",
     remedy:
       "Use the ribbon instead. This is a host limitation rather than a setting: no control in ToneForge turns the context menu on, and a menu that is absent here cannot be restored from inside the add-in.",
     remedyTarget: {

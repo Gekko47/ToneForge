@@ -454,6 +454,19 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   const [semanticSelectionCaptured, setSemanticSelectionCaptured] = useState<boolean | null>(null);
   /*
+   * Back to "not established" when the tab is left.
+   *
+   * The flag describes what the Semantic page is holding right now, and it is
+   * unmounted the moment the user navigates away. Leaving the last answer in
+   * place would make Troubleshooting report a greyed-out Propose rewrite — or a
+   * held paragraph — for a tab that has not been opened since, and the page
+   * holding the paragraph has by definition forgotten it.
+   */
+  useEffect(() => {
+    if (page === "semantic") return;
+    setSemanticSelectionCaptured(null);
+  }, [page]);
+  /*
    * The in-flight flag lives in `PendingChanges`, beside the button it disables.
    *
    * It was duplicated here for a whole-pane "Apply all changes" button that no

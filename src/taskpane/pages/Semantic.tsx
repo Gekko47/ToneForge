@@ -201,6 +201,17 @@ export default function Semantic({
         setSelection(captured ? text : null);
         onSelectionCaptured?.(captured);
       } catch (error: unknown) {
+        /*
+         * Drop what is held before reporting the failure. Reporting `false`
+         * while the previously read paragraph stayed on screen is a state the
+         * panel cannot represent: Troubleshooting would say no paragraph is held
+         * and Propose rewrite would still be enabled for the old one, which is a
+         * proposal about text that was never read. A proposal is cleared with it
+         * for the same reason — it answers about that paragraph, not about the
+         * document as it now reads.
+         */
+        setSelection(null);
+        setProposal(null);
         onSelectionCaptured?.(false);
         setRewriteError(error instanceof Error ? error.message : String(error));
       }
@@ -415,7 +426,10 @@ export default function Semantic({
     } catch (error: unknown) {
       // A failed read leaves no paragraph, and says so. Reporting the failure
       // alone would leave the parent's last `true` standing for a read that
-      // never happened.
+      // never happened, and would leave a paragraph and any proposal made from
+      // it on screen as though the read had succeeded.
+      setSelection(null);
+      setProposal(null);
       onSelectionCaptured?.(false);
       setRewriteError(error instanceof Error ? error.message : String(error));
     }
