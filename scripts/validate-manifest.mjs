@@ -226,7 +226,17 @@ function validateCommandParity(manifest, xml, definitions, errors) {
       }
     }
 
-    const xmlControls = extractControls(xml, definition.id);
+    /*
+     * Looked up by either the command id or the JSON control's own id, because
+     * the two differ wherever the control is addressable at runtime — the
+     * semantic control is `ToneForgeSemanticControl` so `syncSemanticRibbon` can
+     * name it. Exactly one of the two must appear, so a manifest that declares
+     * both, or neither, is still an error.
+     */
+    const xmlControls = [
+      ...extractControls(xml, definition.id),
+      ...extractControls(xml, control?.id ?? definition.id),
+    ].filter((xmlControl, index, all) => all.indexOf(xmlControl) === index);
     if (xmlControls.length !== 1) {
       errors.push(
         `manifest.xml must contain exactly one ToneForge ribbon control for ${definition.id}; found ${xmlControls.length}`,

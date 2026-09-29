@@ -95,9 +95,13 @@ export async function proposeSemanticRewrite(
       maxDelayMs: DEFAULT_MAX_DELAY_MS,
       isRetryable: (err: unknown) => {
         // A caller-driven abort is not a failure to retry: retrying it would
-        // keep a request alive that the user just cancelled.
+        // keep a request alive that the user just cancelled. Checked before the
+        // error's own verdict, because an abort surfaces as an ordinary
+        // retryable `LlmError` on some providers — asking that error alone kept
+        // a cancelled request retrying until the attempt budget ran out.
+        if (opts.signal?.aborted === true) return false;
         if (err instanceof LlmError) return err.retryable;
-        return !opts.signal?.aborted;
+        return true;
       },
     },
   );

@@ -9,7 +9,7 @@
 
 import React from "react";
 import type { Finding } from "../../core/domain/Finding";
-import { reviewKey } from "../reviewKey";
+import { reviewIdentity } from "../occurrenceIdentity";
 import FindingCard from "./FindingCard";
 
 export interface FindingsListProps {
@@ -22,11 +22,15 @@ export interface FindingsListProps {
   onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
   /**
-   * Review keys the user has already produced.
+   * Occurrence identities of the reviews the user has already produced.
    *
-   * Keys rather than finding ids, and the reason is load-bearing: the id issued
-   * by the observer's run never reappears in the plan's, so an id-keyed set could
-   * never line up with what Apply writes. See `reviewKey`.
+   * Occurrence identities rather than finding ids, and the reason is
+   * load-bearing: the id issued by the observer's run never reappears in the
+   * plan's, so an id-keyed set could never line up with what Apply writes.
+   *
+   * `reviewIdentity`, specifically: this is the identity the review store writes
+   * and the one the review gate reads, so a different derivation here would
+   * mark a reviewed card unreviewed while Apply still considered it approved.
    *
    * A set rather than a boolean: the gate records one decision per finding, and
    * a single flag would mark every card at once.
@@ -66,7 +70,7 @@ export default function FindingsList({
               selected={index === selectedIndex}
               onReview={onReview}
               onIgnore={onIgnore}
-              reviewed={reviewedKeys?.has(reviewKey(finding)) === true}
+              reviewed={reviewedKeys?.has(reviewIdentity(finding)) === true}
             />
           ))}
       </div>

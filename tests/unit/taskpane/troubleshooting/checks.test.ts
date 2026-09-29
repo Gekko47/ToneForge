@@ -258,9 +258,15 @@ describe("the troubleshooting registry", () => {
     expect(notes.map((note) => note.id)).toEqual(["context-menu-api-absent"]);
   });
 
-  it("keeps every registered id reachable, so a check cannot be added unreachable", () => {
-    // Guards the registry against an entry whose predicate can never be true,
-    // which would sit in the source as an answer to nothing.
+  it("keeps the registered ids in the order the panel reports them", () => {
+    /*
+     * This is an ORDER check, not a reachability check, and the title used to
+     * claim the latter. Reachability is what the two tests above and below
+     * establish: each of these ids is produced by some input, one id per
+     * situation, across the whole file. Naming it accurately matters because a
+     * title that promises more than the assertion delivers is how a genuinely
+     * unreachable check would sail past this line.
+     */
     expect(troubleshootingCheckIds()).toEqual([
       "auto-scan-off",
       "tracked-editing-off",

@@ -8,7 +8,7 @@ import PendingChanges from "../../../../src/taskpane/components/PendingChanges";
 import StaleBanner from "../../../../src/taskpane/components/StaleBanner";
 import { createTestPlan } from "../../../fixtures/changePlans";
 import { sampleFinding } from "../../../fixtures/sampleDocs";
-import { reviewKey } from "../../../../src/taskpane/reviewKey";
+import { reviewIdentity } from "../../../../src/taskpane/occurrenceIdentity";
 import type { Change } from "../../../../src/core/domain/Change";
 
 /** One applied-able change, so PendingChanges renders its table and actions. */
@@ -53,13 +53,15 @@ describe("FindingsList selection", () => {
   it("disables Review once a finding has been reviewed", () => {
     // Driven by `reviewedKeys`, not by `finding.status`. The status field is
     // written by the observer, so reading it here made the label depend on a
-    // value the pane had to patch back after every scan.
+    // value the pane had to patch back after every scan. The set is keyed by
+    // `reviewIdentity` because that is the identity the review store writes and
+    // the review gate reads.
     const first = findings[0];
     if (first === undefined) throw new Error("expected a finding");
     render(
       <FindingsList
         findings={findings}
-        reviewedKeys={new Set([reviewKey(first)])}
+        reviewedKeys={new Set([reviewIdentity(first)])}
         onReview={() => undefined}
       />,
     );
@@ -85,7 +87,7 @@ describe("FindingsList selection", () => {
     render(
       <FindingsList
         findings={[first, second]}
-        reviewedKeys={new Set([reviewKey(first)])}
+        reviewedKeys={new Set([reviewIdentity(first)])}
         onReview={() => undefined}
       />,
     );

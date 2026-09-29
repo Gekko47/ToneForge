@@ -10,7 +10,7 @@ import type * as PersistenceModule from "../../../../src/core/state/persistence"
  * First run reports; it does not lock.
  *
  * The pane used to return a `NoProfileSetup` component whose `navigate` collapsed
- * every destination except Settings, Troubleshooting, and home back to home Ã¢â‚¬â€
+ * every destination except Settings, Troubleshooting, and home back to home —
  * where home *was* the profile editor. The header's Semantic, Consistency, and
  * Governance Policy items were therefore visible and inert, and the only way to
  * read the AI consent, change the theme, or inspect Troubleshooting was to create

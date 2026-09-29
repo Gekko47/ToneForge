@@ -971,6 +971,40 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     [consistencyResult],
   );
 
+  /*
+   * Drop the expired reviews once the scan has settled.
+   *
+   * Counting them is not enough. A review that no longer describes anything in
+   * the document would sit in the store indefinitely, and a document that later
+   * re-derives the same finding at the same offset would find a stale approval
+   * already waiting for it — which is precisely the thing a review must never be.
+   *
+   * Above the early return, with the live identity set built inside it. A hook
+   * after a conditional return runs on some renders and not others, so React's
+   * hook order differs between them; and depending on a Set rebuilt every render
+   * made the effect fire on every render rather than once per settled scan. The
+   * dependency is the observer's own `documentVersion`, which only changes when a
+   * scan has read the document — so a review persisted from a previous session
+   * cannot be pruned before the first scan of this one has looked.
+   */
+  useEffect(() => {
+    if (status === null || status.phase === "scanning") return;
+    const live = new Set(
+      [...withoutIgnored(status.findings, persisted.ignoredFindings), ...consistencyFindings].map(
+        (finding) => reviewIdentity(finding),
+      ),
+    );
+    const stored = persisted.reviewedFindings ?? [];
+    if (stored.every((entry) => live.has(entry.identity))) return;
+    pruneStaleReviews(live);
+  }, [
+    status?.documentVersion,
+    status?.phase,
+    persisted.reviewedFindings,
+    persisted.ignoredFindings,
+    consistencyFindings,
+  ]);
+
   if (
     page === "settings" ||
     page === "profile" ||
@@ -1163,20 +1197,10 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     (entry) => !liveIdentities.has(entry.identity),
   ).length;
   /*
-   * Drop the expired ones once the scan has settled.
-   *
-   * Counting them is not enough. A review that no longer describes anything in
-   * the document would sit in the store indefinitely, and a document that later
-   * re-derives the same finding at the same offset would find a stale approval
-   * already waiting for it — which is precisely the thing a review must never be.
-   *
-   * Pruned in an effect rather than during render, so the write stays out of the
-   * render pass, and gated on the count so it runs once per settled set rather
-   * than on every render.
+   * Only counted here. The reviews themselves are dropped by the effect above the
+   * early return, which has to sit there so the hook order cannot differ between
+   * renders.
    */
-  useEffect(() => {
-    if (expiredReviews > 0) pruneStaleReviews(liveIdentities);
-  }, [expiredReviews, liveIdentities]);
   /**
    * One readiness decision, shared by the Apply button and the host banner.
    *

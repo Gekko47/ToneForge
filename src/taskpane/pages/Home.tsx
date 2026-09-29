@@ -143,15 +143,15 @@ function SetupRow({
           Set up {item.label.toLowerCase()}
         </button>
       )}
+      {/*
+        `item.control` alone. It already reads "Deterministic Style Profile →
+        Save profile", so prefixing the destination produced
+        "Deterministic Style Profile → Deterministic Style Profile → Save
+        profile" — the same page named twice in the sentence describing the
+        button, which is the opposite of pointing at it.
+      */}
       <p id={`tf-setup-control-${item.id}`} className="tf-sub">
-        {item.destination === "profile" ? "Deterministic Style Profile" : null}
-        {item.destination === "semantic" ? "Semantic" : null}
-        {item.destination === "settings" ? "Settings" : null}
-        {item.destination === "settings" ||
-        item.destination === "profile" ||
-        item.destination === "semantic"
-          ? ` → ${item.control}`
-          : null}
+        {item.control}
       </p>
     </li>
   );

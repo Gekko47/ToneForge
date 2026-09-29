@@ -89,7 +89,20 @@ describe("DebuggingPanel", () => {
     // Probing and then diagnosing leaves both output blocks on screen. Two
     // polite regions reading in DOM order rather than run order is the defect
     // ADR-0062 fixed on the Dashboard, recurring on a second surface.
+    //
+    // Both actions are actually run: the extra region this guards against only
+    // appears once the second output is on screen, so counting on an untouched
+    // panel proved nothing.
+    mocks.prepareReformatHost.mockResolvedValue({ supportsRevisions: true });
     const { container } = render(<DebuggingPanel onBack={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /probe word capabilities/i }));
+    await waitFor(() =>
+      expect(container.querySelectorAll('[aria-live="polite"], [role="status"]')).toHaveLength(1),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /diagnose office runtime/i }));
+    await waitFor(() => expect(container.querySelectorAll("pre")).toHaveLength(2));
+
     expect(container.querySelectorAll('[aria-live="polite"], [role="status"]')).toHaveLength(1);
   });
 

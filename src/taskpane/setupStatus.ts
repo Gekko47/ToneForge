@@ -133,22 +133,33 @@ export function setupStatusFromState(state: PersistedState): SetupStatus {
 export type Capability =
   "scan" | "apply" | "consistencyReview" | "semanticRewrite" | "governancePolicy";
 
-const CAPABILITY_ITEM: Readonly<Record<Capability, SetupItemId>> = {
-  scan: "deterministicProfile",
-  apply: "deterministicProfile",
+/**
+ * A list rather than one item, because a capability can need more than one thing.
+ *
+ * One id per capability could not express the consistency review's two real
+ * prerequisites, and naming only the deterministic profile reported it available
+ * with no provider — which is the configuration in which the run fails.
+ */
+const CAPABILITY_ITEMS: Readonly<Record<Capability, readonly SetupItemId[]>> = {
+  scan: ["deterministicProfile"],
+  apply: ["deterministicProfile"],
   // The consistency engine compares the document against itself. It needs a
   // deterministic profile for the governing policy and a provider for
   // adjudication, so both are real prerequisites rather than assumed ones.
-  consistencyReview: "deterministicProfile",
-  semanticRewrite: "semanticProfile",
-  governancePolicy: "deterministicProfile",
+  consistencyReview: ["deterministicProfile", "llmProvider"],
+  semanticRewrite: ["semanticProfile"],
+  governancePolicy: ["deterministicProfile"],
 };
 
 export function capabilityAvailable(
   status: SetupStatus,
   capability: Capability,
 ): { available: boolean; reason: string | null } {
-  const required = status.items.find((item) => item.id === CAPABILITY_ITEM[capability]);
-  if (required === undefined || required.ready) return { available: true, reason: null };
-  return { available: false, reason: required.blocked };
+  // The first unmet prerequisite, in the declared order, so the refusal names one
+  // concrete thing rather than every thing at once.
+  const unmet = CAPABILITY_ITEMS[capability]
+    .map((id) => status.items.find((item) => item.id === id))
+    .find((item) => item !== undefined && !item.ready);
+  if (unmet === undefined || unmet.ready) return { available: true, reason: null };
+  return { available: false, reason: unmet.blocked };
 }

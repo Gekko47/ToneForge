@@ -255,6 +255,11 @@ export default function Semantic({
     );
     setRecord(created);
     setActiveId(created.id);
+    // Stored as active as well as selected locally. Without this the picker
+    // showed the new profile while the stored active id still pointed at
+    // whatever was active before, so the ribbon button — enabled by the *active*
+    // profile's existence — never turned on.
+    setActiveSemanticProfile(created.id);
     refreshRecords();
     // Same rule as `selectProfile` and `deleteProfile`: a proposal made against
     // the previous profile says nothing about the blank one now on screen.
@@ -274,13 +279,20 @@ export default function Semantic({
   }
 
   function persistSemantic(semantic: StyleProfile["semantic"]): void {
-    if (record === null || record.draft === null) return;
+    if (record === null) return;
+    /*
+     * The published version is a valid base. A record whose draft has been
+     * published and discarded has no draft, and returning here dropped every
+     * edit made to it — the editor showed a profile that could not be saved.
+     */
+    const base = record.draft ?? effectiveProfile(record);
+    if (base === null) return;
     // Through `updateDraft`, not around it: the record is the audit trail, and
     // it assigns the revision number and the timestamp that make the edit
     // attributable later.
     const { record: updated } = updateDraft(
       record,
-      { ...record.draft, semantic },
+      { ...base, semantic },
       new Date().toISOString(),
     );
     // The semantic writer, so the edit cannot land in the deterministic record
@@ -316,6 +328,9 @@ export default function Semantic({
       // button — which is enabled by the *active* profile's existence — stayed
       // greyed out with no way to tell why.
       setActiveSemanticProfile(created.id);
+      // The picker has to follow the stored active profile, or it shows a
+      // different selection from the one the rest of the pane reads.
+      setActiveId(created.id);
       refreshRecords();
       // A proposal is an answer about the previous voice, not this one.
       setProposal(null);

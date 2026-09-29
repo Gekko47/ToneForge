@@ -54,6 +54,17 @@
     </Requirements>
     <Hosts>
       <Host xsi:type="Document">
+        <!--
+          The schema-supported spelling of the shared runtime: a `Runtimes`
+          element on the Host. It is the FIRST child, ahead of DesktopFormFactor,
+          because the Host type's base sequence declares Runtimes (and then
+          AllFormFactors) before the form factor that extends it. `lifetime="long"`
+          is what makes it shared, and the resid must agree with the FunctionFile
+          it replaces, so this points at the same commands page.
+        -->
+        <Runtimes>
+          <Runtime resid="ToneForge.Commands.Url" lifetime="long" />
+        </Runtimes>
         <DesktopFormFactor>
           <FunctionFile resid="ToneForge.Commands.Url" />
           <ExtensionPoint xsi:type="PrimaryCommandSurface">
@@ -157,7 +168,14 @@
                   </Action>
                 </Control>
               </Group>
-              <Group id="ToneForgeProfileGroup">
+              <!--
+                The group and control ids below are the ones `syncSemanticRibbon`
+                addresses at runtime. They must match `SEMANTIC_RIBBON_GROUP` and
+                `SEMANTIC_RIBBON_CONTROL` in src/commands/ribbonState.ts exactly, or
+                the enable request targets a control the host does not have and the
+                button stays greyed out with nothing to explain why.
+              -->
+              <Group id="ToneForgeProfile">
                 <Label resid="ToneForge.ProfileGroupLabel" />
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16" />
@@ -196,7 +214,13 @@
                     <SourceLocation resid="Taskpane.Url" />
                   </Action>
                 </Control>
-                <Control xsi:type="Button" id="ToneForgeSemantic">
+                <!--
+                  Disabled here and enabled only by `syncSemanticRibbon`. The rewrite
+                  is meaningless without a semantic profile: the prompt sends the
+                  profile, so with none there is nothing to send. `Enabled` follows
+                  `Action` because that is the order the Button schema declares.
+                -->
+                <Control xsi:type="Button" id="ToneForgeSemanticControl">
                   <Label resid="ToneForge.SemanticLabel" />
                   <Supertip>
                     <Title resid="ToneForge.SemanticLabel" />
@@ -211,6 +235,7 @@
                     <TaskpaneId>ButtonId1</TaskpaneId>
                     <SourceLocation resid="Taskpane.Url" />
                   </Action>
+                  <Enabled>false</Enabled>
                 </Control>
               </Group>
               <Group id="ToneForgeChangesGroup">
@@ -291,15 +316,6 @@
             </OfficeMenu>
           </ExtensionPoint>
         </DesktopFormFactor>
-        <!--
-          The schema-supported spelling of the shared runtime: a `Runtimes`
-          element on the Host, after DesktopFormFactor. `lifetime="long"` is
-          what makes it shared, and the resid must agree with the FunctionFile
-          it replaces, so this points at the same commands page.
-        -->
-        <Runtimes>
-          <Runtime resid="ToneForge.Commands.Url" lifetime="long" />
-        </Runtimes>
       </Host>
     </Hosts>
     <Resources>

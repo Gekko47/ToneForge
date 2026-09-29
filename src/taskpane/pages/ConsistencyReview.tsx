@@ -2,7 +2,10 @@ import React from "react";
 import AiReviewSection, { type AiReviewStage } from "../components/AiReviewSection";
 import { getStructuredSnapshot } from "../../word/documentReader";
 import { loadState } from "../../core/state/persistence";
-import { createRegistryFromSettings } from "../settings/providerComposition";
+import {
+  createRegistryFromSettings,
+  isRemoteProviderConfigured,
+} from "../settings/providerComposition";
 import {
   previewStatements,
   runConsistencyReview,
@@ -60,7 +63,8 @@ export default function ConsistencyReview({
   const [message, setMessage] = React.useState<string | null>(null);
   const abortRef = React.useRef<AbortController | null>(null);
 
-  const settings = loadState().settings;
+  const state = loadState();
+  const settings = state.settings;
   const stage: AiReviewStage =
     progress !== null
       ? "running"
@@ -188,7 +192,11 @@ export default function ConsistencyReview({
       </nav>
       <AiReviewSection
         stage={stage}
-        providerConfigured={Boolean(settings.openAiBaseUrl) || settings.llmProvider === "mock"}
+        // The same check Settings and the setup status use. Reading the base URL
+        // directly called a provider configured whenever one was typed, even with
+        // no key stored, and called it unconfigured when the key was brokered — so
+        // the section refused a run the rest of the product considers possible.
+        providerConfigured={isRemoteProviderConfigured(state.settings, state.providerConnections)}
         hasConsent={settings.consistencyReviewConsent}
         providerName={settings.llmProvider}
         preflight={

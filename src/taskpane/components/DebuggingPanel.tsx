@@ -100,8 +100,12 @@ export default function DebuggingPanel({
    * from "is there a probe result" named the wrong result the moment a second
    * action ran — running the runtime diagnosis after the probe announced the
    * probe, which is the opposite of what happened.
+   *
+   * `probeFailed` is separate from both completed actions: a probe that threw
+   * produced no capability result, and announcing it as a finished diagnosis
+   * reported a runtime diagnosis the user never ran.
    */
-  const [lastAction, setLastAction] = useState<"probe" | "diagnose" | null>(null);
+  const [lastAction, setLastAction] = useState<"probe" | "diagnose" | "probeFailed" | null>(null);
 
   async function probeCapabilities(): Promise<void> {
     setBusy(true);
@@ -111,7 +115,7 @@ export default function DebuggingPanel({
       setLastAction("probe");
     } catch {
       setCapabilities(null);
-      setLastAction("diagnose");
+      setLastAction("probeFailed");
       setDiagnostics(
         "Capability probe did not complete. Confirm the add-in is running inside a supported Word host.",
       );
@@ -178,7 +182,9 @@ export default function DebuggingPanel({
             ? "Capability probe finished. The result is below."
             : lastAction === "diagnose"
               ? "Office runtime diagnosis finished. The result is below."
-              : ""}
+              : lastAction === "probeFailed"
+                ? "Capability probe did not complete. The reason is below."
+                : ""}
         </p>
         {capabilities && (
           <pre className="tf-debug-output">{JSON.stringify(capabilities, null, 2)}</pre>

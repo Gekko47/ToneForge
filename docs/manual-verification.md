@@ -277,8 +277,13 @@ change`, that the preview table shows one row, and — the part that matters —
    control, and that renaming a control in code now fails a test.
 6. **Ribbon and context menu after a clean re-sideload** (ADR-0070). Follow
    **After changing a manifest** above exactly. Record whether the tab and the
-   menu entry appear. If they do not, the manifest is being rejected, and the
-   reason is in Word's log — capture it rather than re-diagnosing.
+   menu entry appear. If they do not, record that as **unknown** — an absent
+   control is a symptom with several possible causes (a rejected manifest, a
+   stale cached copy of the manifest, or the entry simply being off the screen
+   in a collapsed group), and naming the cause here would be a claim the test
+   has not earned. Capture `%LOCALAPPDATA%\Temp\OfficeAddins.log.txt` and let
+   the host's own diagnostics establish the cause before recording it as a
+   rejection.
 
 Until this is recorded, describe these six as "fixed and unit-verified, not yet
 confirmed in a host". No release claim rests on them.
