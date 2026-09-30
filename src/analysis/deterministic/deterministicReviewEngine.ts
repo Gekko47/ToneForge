@@ -154,6 +154,17 @@ export function groupFindings(
     }
     if (!sameBatchKey && !single) {
       safeBatchApproval = false;
+      /*
+       * A reason, not just a verdict.
+       *
+       * Spec §15's rule is that a control the user cannot press must say why,
+       * and `batchApprovalLabel` reads this field to say it. Disabling without
+       * one produces a disabled "Approve all" whose reason is `undefined` — the
+       * control gives the reader nothing to act on. An earlier refusal above is
+       * more specific and is kept.
+       */
+      batchRefusalReason ??=
+        "these occurrences do not all declare the same safe correction to apply as a batch";
     }
 
     return {
@@ -180,19 +191,16 @@ export async function runDeterministicReview(
   options: DeterministicReviewOptions,
 ): Promise<DeterministicReviewReport> {
   const { context } = options;
-  if (context.text.trim().length === 0) {
-    return buildReport({
-      profile: context.profile,
-      policy: resolveResolvedPolicy(context.profile, context.policy),
-      findings: [],
-      coverage: buildDeterministicCoverage({ context }),
-      context,
-      ...(options.examinedNodeIds === undefined
-        ? {}
-        : { examinedNodeIds: options.examinedNodeIds }),
-    });
-  }
 
+  /*
+   * The profile and policy checks come first, before anything about the text.
+   *
+   * They used to sit below the empty-document early return, so an empty document
+   * skipped them entirely: a semantic profile produced a report attributed to a
+   * deterministic standard the user never chose, and a `resolvedPolicy` resolved
+   * from a *different* profile was applied without complaint. The document's
+   * emptiness says nothing about which profile is legitimate.
+   */
   assertDeterministicProfile(context.profile);
   const policy =
     options.resolvedPolicy === undefined
@@ -202,6 +210,35 @@ export async function runDeterministicReview(
     throw new Error(
       "runDeterministicReview received a resolvedPolicy resolved from a different StyleProfile",
     );
+  }
+
+  if (context.text.trim().length === 0) {
+    return buildReport({
+      profile: policy.profile,
+      policy,
+      findings: [],
+      /*
+       * The incremental declaration travels here too.
+       *
+       * This branch built coverage with `{ context }` alone, so a narrowed run
+       * over an empty window reported itself *complete* — the observer had
+       * already narrowed `context.nodes`, so coverage's node-count arithmetic
+       * is zero by construction and `incremental` was the only signal that this
+       * run saw a fraction of the document. Dropping it here is how an
+       * incremental scan was able to claim whole-document coverage.
+       */
+      coverage: buildDeterministicCoverage({
+        context,
+        ...(options.incremental === undefined ? {} : { incremental: options.incremental }),
+        ...(options.incrementalReason === undefined
+          ? {}
+          : { incrementalReason: options.incrementalReason }),
+      }),
+      context,
+      ...(options.examinedNodeIds === undefined
+        ? {}
+        : { examinedNodeIds: options.examinedNodeIds }),
+    });
   }
 
   const examinedNodeIds = resolveExaminedNodeIds(context.nodes, options.examinedNodeIds);

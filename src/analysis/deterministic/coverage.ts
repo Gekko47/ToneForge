@@ -203,8 +203,21 @@ export function buildDeterministicCoverage(
   // A scope the host cannot serve is never examined, whatever the policy says.
   const examinable = intersect(requested, host.supported);
   const examinedScopes = intersect(examinable, requested);
+  /*
+   * Asked for, servable, and not examined — nothing else.
+   *
+   * The previous filter compared `ScopeKind` values against the *raw acquisition
+   * tokens*, which are a different vocabulary: `body`, `headings` and `lists` are
+   * never emitted as tokens, so the exclusion test was answering a question
+   * about a different set and could not do what its name says. It also kept the
+   * scopes the host *cannot* serve, which belong in `unsupportedScopes` and are
+   * already reported there with their own remedy.
+   *
+   * Derived from the two lists that are already computed, so a scope cannot be
+   * simultaneously excluded here and examined there.
+   */
   const excludedScopes = requested.filter(
-    (scope) => !host.supported.includes(scope) && !context.acquisition.unsupported.includes(scope),
+    (scope) => host.supported.includes(scope) && !examinedScopes.includes(scope),
   );
 
   const nodesByType = (type: string): number =>
