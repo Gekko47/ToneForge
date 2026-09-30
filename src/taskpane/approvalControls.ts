@@ -93,20 +93,35 @@ export function approvalControls(input: ApprovalControlInput): ApprovalControls 
 /**
  * Record a decision, replacing any prior one for the same occurrence.
  *
- * Returns a new set rather than mutating, so a caller cannot leave the card and
+ * Returns new sets rather than mutating, so a caller cannot leave the card and
  * the projection disagreeing by holding a set that only one of them updated. The
  * newest decision wins: a user who approved a finding and then skipped it has
  * made one decision, and a list showing both would depend on how many times they
  * changed their mind.
+ *
+ * Both sets travel in and both come back because the two decisions are
+ * mutually exclusive and this is the one place that resolves it. Adding the
+ * identity to the chosen set and removing it from the other is what stops an
+ * occurrence being approved and skipped at once — a state `approvedIdentities`
+ * has to then defend against downstream, from a card the user cannot fix. The
+ * identity therefore leaves the set it is not in whatever the caller's own
+ * state was.
  */
 export function decide(
-  current: ReadonlySet<string>,
+  current: { approved: ReadonlySet<string>; skipped: ReadonlySet<string> },
   identity: string,
-  _decision: ReviewDecisionKind,
-): Set<string> {
-  const next = new Set(current);
-  next.add(identity);
-  return next;
+  decision: ReviewDecisionKind,
+): { approved: Set<string>; skipped: Set<string> } {
+  const approved = new Set(current.approved);
+  const skipped = new Set(current.skipped);
+  if (decision === "approved") {
+    approved.add(identity);
+    skipped.delete(identity);
+  } else {
+    skipped.add(identity);
+    approved.delete(identity);
+  }
+  return { approved, skipped };
 }
 
 /**

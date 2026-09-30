@@ -180,11 +180,21 @@ export default function PendingChanges({
    */
   async function handleGoTo(finding: Finding): Promise<void> {
     setNavigationNote(null);
-    const outcome = await goToFinding(finding);
-    // A superseded attempt says neither success nor failure: it was replaced,
-    // and claiming an outcome would contradict what the pane just did.
-    if (outcome.superseded) return;
-    setNavigationNote(outcome.message);
+    try {
+      const outcome = await goToFinding(finding);
+      // A superseded attempt says neither success nor failure: it was replaced,
+      // and claiming an outcome would contradict what the pane just did.
+      if (outcome.superseded) return;
+      setNavigationNote(outcome.message);
+    } catch (error: unknown) {
+      // `goToFinding` resolves with a superseded marker but rejects when the
+      // host refuses the range or the selection. Nothing caught that, so the
+      // rejection escaped a click handler and the user saw the button reset
+      // with no explanation at all. The detail is the host's own message, which
+      // is the only thing that says *why* the selection failed.
+      const detail = error instanceof Error ? error.message : String(error);
+      setNavigationNote(`That change could not be selected: ${detail}`);
+    }
   }
 
   /*

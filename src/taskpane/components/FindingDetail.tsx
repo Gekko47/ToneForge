@@ -96,6 +96,11 @@ export default function FindingDetail({
   // Each card owns its status element; a shared id would collapse every card's
   // message onto the first rendered status node for assistive technology.
   const navigationStatusId = `finding-navigation-status-${finding.id}`;
+  // Per-card, for the same reason as the navigation status: the same sentence
+  // is rendered by every decided card, and a shared id is resolved by assistive
+  // technology to the first one in the document rather than to the button that
+  // names it.
+  const ignoreBlockedId = `finding-ignore-blocked-${finding.id}`;
   const sourceLabel =
     finding.source === "deterministic"
       ? "Deterministic"
@@ -262,15 +267,20 @@ export default function FindingDetail({
              * both is a finding that is simultaneously queued and set aside. The
              * store refuses the ignore as well, so this is not only a UI
              * courtesy — a caller that bypassed it would corrupt the two.
+             *
+             * The description id carries the finding's own id. A shared one was
+             * rendered by every decided card in the list, so `aria-describedby`
+             * resolved to whichever appeared first in the document — one card's
+             * explanation attached to all the others.
              */
             disabled={controls.kind !== "undecided"}
-            aria-describedby={controls.kind === "undecided" ? undefined : "finding-ignore-blocked"}
+            aria-describedby={controls.kind === "undecided" ? undefined : ignoreBlockedId}
           >
             Ignore
           </button>
         )}
         {controls.kind !== "undecided" && onIgnore ? (
-          <span id="finding-ignore-blocked" className="sr-only">
+          <span id={ignoreBlockedId} className="sr-only">
             This finding has already been decided. Undo the decision first if you would rather set
             it aside.
           </span>

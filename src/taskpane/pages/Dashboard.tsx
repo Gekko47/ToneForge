@@ -1135,7 +1135,26 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       setReviewNote("That change is no longer part of this review.");
       return;
     }
-    clearReviewDecision(reviewIdentity(owner));
+    /*
+     * The store write is guarded, and the success note follows it.
+     *
+     * `clearReviewDecision` throws when there is no review session to clear —
+     * the session expires, or a profile change invalidated it — and can fail on
+     * the write itself. Unguarded, that escaped the click handler and the note
+     * was never set, so the card stayed in Pending Changes with nothing on
+     * screen to explain it: the click appeared to do nothing at all. Stating
+     * success before the store confirmed it was the worse half of the same
+     * bug — a change that was still queued, described as removed.
+     */
+    try {
+      clearReviewDecision(reviewIdentity(owner));
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setReviewNote(
+        `That change could not be removed from Pending changes: ${detail}. Nothing was applied to the document.`,
+      );
+      return;
+    }
     setReviewNote("Removed from Pending changes. Nothing was applied to the document.");
   }
 

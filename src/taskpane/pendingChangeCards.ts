@@ -109,17 +109,30 @@ function locationLabel(range: ChangeRange): string {
   return `Character ${range.start}`;
 }
 
-/** The approval state, in words rather than the enum value. */
+/**
+ * The approval state, in words rather than the enum value.
+ *
+ * The state is read first and the requirement second, deliberately. Asking
+ * `approvalRequired` first meant a *rejected* change whose `approvalRequired` was
+ * absent or false was labelled "Approved": the flag says the user has to
+ * approve, and its absence says nothing about what they actually decided. The
+ * state is the record of the decision, so it is what the card has to report.
+ *
+ * `notRequired` is named explicitly rather than left to the default branch: a
+ * change nobody has to approve is not the same claim as one the user approved,
+ * and the card is the surface that says which happened.
+ */
 function approvalLabel(change: Change): string {
   if (change.approvalState === undefined) return "Approval state unavailable";
-  if (change.approvalRequired !== true) return "Approved";
   switch (change.approvalState) {
     case "approved":
       return "Approved";
     case "rejected":
       return "Rejected";
     case "pending":
-      return "Awaiting approval";
+      return change.approvalRequired === true ? "Awaiting approval" : "Approval not required";
+    case "notRequired":
+      return "Approval not required";
     default:
       return "Approval not required";
   }

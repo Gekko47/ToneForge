@@ -88,29 +88,56 @@ describe("approvalControls", () => {
 });
 
 describe("decide and undecide", () => {
-  it("returns a new set rather than mutating the one it was given", () => {
+  const none = { approved: new Set<string>(), skipped: new Set<string>() };
+
+  it("returns new sets rather than mutating the ones it was given", () => {
     // A caller that mutates in place can leave the card and the projection
     // disagreeing, holding one set that only one of them updated.
-    const original = new Set<string>();
+    const original = { approved: new Set<string>(), skipped: new Set<string>() };
     const next = decide(original, "a", "approved");
-    expect(original.size).toBe(0);
-    expect(next.has("a")).toBe(true);
+    expect(original.approved.size).toBe(0);
+    expect(original.skipped.size).toBe(0);
+    expect(next.approved.has("a")).toBe(true);
   });
 
   it("keeps the newest decision for an occurrence, so the list shows one row", () => {
-    const first = decide(new Set<string>(), "a", "approved");
+    // The user's later word is the one decision. An identity that is both
+    // approved and skipped is not a decision, it is a state the card cannot
+    // render and the plan cannot resolve.
+    const first = decide(none, "a", "approved");
     const second = decide(first, "a", "skipped");
-    expect(second.size).toBe(1);
+    expect(second.skipped.has("a")).toBe(true);
+    expect(second.approved.has("a")).toBe(false);
+    expect(new Set([...second.approved, ...second.skipped]).size).toBe(1);
+  });
+
+  it("removes an identity from the set it is no longer decided into", () => {
+    // Approving after skipping must undo the skip, and the reverse. This is what
+    // `approvedIdentities` has to defend against downstream, from a card the user
+    // cannot fix.
+    const skipped = decide(none, "a", "skipped");
+    expect(decide(skipped, "a", "approved").approved.has("a")).toBe(true);
+    expect(decide(skipped, "a", "approved").skipped.has("a")).toBe(false);
+
+    const approved = decide(none, "a", "approved");
+    expect(decide(approved, "a", "skipped").approved.has("a")).toBe(false);
+    expect(decide(approved, "a", "skipped").skipped.has("a")).toBe(true);
+  });
+
+  it("leaves other occurrences alone", () => {
+    const both = decide(decide(none, "a", "approved"), "b", "skipped");
+    expect(both.approved.has("b")).toBe(false);
+    expect(both.skipped.has("a")).toBe(false);
   });
 
   it("withdraws a decision so the occurrence can be decided again", () => {
-    const decided = decide(new Set<string>(), "a", "approved");
-    expect(undecide(decided, "a").has("a")).toBe(false);
+    const decided = decide(none, "a", "approved");
+    expect(undecide(decided.approved, "a").has("a")).toBe(false);
   });
 
   it("leaves other occurrences alone when withdrawing one", () => {
-    const decided = decide(decide(new Set<string>(), "a", "approved"), "b", "approved");
-    expect(undecide(decided, "a").has("b")).toBe(true);
+    const decided = decide(decide(none, "a", "approved"), "b", "approved");
+    expect(undecide(decided.approved, "a").has("b")).toBe(true);
   });
 });
 
