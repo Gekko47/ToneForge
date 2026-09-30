@@ -440,7 +440,9 @@ describe("ProfileEditor", () => {
      * the label plus the selected option ("Double quotes Curly"), and "Em dash"
      * would additionally match "Em dash spacing", which throws on two matches.
      */
-    ["Double quotes", "Apostrophes", "Spelling variant"].forEach((label) => {
+    // The spelling-variant dropdown is gone with its rule (spec §4.3), so the
+    // list is the dropdowns that still exist.
+    ["Double quotes", "Apostrophes"].forEach((label) => {
       const field = within(container).getByRole("combobox", {
         name: (name) => name.startsWith(label),
       });

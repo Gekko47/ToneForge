@@ -189,20 +189,6 @@ describe("planChanges", () => {
     });
   });
 
-  it("extracts the preferred term from spelling-variant messages", () => {
-    const plan = planFor([
-      finding({
-        category: "houseStyle.spellingVariant",
-        start: 0,
-        end: 6,
-        message: "Use en-US spelling “color” instead of “colour”",
-        evidence: "colour",
-      }),
-    ]);
-
-    expect(soleChange(plan).payload).toEqual({ text: "color" });
-  });
-
   it("maps capitalization findings to the cased character", () => {
     const sentenceCase = planFor([
       finding({

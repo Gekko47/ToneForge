@@ -107,7 +107,6 @@ const diffFields: readonly { label: string; path: readonly string[] }[] = [
   { label: "Banned terms", path: ["houseStyle", "bannedTerms"] },
   { label: "Sentence case", path: ["houseStyle", "capitalization", "sentenceCase"] },
   { label: "Title-case words", path: ["houseStyle", "capitalization", "titleCaseWords"] },
-  { label: "Spelling variant", path: ["houseStyle", "spellingVariant"] },
   /*
    * The three sections spec section 6 adds, diffed as whole sections rather
    * than field by field.

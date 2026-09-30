@@ -113,8 +113,6 @@ const buttonStyle: React.CSSProperties = {
   marginTop: 16,
 };
 
-const spellingVariants = ["en-US", "en-GB", "au"] as const;
-
 function dropdownValue(option: IDropdownOption | undefined): string | null {
   return option && typeof option.key === "string" ? option.key : null;
 }
@@ -669,16 +667,15 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
             errorMessage={fieldErrors["capitalization.titleCaseWords"] ?? ""}
             onChange={(_event, value) => patch({ titleCaseWords: value ?? "" })}
           />
-          <Dropdown
-            label="Spelling variant"
-            selectedKey={values.spellingVariant}
-            options={spellingVariants.map((value) => option(value, value))}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue)
-                patch({ spellingVariant: nextValue as ProfileFormValues["spellingVariant"] });
-            }}
-          />
+          {/*
+           * No spelling-variant control, deliberately (spec §4.3).
+           *
+           * A control here would be a promise the product does not keep: the
+           * field round-trips through the form and is written back unchanged,
+           * but no rule reads it, so choosing "en-GB" changes nothing a user can
+           * observe. The value stays in `ProfileFormValues` so a profile written
+           * before the rule was removed is not silently reset on save.
+           */}
           <Toggle
             label="Use sentence case by default"
             checked={values.capitalizationSentenceCase}

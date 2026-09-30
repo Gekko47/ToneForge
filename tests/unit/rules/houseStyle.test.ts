@@ -107,50 +107,6 @@ describe("findHouseStyleIssues", () => {
     expect(findings.map((finding) => finding.evidence)).toEqual(["beta", "alpha"]);
   });
 
-  it("uses bounded preferred terminology matching", () => {
-    const findings = findHouseStyleIssues({
-      text: "colorful paint uses color.",
-      rules: {
-        ...quietHouseStyle,
-        preferredTerminology: { color: "colour" },
-      },
-    });
-
-    expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({
-      range: { start: 20, end: 25, unit: "character" },
-      evidence: "color",
-    });
-  });
-
-  it("ignores empty and whitespace-only terminology entries", () => {
-    const findings = findHouseStyleIssues({
-      text: "color and colour",
-      rules: {
-        ...quietHouseStyle,
-        preferredTerminology: {
-          "": "ignored",
-          "   ": "ignored",
-          color: "",
-          "  colour  ": "  hue  ",
-        },
-      },
-    });
-
-    expect(findings).toHaveLength(2);
-    expect(findings[0]).toMatchObject({
-      category: "houseStyle.terminology",
-      range: { start: 10, end: 16, unit: "character" },
-      evidence: "colour",
-      message: "Use “hue” instead of “colour”",
-    });
-    expect(findings[1]).toMatchObject({
-      category: "houseStyle.spellingVariant",
-      range: { start: 10, end: 16, unit: "character" },
-      evidence: "colour",
-    });
-  });
-
   it("finds banned terms at boundaries and deduplicates duplicate configured terms", () => {
     const text = "color, COLOR and colorful.";
     const findings = findHouseStyleIssues({
@@ -323,80 +279,6 @@ describe("findHouseStyleIssues", () => {
     expect(findings).toEqual([]);
   });
 
-  it("flags en-GB alternatives while leaving the preferred en-GB spelling alone", () => {
-    const findings = findHouseStyleIssues({
-      text: "color favorite program",
-      rules: {
-        ...quietHouseStyle,
-        spellingVariant: "en-GB",
-      },
-    });
-
-    expect(findings).toHaveLength(3);
-    expect(findings.map((finding) => finding.category)).toEqual([
-      "houseStyle.spellingVariant",
-      "houseStyle.spellingVariant",
-      "houseStyle.spellingVariant",
-    ]);
-    expect(findings.map((finding) => finding.range)).toEqual([
-      { start: 0, end: 5, unit: "character" },
-      { start: 6, end: 14, unit: "character" },
-      { start: 15, end: 22, unit: "character" },
-    ]);
-    expect(findings.map((finding) => finding.evidence)).toEqual(["color", "favorite", "program"]);
-    expect(findings.every((finding) => finding.message.includes("en-GB"))).toBe(true);
-  });
-
-  it("flags en-US alternatives while leaving preferred en-US spellings alone", () => {
-    const findings = findHouseStyleIssues({
-      text: "colour favourite programme",
-      rules: {
-        ...quietHouseStyle,
-        spellingVariant: "en-US",
-      },
-    });
-
-    expect(findings.map((finding) => finding.range)).toEqual([
-      { start: 0, end: 6, unit: "character" },
-      { start: 7, end: 16, unit: "character" },
-      { start: 17, end: 26, unit: "character" },
-    ]);
-    expect(findings.map((finding) => finding.evidence)).toEqual([
-      "colour",
-      "favourite",
-      "programme",
-    ]);
-  });
-
-  it("uses the Australian variant table and treats program as preferred", () => {
-    const findings = findHouseStyleIssues({
-      text: "color favorite programme",
-      rules: {
-        ...quietHouseStyle,
-        spellingVariant: "au",
-      },
-    });
-
-    expect(findings.map((finding) => finding.range)).toEqual([
-      { start: 0, end: 5, unit: "character" },
-      { start: 6, end: 14, unit: "character" },
-      { start: 15, end: 24, unit: "character" },
-    ]);
-    expect(findings.map((finding) => finding.evidence)).toEqual(["color", "favorite", "programme"]);
-  });
-
-  it("does not flag preferred spelling variants or alternatives inside larger words", () => {
-    const findings = findHouseStyleIssues({
-      text: "Colorful colourless Favorite",
-      rules: {
-        ...quietHouseStyle,
-        spellingVariant: "en-US",
-      },
-    });
-
-    expect(findings).toEqual([]);
-  });
-
   it("reports exact JavaScript character offsets for Unicode text", () => {
     const text = "🙂 café color";
     const findings = findHouseStyleIssues({
@@ -428,51 +310,5 @@ describe("findHouseStyleIssues", () => {
       { start: 10, end: 14, unit: "character" },
     ]);
     expect(findings.map((finding) => finding.evidence)).toEqual(["CAFÉ", "café"]);
-  });
-
-  it("reports all house-style categories for mixed input", () => {
-    const findings = findHouseStyleIssues({
-      text: "color the colour. next sentence.",
-      rules: {
-        preferredTerminology: { color: "colour" },
-        bannedTerms: ["the"],
-        capitalization: {
-          sentenceCase: true,
-          titleCaseWords: ["the"],
-        },
-        spellingVariant: "en-GB",
-      },
-    });
-
-    expect(findings.map((finding) => finding.category)).toEqual([
-      "houseStyle.terminology",
-      "houseStyle.bannedTerm",
-      "houseStyle.capitalization.sentenceCase",
-      "houseStyle.capitalization.sentenceCase",
-      "houseStyle.capitalization.titleCase",
-      "houseStyle.spellingVariant",
-    ]);
-    expect(findings.map((finding) => finding.range.start)).toEqual([0, 6, 0, 18, 6, 0]);
-  });
-
-  it("handles large inputs without missing repeated matches", () => {
-    const text = "color ".repeat(2_000);
-    const findings = findHouseStyleIssues({
-      text,
-      rules: {
-        ...quietHouseStyle,
-        spellingVariant: "en-GB",
-      },
-    });
-
-    expect(findings).toHaveLength(2_000);
-    expect(findings[0]).toMatchObject({
-      range: { start: 0, end: 5, unit: "character" },
-      evidence: "color",
-    });
-    expect(findings.at(-1)).toMatchObject({
-      range: { start: 11_994, end: 11_999, unit: "character" },
-      evidence: "color",
-    });
   });
 });

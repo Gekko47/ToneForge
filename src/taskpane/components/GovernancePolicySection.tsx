@@ -133,7 +133,6 @@ const SCOPE_FLAGS: ReadonlyArray<{
 const SOURCE_LABEL: Readonly<Record<(typeof GOVERNANCE_RULE_SOURCES)[number], string>> = {
   typography: "Typography",
   "houseStyle.terminology": "House terminology",
-  "houseStyle.spellingVariant": "Spelling variants",
   formatting: "Formatting",
   semantic: "Semantic",
   protection: "Protection",

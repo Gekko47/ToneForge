@@ -279,10 +279,6 @@ function houseStyleReplacement(finding: Finding): string | null {
   switch (finding.category) {
     case "houseStyle.terminology":
       return quotedReplacement(finding.message);
-    case "houseStyle.spellingVariant": {
-      const match = /\bspelling\s+[“"']([^”"']+)[”"']\s+instead\s+of/i.exec(finding.message);
-      return match?.[1]?.trim() ?? quotedReplacement(finding.message);
-    }
     case "houseStyle.capitalization.sentenceCase":
       return finding.transformation?.kind === "case" && finding.transformation.style === "sentence"
         ? toSentenceCase(finding.transformation.text)
@@ -388,7 +384,6 @@ function changesForFinding(finding: Finding): Change[] {
     case "language.unit.magnitude":
       return [];
     case "houseStyle.terminology":
-    case "houseStyle.spellingVariant":
     case "houseStyle.capitalization.sentenceCase":
     case "houseStyle.capitalization.titleCase": {
       const replacement =

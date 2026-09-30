@@ -25,29 +25,22 @@ interface MatchRange {
   end: number;
 }
 
-interface SpellingVariantEntry {
-  "en-US": string;
-  "en-GB": string;
-  au: string;
-}
-
-/** Common variant sets only; this engine is not a full spellchecker. */
-const SPELLING_VARIANT_TABLE: readonly SpellingVariantEntry[] = [
-  { "en-US": "color", "en-GB": "colour", au: "colour" },
-  { "en-US": "favorite", "en-GB": "favourite", au: "favourite" },
-  { "en-US": "honor", "en-GB": "honour", au: "honour" },
-  { "en-US": "labor", "en-GB": "labour", au: "labour" },
-  { "en-US": "center", "en-GB": "centre", au: "centre" },
-  { "en-US": "organize", "en-GB": "organise", au: "organise" },
-  { "en-US": "organization", "en-GB": "organisation", au: "organisation" },
-  { "en-US": "analyze", "en-GB": "analyse", au: "analyse" },
-  { "en-US": "behavior", "en-GB": "behaviour", au: "behaviour" },
-  { "en-US": "defense", "en-GB": "defence", au: "defence" },
-  { "en-US": "traveling", "en-GB": "travelling", au: "travelling" },
-  { "en-US": "canceled", "en-GB": "cancelled", au: "cancelled" },
-  { "en-US": "modeled", "en-GB": "modelled", au: "modelled" },
-  { "en-US": "program", "en-GB": "programme", au: "program" },
-];
+/*
+ * The US/UK variant table that used to live here is gone (spec §4.3).
+ *
+ * It duplicated Word's own spellchecker, which already flags every one of these
+ * words, and it did so worse: a closed list of fourteen pairs, so a house
+ * spelling outside the list produced nothing while a word *inside* it produced
+ * a finding the author had already been told about. A rule that can only ever
+ * be a subset of the host's, and that reports the subset as if it were the
+ * whole, is worse than no rule — the count in the findings list is a claim
+ * about the document, and this one understated it.
+ *
+ * `houseStyle.spellingVariant` stays in the schema as metadata, and nothing
+ * reads it. A house with its own spelling convention declares it as a
+ * terminology rule, which is enforceable, scoped and correctable — the four
+ * things this table could not be.
+ */
 
 /** Scan text against house-style preferences and return deterministic findings. */
 export function findHouseStyleIssues(options: HouseStyleCheckOptions): Finding[] {
@@ -59,7 +52,6 @@ export function findHouseStyleIssues(options: HouseStyleCheckOptions): Finding[]
   findings.push(...checkBannedTerms(text, rules));
   findings.push(...checkSentenceCase(text, rules));
   findings.push(...checkTitleCaseWords(text, rules));
-  findings.push(...checkSpellingVariant(text, rules));
   return findings;
 }
 
@@ -291,35 +283,6 @@ function checkTitleCaseWords(text: string, rules: HouseStyle): Finding[] {
         }),
       );
     });
-
-  return findings;
-}
-
-function checkSpellingVariant(text: string, rules: HouseStyle): Finding[] {
-  const findings: Finding[] = [];
-
-  SPELLING_VARIANT_TABLE.forEach((entry) => {
-    const preferred = entry[rules.spellingVariant];
-    const alternatives = [
-      ...new Set(Object.values(entry).filter((variant) => variant !== preferred)),
-    ];
-
-    alternatives.forEach((alternative) => {
-      findMatches(text, boundedTermPattern(alternative)).forEach((range) => {
-        findings.push(
-          makeFinding({
-            category: "houseStyle.spellingVariant",
-            range: makeRange(range),
-            message: `Use ${rules.spellingVariant} spelling “${preferred}” instead of “${alternative}”`,
-            severity: "warning",
-            evidence: text.slice(range.start, range.end),
-            actual: alternative,
-            expected: preferred,
-          }),
-        );
-      });
-    });
-  });
 
   return findings;
 }
