@@ -108,6 +108,15 @@ const diffFields: readonly { label: string; path: readonly string[] }[] = [
   { label: "Sentence case", path: ["houseStyle", "capitalization", "sentenceCase"] },
   { label: "Title-case words", path: ["houseStyle", "capitalization", "titleCaseWords"] },
   /*
+   * The spelling variant is the one house-style field deliberately *not* wired
+   * to a rule (spec §4.3 removed the scanner; the value stays as metadata). It is
+   * listed here so a revision that changes it still reports a change: a field a
+   * user can edit and that a revision diff cannot see is indistinguishable from
+   * a field the editor never saved. A diff entry is not a claim that a rule
+   * reads the field — the opposite, in this case.
+   */
+  { label: "Spelling variant", path: ["houseStyle", "spellingVariant"] },
+  /*
    * The three sections spec section 6 adds, diffed as whole sections rather
    * than field by field.
    *
@@ -116,11 +125,6 @@ const diffFields: readonly { label: string; path: readonly string[] }[] = [
    * line per term — a changelog nobody reads. A reviewer asking "did the house
    * style change" wants one line per section, and the value formatter already
    * summarises a list as its length with its distinct values.
-   *
-   * The spelling variant above is the one field deliberately *not* wired to a
-   * rule (spec section 4.3 removed the rule; the value stays as metadata), and
-   * it is listed so the changelog still reports a change to it. A diff entry is
-   * not a claim that a rule reads the field.
    */
   { label: "Language conventions", path: ["language"] },
   { label: "Document formatting", path: ["formatting"] },

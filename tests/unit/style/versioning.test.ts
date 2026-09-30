@@ -46,6 +46,24 @@ describe("diffProfiles", () => {
     expect(banned?.to).toBe("utilize");
   });
 
+  it("reports a change to the retained spelling-variant metadata", () => {
+    /*
+     * No rule reads `houseStyle.spellingVariant` — spec §4.3 removed the
+     * scanner and kept the value — so it was dropped from the diff as well. That
+     * made a field the user can still edit invisible to the revision changelog,
+     * which is indistinguishable from the editor failing to save it. The entry
+     * is a diff record, not a claim that a rule consumes the field.
+     */
+    const from = createEmptyProfile("Saved profile");
+    const to = {
+      ...from,
+      houseStyle: { ...from.houseStyle, spellingVariant: "au" as const },
+    };
+
+    const fields = diffProfiles(from, to).changes.map((change) => change.field);
+    expect(fields).toContain("Spelling variant");
+  });
+
   it("ignores measured metrics because they are derived", () => {
     const from = createEmptyProfile("Saved profile");
     const to = {
