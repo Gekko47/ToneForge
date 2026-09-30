@@ -194,6 +194,26 @@ describe("command and manifest contracts", () => {
     );
   });
 
+  it("rejects a group that reuses its enclosing tab's id", async () => {
+    /*
+     * `OfficeTab` shares the id namespace with `Group` and `Control`, so a group
+     * carrying the tab's own id is the same defect as a group colliding with a
+     * control — one level up. Word rejects the whole manifest either way, and the
+     * check has to name the pair for the failure to be actionable.
+     */
+    const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as unknown;
+    const broken = readFileSync(repositoryPath("manifest.xml"), "utf8").replace(
+      '<Group id="ToneForgeProfileGroup">',
+      '<Group id="ToneForge">',
+    );
+    expect(broken).not.toBe(readFileSync(repositoryPath("manifest.xml"), "utf8"));
+
+    const errors = await validateManifests({ manifest, xml: broken, runOfficialValidator: false });
+    expect(errors).toContain(
+      'manifest.xml UI element id "ToneForge" is used by both a <OfficeTab> and a <Group> on the ToneForge ribbon; Word requires these ids to be unique and rejects the entire manifest, which presents as "This add-in is no longer available"',
+    );
+  });
+
   it("keeps every real ribbon UI element id unique", async () => {
     // The assertion that would have failed before the rename. It reads the
     // manifest rather than trusting the validator, so a future edit that
@@ -203,7 +223,7 @@ describe("command and manifest contracts", () => {
     const tab = xml.slice(tabStart, xml.indexOf("</OfficeTab>", tabStart));
     const owners = new Map<string, string>();
     const collisions: string[] = [];
-    for (const match of tab.matchAll(/<(Tab|Group|Control)\b[^>]*\bid="([^"]*)"/g)) {
+    for (const match of tab.matchAll(/<(OfficeTab|Tab|Group|Control)\b[^>]*\bid="([^"]*)"/g)) {
       const kind = match[1] ?? "";
       const id = match[2] ?? "";
       const previous = owners.get(id);

@@ -362,7 +362,14 @@ function validateUniqueUiElementIds(xml, errors) {
 
   const seen = new Map();
   const reported = new Set();
-  const elements = /<(Tab|Group|Control)\b[^>]*\bid="([^"]*)"/g;
+  /*
+   * `OfficeTab` is captured alongside `Tab`, `Group` and `Control` because it
+   * carries an id in the same namespace and the host holds it to the same rule.
+   * The enclosing tab is inside the slice this function scans, so leaving it out
+   * meant a group or control that reused the tab's own id was reported as
+   * unique — the same defect as a group colliding with a control, one level up.
+   */
+  const elements = /<(OfficeTab|Tab|Group|Control)\b[^>]*\bid="([^"]*)"/g;
   for (const match of tab.matchAll(elements)) {
     const kind = match[1];
     const id = match[2];
