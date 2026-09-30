@@ -159,6 +159,12 @@ function gapsBefore(
  * `safeBatchKey` is set only where every occurrence carrying the same key wants
  * the same correction. Spec §13 permits batch approval on that basis and no
  * other, so a key left off is a group that must be approved one at a time.
+ *
+ * `occurrenceGroupKey` is the batch key when there is one, and the profile path
+ * and expected value otherwise. Grouping on the category alone would put
+ * `01/02/2026` and an ambiguous currency figure in one bucket, and the group's
+ * `expected` values would then differ — so the group would refuse batch approval
+ * for the wrong reason, and the UI would show a mixed bucket under one heading.
  */
 function makeFinding(params: {
   category: string;
@@ -194,6 +200,7 @@ function makeFinding(params: {
       profilePath: params.profilePath,
       actual: params.actual,
       expected: params.expected,
+      occurrenceGroupKey: params.safeBatchKey ?? `${params.profilePath}|${params.expected}`,
       correctionAvailable: params.correctionAvailable,
       ...(params.safeBatchKey === undefined ? {} : { safeBatchKey: params.safeBatchKey }),
     },

@@ -75,8 +75,26 @@ function boundedTermPattern(value: string): RegExp {
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "giu");
 }
 
+/**
+ * Build a finding.
+ *
+ * `deterministic` carries the provenance spec §12 requires. These findings
+ * previously carried none at all, which had two consequences worth stating: the
+ * review UI could not say which house-style field produced a finding, and
+ * `groupFindings` fell back to grouping on `category|""` — so every preferred
+ * term in the document landed in one bucket, and the group's `expected` values
+ * differed, so the group refused batch approval with a reason that named the
+ * symptom rather than the cause.
+ *
+ * `occurrenceGroupKey` is the *field plus the correction*, not the field alone.
+ * `program → programme` and `colour → color` are both `houseStyle.terminology`,
+ * and grouping them together would offer one `Approve all` for two unrelated
+ * substitutions. With the correction in the key they are two groups of one each,
+ * which is the honest answer.
+ */
 function makeFinding(params: {
   category: string;
+  profilePath: string;
   range: Range;
   message: string;
   severity: Severity;
@@ -84,6 +102,8 @@ function makeFinding(params: {
   actual: string;
   expected: string;
   transformation?: Finding["transformation"];
+  /** Set only where the correction is a named substitution the profile asked for. */
+  safeBatchKey?: string;
 }): Finding {
   return {
     id: uuidv4(),
@@ -104,6 +124,14 @@ function makeFinding(params: {
     expected: params.expected,
     ...(params.transformation === undefined ? {} : { transformation: params.transformation }),
     precondition: { kind: "text", expectedText: params.actual },
+    deterministic: {
+      profilePath: params.profilePath,
+      actual: params.actual,
+      expected: params.expected,
+      occurrenceGroupKey: `${params.profilePath}|${params.expected}`,
+      ...(params.safeBatchKey === undefined ? {} : { safeBatchKey: params.safeBatchKey }),
+      correctionAvailable: true,
+    },
   };
 }
 
@@ -150,12 +178,18 @@ function checkPreferredTerminology(text: string, rules: HouseStyle): Finding[] {
       findings.push(
         makeFinding({
           category: "houseStyle.terminology",
+          profilePath: "language.terminology",
           range: makeRange(candidate.range),
           message: `Use “${candidate.preferred}” instead of “${candidate.term}”`,
           severity: "warning",
           evidence: text.slice(candidate.range.start, candidate.range.end),
           actual: text.slice(candidate.range.start, candidate.range.end),
           expected: candidate.preferred,
+          // A named substitution the profile asked for by value. Two occurrences
+          // of the same `term → preferred` pair want the same edit, so the batch
+          // key is the pair rather than the category: `program → programme` and
+          // `colour → color` must never be approved together.
+          safeBatchKey: `terminology:${candidate.term}->${candidate.preferred}`,
         }),
       );
     });
@@ -179,12 +213,25 @@ function checkBannedTerms(text: string, rules: HouseStyle): Finding[] {
       findings.push(
         makeFinding({
           category: "houseStyle.bannedTerm",
+          profilePath: "language.bannedTerms",
           range: makeRange(range),
           message: `Remove banned term “${term}”`,
           severity: "error",
           evidence: text.slice(range.start, range.end),
           actual: text.slice(range.start, range.end),
           expected: "",
+          /*
+           * No `safeBatchKey`, deliberately.
+           *
+           * Unlike a substitution, a deletion is not semantically neutral: it
+           * removes the author's words rather than restating them, and the
+           * planner already builds it as a non-reversible `deleteRange`. §13
+           * permits batch approval only where the correction is neutral, so a
+           * banned term is a group the user approves one occurrence at a time.
+           * Leaving the key off is what makes `groupFindings` refuse, and it
+           * refuses with a reason the UI can show rather than by hiding the
+           * control.
+           */
         }),
       );
     });
@@ -224,12 +271,17 @@ function checkSentenceCase(text: string, rules: HouseStyle): Finding[] {
     findings.push(
       makeFinding({
         category: "houseStyle.capitalization.sentenceCase",
+        profilePath: "language.capitalisation.sentenceCase",
         range: makeRange(range),
         message: `Start the sentence with uppercase “${firstCased.character.toUpperCase()}”`,
         severity: "warning",
         evidence: text.slice(range.start, range.end),
         actual: text.slice(range.start, range.end),
         expected: toSentenceCase(text.slice(range.start, range.end)),
+        // The expected value is the uppercased character itself, so every
+        // occurrence wanting the same letter groups together and a sentence
+        // starting with a different one does not join it.
+        safeBatchKey: "sentenceCase",
         transformation: {
           kind: "case",
           style: "sentence",
@@ -269,12 +321,14 @@ function checkTitleCaseWords(text: string, rules: HouseStyle): Finding[] {
       findings.push(
         makeFinding({
           category: "houseStyle.capitalization.titleCase",
+          profilePath: "language.capitalisation.headingCase",
           range: makeRange(range),
           message: `Capitalize title-case word “${candidate.word}”`,
           severity: "warning",
           evidence: text.slice(range.start, range.end),
           actual: text.slice(range.start, range.end),
           expected: firstCased.character.toUpperCase(),
+          safeBatchKey: `titleCase:${candidate.word}`,
           transformation: {
             kind: "case",
             style: "title",

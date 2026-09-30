@@ -243,6 +243,10 @@ function makeFinding(params: {
   /** Whether the planner can build a safe correction for this finding. */
   correctable?: boolean;
   correctionReason?: string;
+  /** The deviations of one standard that belong in one group. */
+  occurrenceGroupKey?: string;
+  /** Set only where approving several occurrences at once is provably safe. */
+  safeBatchKey?: string;
 }): Finding {
   const precondition = params.paragraph ? paragraphPrecondition(params.paragraph) : undefined;
   return {
@@ -266,6 +270,13 @@ function makeFinding(params: {
       profilePath: params.profilePath,
       ...(params.expectedValue === undefined ? {} : { expected: params.expectedValue }),
       ...(params.actualValue === undefined ? {} : { actual: params.actualValue }),
+      // The fallback keys on the profile path, which is unique per property, so
+      // a finding that declares neither still lands in a group of its own rather
+      // than joining every other paragraph deviation.
+      ...(params.occurrenceGroupKey === undefined
+        ? { occurrenceGroupKey: params.profilePath }
+        : { occurrenceGroupKey: params.occurrenceGroupKey }),
+      ...(params.safeBatchKey === undefined ? {} : { safeBatchKey: params.safeBatchKey }),
       correctionAvailable: params.correctable ?? true,
       ...(params.correctionReason === undefined
         ? {}
@@ -324,6 +335,13 @@ function styleFindings(params: {
         expected: standard.styleName,
         expectedValue: standard.styleName,
         actualValue: styleName,
+        // Grouped by the standard it wants, not by the category: four body
+        // paragraphs wanting "Normal" are one decision, and a mis-styled
+        // subtitle wanting "Subtitle" is a different one. Batch-safe because
+        // `applyStyle` of a named Word style to N paragraphs is the same edit
+        // N times, and applying a style cannot destroy author emphasis.
+        occurrenceGroupKey: `${path}.styleName|${standard.styleName}`,
+        safeBatchKey: `style:${path}|${standard.styleName}`,
       }),
     );
   }
@@ -340,6 +358,17 @@ function styleFindings(params: {
         expected: String(deviation.expected),
         expectedValue: deviation.expected,
         actualValue: deviation.actual,
+        /*
+         * Grouped by property and expected value, and never batch-safe.
+         *
+         * Grouping by property alone would put "alignment is left" next to
+         * "alignment is justified" and the group would then refuse for the wrong
+         * reason. Batch approval is refused outright because the correction is
+         * not available at all — the two lines below say why — and a group whose
+         * members have no correction to approve together should not offer a
+         * control that approves nothing.
+         */
+        occurrenceGroupKey: `${path}.${deviation.property}|${String(deviation.expected)}`,
         // A property deviation is reported, not auto-corrected: writing a font
         // size or an indent over a paragraph is exactly the direct formatting
         // the profile's style-first strategy exists to avoid. Spec §7 prefers

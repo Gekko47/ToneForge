@@ -29,6 +29,35 @@ export interface TypographyCheckOptions {
 }
 
 /**
+ * Which profile field each finding category is a statement about.
+ *
+ * Spec §12: a finding names the profile field that produced it, and §13 groups
+ * findings by that field. One entry per category rather than a `profilePath`
+ * argument at each of the twenty-eight call sites, because the mapping is a
+ * property of the rule rather than of any individual detection — a reader can
+ * audit the whole thing in one place, and a site that forgot the field is a
+ * category missing from this table rather than a silent omission.
+ *
+ * `typography.whitespace` and `typography.punctuation` are deliberately absent:
+ * each covers several settings, and the check that produces them passes the
+ * specific field explicitly. A single path for either would claim a finding came
+ * from `typography.normaliseWhitespace` when the profile's
+ * `typography.flagTabs` is what fired, and grouping on that key would put a tab
+ * in the same batch as a doubled space.
+ */
+const CATEGORY_PROFILE_PATHS: Readonly<Record<string, string>> = {
+  "typography.emDash": "typography.emDash",
+  "typography.emDashSpacing": "typography.emDashSpacing",
+  "typography.enDashSpacing": "typography.enDashSpacing",
+  "typography.doubleQuotes": "typography.doubleQuotes",
+  "typography.singleQuotes": "typography.singleQuotes",
+  "typography.apostrophes": "typography.apostrophes",
+  "typography.decimalSeparator": "typography.decimalSeparator",
+  "typography.thousandsSeparator": "typography.thousandsSeparator",
+  "typography.ellipsis": "typography.ellipsis",
+};
+
+/**
  * Scan text against typography preferences and return deterministic findings.
  * Returns an empty array for empty input.
  */
@@ -73,7 +102,22 @@ function makeFinding(params: {
   severity: Severity;
   evidence: string;
   expected?: string;
+  /** Overrides the table, for the categories that cover several settings. */
+  profilePath?: string;
 }): Finding {
+  const profilePath = params.profilePath ?? CATEGORY_PROFILE_PATHS[params.category];
+  if (profilePath === undefined) {
+    /*
+     * Thrown rather than defaulted.
+     *
+     * The alternative is a finding with no declared origin, which the engine
+     * accepts and the §11 audit cannot see past: it groups on the category, the
+     * UI cannot say which setting fired, and the failure is a report that looks
+     * complete. A missing table entry is a coding error and belongs at the point
+     * it is made.
+     */
+    throw new Error(`typography: no profile field declared for category "${params.category}"`);
+  }
   return {
     id: uuidv4(),
     kind: "deterministic",
@@ -92,6 +136,19 @@ function makeFinding(params: {
     actual: params.evidence,
     ...(params.expected === undefined ? {} : { expected: params.expected }),
     precondition: { kind: "text", expectedText: params.evidence },
+    deterministic: {
+      profilePath,
+      actual: params.evidence,
+      ...(params.expected === undefined ? {} : { expected: params.expected }),
+      // One key per profile field: every occurrence of an em-dash finding wants
+      // the same replacement, so a group is exactly "this setting, everywhere".
+      occurrenceGroupKey: profilePath,
+      safeBatchKey: profilePath,
+      // Typography corrections are character substitutions the profile asked for
+      // by name, so one is never structurally ambiguous. This is the assertion
+      // §13 requires before `Approve all` may be offered at all.
+      correctionAvailable: true,
+    },
   };
 }
 
@@ -456,6 +513,7 @@ function checkWhitespace(text: string, rules: TypographyRules): Finding[] {
           message: "Use a single space instead of multiple consecutive spaces",
           severity: "warning",
           evidence: text.slice(m.start, m.end),
+          profilePath: "typography.normaliseWhitespace",
         }),
       );
     });
@@ -468,6 +526,7 @@ function checkWhitespace(text: string, rules: TypographyRules): Finding[] {
           message: "Remove trailing spaces",
           severity: "warning",
           evidence: text.slice(m.start, m.end),
+          profilePath: "typography.normaliseWhitespace",
         }),
       );
     });
@@ -482,6 +541,7 @@ function checkWhitespace(text: string, rules: TypographyRules): Finding[] {
           message: "Use spaces instead of tabs",
           severity: "warning",
           evidence: text.slice(m.start, m.end),
+          profilePath: "typography.flagTabs",
         }),
       );
     });
@@ -499,6 +559,7 @@ function checkWhitespace(text: string, rules: TypographyRules): Finding[] {
           message: "Use a regular space instead of a non-breaking space",
           severity: "warning",
           evidence: text.slice(m.start, m.end),
+          profilePath: "typography.nonBreakingSpace",
         }),
       );
     });
@@ -507,12 +568,21 @@ function checkWhitespace(text: string, rules: TypographyRules): Finding[] {
   return findings;
 }
 
-/** Report a gap that does not match the wanted spacing, and only that gap. */
+/**
+ * Report a gap that does not match the wanted spacing, and only that gap.
+ *
+ * `profilePath` is a parameter rather than derived from the category because all
+ * four spacing settings share `typography.punctuation`. Each one is a different
+ * profile field with a different remedy, and grouping them under one path would
+ * offer a single `Approve all` for a mix of solidus, percentage, currency and
+ * bracket corrections.
+ */
 function spacingFindings(params: {
   text: string;
   matches: readonly { start: number; end: number }[];
   wantsSpace: boolean;
   category: string;
+  profilePath: string;
   spacedMessage: string;
   tightMessage: string;
 }): Finding[] {
@@ -527,6 +597,7 @@ function spacingFindings(params: {
         severity: "warning",
         evidence: gap,
         expected: params.wantsSpace ? " " : "",
+        profilePath: params.profilePath,
       }),
     );
 }
@@ -545,6 +616,7 @@ function checkSlashSpacing(text: string, rules: TypographyRules): Finding[] {
     matches: findMatches(text, /\s*\/+/g),
     wantsSpace: rules.slashSpacing === "spaced",
     category: "typography.punctuation",
+    profilePath: "typography.slashSpacing",
     spacedMessage: "A solidus is surrounded by spaces",
     tightMessage: "A solidus is written tight against the words around it",
   });
@@ -565,6 +637,7 @@ function checkPercentageSpacing(text: string, rules: TypographyRules): Finding[]
     matches: findMatches(text, /[ \t]*(?=%|per\s+cent|percent)/giu),
     wantsSpace: rules.percentageSpacing === "spaced",
     category: "typography.punctuation",
+    profilePath: "typography.percentageSpacing",
     spacedMessage: "A percentage takes a space before the sign",
     tightMessage: "A percentage takes no space before the sign",
   });
@@ -578,6 +651,7 @@ function checkCurrencySpacing(text: string, rules: TypographyRules): Finding[] {
     matches: findMatches(text, /[$£€¥][ \t]*/gu),
     wantsSpace: rules.currencySpacing === "spaced",
     category: "typography.punctuation",
+    profilePath: "typography.currencySpacing",
     spacedMessage: "A currency symbol is separated from its amount by a space",
     tightMessage: "A currency symbol is written tight against its amount",
   });
@@ -602,6 +676,7 @@ function checkSpaceBeforeParenthesis(text: string, rules: TypographyRules): Find
         severity: "warning",
         evidence: text.slice(m.start, m.end),
         expected: " ",
+        profilePath: "typography.spaceBeforeParenthesis",
       }),
     );
 }
@@ -619,6 +694,7 @@ function checkSpaceAfterHyphen(text: string, rules: TypographyRules): Finding[] 
         severity: "warning",
         evidence: text.slice(m.start, m.end),
         expected: " - ",
+        profilePath: "typography.spaceAfterHyphen",
       }),
     );
 }
