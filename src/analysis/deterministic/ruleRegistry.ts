@@ -106,13 +106,26 @@ function language(
   return selectCategories(scan(scanOptions), categories) as DeterministicFinding[];
 }
 
-/** Run the formatting scanner and keep one rule's categories. */
+/**
+ * Run the formatting scanner and keep one rule's categories.
+ *
+ * The profile, the structure section and the host capabilities are all passed
+ * through rather than being read from the snapshot. That is the spec §10 change:
+ * a formatting check with no profile has no standard to compare against, and one
+ * that cannot see the capabilities would report a property the host declined to
+ * serve as if the document had got it wrong.
+ */
 function formatting(
   ruleContext: DeterministicRuleContext,
   categories: readonly string[],
 ): DeterministicFinding[] {
   return selectCategories(
-    findFormattingIssues({ snapshot: ruleContext.context.formatting }),
+    findFormattingIssues({
+      snapshot: ruleContext.context.formatting,
+      profile: ruleContext.policy.formatting,
+      structure: ruleContext.policy.structure,
+      capabilities: ruleContext.context.capabilities,
+    }),
     categories,
   ) as DeterministicFinding[];
 }
@@ -509,7 +522,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "formatting",
     scope: "paragraph",
     category: "formatting.bodyStyle",
-    emits: ["formatting.bodyStyle", "formatting.emptyStyle"],
+    emits: ["formatting.bodyStyle", "formatting.emptyStyle", "formatting.styleStandard"],
     profilePaths: [
       "formatting.bodyStyle",
       "formatting.titleStyle",
@@ -517,7 +530,12 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "formatting.captions",
     ],
     correctable: true,
-    analyze: (ruleContext) => formatting(ruleContext, ["formatting.emptyStyle"]),
+    analyze: (ruleContext) =>
+      formatting(ruleContext, [
+        "formatting.emptyStyle",
+        "formatting.bodyStyle",
+        "formatting.styleStandard",
+      ]),
   },
   {
     id: "formatting/headings",
@@ -526,6 +544,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "formatting.headingStyle",
     profilePaths: ["formatting.headings", "structure.maxHeadingLevel"],
     correctable: true,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.headingStyle"]),
   },
   {
     id: "formatting/direct",
@@ -546,9 +565,11 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "formatting",
     scope: "list",
     category: "formatting.listLevel",
+    emits: ["formatting.listLevel", "formatting.listStyle"],
     profilePaths: ["formatting.lists"],
     correctable: true,
-    analyze: (ruleContext) => formatting(ruleContext, ["formatting.listLevel"]),
+    analyze: (ruleContext) =>
+      formatting(ruleContext, ["formatting.listLevel", "formatting.listStyle"]),
   },
   {
     id: "formatting/tables",

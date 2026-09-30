@@ -30,6 +30,7 @@ function finding(params: {
   confidence?: number;
   suggestedChangeId?: string;
   id?: string;
+  deterministic?: Finding["deterministic"];
 }): Finding {
   return {
     id: params.id ?? FINDING_ID,
@@ -55,6 +56,7 @@ function finding(params: {
     ...(params.suggestedChangeId === undefined
       ? {}
       : { suggestedChangeId: params.suggestedChangeId }),
+    ...(params.deterministic === undefined ? {} : { deterministic: params.deterministic }),
   };
 }
 
@@ -252,18 +254,79 @@ describe("planChanges", () => {
     });
   });
 
-  it.each(["formatting.unknownStyle", "formatting.emptyStyle", "formatting.emptyHeading"])(
-    "maps %s to Normal",
-    (category) => {
-      const plan = planFor([finding({ category, start: 1, end: 2, unit: "paragraph" })]);
+  /*
+   * Spec §7, style-first. Every style-identity deviation is corrected by applying
+   * the Word style the profile names, not by writing the font, size or indent the
+   * style would have produced. One mutation, one place for the user to look, and
+   * no new direct formatting to accumulate.
+   */
+  it.each([
+    ["formatting.bodyStyle", "Normal"],
+    ["formatting.headingStyle", "Heading 2"],
+    ["formatting.styleStandard", "Report Title"],
+    ["formatting.listStyle", "List Paragraph"],
+  ])("applies the profile's Word style for %s", (category, styleName) => {
+    const plan = planFor([
+      finding({ category, start: 1, end: 2, unit: "paragraph", expected: styleName }),
+    ]);
 
-      expect(soleChange(plan)).toMatchObject({
-        type: "applyStyle",
-        range: { start: 1, end: 2 },
-        payload: { styleName: "Normal" },
-      });
-    },
-  );
+    expect(soleChange(plan)).toMatchObject({
+      type: "applyStyle",
+      range: { start: 1, end: 2 },
+      payload: { styleName },
+    });
+  });
+
+  it("applies the profile's body style for a paragraph with no applied style", () => {
+    const plan = planFor([
+      finding({
+        category: "formatting.emptyStyle",
+        start: 1,
+        end: 2,
+        unit: "paragraph",
+        expected: "Body Text",
+      }),
+    ]);
+
+    expect(soleChange(plan)).toMatchObject({
+      type: "applyStyle",
+      payload: { styleName: "Body Text" },
+    });
+  });
+
+  /*
+   * The three findings below used to plan corrections, and each correction was
+   * one the rule itself had already declined to offer: a custom style replaced
+   * by `Normal` discards the author's own document structure, an empty heading
+   * restyled to `Normal` produces a blank body paragraph rather than removing
+   * anything, and a character-format reset strips the bold the rule deliberately
+   * left alone. `correctionAvailable: false` is the rule's decision, and the
+   * planner honours it whatever category the finding arrives under.
+   */
+  it.each([
+    ["formatting.unknownStyle", "a custom style replaced by a built-in"],
+    ["formatting.emptyHeading", "an empty heading restyled instead of removed"],
+    ["formatting.directFormatting", "a character reset that would strip the author's emphasis"],
+  ])("plans no change for %s, because %s is not a safe correction", (category) => {
+    const plan = planFor([
+      finding({
+        category,
+        start: 1,
+        end: 2,
+        unit: "paragraph",
+        expected: "Normal",
+        deterministic: {
+          profilePath: "formatting.bodyStyle",
+          correctionAvailable: false,
+          correctionReason: "Reviewed by hand.",
+        },
+      }),
+    ]);
+
+    expect(plan.changes).toEqual([]);
+    // The finding still reaches the report, so the user sees what was flagged.
+    expect(plan.findings).toHaveLength(1);
+  });
 
   it("derives the intermediate heading level from the finding message", () => {
     const plan = planFor([
@@ -280,39 +343,41 @@ describe("planChanges", () => {
     expect(soleChange(plan).payload).toEqual({ styleName: "Heading 2" });
   });
 
-  it("maps direct formatting findings to a reset that restores style control", () => {
-    const plan = planFor([
-      finding({
-        category: "formatting.directFormatting",
-        start: 0,
-        end: 1,
-        unit: "paragraph",
-        message:
-          "Paragraph has direct character formatting; clear it so the applied Word style controls appearance",
-      }),
-    ]);
-    const change = soleChange(plan);
-
-    expect(change.type).toBe("resetCharacterFormatting");
-    expect(change.payload).toEqual({});
-    expect(ChangeSchema.safeParse(change).success).toBe(true);
-  });
-
-  it("maps list-level findings to level zero", () => {
-    const plan = planFor([
+  it("maps list-level findings to the level the rule expected", () => {
+    const integrity = planFor([
       finding({
         category: "formatting.listLevel",
         start: 4,
         end: 5,
         unit: "paragraph",
         message: 'Paragraph has list level 2 but style "List Paragraph" is not a list style',
+        deterministic: { profilePath: "structure.listLevelIntegrity", expected: 0 },
+      }),
+    ]);
+    const profileDriven = planFor([
+      finding({
+        category: "formatting.listLevel",
+        start: 4,
+        end: 5,
+        unit: "paragraph",
+        message: "List paragraph is at level 2 but the profile expects level 0",
+        deterministic: { profilePath: "formatting.lists.level", expected: 0 },
       }),
     ]);
 
-    expect(soleChange(plan)).toMatchObject({
+    expect(soleChange(integrity)).toMatchObject({ type: "setListLevel", payload: { level: 0 } });
+    expect(soleChange(profileDriven)).toMatchObject({
       type: "setListLevel",
       payload: { level: 0 },
     });
+  });
+
+  it("falls back to level zero when a list finding names no expected level", () => {
+    const plan = planFor([
+      finding({ category: "formatting.listLevel", start: 4, end: 5, unit: "paragraph" }),
+    ]);
+
+    expect(soleChange(plan)).toMatchObject({ type: "setListLevel", payload: { level: 0 } });
   });
 
   it("retains semantic findings for future review without inventing a change", () => {

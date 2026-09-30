@@ -4,6 +4,10 @@ import { createChangePlan } from "../../../src/core/domain/ChangePlan";
 import { FindingSchema, type Finding } from "../../../src/core/domain/Finding";
 import { planChanges } from "../../../src/changes/planner";
 import { findFormattingIssues } from "../../../src/formatting/analyzer";
+import {
+  DocumentFormattingProfileSchema,
+  DocumentStructureProfileSchema,
+} from "../../../src/core/domain/StyleProfile";
 import { toSentenceCase, toTitleCase } from "../../../src/shared/utils/caseConversion";
 import type { FormattingSnapshot } from "../../../src/formatting/formattingSnapshot";
 
@@ -127,6 +131,15 @@ describe("Stage 1-2 hardening contracts", () => {
           unsupported: [],
         },
       },
+      profile: DocumentFormattingProfileSchema.parse({
+        bodyStyle: { styleName: "Normal", styleControlledFormatting: true },
+      }),
+      structure: DocumentStructureProfileSchema.parse({}),
+      capabilities: {
+        supportsStyles: true,
+        supportsParagraphFormat: true,
+        supportsListLevel: true,
+      },
     });
     expect(result[0]).toMatchObject({
       nodeIds: ["word-paragraph-abc"],
@@ -165,6 +178,17 @@ describe("Stage 1-2 hardening contracts", () => {
           directFormattingProvenance: "partial",
           unsupported: [],
         },
+      },
+      // The profile allows direct formatting, so a style-controlled reset is not
+      // expected and the paragraph's character provenance is irrelevant.
+      profile: DocumentFormattingProfileSchema.parse({
+        bodyStyle: { styleName: "Normal", styleControlledFormatting: false },
+      }),
+      structure: DocumentStructureProfileSchema.parse({}),
+      capabilities: {
+        supportsStyles: true,
+        supportsParagraphFormat: true,
+        supportsListLevel: true,
       },
     });
 

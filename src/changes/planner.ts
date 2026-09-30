@@ -213,19 +213,6 @@ function listLevelChange(finding: Finding, level: number): Change | null {
   });
 }
 
-function directFormatChange(finding: Finding): Change | null {
-  const precondition = formattingPrecondition(finding);
-  if (precondition === null) return null;
-  return makeChange({
-    type: "resetCharacterFormatting",
-    range: toChangeRange(finding.range),
-    payload: {},
-    rationale: finding.message,
-    finding,
-    precondition,
-  });
-}
-
 function quotedReplacement(message: string): string | null {
   const patterns = [
     /Use\s+[“"']([^”"']+)[”"']\s+instead/i,
@@ -319,6 +306,17 @@ function semanticChanges(finding: Finding): Change[] {
 function changesForFinding(finding: Finding): Change[] {
   if (finding.actionable === false) return [];
   if (finding.status === "ignored" || finding.status === "deferred") return [];
+  /*
+   * A rule that decided it cannot safely correct this finding wins over the
+   * switch below, whatever category it arrives under.
+   *
+   * The formatting rules are the reason: a `formatting.emptyHeading` finding
+   * used to plan an `applyStyle("Normal")`, which turns an empty heading into a
+   * body paragraph rather than removing anything, and a `formatting.directFormatting`
+   * finding used to plan a `resetCharacterFormatting` that would strip the
+   * author's bold. Both were corrections the rule had already declined to offer.
+   */
+  if (finding.deterministic?.correctionAvailable === false) return [];
   switch (finding.category) {
     case "typography.emDash":
     case "typography.emDashSpacing":
@@ -397,10 +395,22 @@ function changesForFinding(finding: Finding): Change[] {
       const change = deleteChange(finding);
       return change === null ? [] : [change];
     }
-    case "formatting.unknownStyle":
-    case "formatting.emptyStyle":
-    case "formatting.emptyHeading": {
-      const change = styleChange(finding, "Normal");
+    /*
+     * Spec §7: style-first.
+     *
+     * Every style-identity deviation is corrected by applying the Word style the
+     * profile names, not by writing the font, size or indent the style would
+     * have produced. That is fewer mutations, one place for the user to inspect,
+     * and no new direct formatting to accumulate — and it is why the analyzer
+     * reports a property override as uncorrectable rather than offering to write
+     * the value over the paragraph.
+     */
+    case "formatting.bodyStyle":
+    case "formatting.headingStyle":
+    case "formatting.styleStandard":
+    case "formatting.listStyle":
+    case "formatting.emptyStyle": {
+      const change = styleChange(finding, finding.expected ?? "Normal");
       return change === null ? [] : [change];
     }
     case "formatting.headingHierarchy": {
@@ -408,12 +418,9 @@ function changesForFinding(finding: Finding): Change[] {
       const change = styleChange(finding, targetStyle);
       return change === null ? [] : [change];
     }
-    case "formatting.directFormatting": {
-      const change = directFormatChange(finding);
-      return change === null ? [] : [change];
-    }
     case "formatting.listLevel": {
-      const change = listLevelChange(finding, 0);
+      const expected = finding.deterministic?.expected;
+      const change = listLevelChange(finding, typeof expected === "number" ? expected : 0);
       return change === null ? [] : [change];
     }
     default:
