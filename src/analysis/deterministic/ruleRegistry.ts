@@ -27,6 +27,75 @@ import {
   deterministicProfileOf,
   type DeterministicStyleProfile,
 } from "../../core/domain/StyleProfile";
+import { findTypographyIssues } from "../../rules/typography";
+import { findHouseStyleIssues } from "../../rules/houseStyle";
+import { findFormattingIssues } from "../../formatting/analyzer";
+
+/** The categories `typography/dashes` is responsible for. */
+const DASH_CATEGORIES = [
+  "typography.emDash",
+  "typography.emDashSpacing",
+  "typography.enDashSpacing",
+] as const;
+
+/** The categories `typography/quotes` is responsible for. */
+const QUOTE_CATEGORIES = [
+  "typography.doubleQuotes",
+  "typography.singleQuotes",
+  "typography.apostrophes",
+] as const;
+
+/** The categories `typography/numbers` is responsible for. */
+const NUMBER_CATEGORIES = ["typography.decimalSeparator", "typography.thousandsSeparator"] as const;
+
+/**
+ * Keep only the findings a rule is responsible for.
+ *
+ * The three legacy scanners each return every category they know about, so a
+ * rule wrapping one of them has to select its own. Without the filter every rule
+ * wrapping `findTypographyIssues` would report the same dashes *and* the same
+ * quotes, and the report would carry a finding four times over.
+ */
+function selectCategories(
+  findings: readonly { category: string }[],
+  categories: readonly string[],
+): { category: string }[] {
+  const wanted = new Set(categories);
+  return findings.filter((finding) => wanted.has(finding.category));
+}
+
+/** Run the typography scanner and keep one rule's categories. */
+function typography(
+  ruleContext: DeterministicRuleContext,
+  categories: readonly string[],
+): DeterministicFinding[] {
+  return selectCategories(
+    findTypographyIssues({ text: ruleContext.context.text, rules: ruleContext.policy.typography }),
+    categories,
+  ) as DeterministicFinding[];
+}
+
+/** Run the house-style scanner and keep one rule's categories. */
+function houseStyle(
+  ruleContext: DeterministicRuleContext,
+  categories: readonly string[],
+): DeterministicFinding[] {
+  return selectCategories(
+    findHouseStyleIssues({ text: ruleContext.context.text, rules: ruleContext.policy.houseStyle }),
+    categories,
+  ) as DeterministicFinding[];
+}
+
+/** Run the formatting scanner and keep one rule's categories. */
+function formatting(
+  ruleContext: DeterministicRuleContext,
+  categories: readonly string[],
+): DeterministicFinding[] {
+  return selectCategories(
+    findFormattingIssues({ snapshot: ruleContext.context.formatting }),
+    categories,
+  ) as DeterministicFinding[];
+}
 
 /** The rule groups spec §11 asks the registry to expose. */
 export const RULE_GROUPS = [
@@ -54,8 +123,21 @@ export interface DeterministicRule {
   id: string;
   group: RuleGroup;
   scope: RuleScope;
-  /** The user-facing name, which is also the finding category. */
+  /**
+   * The rule's headline category — the one the UI groups by and the one a
+   * profile setting is named after.
+   */
   category: string;
+  /**
+   * Every finding category the rule can emit, `category` included.
+   *
+   * Needed because one rule often produces several closely related categories
+   * (`typography/dashes` emits emDash, emDashSpacing and enDashSpacing). The
+   * engine filters a shared body function's output by this list, which is what
+   * lets every rule wrap the same underlying scanner while remaining separately
+   * auditable. Defaults to `[category]` when a rule emits one.
+   */
+  emits?: readonly string[];
   /**
    * The profile fields this rule reads.
    *
@@ -183,9 +265,17 @@ export const PROFILE_FIELD_PATHS: readonly string[] = [
 /**
  * The rules as they stand.
  *
- * The typography and house-style bodies are attached in T7–T9; the registry
- * declares them now so the audit has something to check against from the start.
- * A rule with no `analyze` yet is visibly incomplete rather than invisible.
+ * The typography, house-style and formatting bodies are attached here; the
+ * language-convention and structural rules that have no body yet are declared
+ * so the audit has something to check against, and a rule with no `analyze` is
+ * visibly incomplete rather than invisible.
+ *
+ * **Why the bodies are attached here rather than called directly by the
+ * engine.** The audit in `ruleRegistry.test.ts` reads this array. If the engine
+ * called `findTypographyIssues` itself, the registry would describe a rule set
+ * that nothing consults, and the audit could pass while the engine ran
+ * something else entirely. Dispatching through `analyze` is what makes the audit
+ * a statement about the running engine rather than about a declaration.
  */
 export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
   {
@@ -193,16 +283,20 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "typography",
     scope: "text",
     category: "typography.emDash",
+    emits: ["typography.emDash", "typography.emDashSpacing", "typography.enDashSpacing"],
     profilePaths: ["typography.emDash", "typography.emDashSpacing", "typography.enDashSpacing"],
     correctable: true,
+    analyze: (ruleContext) => typography(ruleContext, DASH_CATEGORIES),
   },
   {
     id: "typography/quotes",
     group: "typography",
     scope: "text",
     category: "typography.doubleQuotes",
+    emits: ["typography.doubleQuotes", "typography.singleQuotes", "typography.apostrophes"],
     profilePaths: ["typography.doubleQuotes", "typography.singleQuotes", "typography.apostrophes"],
     correctable: true,
+    analyze: (ruleContext) => typography(ruleContext, QUOTE_CATEGORIES),
   },
   {
     id: "typography/ellipsis",
@@ -211,6 +305,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "typography.ellipsis",
     profilePaths: ["typography.ellipsis"],
     correctable: true,
+    analyze: (ruleContext) => typography(ruleContext, ["typography.ellipsis"]),
   },
   {
     id: "typography/numbers",
@@ -237,6 +332,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "typography.percentageSpacing",
     ],
     correctable: true,
+    analyze: (ruleContext) => typography(ruleContext, NUMBER_CATEGORIES),
   },
   {
     id: "typography/whitespace",
@@ -249,6 +345,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "typography.nonBreakingSpace",
     ],
     correctable: true,
+    analyze: (ruleContext) => typography(ruleContext, ["typography.whitespace"]),
   },
   {
     id: "typography/punctuation",
@@ -270,6 +367,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "houseStyle.terminology",
     profilePaths: ["language.terminology", "language.legacyPreferredTerminology"],
     correctable: true,
+    analyze: (ruleContext) => houseStyle(ruleContext, ["houseStyle.terminology"]),
   },
   {
     id: "language/banned",
@@ -278,12 +376,18 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "houseStyle.bannedTerm",
     profilePaths: ["language.bannedTerms"],
     correctable: true,
+    analyze: (ruleContext) => houseStyle(ruleContext, ["houseStyle.bannedTerm"]),
   },
   {
     id: "language/capitalisation",
     group: "language",
     scope: "text",
     category: "houseStyle.capitalization",
+    emits: [
+      "houseStyle.capitalization",
+      "houseStyle.capitalization.sentenceCase",
+      "houseStyle.capitalization.titleCase",
+    ],
     profilePaths: [
       "language.capitalisation.sentenceCase",
       "language.capitalisation.properNouns",
@@ -291,6 +395,12 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.capitalisation.headingCase",
     ],
     correctable: true,
+    analyze: (ruleContext) =>
+      houseStyle(ruleContext, [
+        "houseStyle.capitalization",
+        "houseStyle.capitalization.sentenceCase",
+        "houseStyle.capitalization.titleCase",
+      ]),
   },
   {
     id: "language/abbreviations",
@@ -344,6 +454,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "formatting",
     scope: "paragraph",
     category: "formatting.bodyStyle",
+    emits: ["formatting.bodyStyle", "formatting.emptyStyle"],
     profilePaths: [
       "formatting.bodyStyle",
       "formatting.titleStyle",
@@ -351,6 +462,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "formatting.captions",
     ],
     correctable: true,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.emptyStyle"]),
   },
   {
     id: "formatting/headings",
@@ -372,6 +484,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     // and flips it per-finding rather than per-rule; the rule-level answer is
     // "not by default" because the safe case is the exception.
     correctable: false,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.directFormatting"]),
   },
   {
     id: "formatting/lists",
@@ -380,6 +493,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "formatting.listLevel",
     profilePaths: ["formatting.lists"],
     correctable: true,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.listLevel"]),
   },
   {
     id: "formatting/tables",
@@ -412,6 +526,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "formatting.headingHierarchy",
     profilePaths: ["structure.allowSkippedHeadingLevels", "structure.maxHeadingLevel"],
     correctable: true,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.headingHierarchy"]),
   },
   {
     id: "integrity/emptyHeading",
@@ -420,6 +535,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "formatting.emptyHeading",
     profilePaths: ["structure.reportEmptyHeadings"],
     correctable: true,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.emptyHeading"]),
   },
   {
     id: "integrity/unknownStyle",
@@ -428,6 +544,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "formatting.unknownStyle",
     profilePaths: ["structure.reportUnknownStyles"],
     correctable: true,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.unknownStyle"]),
   },
 ];
 
@@ -477,7 +594,15 @@ export function unwiredProfilePaths(): readonly string[] {
   );
 }
 
-/** The rule id and field list a rule declares, for diagnostics. */
+/**
+ * The rule id and field list a rule declares, for diagnostics.
+ *
+ * `implemented` says whether the rule has a body. It is here rather than left to
+ * a caller counting `analyze` because the interesting question for anyone
+ * debugging a missing finding is not "is this rule declared" but "is this rule
+ * declared *and* running" — and a summary that omitted the second half answered
+ * the wrong question.
+ */
 export function registrySummary(): readonly {
   id: string;
   group: RuleGroup;
@@ -485,6 +610,7 @@ export function registrySummary(): readonly {
   category: string;
   correctable: boolean;
   reads: number;
+  implemented: boolean;
 }[] {
   return DETERMINISTIC_RULES.map((rule) => ({
     id: rule.id,
@@ -493,6 +619,7 @@ export function registrySummary(): readonly {
     category: rule.category,
     correctable: rule.correctable,
     reads: rule.profilePaths.length,
+    implemented: rule.analyze !== undefined,
   }));
 }
 

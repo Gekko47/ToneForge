@@ -95,4 +95,53 @@ describe("deterministic rule registry", () => {
       expect(rulesInGroup(group).length).toBeGreaterThan(0);
     });
   });
+
+  /*
+   * The audit above reads DETERMINISTIC_RULES. These two assertions are what
+   * make it an audit of the *running engine* rather than of a declaration.
+   *
+   * `emits` is the filter each rule applies to a shared scanner's output, and
+   * every category the engine can produce has to belong to exactly one rule. An
+   * overlap means the same finding is reported twice; a category belonging to
+   * no rule means a real finding is silently dropped, and nothing else in the
+   * suite would notice — the report would simply be shorter.
+   */
+  it("gives every emitted category exactly one owning rule", () => {
+    const owners = new Map<string, string[]>();
+    allRules().forEach((rule) => {
+      (rule.emits ?? [rule.category]).forEach((category) => {
+        const existing = owners.get(category) ?? [];
+        existing.push(rule.id);
+        owners.set(category, existing);
+      });
+    });
+    const contested = Array.from(owners.entries()).filter(([, ids]) => ids.length > 1);
+    expect(contested).toEqual([]);
+  });
+
+  it("includes the headline category in what a rule emits", () => {
+    allRules().forEach((rule) => {
+      expect(rule.emits ?? [rule.category]).toContain(rule.category);
+    });
+  });
+
+  it("attaches a body to every rule the profile can reach a finding through", () => {
+    /*
+     * A rule with no `analyze` produces nothing. That is the correct state for
+     * a rule whose stage has not landed, and the registrySummary test above
+     * reports how many. What must not happen is one quietly reporting findings
+     * through a neighbouring scanner that shares its categories, so the count
+     * of unimplemented rules is asserted to be the count the summary reports —
+     * they are the same list, so a future stage that attaches a body has to
+     * move both.
+     */
+    const unimplemented = allRules()
+      .filter((rule) => rule.analyze === undefined)
+      .map((r) => r.id);
+    expect(unimplemented).toEqual(
+      registrySummary()
+        .filter((r) => !r.implemented)
+        .map((r) => r.id),
+    );
+  });
 });

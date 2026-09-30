@@ -19,10 +19,6 @@ import { deterministicProfileOf } from "../../core/domain/StyleProfile";
 import type { StyleProfile } from "../../core/domain/StyleProfile";
 import { resolveResolvedPolicy } from "../../core/domain/ResolvedPolicy";
 import type { ResolvedPolicy } from "../../core/domain/ResolvedPolicy";
-import { unifyFindings } from "../unifiedFindings";
-import { findTypographyIssues } from "../../rules/typography";
-import { findHouseStyleIssues } from "../../rules/houseStyle";
-import { findFormattingIssues } from "../../formatting/analyzer";
 import type { DocumentNode } from "../../core/domain/DocumentSnapshot";
 import type { Finding } from "../../core/domain/Finding";
 import {
@@ -40,7 +36,7 @@ import {
   type ScopeKind,
 } from "./contracts";
 import { buildDeterministicCoverage } from "./coverage";
-import { ruleByCategory, type RuleGroup } from "./ruleRegistry";
+import { allRules, ruleByCategory, type DeterministicRule, type RuleGroup } from "./ruleRegistry";
 
 /**
  * The scope kinds each rule group applies to.
@@ -222,34 +218,26 @@ export async function runDeterministicReview(
     examinedNodes,
   };
 
-  const runsScope = (scopes: readonly ScopeKind[]): boolean =>
-    scopes.some((scope) => coverage.examinedScopes.includes(scope));
-
   /*
-   * The rule bodies return a general `Finding`, and the report takes a narrowed
-   * one. The narrowing happens here rather than by a cast: `asDeterministicFinding`
-   * is a parse, so a rule that somehow produced a semantic or consistency
-   * finding has it dropped instead of typed into a report that says it cannot
-   * carry one. Spec §27's second gate is enforced by the boundary, not by a
-   * comment.
+   * Dispatch through the registry rather than calling the scanners here.
+   *
+   * Two things depend on this. Spec §11's audit reads `DETERMINISTIC_RULES`, so
+   * an engine that bypassed it would let the audit pass while the engine ran a
+   * different rule set — the audit would describe a registry nothing consults.
+   * And a rule with no `analyze` is then genuinely *not run*, rather than
+   * silently covered by a neighbouring scanner that happens to share its
+   * categories.
+   *
+   * Each rule is gated on a scope the run actually examined, so a host that
+   * served no text produces no text findings rather than findings against text
+   * nobody read.
    */
-  const deterministic: DeterministicFinding[] = [];
-  // The text rules. Each is gated on a scope the run actually examined, so a
-  // host that served no text produces no text findings rather than findings
-  // against text nobody read.
-  if (runsScope(GROUP_SCOPES.language)) {
-    deterministic.push(
-      ...narrowAll(findTypographyIssues({ text: context.text, rules: policy.typography })),
-      ...narrowAll(findHouseStyleIssues({ text: context.text, rules: policy.houseStyle })),
-    );
-  }
-  const formatting: DeterministicFinding[] = coverage.examinedScopes.some((scope) =>
-    GROUP_SCOPES.formatting.includes(scope),
-  )
-    ? narrowAll(findFormattingIssues({ snapshot: context.formatting }))
-    : [];
-
-  const findings = unifyFindings({ deterministic, formatting }) as DeterministicFinding[];
+  const findings = narrowAll(
+    allRules().flatMap((rule) => {
+      if (!ruleRuns(rule, coverage.examinedScopes)) return [];
+      return rule.analyze === undefined ? [] : rule.analyze(ruleContext);
+    }),
+  );
 
   return buildReport({
     profile: policy.profile,
@@ -262,7 +250,25 @@ export async function runDeterministicReview(
   });
 }
 
-/** Keep only the findings the deterministic report may carry. */
+/**
+ * Whether the run examined anything this rule's group applies to.
+ *
+ * Without the gate, a text rule would run over a document whose text
+ * acquisition failed and report findings against text it could not read.
+ */
+function ruleRuns(rule: DeterministicRule, examinedScopes: readonly ScopeKind[]): boolean {
+  return GROUP_SCOPES[rule.group].some((scope) => examinedScopes.includes(scope));
+}
+
+/**
+ * Keep only the findings the deterministic report may carry.
+ *
+ * The narrowing is a parse, not a cast: `asDeterministicFinding` re-validates
+ * each finding, so a rule that somehow produced a semantic or consistency
+ * finding has it dropped instead of typed into a report that says it cannot
+ * carry one. Spec §27's second gate is enforced by the boundary, not by a
+ * comment.
+ */
 function narrowAll(findings: readonly Finding[]): DeterministicFinding[] {
   return findings
     .map((finding) => asDeterministicFinding(finding))
