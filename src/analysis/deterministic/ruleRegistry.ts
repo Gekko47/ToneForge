@@ -28,8 +28,18 @@ import {
   type DeterministicStyleProfile,
 } from "../../core/domain/StyleProfile";
 import { findTypographyIssues } from "../../rules/typography";
-import { findHouseStyleIssues } from "../../rules/houseStyle";
+import {
+  findAbbreviationIssues,
+  findCapitalisationIssues,
+  findCurrencyIssues,
+  findDateIssues,
+  findNumberIssues,
+  findTerminologyIssues,
+  findUnitIssues,
+  type LanguageCheckOptions,
+} from "../../rules/language";
 import { findFormattingIssues } from "../../formatting/analyzer";
+import type { Finding } from "../../core/domain/Finding";
 
 /** The categories `typography/dashes` is responsible for. */
 const DASH_CATEGORIES = [
@@ -75,15 +85,25 @@ function typography(
   ) as DeterministicFinding[];
 }
 
-/** Run the house-style scanner and keep one rule's categories. */
-function houseStyle(
+/**
+ * Run one of the spec §4.2 language scanners and keep one rule's categories.
+ *
+ * The filter is not optional bookkeeping. Each scanner in `src/rules/language.ts`
+ * is a complete check of its own subsection — `findCapitalisationIssues` reports
+ * proper nouns, prohibited capitals and sentence case — so without selecting,
+ * three registry rules would each report all three categories and the report
+ * would carry every capitalisation finding three times.
+ */
+function language(
   ruleContext: DeterministicRuleContext,
+  scan: (options: LanguageCheckOptions) => Finding[],
   categories: readonly string[],
 ): DeterministicFinding[] {
-  return selectCategories(
-    findHouseStyleIssues({ text: ruleContext.context.text, rules: ruleContext.policy.houseStyle }),
-    categories,
-  ) as DeterministicFinding[];
+  const scanOptions: LanguageCheckOptions = {
+    text: ruleContext.context.text,
+    rules: ruleContext.policy.language,
+  };
+  return selectCategories(scan(scanOptions), categories) as DeterministicFinding[];
 }
 
 /** Run the formatting scanner and keep one rule's categories. */
@@ -331,8 +351,20 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.numbers.rangeStyle",
       "typography.percentageSpacing",
     ],
+    // The decimal separator is a safe substitution; spelling a numeral out
+    // changes the author's prose and a range written "to" changes the register.
+    // Both are reported without a correction, so this rule is mixed and the
+    // per-finding `correctionAvailable` is what the review reads.
     correctable: true,
-    analyze: (ruleContext) => typography(ruleContext, NUMBER_CATEGORIES),
+    analyze: (ruleContext) => [
+      ...typography(ruleContext, NUMBER_CATEGORIES),
+      ...language(ruleContext, findNumberIssues, [
+        "language.number.decimalSeparator",
+        "language.number.percentageSpacing",
+        "language.number.spelling",
+        "language.number.range",
+      ]),
+    ],
   },
   {
     id: "typography/whitespace",
@@ -367,7 +399,10 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "houseStyle.terminology",
     profilePaths: ["language.terminology", "language.legacyPreferredTerminology"],
     correctable: true,
-    analyze: (ruleContext) => houseStyle(ruleContext, ["houseStyle.terminology"]),
+    // Only the substitution category. A banned term is a separate rule below,
+    // and a rule that emitted both would report every banned term twice.
+    analyze: (ruleContext) =>
+      language(ruleContext, findTerminologyIssues, ["houseStyle.terminology"]),
   },
   {
     id: "language/banned",
@@ -376,17 +411,17 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "houseStyle.bannedTerm",
     profilePaths: ["language.bannedTerms"],
     correctable: true,
-    analyze: (ruleContext) => houseStyle(ruleContext, ["houseStyle.bannedTerm"]),
+    analyze: (ruleContext) => language(ruleContext, findTerminologyIssues, ["language.bannedTerm"]),
   },
   {
     id: "language/capitalisation",
     group: "language",
     scope: "text",
-    category: "houseStyle.capitalization",
+    category: "language.capitalisation.sentenceCase",
     emits: [
-      "houseStyle.capitalization",
-      "houseStyle.capitalization.sentenceCase",
-      "houseStyle.capitalization.titleCase",
+      "language.capitalisation.sentenceCase",
+      "language.capitalisation.properNoun",
+      "language.capitalisation.prohibited",
     ],
     profilePaths: [
       "language.capitalisation.sentenceCase",
@@ -396,10 +431,10 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     ],
     correctable: true,
     analyze: (ruleContext) =>
-      houseStyle(ruleContext, [
-        "houseStyle.capitalization",
-        "houseStyle.capitalization.sentenceCase",
-        "houseStyle.capitalization.titleCase",
+      language(ruleContext, findCapitalisationIssues, [
+        "language.capitalisation.sentenceCase",
+        "language.capitalisation.properNoun",
+        "language.capitalisation.prohibited",
       ]),
   },
   {
@@ -414,6 +449,11 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.abbreviations.prohibitedVariants",
     ],
     correctable: true,
+    analyze: (ruleContext) =>
+      language(ruleContext, findAbbreviationIssues, [
+        "language.abbreviation.prohibited",
+        "language.abbreviation.firstUse",
+      ]),
   },
   {
     id: "language/dates",
@@ -421,7 +461,12 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "text",
     category: "language.date",
     profilePaths: ["language.dates.formats", "language.dates.requireUnambiguous"],
-    correctable: true,
+    // Reported, never corrected: converting between date shapes means deciding
+    // which field is the day, and `31/05/2026` is exactly the case where
+    // guessing is worst. The rule points at it; the user resolves it.
+    correctable: false,
+    analyze: (ruleContext) =>
+      language(ruleContext, findDateIssues, ["language.date.ambiguous", "language.date.format"]),
   },
   {
     id: "language/currency",
@@ -436,6 +481,11 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.currency.magnitude",
     ],
     correctable: true,
+    analyze: (ruleContext) =>
+      language(ruleContext, findCurrencyIssues, [
+        "language.currency.representation",
+        "language.currency.spacing",
+      ]),
   },
   {
     id: "language/units",
@@ -448,6 +498,11 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.units.symbols",
     ],
     correctable: true,
+    analyze: (ruleContext) =>
+      language(ruleContext, findUnitIssues, [
+        "language.unit.spacing",
+        "language.unit.capitalisation",
+      ]),
   },
   {
     id: "formatting/body",

@@ -338,6 +338,55 @@ function changesForFinding(finding: Finding): Change[] {
       const change = replacement === null ? null : textChange(finding, replacement);
       return change === null ? [] : [change];
     }
+    /*
+     * Spec §4.2's language conventions.
+     *
+     * One case for all of them, because they share a single contract: the rule
+     * already decided the replacement and wrote it into `expected`, and
+     * `deterministic.correctionAvailable` says whether there is one. A finding
+     * without a correction produces no change, which is what keeps the review
+     * from offering an "Approve" for something Apply cannot do — a date the
+     * scanner will not reorder, a numeral it will not spell out, a figure it
+     * will not round.
+     */
+    case "language.capitalisation.sentenceCase":
+    case "language.capitalisation.properNoun":
+    case "language.capitalisation.prohibited":
+    case "language.abbreviation.prohibited":
+    case "language.abbreviation.firstUse":
+    case "language.number.decimalSeparator":
+    case "language.number.percentageSpacing":
+    case "language.number.range":
+    case "language.currency.spacing":
+    case "language.unit.spacing":
+    case "language.unit.capitalisation": {
+      if (finding.deterministic?.correctionAvailable !== true) return [];
+      if (typeof finding.expected !== "string") return [];
+      const change = textChange(finding, finding.expected);
+      return change === null ? [] : [change];
+    }
+    /*
+     * A banned term has no replacement, so the correction is a deletion. The
+     * empty `expected` is what distinguishes it from a substitution, so this
+     * case is separate rather than folded into the one above.
+     */
+    case "language.bannedTerm": {
+      const change = deleteChange(finding);
+      return change === null ? [] : [change];
+    }
+    /*
+     * Reported without a correction, and deliberately planned as nothing. A
+     * date's field order, a numeral the style spells out, a range rewritten as
+     * words, a currency code with no symbol to substitute: each is a claim the
+     * user resolves, and the planner is the last place that could quietly turn
+     * one into an edit.
+     */
+    case "language.date.ambiguous":
+    case "language.date.format":
+    case "language.number.spelling":
+    case "language.currency.representation":
+    case "language.unit.magnitude":
+      return [];
     case "houseStyle.terminology":
     case "houseStyle.spellingVariant":
     case "houseStyle.capitalization.sentenceCase":
