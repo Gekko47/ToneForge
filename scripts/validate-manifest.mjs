@@ -179,11 +179,34 @@ function parseXmlResources(xml, tag) {
   return resources;
 }
 
+/**
+ * Locate the ToneForge ribbon tab, however its opening tag is written.
+ *
+ * Both the parity check and the duplicate-id scan are bounded to this tab, so a
+ * locator that only matches one exact spelling silently disables both: the
+ * checks return nothing and the manifest passes. Attribute order and
+ * whitespace are not under this repository's control once the file has been
+ * through any XML formatter, so the tag is matched structurally rather than as
+ * a literal — an `id` attribute is required, its position among the others is
+ * not.
+ *
+ * Returns the bounds of the tab's contents, or `null` when there is no such
+ * tab. `null` means "this manifest carries no ToneForge ribbon", which every
+ * caller already treats as nothing to check.
+ */
+function toneForgeTabBounds(xml) {
+  const open = /<OfficeTab\b[^>]*\bid="ToneForge"[^>]*>/.exec(xml);
+  if (open === null) return null;
+  const start = open.index;
+  const end = xml.indexOf("</OfficeTab>", start);
+  if (end === -1) return null;
+  return { start, end };
+}
+
 function extractControls(xml, controlId) {
-  const tabStart = xml.indexOf('<OfficeTab id="ToneForge">');
-  if (tabStart === -1) return [];
-  const tabEnd = xml.indexOf("</OfficeTab>", tabStart);
-  const tab = xml.slice(tabStart, tabEnd === -1 ? undefined : tabEnd);
+  const bounds = toneForgeTabBounds(xml);
+  if (bounds === null) return [];
+  const tab = xml.slice(bounds.start, bounds.end);
   const controls = [];
   const expression = /<Control\b([^>]*)>([\s\S]*?)<\/Control>/g;
   let match;
@@ -355,10 +378,10 @@ function validateResourceIdLength(xml, errors) {
  */
 function validateUniqueUiElementIds(xml, errors) {
   // Ribbon ids only, so the scan is bounded to the tab that carries the ribbon.
-  const tabStart = xml.indexOf('<OfficeTab id="ToneForge">');
-  const tabEnd = tabStart === -1 ? -1 : xml.indexOf("</OfficeTab>", tabStart);
-  if (tabEnd === -1) return;
-  const tab = xml.slice(tabStart, tabEnd);
+  // Located structurally, not as a literal: see `toneForgeTabBounds`.
+  const bounds = toneForgeTabBounds(xml);
+  if (bounds === null) return;
+  const tab = xml.slice(bounds.start, bounds.end);
 
   const seen = new Map();
   const reported = new Set();

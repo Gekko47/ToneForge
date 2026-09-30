@@ -214,6 +214,28 @@ describe("command and manifest contracts", () => {
     );
   });
 
+  it("still rejects a duplicate id when the tab tag is spelled differently", async () => {
+    /*
+     * The scan is bounded to the ToneForge tab, so the locator is load-bearing:
+     * had it failed to find a tab written with different whitespace or attribute
+     * order, `validateUniqueUiElementIds` would have found nothing, returned no
+     * errors, and the manifest would have passed — the exact defect it exists to
+     * catch, reintroduced through the spelling of the tag rather than through the
+     * id. Both conditions are combined here on purpose: a duplicate that is only
+     * caught for the one exact spelling of the enclosing tag is not caught at all.
+     */
+    const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as unknown;
+    const broken = readFileSync(repositoryPath("manifest.xml"), "utf8")
+      .replace('<OfficeTab id="ToneForge">', '<OfficeTab\n  id="ToneForge"\n>')
+      .replace('<Group id="ToneForgeProfileGroup">', '<Group id="ToneForgeProfile">');
+    expect(broken).toContain('<OfficeTab\n  id="ToneForge"\n>');
+
+    const errors = await validateManifests({ manifest, xml: broken, runOfficialValidator: false });
+    expect(errors).toContain(
+      'manifest.xml UI element id "ToneForgeProfile" is used by both a <Group> and a <Control> on the ToneForge ribbon; Word requires these ids to be unique and rejects the entire manifest, which presents as "This add-in is no longer available"',
+    );
+  });
+
   it("keeps every real ribbon UI element id unique", async () => {
     // The assertion that would have failed before the rename. It reads the
     // manifest rather than trusting the validator, so a future edit that
