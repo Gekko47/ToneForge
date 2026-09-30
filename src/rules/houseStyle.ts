@@ -178,7 +178,7 @@ function checkPreferredTerminology(text: string, rules: HouseStyle): Finding[] {
       findings.push(
         makeFinding({
           category: "houseStyle.terminology",
-          profilePath: "language.terminology",
+          profilePath: "houseStyle.preferredTerminology",
           range: makeRange(candidate.range),
           message: `Use “${candidate.preferred}” instead of “${candidate.term}”`,
           severity: "warning",
@@ -213,7 +213,7 @@ function checkBannedTerms(text: string, rules: HouseStyle): Finding[] {
       findings.push(
         makeFinding({
           category: "houseStyle.bannedTerm",
-          profilePath: "language.bannedTerms",
+          profilePath: "houseStyle.bannedTerms",
           range: makeRange(range),
           message: `Remove banned term “${term}”`,
           severity: "error",
@@ -271,7 +271,7 @@ function checkSentenceCase(text: string, rules: HouseStyle): Finding[] {
     findings.push(
       makeFinding({
         category: "houseStyle.capitalization.sentenceCase",
-        profilePath: "language.capitalisation.sentenceCase",
+        profilePath: "houseStyle.capitalization.sentenceCase",
         range: makeRange(range),
         message: `Start the sentence with uppercase “${firstCased.character.toUpperCase()}”`,
         severity: "warning",
@@ -321,7 +321,7 @@ function checkTitleCaseWords(text: string, rules: HouseStyle): Finding[] {
       findings.push(
         makeFinding({
           category: "houseStyle.capitalization.titleCase",
-          profilePath: "language.capitalisation.headingCase",
+          profilePath: "houseStyle.capitalization.titleCaseWords",
           range: makeRange(range),
           message: `Capitalize title-case word “${candidate.word}”`,
           severity: "warning",

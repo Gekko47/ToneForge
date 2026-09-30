@@ -611,9 +611,36 @@ function spacingFindings(params: {
  */
 function checkSlashSpacing(text: string, rules: TypographyRules): Finding[] {
   if (rules.slashSpacing === "none") return [];
+  /*
+   * The gaps either side of each solidus, measured separately.
+   *
+   * The old pattern was `\s*\/+`, which matched the slash as well as the space.
+   * The reported range therefore covered the solidus, and applying the
+   * correction replaced `/` with a space — turning `and/or` into `and or` and
+   * deleting a character the author wrote. This is the same defect
+   * `checkCurrencySpacing` already documents and solves: measure the gap, never
+   * consume the marker.
+   *
+   * Measured per side because the two are independent. A solidus can be tight on
+   * one side and spaced on the other, and a single combined match reports the
+   * pair as one thing it cannot correct. The result is the same zero-width gap
+   * the currency rule yields for a tight symbol, so a tight solidus is still
+   * reported under `spaced` rather than skipped — and under `tight`, a solidus
+   * written `and / or` is reported once per side, which is what the author has to
+   * change.
+   */
+  const gaps: { start: number; end: number }[] = [];
+  findMatches(text, /\/+/g).forEach((slash) => {
+    let before = slash.start;
+    while (before > 0 && /[ \t]/u.test(text[before - 1] ?? "")) before -= 1;
+    gaps.push({ start: before, end: slash.start });
+    let after = slash.end;
+    while (after < text.length && /[ \t]/u.test(text[after] ?? "")) after += 1;
+    gaps.push({ start: slash.end, end: after });
+  });
   return spacingFindings({
     text,
-    matches: findMatches(text, /\s*\/+/g),
+    matches: gaps,
     wantsSpace: rules.slashSpacing === "spaced",
     category: "typography.punctuation",
     profilePath: "typography.slashSpacing",
@@ -634,7 +661,23 @@ function checkPercentageSpacing(text: string, rules: TypographyRules): Finding[]
   if (rules.percentageSpacing === "none") return [];
   return spacingFindings({
     text,
-    matches: findMatches(text, /[ \t]*(?=%|per\s+cent|percent)/giu),
+    /*
+     * The whitespace between a digit and a percent sign, and nothing else.
+     *
+     * The old pattern was `[ \t]*(?=%|per\s+cent|percent)`, with no requirement
+     * on what came before. Two consequences, both of them findings on text that
+     * is already correct. `percentage` is a word — the alternation matched it —
+     * so the space in "the percentage of adults" was reported as a percentage
+     * sign needing its space removed. And with no digit required, the match was
+     * zero-width in front of a bare `%`, so `spacingFindings` was handed an empty
+     * gap it could not distinguish from a tight form it had just been asked to
+     * check.
+     *
+     * Requiring the digit is the same shape the currency rule above uses, and
+     * for the same reason: a percentage is a number and a sign, so the number is
+     * what identifies the marker.
+     */
+    matches: findMatches(text, /(?<=\d)[ \t]*(?=%)/gu),
     wantsSpace: rules.percentageSpacing === "spaced",
     category: "typography.punctuation",
     profilePath: "typography.percentageSpacing",
@@ -721,8 +764,21 @@ function checkSpaceBeforeParenthesis(text: string, rules: TypographyRules): Find
 /** A required space on both sides of a hyphen used as a compound marker. */
 function checkSpaceAfterHyphen(text: string, rules: TypographyRules): Finding[] {
   if (!rules.spaceAfterHyphen) return [];
+  /*
+   * The whitespace either side of the hyphen, with both sides in the match.
+   *
+   * The old filter required `text[m.start - 1] === " "` — a space *before* the
+   * match. But the match itself starts at that space, so the character before it
+   * is the preceding word, not a space, and the filter was false for every input
+   * of the form the rule is about. `foo - bar` matched `" - "` at index 3,
+   * `text[2]` was `o`, and the finding was discarded: the rule could never fire.
+   *
+   * Only the "there is some whitespace here" test survives. A tight `well-known`
+   * is a closed compound rather than a spaced one, and rewriting it to
+   * `well - known` would be the opposite correction.
+   */
   return findMatches(text, /[ \t]*-[ \t]*/g)
-    .filter((m) => text[m.start - 1] === " " && m.end - m.start > 1)
+    .filter((m) => m.end - m.start > 1)
     .map((m) =>
       makeFinding({
         category: "typography.punctuation",

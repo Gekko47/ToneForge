@@ -381,7 +381,20 @@ export function findTerminologyIssues(options: LanguageCheckOptions): Finding[] 
           // substitution a replaceText. Which one it is, is the planner's
           // call from the empty `expected`.
           correctionAvailable: true,
-          safeBatchKey: `terminology:${rule.source}:${expected}`,
+          /*
+           * No batch key for a banned term, deliberately.
+           *
+           * Unlike a substitution, a deletion is not semantically neutral: it
+           * removes the author's words rather than restating them, and the
+           * planner already builds it as a non-reversible `deleteRange`. Spec §13
+           * permits batch approval only where the correction is neutral, so the
+           * key is withheld here exactly as `houseStyle.ts` withholds it for its
+           * own banned-term rule. Without a key, `groupFindings` refuses the
+           * batch and refuses it *with a reason the UI can show* — which is the
+           * outcome the rule wants, rather than a disabled control with no
+           * explanation.
+           */
+          ...(banned ? {} : { safeBatchKey: `terminology:${rule.source}:${expected}` }),
         }),
       );
     });
@@ -440,6 +453,24 @@ export function findCapitalisationIssues(options: LanguageCheckOptions): Finding
     // The pattern requires the capital, so only the capitalised form matches.
     const capitalised = (term[0]?.toUpperCase() ?? "") + term.slice(1);
     findMatches(text, termPattern(capitalised, true, true)).forEach((range) => {
+      /*
+       * A capital that opens a sentence is the rule, not a violation of it.
+       *
+       * The list names words that are not proper nouns and so are written in
+       * lower case *within* a sentence. The first word of a sentence is
+       * capitalised whatever it is, so reporting "The Committee met." would
+       * tell the author to delete the capital that English requires — and the
+       * user who approved it would be shown a lower-case sentence start as a
+       * correction.
+       *
+       * Skipped at the very start of the text and after sentence-ending
+       * punctuation, with opening quotes allowed between them: `He said "The
+       * Committee met."` opens a quoted sentence, not a mid-sentence use.
+       */
+      const before = text.slice(0, range.start);
+      const preceding = before.replace(/[\s"'(\[]*$/u, "");
+      const last = preceding.at(-1);
+      if (last === undefined || /[.!?]/u.test(last)) return;
       const found = text.slice(range.start, range.end);
       findings.push(
         makeFinding({
@@ -589,20 +620,24 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
   const wanted = numbers.decimalSeparator === "comma" ? "," : ".";
   const unwanted = numbers.decimalSeparator === "comma" ? "." : ",";
   /*
-   * A comma between digits is not necessarily a decimal separator: `1,000` and
-   * `4,200,000` are grouped thousands. The lookaround matched every one of them,
-   * so a document written with comma grouping under a dot-decimal profile
-   * reported a decimal-separator deviation at each group mark and offered to
-   * rewrite `1,000` as `1.000` — a figure altered by a punctuation rule.
+   * A separator between digits is not necessarily a decimal separator: `1,000`
+   * and `1.000` are both grouped thousands. The lookaround matched every one of
+   * them, so a document written with grouping under a profile preferring the
+   * other separator reported a decimal-separator deviation at each group mark
+   * and offered to rewrite `1,000` as `1.000` — a figure altered by a
+   * punctuation rule.
    *
-   * The group is recognised structurally rather than by counting commas: a
-   * separator preceded by one to three digits from a non-digit boundary and
-   * followed by exactly three digits is a thousands group mark, whatever the
-   * profile's own `thousandsSeparator` says, because `1,000` is grouped whether
-   * or not the house asked for it.
+   * The group is recognised structurally rather than by counting separators, and
+   * for **both** separator characters rather than for one: a separator preceded
+   * by one to three digits from a non-digit boundary and followed by exactly
+   * three digits is a thousands group mark, whatever the profile's own
+   * `thousandsSeparator` says, because `1.000` is grouped whether or not the
+   * house asked for it. Restricting this to the comma left a document using dot
+   * grouping under a comma-decimal profile being offered a "decimal" correction
+   * on every group mark — the same corrupted-figure bug, reachable through the
+   * other separator.
    */
   const isGroupMark = (index: number): boolean => {
-    if (unwanted !== ",") return false;
     let leading = 0;
     while (index - leading > 0 && /\d/u.test(text[index - leading - 1] ?? "")) leading += 1;
     if (leading < 1 || leading > 3) return false;
@@ -619,9 +654,12 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
      * A separator that is neither a clean decimal nor a clean group is
      * ambiguous: `0,1234` could be either, and picking one rewrites a figure.
      * Those are reported so the reader knows a convention was broken, and marked
-     * non-correctable so nothing offers to decide it.
+     * non-correctable so nothing offers to decide it. As with the group mark
+     * above, the test is on the shape of the digits and not on which separator
+     * character it is — `0.1234` is exactly as ambiguous under a comma-decimal
+     * profile as `0,1234` is under a dot-decimal one.
      */
-    const ambiguous = unwanted === "," && /^\d{3,}(?!\d)/u.test(text.slice(start + 1));
+    const ambiguous = /^\d{3,}(?!\d)/u.test(text.slice(start + 1));
     findings.push(
       makeFinding({
         category: "language.number.decimalSeparator",
@@ -648,9 +686,16 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
    * not *does this look wrong*: an earlier version skipped a match whose gap
    * already matched the profile, which discarded exactly the cases it existed
    * to report and left the rule silent.
+   *
+   * The marker is the percent sign alone. Matching the spelled-out forms as well
+   * meant `gapsBefore` measured the gap in front of the *word*, so under the
+   * default tight rule "50 percent" reported a deviation and proposed deleting
+   * the space — turning a correctly written figure into "50percent". A
+   * punctuation-spacing setting has no opinion about how the word is spelled,
+   * and `gapsBefore` already refuses a gap with no digit before it.
    */
   const wantsSpace = numbers.percentageSpacing === "space";
-  gapsBefore(text, /%|(?:per\s+cent|percent)/giu).forEach(({ start, end }) => {
+  gapsBefore(text, /%/gu).forEach(({ start, end }) => {
     const gap = text.slice(start, end);
     if (gap.length > 0 === wantsSpace) return;
     findings.push(
@@ -671,10 +716,20 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
     );
   });
 
-  // Reported, never corrected. See the function's own note.
+  /*
+   * Reported, never corrected. See the function's own note.
+   *
+   * The numeral must be a whole number standing alone. The old lookarounds only
+   * excluded *letters*, so `2026` matched as `202` and `3.50` matched as both
+   * `3` and `50`: the rule reported "spell out 202" against a year, and offered
+   * the same remedy for the integer and the fractional part of one figure. A
+   * digit or a numeric separator on either side means the numeral is part of a
+   * longer number, and this rule has no correction for that anyway — rewriting
+   * `3.50` as "three point five zero" is a change of register, not a spelling.
+   */
   const threshold = numbers.numberWordThreshold;
   if (threshold !== null) {
-    [...text.matchAll(/(?<!\p{L})\d{1,3}(?!\p{L})/gu)].forEach((match) => {
+    [...text.matchAll(/(?<![\p{L}\d.,])\d{1,3}(?![\p{L}\d.,])/gu)].forEach((match) => {
       const value = Number(match[0]);
       if (!Number.isFinite(value) || value > threshold) return;
       const start = match.index;

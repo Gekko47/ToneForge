@@ -423,6 +423,21 @@ describe("findNumberIssues", () => {
       rules: profile({ numbers: { percentageSpacing: "space" } }),
     });
     expect(categories(tight)).toEqual(["language.number.percentageSpacing"]);
+
+    /*
+     * The spelled-out form is not a spacing violation.
+     *
+     * The marker pattern also matched `percent`, so `gapsBefore` measured the gap
+     * in front of the *word*. Under the default tight rule that reported "50
+     * percent" and proposed deleting the space — turning a correctly written
+     * figure into "50percent". The setting governs the gap before the sign, and
+     * there is no sign here.
+     */
+    const spelledOut = findNumberIssues({
+      text: "Up 50 percent this year.",
+      rules: profile({}),
+    });
+    expect(categories(spelledOut)).not.toContain("language.number.percentageSpacing");
   });
 
   it("reports a numeral below the threshold without offering to rewrite it", () => {
