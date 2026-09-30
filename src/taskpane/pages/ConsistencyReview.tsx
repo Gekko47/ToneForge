@@ -19,10 +19,14 @@ export interface ConsistencyReviewProps {
   /**
    * The finished report, owned by the Dashboard.
    *
-   * The report lives above this page because Deterministic Review's findings list
-   * shows it too, and that list is on a different tab. Moving the report here
-   * would make the handover lose the findings the moment the user navigated to
-   * read them, which is the one thing "Review in Findings" must not do.
+   * The report lives above this page so that navigating away and back does not
+   * discard a run the user paid for — a consistency review is slow, expensive
+   * and consent-gated, and losing it on a tab change would be the worst possible
+   * outcome of an ordinary navigation.
+   *
+   * It is *only* held above this page, never handed to another surface. The
+   * results are read here and nowhere else, which is what keeps a model's
+   * inter-document judgement out of the deterministic findings list.
    */
   result: ConsistencyReport | null;
   /** Receives a finished report, or null once it has been dismissed. */
@@ -219,7 +223,6 @@ export default function ConsistencyReview({
           abortRef.current?.abort();
           setCancelled(true);
         }}
-        onReviewFindings={onBack}
         onDismiss={() => onResult(null)}
       />
     </div>

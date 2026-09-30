@@ -134,11 +134,7 @@ describe("consistency results", () => {
     // A clean result is only meaningful next to the scope that produced it, so
     // coverage is rendered first rather than tucked away below the list.
     const { container } = render(
-      <ConsistencyReviewResults
-        report={report()}
-        onReviewFindings={() => undefined}
-        onDismiss={() => undefined}
-      />,
+      <ConsistencyReviewResults report={report()} onDismiss={() => undefined} />,
     );
     const text = container.textContent ?? "";
     expect(text.indexOf("Reviewed the whole document")).toBeGreaterThanOrEqual(0);
@@ -183,7 +179,6 @@ describe("consistency results", () => {
             },
           ],
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -216,7 +211,6 @@ describe("consistency results", () => {
             },
           ],
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -252,7 +246,6 @@ describe("consistency results", () => {
             },
           ],
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -281,7 +274,6 @@ describe("consistency results", () => {
             },
           ],
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -321,7 +313,6 @@ describe("consistency results", () => {
     render(
       <ConsistencyReviewResults
         report={report({ issues: repeated })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -360,7 +351,6 @@ describe("consistency results", () => {
             },
           ],
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -398,7 +388,6 @@ describe("consistency results", () => {
             },
           ],
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -435,7 +424,6 @@ describe("consistency results", () => {
             },
           ],
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -467,7 +455,6 @@ describe("consistency results", () => {
             modelAdjudicated: 3,
           },
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -496,7 +483,6 @@ describe("consistency results", () => {
             modelAdjudicated: 0,
           },
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -507,7 +493,6 @@ describe("consistency results", () => {
     render(
       <ConsistencyReviewResults
         report={report({ usedModel: false })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -539,7 +524,6 @@ describe("consistency results", () => {
             },
           ],
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -566,22 +550,47 @@ describe("consistency results", () => {
             },
           ],
         })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
     expect(screen.getByText(/advisory only/i)).toBeTruthy();
   });
 
-  it("disables the findings hand-off when there is nothing to review", () => {
+  it("offers no hand-off into the findings list at all", () => {
+    /*
+     * Spec §3.3. This replaced a test asserting the hand-off button was
+     * *disabled* on an empty result — which passed while the bridge existed and
+     * the button was live on every non-empty one.
+     *
+     * The failure this is really about is a count. The Findings list and its
+     * toolbar count were one number covering rule findings and model inferences
+     * together, so a reader had no way to know how much of the document a rule
+     * had actually checked. Removing the bridge is what makes each number mean
+     * one thing, so the assertion is absence of any control at all, for a report
+     * that does have contradictions in it.
+     */
     render(
       <ConsistencyReviewResults
-        report={report()}
-        onReviewFindings={() => undefined}
+        report={report({
+          issues: [
+            {
+              checkId: "C4",
+              fingerprint: "C4:a|b",
+              title: "Entity attribute conflict",
+              detail: "These two sections may disagree.",
+              severity: "warning",
+              confidence: 0.9,
+              actionable: false,
+              nodeIds: ["s0", "s1"],
+              evidence: { left: "A", right: "B", sectionLeft: "", sectionRight: "" },
+            },
+          ],
+        })}
         onDismiss={() => undefined}
       />,
     );
-    expect(screen.getByRole("button", { name: /review in findings/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /review in findings/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /dismiss/i })).toBeTruthy();
   });
 });
 
@@ -609,7 +618,6 @@ describe("stepping through the consistency results", () => {
     return render(
       <ConsistencyReviewResults
         report={report({ issues: tags.map(conflict) })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );
@@ -699,7 +707,6 @@ describe("stepping through the consistency results", () => {
     rerender(
       <ConsistencyReviewResults
         report={report({ issues: [conflict("fresh")] })}
-        onReviewFindings={() => undefined}
         onDismiss={() => undefined}
       />,
     );

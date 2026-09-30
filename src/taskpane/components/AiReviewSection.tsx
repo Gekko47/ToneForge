@@ -47,7 +47,6 @@ export interface AiReviewSectionProps {
   onConfirm: () => void;
   onCancel: () => void;
   onCancelRun: () => void;
-  onReviewFindings: () => void;
   onDismiss: () => void;
 }
 
@@ -93,7 +92,6 @@ export default function AiReviewSection({
   onConfirm,
   onCancel,
   onCancelRun,
-  onReviewFindings,
   onDismiss,
 }: AiReviewSectionProps): React.ReactNode {
   const blocker = aiReviewBlocker({ hasConsent, providerConfigured, onOpenSettings });
@@ -159,11 +157,7 @@ export default function AiReviewSection({
       ) : null}
 
       {stage === "results" && result !== null ? (
-        <ConsistencyReviewResults
-          report={result}
-          onReviewFindings={onReviewFindings}
-          onDismiss={onDismiss}
-        />
+        <ConsistencyReviewResults report={result} onDismiss={onDismiss} />
       ) : null}
     </section>
   );

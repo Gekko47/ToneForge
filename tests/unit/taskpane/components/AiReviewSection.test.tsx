@@ -20,7 +20,6 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof AiReviewSe
     onConfirm: vi.fn(),
     onCancel: vi.fn(),
     onCancelRun: vi.fn(),
-    onReviewFindings: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
   };

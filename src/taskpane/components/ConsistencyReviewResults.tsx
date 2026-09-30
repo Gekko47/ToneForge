@@ -44,7 +44,6 @@ import FindingDetail from "./FindingDetail";
 
 export interface ConsistencyReviewResultsProps {
   report: ConsistencyReport;
-  onReviewFindings: () => void;
   onDismiss: () => void;
 }
 
@@ -145,7 +144,6 @@ function ConflictCard({
 
 export default function ConsistencyReviewResults({
   report,
-  onReviewFindings,
   onDismiss,
 }: ConsistencyReviewResultsProps): React.ReactNode {
   const { coverage, issues } = report;
@@ -304,10 +302,20 @@ export default function ConsistencyReviewResults({
         />
       ))}
 
+      {/*
+       * There is deliberately no "Review in Findings" button here.
+       *
+       * It used to bridge these contradictions into the ordinary Findings list,
+       * which put an inter-document judgement among the document's own style
+       * deviations: same card, same Approve action, same count in the toolbar.
+       * A reader had no way to tell which items a rule found and which a model
+       * inferred by comparing two distant statements, and a count that mixed
+       * them overstated how much of the document the deterministic rules had
+       * actually checked. The two products stay on separate pages, each with its
+       * own coverage statement, which is the only arrangement where the number
+       * beside the list means what it says.
+       */}
       <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button type="button" onClick={onReviewFindings} disabled={groups.length === 0}>
-          Review in Findings
-        </button>
         <button type="button" onClick={onDismiss}>
           Dismiss
         </button>

@@ -26,7 +26,7 @@ import CoverageBanner from "../components/CoverageBanner";
 import StaleBanner from "../components/StaleBanner";
 import PendingChanges from "../components/PendingChanges";
 import IgnoredFindings from "../components/IgnoredFindings";
-import { toFindings, type ConsistencyReport } from "../../analysis/consistency";
+import type { ConsistencyReport } from "../../analysis/consistency";
 import type { buildCoverage } from "../../analysis/coverage";
 import { findingFingerprint } from "../findingFingerprint";
 import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
@@ -975,21 +975,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     announcement.announce("Re-scanning the document.");
   }
 
-  // The consistency report crosses into the ordinary finding model through the
-  // same bridge every other engine uses, so the review results can hand its
-  // findings to the Findings list rather than to a surface of their own. These
-  // produce no change: the planner has no path for a consistency finding until the
-  // engine supplies a real correction.
-  //
-  // Declared above the early return below, and not merely before the composition
-  // that uses it: a hook after a conditional return runs on some renders and not
-  // others, and React's hook order then differs between them.
-  const consistencyFindings = React.useMemo(
-    () =>
-      consistencyResult === null ? [] : toFindings(consistencyResult, () => crypto.randomUUID()),
-    [consistencyResult],
-  );
-
   /*
    * Drop the expired reviews once the scan has settled.
    *
@@ -1009,8 +994,8 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   useEffect(() => {
     if (status === null || status.phase === "scanning") return;
     const live = new Set(
-      [...withoutIgnored(status.findings, persisted.ignoredFindings), ...consistencyFindings].map(
-        (finding) => reviewIdentity(finding),
+      withoutIgnored(status.findings, persisted.ignoredFindings).map((finding) =>
+        reviewIdentity(finding),
       ),
     );
     const stored = persisted.reviewedFindings ?? [];
@@ -1021,7 +1006,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     status?.phase,
     persisted.reviewedFindings,
     persisted.ignoredFindings,
-    consistencyFindings,
   ]);
 
   if (
@@ -1129,7 +1113,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * contradicts itself, and the observer is the one that scanned the document
    * the user is looking at.
    */
-  const findings = [...observerFindings, ...consistencyFindings];
+  const findings = observerFindings;
   /*
    * Counted over the list the user can actually see, with the same ignore
    * predicate the filtering above used. Recomputed from `findings` rather than
