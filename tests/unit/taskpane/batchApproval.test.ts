@@ -317,7 +317,11 @@ describe("approveGroup", () => {
 
 describe("skipGroup", () => {
   it("records a skip for every occurrence, and needs no plan", () => {
-    const findings = [finding(), finding()];
+    // Distinct offsets, so these are two occurrences rather than one. Two
+    // findings sharing a range are the *same* occurrence by `reviewIdentity`,
+    // and a test that passed only because they collapsed would assert one
+    // decision where the reader sees two rows in the panel.
+    const findings = [finding(0), finding(30)];
     const outcome = skipGroup({
       group: group({ occurrenceIds: findings.map((entry) => entry.id) }),
       findings,
@@ -328,7 +332,10 @@ describe("skipGroup", () => {
 
     expect(outcome.kind).toBe("approved");
     if (outcome.kind !== "approved") return;
+    // One decision per finding, which is the claim the test exists to make.
+    expect(outcome.decisions).toHaveLength(2);
     expect(outcome.decisions.every((entry) => entry.decision === "skipped")).toBe(true);
+    expect(new Set(outcome.decisions.map((entry) => entry.identity)).size).toBe(2);
   });
 
   it("skips a batch the engine refused to approve, because declining is not a correction", () => {
