@@ -86,19 +86,34 @@ export function findFormattingIssues(options: FormattingCheckOptions): Finding[]
 /** The Word styles that mean something other than body text. */
 const HEADING_RE = /^heading\s*([1-9])$/i;
 const TITLE_STYLES = new Set(["title", "subtitle", "caption"]);
-const LIST_STYLES = new Set(["list paragraph", "list bullet", "list number", "list continue"]);
+
+/**
+ * Word's built-in list styles, including the numbered levels.
+ *
+ * Word names them `List Bullet`, `List Number`, `List Continue` and `List`, each
+ * with a ` 2` through ` 5` suffix for the deeper levels — so a document using
+ * `List Number 2` was not recognised as a list at all. It therefore fell through
+ * to the body standard and produced a body-style deviation on a correctly
+ * formatted list item, and the level-integrity check below then reported the
+ * same paragraph as a non-list paragraph indented to level 1.
+ *
+ * Matched by shape rather than enumerated, because the suffix range is a
+ * property of Word's built-in set and enumerating nine names would need editing
+ * whenever Word adds one.
+ */
+const LIST_STYLE_RE = /^list(?: paragraph| bullet| number| continue)?(?: [2-5])?$/;
 
 function isHeadingStyle(name: string): boolean {
   return HEADING_RE.test(name.trim());
 }
 
-function headingLevelOf(name: string): number {
-  return Number.parseInt(HEADING_RE.exec(name.trim())?.[1] ?? "0", 10);
-}
-
 /** Whether a style name is one of the built-in list styles, case-insensitively. */
 function isListStyle(name: string): boolean {
-  return LIST_STYLES.has(name.trim().toLowerCase());
+  return LIST_STYLE_RE.test(name.trim().toLowerCase());
+}
+
+function headingLevelOf(name: string): number {
+  return Number.parseInt(HEADING_RE.exec(name.trim())?.[1] ?? "0", 10);
 }
 
 /**

@@ -377,6 +377,46 @@ describe("findFormattingIssues", () => {
       expect(categories(findings)).not.toContain("formatting.listLevel");
     });
 
+    /*
+     * Word's numbered list styles.
+     *
+     * The recognised set held only the four base names, so `List Number 2` was
+     * not a list style at all. A correctly formatted nested list item then
+     * produced two findings from one cause: a body-style deviation, because the
+     * body standard applied to it, and a list-level integrity finding, because
+     * the level check saw a non-list style indented to level 2. The second of
+     * those is the one that matters — it points at the author's own list
+     * structure as though it were corrupt.
+     */
+    it.each([
+      "List Bullet 2",
+      "List Bullet 5",
+      "List Number 2",
+      "List Number 3",
+      "List Continue 2",
+      "List 2",
+      "List 5",
+      "List Paragraph",
+    ])("treats %s as a list style, not a body paragraph", (styleName) => {
+      const findings = run([{ ...paragraph(0, "Nested item"), styleName, listLevel: 1 }]);
+
+      // Not a body-style deviation: the body standard must not apply to a list.
+      expect(categories(findings)).not.toContain("formatting.bodyStyle");
+      // And not a level-integrity finding: the style *is* a list style.
+      expect(categories(findings)).not.toContain("formatting.listLevel");
+    });
+
+    it("still treats a non-list style carrying a level as anomalous", () => {
+      // The counterpart, so the pattern is not simply matching anything: a
+      // custom body style at level 3 remains a genuine integrity finding.
+      const findings = run([
+        { ...paragraph(0, "Deep item"), styleName: "Body Text", listLevel: 3 },
+      ]);
+      const level = findings.filter((f) => f.category === "formatting.listLevel");
+      expect(level).toHaveLength(1);
+      expect(level[0]?.deterministic?.profilePath).toBe("structure.listLevelIntegrity");
+    });
+
     it("groups a list style deviation by the style the profile wants", () => {
       // Spec §13: a group is one correction, so every list paragraph wanting
       // "List Paragraph" is one decision. Grouping on the category alone would
