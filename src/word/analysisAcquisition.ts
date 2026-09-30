@@ -35,6 +35,11 @@ export interface AnalysisAcquisitionOptions {
   maxChars?: number;
 }
 
+interface ParagraphFormatView {
+  keepWithNext?: boolean;
+  keepTogether?: boolean;
+}
+
 interface ParagraphView {
   text?: string;
   style?: string | { name?: string };
@@ -48,9 +53,7 @@ interface ParagraphView {
   leftIndent?: number;
   rightIndent?: number;
   firstLineIndent?: number;
-  keepNext?: boolean;
-  keepLines?: boolean;
-  pageBreakBefore?: boolean;
+  paragraphFormat?: ParagraphFormatView;
   font?: FontView;
   listItem?: { level?: number };
   load?: (properties: string | string[]) => unknown;
@@ -99,9 +102,16 @@ const CAPABILITY_PROPERTY_GROUPS: readonly {
       "leftIndent",
       "rightIndent",
       "firstLineIndent",
-      "keepNext",
-      "keepLines",
-      "pageBreakBefore",
+      /*
+       * `paragraphFormat`, and only `paragraphFormat`.
+       *
+       * `keepWithNext` and `keepTogether` are properties of
+       * `Word.ParagraphFormat`, not of `Word.Paragraph`. Asking the paragraph
+       * for a property it does not have is not a partial read: Word rejects the
+       * whole request with a generic `GeneralException`, which costs every
+       * property in this group rather than the one that was wrong.
+       */
+      "paragraphFormat",
     ],
   },
   { capability: "supportsCharacterFormat", properties: ["font"] },
@@ -449,6 +459,13 @@ function buildFormatting(
     const font = readPlanned(plan, "font", () => paragraph.font);
     const listLevel = readPlanned(plan, "listItem", () => paragraph.listItem?.level);
     /*
+     * The flow controls live on `Word.ParagraphFormat`, reached through
+     * `paragraphFormat` on the paragraph. Read through the same plan as every
+     * other optional property, so a degraded scope still reports them as not
+     * read rather than as a host failure.
+     */
+    const paragraphFormat = readPlanned(plan, "paragraphFormat", () => paragraph.paragraphFormat);
+    /*
      * A missing list level is only *unsupported* when the plan asked for one and
      * the host would not serve it. In a degraded scope the plan never asked, so
      * reporting `listLevel` as unsupported would blame the host for a scope
@@ -462,6 +479,10 @@ function buildFormatting(
         unsupportedProperties.push(property);
       }
     });
+    const plannedFormat = plan.paragraphProperties.includes("paragraphFormat");
+    if (plannedFormat && paragraphFormat === null) {
+      unsupportedProperties.push("keepNext", "keepLines");
+    }
     return {
       index,
       nodeId,
@@ -478,11 +499,19 @@ function buildFormatting(
       firstLineIndent: numberOrNull(
         readPlanned(plan, "firstLineIndent", () => paragraph.firstLineIndent),
       ),
-      keepNext: booleanOrNull(readPlanned(plan, "keepNext", () => paragraph.keepNext)),
-      keepLines: booleanOrNull(readPlanned(plan, "keepLines", () => paragraph.keepLines)),
-      pageBreakBefore: booleanOrNull(
-        readPlanned(plan, "pageBreakBefore", () => paragraph.pageBreakBefore),
-      ),
+      keepNext: booleanOrNull(paragraphFormat?.keepWithNext),
+      keepLines: booleanOrNull(paragraphFormat?.keepTogether),
+      /*
+       * Always `null`, and deliberately never requested.
+       *
+       * `pageBreakBefore` is a `Word.Paragraph` property in the VBA and
+       * interop object models, but the JavaScript `Word.ParagraphFormat` — the
+       * only documented place a paragraph's pagination settings live — has no
+       * such property. Asking for a name the API does not have gets the whole
+       * request rejected, so the field stays "not read" and the analyzer skips
+       * the comparison rather than inventing a value for it.
+       */
+      pageBreakBefore: null,
       fontName: fontValue(font?.name),
       fontSize: font?.size ?? null,
       fontColor: fontValue(font?.color),
@@ -613,20 +642,15 @@ function plannedStyleName(paragraph: ParagraphView, plan: AcquisitionLoadPlan): 
 }
 
 /**
- * Paragraph indentation and flow properties carried through the DTO.
+ * Paragraph indentation properties carried through the DTO.
  *
- * They are grouped because they share one truthiness rule: Word reports
- * `false` and `0` for a real value, so the absence of a value is the only
- * thing that becomes `null`.
+ * Grouped because they share one truthiness rule: Word reports `false` and `0`
+ * for a real value, so the absence of a value is the only thing that becomes
+ * `null`. The pagination settings are *not* in this list — they are read from
+ * `Word.ParagraphFormat` above, which is a different object with different
+ * property names.
  */
-const PLANNED_FLOW_PROPERTIES = [
-  "leftIndent",
-  "rightIndent",
-  "firstLineIndent",
-  "keepNext",
-  "keepLines",
-  "pageBreakBefore",
-] as const;
+const PLANNED_FLOW_PROPERTIES = ["leftIndent", "rightIndent", "firstLineIndent"] as const;
 
 function numberOrNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;

@@ -67,9 +67,11 @@ const SERVED_VALUES: Record<string, unknown> = {
   leftIndent: 36,
   rightIndent: 0,
   firstLineIndent: -18,
-  keepNext: true,
-  keepLines: false,
-  pageBreakBefore: false,
+  // The flow controls are served through `paragraphFormat`, because that is
+  // where `Word.ParagraphFormat` keeps them. A host double keyed by the loaded
+  // property name has to mirror that shape, or it is asserting a property path
+  // the real API does not have.
+  paragraphFormat: { keepWithNext: true, keepTogether: false },
   font: {
     name: "Calibri",
     size: 11,
@@ -278,7 +280,7 @@ describe("acquireAnalysisContext degraded scope", () => {
   });
 
   /*
-   * Indentation and the three flow controls. `0` and `false` are *values* here,
+   * Indentation and the flow controls. `0` and `false` are *values* here,
    * not absences: Word reports a real zero indent and a real "do not keep
    * lines together". Coercing either to null would tell a formatting check that
    * the property was not read, which is the one claim it must never make.
@@ -295,27 +297,34 @@ describe("acquireAnalysisContext degraded scope", () => {
     expect(paragraph?.leftIndent).toBe(36);
     expect(paragraph?.rightIndent).toBe(0);
     expect(paragraph?.firstLineIndent).toBe(-18);
+    // Read from `Word.ParagraphFormat`, which names them `keepWithNext` and
+    // `keepTogether` — the paragraph itself has no `keepNext` property.
     expect(paragraph?.keepNext).toBe(true);
     // A false flag and a zero indent are values. Reporting them as "not read"
     // would make a check report a clean paragraph it never actually saw.
     expect(paragraph?.keepLines).toBe(false);
-    expect(paragraph?.pageBreakBefore).toBe(false);
+    // Never requested, because the JavaScript `Word.ParagraphFormat` has no
+    // such property. "Not read" is the honest answer, and it is the one that
+    // makes the analyzer skip the comparison rather than invent a value.
+    expect(paragraph?.pageBreakBefore).toBeNull();
     expect(paragraph?.unsupportedProperties ?? []).toEqual([]);
   });
 
   it("reports a flow property as unsupported only when the rich scope asked for it", async () => {
     // A host that serves the family but omits one property still has to say so,
     // or a formatting check would treat "absent" as "correct".
-    SERVED_VALUES.keepNext = undefined;
+    SERVED_VALUES.paragraphFormat = undefined;
     try {
       installHost(false);
       const context = await acquireAnalysisContext({
         profile: PROFILE,
         capabilities: ALL_ON,
       });
-      expect(context.formatting.paragraphs[0]?.unsupportedProperties ?? []).toContain("keepNext");
+      const unsupported = context.formatting.paragraphs[0]?.unsupportedProperties ?? [];
+      expect(unsupported).toContain("keepNext");
+      expect(unsupported).toContain("keepLines");
     } finally {
-      SERVED_VALUES.keepNext = true;
+      SERVED_VALUES.paragraphFormat = { keepWithNext: true, keepTogether: false };
     }
   });
 
