@@ -45,7 +45,12 @@ export function findTypographyIssues(options: TypographyCheckOptions): Finding[]
   findings.push(...checkEllipsis(text, rules));
   findings.push(...checkDecimalSeparator(text, rules));
   findings.push(...checkThousandsSeparator(text, rules));
-  findings.push(...checkWhitespace(text));
+  findings.push(...checkWhitespace(text, rules));
+  findings.push(...checkSlashSpacing(text, rules));
+  findings.push(...checkPercentageSpacing(text, rules));
+  findings.push(...checkCurrencySpacing(text, rules));
+  findings.push(...checkSpaceBeforeParenthesis(text, rules));
+  findings.push(...checkSpaceAfterHyphen(text, rules));
   return findings;
 }
 
@@ -427,56 +432,193 @@ function checkEllipsis(text: string, rules: TypographyRules): Finding[] {
   return findings;
 }
 
-function checkWhitespace(text: string): Finding[] {
+/**
+ * Whitespace, gated on the three settings that govern it.
+ *
+ * The gating is the point of the change, not a wrapper around it. Previously the
+ * check ran unconditionally and took no `rules` at all, so `normaliseWhitespace`,
+ * `flagTabs` and `nonBreakingSpace` were three settings a user could change and
+ * nothing would happen — a document quoted from a spreadsheet could not be
+ * accepted, and a non-breaking space could not be preserved.
+ *
+ * Each switch defaults to the behaviour that existed before the field did, so a
+ * profile that never touched them reports exactly what it always did.
+ */
+function checkWhitespace(text: string, rules: TypographyRules): Finding[] {
   const findings: Finding[] = [];
 
-  findMatches(text, / {2,}/g).forEach((m) => {
-    findings.push(
-      makeFinding({
-        category: "typography.whitespace",
-        range: { start: m.start, end: m.end, unit: "character" },
-        message: "Use a single space instead of multiple consecutive spaces",
-        severity: "warning",
-        evidence: text.slice(m.start, m.end),
-      }),
-    );
-  });
+  if (rules.normaliseWhitespace) {
+    findMatches(text, / {2,}/g).forEach((m) => {
+      findings.push(
+        makeFinding({
+          category: "typography.whitespace",
+          range: { start: m.start, end: m.end, unit: "character" },
+          message: "Use a single space instead of multiple consecutive spaces",
+          severity: "warning",
+          evidence: text.slice(m.start, m.end),
+        }),
+      );
+    });
 
-  findMatches(text, / +$/gm).forEach((m) => {
-    findings.push(
-      makeFinding({
-        category: "typography.whitespace",
-        range: { start: m.start, end: m.end, unit: "character" },
-        message: "Remove trailing spaces",
-        severity: "warning",
-        evidence: text.slice(m.start, m.end),
-      }),
-    );
-  });
+    findMatches(text, / +$/gm).forEach((m) => {
+      findings.push(
+        makeFinding({
+          category: "typography.whitespace",
+          range: { start: m.start, end: m.end, unit: "character" },
+          message: "Remove trailing spaces",
+          severity: "warning",
+          evidence: text.slice(m.start, m.end),
+        }),
+      );
+    });
+  }
 
-  findMatches(text, /\t/g).forEach((m) => {
-    findings.push(
-      makeFinding({
-        category: "typography.whitespace",
-        range: { start: m.start, end: m.end, unit: "character" },
-        message: "Use spaces instead of tabs",
-        severity: "warning",
-        evidence: text.slice(m.start, m.end),
-      }),
-    );
-  });
+  if (rules.flagTabs) {
+    findMatches(text, /\t/g).forEach((m) => {
+      findings.push(
+        makeFinding({
+          category: "typography.whitespace",
+          range: { start: m.start, end: m.end, unit: "character" },
+          message: "Use spaces instead of tabs",
+          severity: "warning",
+          evidence: text.slice(m.start, m.end),
+        }),
+      );
+    });
+  }
 
-  findMatches(text, new RegExp(NON_BREAKING_SPACE, "g")).forEach((m) => {
-    findings.push(
-      makeFinding({
-        category: "typography.whitespace",
-        range: { start: m.start, end: m.end, unit: "character" },
-        message: "Use a regular space instead of a non-breaking space",
-        severity: "warning",
-        evidence: text.slice(m.start, m.end),
-      }),
-    );
-  });
+  // `preserve` is a real answer, and an important one: a non-breaking space is
+  // how a house style keeps `10 kg` together, so treating every one as an error
+  // would fight the profile's own units rule.
+  if (rules.nonBreakingSpace === "flag") {
+    findMatches(text, new RegExp(NON_BREAKING_SPACE, "g")).forEach((m) => {
+      findings.push(
+        makeFinding({
+          category: "typography.whitespace",
+          range: { start: m.start, end: m.end, unit: "character" },
+          message: "Use a regular space instead of a non-breaking space",
+          severity: "warning",
+          evidence: text.slice(m.start, m.end),
+        }),
+      );
+    });
+  }
 
   return findings;
+}
+
+/** Report a gap that does not match the wanted spacing, and only that gap. */
+function spacingFindings(params: {
+  text: string;
+  matches: readonly { start: number; end: number }[];
+  wantsSpace: boolean;
+  category: string;
+  spacedMessage: string;
+  tightMessage: string;
+}): Finding[] {
+  return params.matches
+    .map((m) => ({ m, gap: params.text.slice(m.start, m.end) }))
+    .filter(({ gap }) => gap.length > 0 !== params.wantsSpace)
+    .map(({ m, gap }) =>
+      makeFinding({
+        category: params.category,
+        range: { start: m.start, end: m.end, unit: "character" },
+        message: params.wantsSpace ? params.spacedMessage : params.tightMessage,
+        severity: "warning",
+        evidence: gap,
+        expected: params.wantsSpace ? " " : "",
+      }),
+    );
+}
+
+/**
+ * Spacing around a solidus.
+ *
+ * `none` means the profile has no opinion, which is distinct from `tight`: an
+ * opinion that forbids spaces is a decision, and a profile that has not made one
+ * must not have the rule fire.
+ */
+function checkSlashSpacing(text: string, rules: TypographyRules): Finding[] {
+  if (rules.slashSpacing === "none") return [];
+  return spacingFindings({
+    text,
+    matches: findMatches(text, /\s*\/+/g),
+    wantsSpace: rules.slashSpacing === "spaced",
+    category: "typography.punctuation",
+    spacedMessage: "A solidus is surrounded by spaces",
+    tightMessage: "A solidus is written tight against the words around it",
+  });
+}
+
+/**
+ * Spacing before a percent sign.
+ *
+ * The number profile's own `percentageSpacing` is normative; this exists so a
+ * typography-only profile can express the rule without also configuring a
+ * number convention. The two are reconciled by the caller, which prefers the
+ * number profile's value when the two differ.
+ */
+function checkPercentageSpacing(text: string, rules: TypographyRules): Finding[] {
+  if (rules.percentageSpacing === "none") return [];
+  return spacingFindings({
+    text,
+    matches: findMatches(text, /[ \t]*(?=%|per\s+cent|percent)/giu),
+    wantsSpace: rules.percentageSpacing === "spaced",
+    category: "typography.punctuation",
+    spacedMessage: "A percentage takes a space before the sign",
+    tightMessage: "A percentage takes no space before the sign",
+  });
+}
+
+/** Spacing between a currency symbol and its amount; `none` defers to currency. */
+function checkCurrencySpacing(text: string, rules: TypographyRules): Finding[] {
+  if (rules.currencySpacing === "none") return [];
+  return spacingFindings({
+    text,
+    matches: findMatches(text, /[$£€¥][ \t]*/gu),
+    wantsSpace: rules.currencySpacing === "spaced",
+    category: "typography.punctuation",
+    spacedMessage: "A currency symbol is separated from its amount by a space",
+    tightMessage: "A currency symbol is written tight against its amount",
+  });
+}
+
+/**
+ * A required space before an opening bracket.
+ *
+ * Off by default, and it is worth being explicit about why: the convention runs
+ * the other way in most house styles, and a rule that fires on correct text
+ * teaches the reader to ignore the panel it appears in.
+ */
+function checkSpaceBeforeParenthesis(text: string, rules: TypographyRules): Finding[] {
+  if (!rules.spaceBeforeParenthesis) return [];
+  return findMatches(text, /\S[ \t]*(?=[([])/g)
+    .filter((m) => m.end > m.start)
+    .map((m) =>
+      makeFinding({
+        category: "typography.punctuation",
+        range: { start: m.start, end: m.end, unit: "character" },
+        message: "An opening bracket is separated from the word before it",
+        severity: "warning",
+        evidence: text.slice(m.start, m.end),
+        expected: " ",
+      }),
+    );
+}
+
+/** A required space on both sides of a hyphen used as a compound marker. */
+function checkSpaceAfterHyphen(text: string, rules: TypographyRules): Finding[] {
+  if (!rules.spaceAfterHyphen) return [];
+  return findMatches(text, /[ \t]*-[ \t]*/g)
+    .filter((m) => text[m.start - 1] === " " && m.end - m.start > 1)
+    .map((m) =>
+      makeFinding({
+        category: "typography.punctuation",
+        range: { start: m.start, end: m.end, unit: "character" },
+        message: "A hyphen in a compound is separated by spaces",
+        severity: "warning",
+        evidence: text.slice(m.start, m.end),
+        expected: " - ",
+      }),
+    );
 }
