@@ -68,7 +68,17 @@ function formatValue(value: unknown): string {
     return "None";
   }
   if (Array.isArray(value)) {
-    return value.length === 0 ? "None" : value.join(", ");
+    /*
+     * Each item formatted, not the array stringified.
+     *
+     * `Array.prototype.join` calls `String()` on each element, so a record in
+     * the list came out as `[object Object]` — a changelog line reading
+     * "colour: [object Object], [object Object] -> colour: [object Object]" for
+     * a terminology list that had simply gained a term. The record branch below
+     * already formats its values recursively; an array of records needs the same
+     * treatment, and `formatValue` is the one function that knows how.
+     */
+    return value.length === 0 ? "None" : value.map((item: unknown) => formatValue(item)).join(", ");
   }
   if (isRecord(value)) {
     const entries = Object.entries(value as Record<string, unknown>);
