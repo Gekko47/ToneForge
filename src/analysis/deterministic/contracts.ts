@@ -126,8 +126,14 @@ export const DeterministicCoverageSchema = z.object({
    * Part of the review-session fingerprint (spec §16): a session whose coverage
    * fingerprint changed examined a different amount of the document, so its
    * approvals cannot be carried across even when the document is unchanged.
+   *
+   * Required rather than defaulted. A default of `""` was not a usable fallback
+   * beside `min(1)`: Zod applies the default and then validates it, so parsing a
+   * coverage record without one threw rather than defaulting. Required says the
+   * same thing honestly — a missing fingerprint is a real gap, not a value to
+   * invent.
    */
-  coverageFingerprint: z.string().trim().min(1).default(""),
+  coverageFingerprint: z.string().trim().min(1),
 });
 export type DeterministicCoverage = z.infer<typeof DeterministicCoverageSchema>;
 

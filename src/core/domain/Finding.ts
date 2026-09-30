@@ -80,8 +80,16 @@ export const DeterministicFindingMetadataSchema = z.object({
   /**
    * The profile field that produced this finding, e.g.
    * `houseStyle.terminology.program` or `formatting.headings.2.styleName`.
+   *
+   * Required rather than defaulted. `min(1)` exists so a rule cannot declare an
+   * empty profile path, and a default of `""` beside it is not a fallback at
+   * all — Zod validates the default it just applied, so parsing a metadata
+   * record without a path threw instead of yielding one. A deterministic finding
+   * has to name the field it came from; where a caller genuinely has none, the
+   * honest answers are to omit the metadata or to name the absence explicitly,
+   * not to parse an empty string.
    */
-  profilePath: z.string().trim().min(1).default(""),
+  profilePath: z.string().trim().min(1),
   /** The profile's configured value. `undefined` when the profile is silent. */
   expected: z.unknown().optional(),
   /** What the document actually has. `undefined` when nothing was acquired. */
