@@ -35,11 +35,6 @@ export interface AnalysisAcquisitionOptions {
   maxChars?: number;
 }
 
-interface ParagraphFormatView {
-  keepWithNext?: boolean;
-  keepTogether?: boolean;
-}
-
 interface ParagraphView {
   text?: string;
   style?: string | { name?: string };
@@ -53,7 +48,6 @@ interface ParagraphView {
   leftIndent?: number;
   rightIndent?: number;
   firstLineIndent?: number;
-  paragraphFormat?: ParagraphFormatView;
   font?: FontView;
   listItem?: { level?: number };
   load?: (properties: string | string[]) => unknown;
@@ -103,15 +97,26 @@ const CAPABILITY_PROPERTY_GROUPS: readonly {
       "rightIndent",
       "firstLineIndent",
       /*
-       * `paragraphFormat`, and only `paragraphFormat`.
+       * No `paragraphFormat`, and no flow controls with it.
        *
-       * `keepWithNext` and `keepTogether` are properties of
-       * `Word.ParagraphFormat`, not of `Word.Paragraph`. Asking the paragraph
-       * for a property it does not have is not a partial read: Word rejects the
-       * whole request with a generic `GeneralException`, which costs every
-       * property in this group rather than the one that was wrong.
+       * `keepWithNext` and `keepTogether` live on `Word.ParagraphFormat`, and
+       * `Word.Paragraph` has no `paragraphFormat` property to reach them
+       * through — Microsoft's own reference for `Word.Paragraph` lists no such
+       * member, and `Word.ParagraphFormat` names only `Word.ConditionalStyle`
+       * and `Word.Style` as its users. The earlier version of this group asked
+       * for `paragraphFormat` by name on that basis.
+       *
+       * Asking a paragraph for a property it does not have is not a partial
+       * read. Word rejects the whole request with a generic `GeneralException`,
+       * which costs `alignment`, the indents and the spacing in this group
+       * rather than the one name that was wrong — the same failure that made
+       * this file build its request from the probe result in the first place.
+       *
+       * So the flow controls are simply not examined. `keepNext`, `keepLines`
+       * and `pageBreakBefore` stay `null`, which is the answer "not read", and
+       * the analyzer skips those comparisons rather than inventing a value.
+       * Reaching them properly needs an API that exists.
        */
-      "paragraphFormat",
     ],
   },
   { capability: "supportsCharacterFormat", properties: ["font"] },
@@ -459,17 +464,15 @@ function buildFormatting(
     const font = readPlanned(plan, "font", () => paragraph.font);
     const listLevel = readPlanned(plan, "listItem", () => paragraph.listItem?.level);
     /*
-     * The flow controls live on `Word.ParagraphFormat`, reached through
-     * `paragraphFormat` on the paragraph. Read through the same plan as every
-     * other optional property, so a degraded scope still reports them as not
-     * read rather than as a host failure.
-     */
-    const paragraphFormat = readPlanned(plan, "paragraphFormat", () => paragraph.paragraphFormat);
-    /*
-     * A missing list level is only *unsupported* when the plan asked for one and
-     * the host would not serve it. In a degraded scope the plan never asked, so
-     * reporting `listLevel` as unsupported would blame the host for a scope
-     * ToneForge chose.
+     * The flow controls are never read.
+     *
+     * `Word.Paragraph` exposes no `paragraphFormat`, so there is nothing to load
+     * them through — see `CAPABILITY_PROPERTY_GROUPS`. They are reported as
+     * `null`, the same "not read" answer `pageBreakBefore` gets below, rather
+     * than being named as host-unsupported: no host has declined to serve a
+     * property this acquisition never asked for, and blaming the host for a
+     * scope ToneForge chose is the mistake the unsupported-property list exists
+     * to avoid.
      */
     const unsupportedProperties: string[] =
       listLevel === null && plan.paragraphProperties.includes("listItem") ? ["listLevel"] : [];
@@ -479,10 +482,6 @@ function buildFormatting(
         unsupportedProperties.push(property);
       }
     });
-    const plannedFormat = plan.paragraphProperties.includes("paragraphFormat");
-    if (plannedFormat && paragraphFormat === null) {
-      unsupportedProperties.push("keepNext", "keepLines");
-    }
     return {
       index,
       nodeId,
@@ -499,8 +498,23 @@ function buildFormatting(
       firstLineIndent: numberOrNull(
         readPlanned(plan, "firstLineIndent", () => paragraph.firstLineIndent),
       ),
-      keepNext: booleanOrNull(paragraphFormat?.keepWithNext),
-      keepLines: booleanOrNull(paragraphFormat?.keepTogether),
+      /*
+       * Always `null`, and deliberately never requested.
+       *
+       * There is no property path to them. `keepWithNext` and `keepTogether` are
+       * properties of `Word.ParagraphFormat`, which the JavaScript API reaches
+       * only through a style — `Word.Style.paragraphFormat` and
+       * `Word.ConditionalStyle.paragraphFormat` are its documented users — and
+       * `Word.Paragraph` exposes no `paragraphFormat` of its own to read a
+       * paragraph's own values with. `pageBreakBefore` has no home there either.
+       *
+       * So the flow controls are reported as "not read" rather than being loaded
+       * by a name the API does not have, which would cost the whole
+       * paragraph-format family rather than the three values. The analyzer skips
+       * these comparisons rather than inventing a value.
+       */
+      keepNext: null,
+      keepLines: null,
       /*
        * Always `null`, and deliberately never requested.
        *
@@ -646,18 +660,13 @@ function plannedStyleName(paragraph: ParagraphView, plan: AcquisitionLoadPlan): 
  *
  * Grouped because they share one truthiness rule: Word reports `false` and `0`
  * for a real value, so the absence of a value is the only thing that becomes
- * `null`. The pagination settings are *not* in this list — they are read from
- * `Word.ParagraphFormat` above, which is a different object with different
- * property names.
+ * `null`. The pagination settings are *not* in this list — they have no
+ * property path on `Word.Paragraph`, so they are never read at all.
  */
 const PLANNED_FLOW_PROPERTIES = ["leftIndent", "rightIndent", "firstLineIndent"] as const;
 
 function numberOrNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function booleanOrNull(value: boolean | null | undefined): boolean | null {
-  return typeof value === "boolean" ? value : null;
 }
 
 function fontValue(value: string | undefined): string | null {

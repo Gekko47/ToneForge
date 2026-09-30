@@ -59,30 +59,31 @@ describe("planAcquisitionLoads", () => {
   });
 
   /*
-   * Indentation and the flow controls arrive with the paragraph-format
-   * family. Loading them separately would be a second transaction for one
-   * paragraph, and Word serves them or refuses them together.
+   * Indentation arrives with the paragraph-format family. Loading them
+   * separately would be a second transaction for one paragraph, and Word serves
+   * them or refuses them together.
    *
-   * The flow controls are requested as `paragraphFormat`, not as
-   * `keepNext`/`keepLines`. Those names belong to `Word.ParagraphFormat`;
-   * `Word.Paragraph` has no such properties, and asking a host for a property
-   * it does not have rejects the whole request rather than the one name.
+   * The flow controls are *not* requested at all. `keepNext`/`keepLines` belong
+   * to `Word.ParagraphFormat`, and `Word.Paragraph` has no `paragraphFormat`
+   * property to reach them through — so a request naming one is a request for a
+   * property the host does not have, which it answers by rejecting the whole
+   * call and costing every property in this family.
    */
-  it("asks for indentation and the paragraph format with the paragraph-format family", () => {
+  it("asks for indentation with the paragraph-format family and no flow controls", () => {
     const plan = planAcquisitionLoads(ALL_ON);
-    ["leftIndent", "rightIndent", "firstLineIndent", "paragraphFormat"].forEach((property) => {
+    ["leftIndent", "rightIndent", "firstLineIndent"].forEach((property) => {
       expect(plan.paragraphProperties).toContain(property);
     });
-    // The undocumented names must not reappear: a request carrying either is
-    // the one that costs the whole paragraph-format family.
-    expect(plan.paragraphProperties).not.toContain("keepNext");
-    expect(plan.paragraphProperties).not.toContain("keepLines");
-    expect(plan.paragraphProperties).not.toContain("pageBreakBefore");
+    // No undocumented name may reappear, including `paragraphFormat`: a request
+    // carrying any of them is the one that costs the whole family.
+    ["keepNext", "keepLines", "pageBreakBefore", "paragraphFormat"].forEach((property) => {
+      expect(plan.paragraphProperties).not.toContain(property);
+    });
   });
 
   it("withholds the flow controls from a host without paragraph format", () => {
     const plan = planAcquisitionLoads({ ...ALL_ON, supportsParagraphFormat: false });
-    ["leftIndent", "paragraphFormat"].forEach((property) => {
+    ["leftIndent", "rightIndent", "firstLineIndent"].forEach((property) => {
       expect(plan.paragraphProperties).not.toContain(property);
     });
   });
