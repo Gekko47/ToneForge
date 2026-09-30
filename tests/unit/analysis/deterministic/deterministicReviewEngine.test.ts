@@ -182,17 +182,51 @@ describe("runDeterministicReview", () => {
     });
   });
 
-  it("says the run is incomplete when a requested scope could not be examined", async () => {
+  /*
+   * The scope distinction, through the engine.
+   *
+   * Two halves of the same scan. The only difference is whether the policy named
+   * tables as mandatory, and the verdict has to differ accordingly: an
+   * unrequested-by-insistence gap is a limitation the report states, while a
+   * mandatory one refuses Apply.
+   *
+   * This test used to assert `complete === false` for the *non*-mandatory case.
+   * That was the behaviour the plan calls out as a defect: a document whose
+   * tables the host cannot read reported "Incomplete" with a blocker naming a
+   * host limitation, so the only thing a user could do with the verdict was
+   * learn to ignore it.
+   */
+  it("names a scope the host could not read without failing the run", async () => {
     const context = contextFor("Some text.");
-    // A host that reports tables unsupported, with the policy asking for them.
     const degraded = {
       ...context,
       acquisition: { ...context.acquisition, unsupported: ["tables"] },
     };
     const report = await runDeterministicReview({ context: degraded });
 
-    expect(report.coverage.complete).toBe(false);
+    expect(report.coverage.complete).toBe(true);
     expect(report.coverage.unsupportedScopes).toContain("tables");
+    // Still on the record, which is what makes `complete` a claim rather than a
+    // way of saying nothing.
+    expect(report.coverage.excludedScopes).toContain("tables");
+    expect(report.coverage.blockers).toEqual([]);
+  });
+
+  it("refuses the run when a mandatory scope could not be read", async () => {
+    const context = contextFor("Some text.");
+    const base = createGovernanceProfile(PROFILE);
+    const degraded = {
+      ...context,
+      policy: {
+        ...base,
+        scope: { ...base.scope, mandatoryScopes: ["body", "headings", "tables"] },
+      },
+      acquisition: { ...context.acquisition, unsupported: ["tables"] },
+    };
+    const report = await runDeterministicReview({ context: degraded });
+
+    expect(report.coverage.complete).toBe(false);
+    expect(report.coverage.blockers.some((blocker) => blocker.scope === "tables")).toBe(true);
   });
 
   it("narrows to the examined nodes and says the run was partial", async () => {

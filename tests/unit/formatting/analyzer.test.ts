@@ -551,4 +551,270 @@ describe("findFormattingIssues", () => {
       expect(categories(findings)).toEqual(["formatting.emptyStyle"]);
     });
   });
+
+  /*
+   * The three structural scopes: tables (§10.5), headers/footers and page setup
+   * (§8.4, §8.5).
+   *
+   * Every case below is written in the same shape as the paragraph ones: the
+   * same snapshot produces a finding under a profile that configures a standard
+   * and nothing under one that does not, and *nothing at all* on a host whose
+   * capability is `false`. That third case is the important one. These three
+   * families default to `false` everywhere (DD-3), so a check that ran anyway
+   * would report a clean table as compliant on a host that never served it.
+   */
+  describe("structural scopes (spec §8.3–§8.5, §10.5)", () => {
+    const STRUCTURAL_CAPABILITIES: FormattingCapabilities = {
+      ...CAPABILITIES,
+      supportsTables: true,
+      supportsHeadersFooters: true,
+      supportsSections: true,
+    };
+
+    /** Run with a snapshot that also carries the structural collections. */
+    function runStructural(
+      collections: Partial<Pick<FormattingSnapshot, "tables" | "sections" | "headersFooters">>,
+      options: { profile?: ReturnType<typeof profile>; capabilities?: FormattingCapabilities } = {},
+    ) {
+      return findFormattingIssues({
+        snapshot: {
+          ...snapshot([]),
+          tables: [],
+          sections: [],
+          headersFooters: [],
+          ...collections,
+        } as FormattingSnapshot,
+        profile: options.profile ?? profile(),
+        structure: structure(),
+        capabilities: options.capabilities ?? STRUCTURAL_CAPABILITIES,
+      });
+    }
+
+    const table = (overrides: Record<string, unknown> = {}) => ({
+      index: 0,
+      nodeId: "table-1",
+      sourcePath: "body/table/0",
+      text: "A\tB",
+      styleName: "Table Grid",
+      headerRow: null,
+      headerRowCount: null,
+      cellStyleName: null,
+      rowCount: 2,
+      columnCount: 2,
+      ...overrides,
+    });
+
+    const section = (overrides: Record<string, unknown> = {}) => ({
+      index: 0,
+      nodeId: "section-1",
+      sourcePath: "body/section/0",
+      text: "Section text",
+      orientation: "portrait" as const,
+      margins: { top: 72, bottom: 72, left: 72, right: 72 },
+      width: 11906,
+      height: 16838,
+      ...overrides,
+    });
+
+    const headerFooter = (overrides: Record<string, unknown> = {}) => ({
+      index: 0,
+      nodeId: "header-1",
+      sourcePath: "body/section/0/header/Primary",
+      kind: "header" as const,
+      text: "Quarterly report",
+      styleName: "Header",
+      required: true,
+      font: {
+        name: "Calibri",
+        size: 9,
+        color: "#000000",
+        bold: false,
+        italic: false,
+        underline: false,
+      },
+      ...overrides,
+    });
+
+    const tableProfile = () =>
+      profile({ tables: { styleName: "Table Normal", headerRowCount: 2, supported: true } });
+
+    describe("tables (spec §10.5)", () => {
+      it("reports a table style the profile did not name", () => {
+        const findings = runStructural({ tables: [table()] }, { profile: tableProfile() });
+        expect(categories(findings)).toContain("formatting.tableStyle");
+        const finding = findings.find(
+          (f) => f.deterministic?.profilePath === "formatting.tables.styleName",
+        );
+        expect(finding?.message).toMatch(/"Table Grid" but the profile expects "Table Normal"/);
+      });
+
+      it("says nothing about a table when the profile configures no table standard", () => {
+        // A profile that has not looked at tables has not decided they are wrong.
+        const findings = runStructural({ tables: [table()] });
+        expect(categories(findings)).not.toContain("formatting.tableStyle");
+      });
+
+      it("reports nothing at all on a host that will not serve tables", () => {
+        const findings = runStructural(
+          { tables: [table()] },
+          {
+            profile: tableProfile(),
+            capabilities: { ...STRUCTURAL_CAPABILITIES, supportsTables: false },
+          },
+        );
+        expect(categories(findings)).not.toContain("formatting.tableStyle");
+      });
+
+      it("says nothing about a table property the host never read", () => {
+        // `headerRow` and `cellStyleName` have no member on `Word.Table`'s load
+        // options, so acquisition reports them as `null` and the check is skipped
+        // rather than comparing an absent value against the profile's.
+        const findings = runStructural(
+          {
+            tables: [
+              table({
+                styleName: "Table Normal",
+                headerRow: null,
+                cellStyleName: null,
+                rowCount: 2,
+              }),
+            ],
+          },
+          { profile: tableProfile() },
+        );
+        expect(categories(findings)).not.toContain("formatting.tableStyle");
+      });
+
+      it("compares the header-row count the host did read", () => {
+        const findings = runStructural(
+          { tables: [table({ styleName: "Table Normal", headerRowCount: 1 })] },
+          { profile: tableProfile() },
+        );
+        expect(
+          findings.some((f) => f.deterministic?.profilePath === "formatting.tables.headerRowCount"),
+        ).toBe(true);
+      });
+
+      it("never offers a correction, because no table mutation is verified", () => {
+        // Spec §8.3: table mutation is refused rather than guessed at, so a
+        // finding here is advisory. An "Approve" that Apply would drop is worse
+        // than no Approve.
+        const findings = runStructural({ tables: [table()] }, { profile: tableProfile() });
+        findings
+          .filter((f) => f.category === "formatting.tableStyle")
+          .forEach((finding) => {
+            expect(finding.deterministic?.correctionAvailable).toBe(false);
+            expect(finding.deterministic?.correctionReason).toMatch(/table/i);
+          });
+      });
+    });
+
+    describe("headers and footers (spec §8.4)", () => {
+      const headerProfile = () =>
+        profile({ headersFooters: { styleName: "Header", required: true, supported: true } });
+
+      it("reports a header carrying a style the profile did not name", () => {
+        const findings = runStructural(
+          { headersFooters: [headerFooter({ styleName: "Normal" })] },
+          { profile: headerProfile() },
+        );
+        const finding = findings.find(
+          (f) => f.deterministic?.profilePath === "formatting.headersFooters.styleName",
+        );
+        expect(finding?.message).toMatch(/header carries "Normal"/);
+      });
+
+      it("reports a missing header when the profile requires one", () => {
+        // `required` is presence: Word serves a blank body for a header the
+        // document does not have, so a blank is the only evidence of absence.
+        const findings = runStructural(
+          { headersFooters: [headerFooter({ text: "", required: false, styleName: "Header" })] },
+          { profile: headerProfile() },
+        );
+        expect(
+          findings.some(
+            (f) => f.deterministic?.profilePath === "formatting.headersFooters.required",
+          ),
+        ).toBe(true);
+      });
+
+      it("compares the font properties the host read", () => {
+        const findings = runStructural(
+          { headersFooters: [headerFooter({ font: { name: "Arial", size: 9 } })] },
+          {
+            profile: profile({
+              headersFooters: { font: { name: "Calibri", size: 9 }, supported: true },
+            }),
+          },
+        );
+        expect(
+          findings.some(
+            (f) => f.deterministic?.profilePath === "formatting.headersFooters.font.name",
+          ),
+        ).toBe(true);
+        // Size matches, so it is not a finding of its own.
+        expect(
+          findings.some(
+            (f) => f.deterministic?.profilePath === "formatting.headersFooters.font.size",
+          ),
+        ).toBe(false);
+      });
+
+      it("reports nothing at all on a host that will not serve headers", () => {
+        const findings = runStructural(
+          { headersFooters: [headerFooter({ styleName: "Normal" })] },
+          {
+            profile: headerProfile(),
+            capabilities: { ...STRUCTURAL_CAPABILITIES, supportsHeadersFooters: false },
+          },
+        );
+        expect(categories(findings)).not.toContain("formatting.headerFooter");
+      });
+    });
+
+    describe("page setup (spec §8.5)", () => {
+      const pageProfile = () => profile({ page: { orientation: "landscape", supported: true } });
+
+      it("reports an orientation the profile did not ask for", () => {
+        const findings = runStructural({ sections: [section()] }, { profile: pageProfile() });
+        expect(categories(findings)).toContain("formatting.pageSetup");
+        expect(findings[0]?.message).toMatch(
+          /orientation is portrait but the profile expects landscape/,
+        );
+      });
+
+      it("says nothing on a host with no page setup, which is Word on the web", () => {
+        // `Section.pageSetup` is WordApiDesktop 1.3. A web host serves the section
+        // and refuses the geometry, and the geometry reads as `null`.
+        const findings = runStructural(
+          { sections: [section({ orientation: null, margins: {}, width: null, height: null })] },
+          { profile: pageProfile() },
+        );
+        expect(categories(findings)).not.toContain("formatting.pageSetup");
+      });
+
+      it("reports nothing at all on a host that will not serve sections", () => {
+        const findings = runStructural(
+          { sections: [section()] },
+          {
+            profile: pageProfile(),
+            capabilities: { ...STRUCTURAL_CAPABILITIES, supportsSections: false },
+          },
+        );
+        expect(categories(findings)).not.toContain("formatting.pageSetup");
+      });
+
+      it("compares each margin edge separately, so a group is one remedy", () => {
+        const findings = runStructural(
+          { sections: [section({ margins: { top: 72, bottom: 36, left: 72, right: 72 } })] },
+          { profile: profile({ page: { margins: { bottom: 72 }, supported: true } }) },
+        );
+        const marginFindings = findings.filter(
+          (f) => f.deterministic?.profilePath === "formatting.page.margins.bottom",
+        );
+        expect(marginFindings).toHaveLength(1);
+        expect(marginFindings[0]?.message).toMatch(/Page margin bottom is 36/);
+      });
+    });
+  });
 });

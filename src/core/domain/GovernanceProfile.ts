@@ -21,7 +21,56 @@ export const ScopePolicySchema = z.object({
   includeFields: z.boolean().default(false),
   includeImages: z.boolean().default(false),
   includeTables: z.boolean().default(true),
+  /*
+   * Section geometry, added with the section scope in T20.
+   *
+   * Without a flag here the `sections` scope could never be *requested*, so it
+   * could never be a coverage blocker either, and `coverage.ts` reported the
+   * scope as neither examined nor excluded — the "asked for nothing, so nothing
+   * is missing" case that reads as complete. Spec §8.5 gates sections the same
+   * way it gates headers and footers: in by default, and the author's to turn off.
+   *
+   * A defaulted field, so no migration is needed — that is what `.default()` is
+   * for, and the spec's "no back-migration" answer is honoured by construction
+   * rather than by a migration step.
+   */
+  includeSections: z.boolean().default(true),
   includeLists: z.boolean().default(true),
+  /*
+   * Scopes the author will not accept a partial answer for.
+   *
+   * Spec §9 and §27 gate 12: coverage has to *prevent* a false-compliance
+   * claim, which it can only do for a scope somebody insisted on. Every other
+   * scope is a limitation the report states and moves past — a document whose
+   * tables could not be read is not a document whose body was not checked, and
+   * refusing Apply over it would train the user to ignore the verdict.
+   *
+   * `body` is mandatory by construction rather than by configuration: a run
+   * that examined part of the body cannot speak for the document whatever the
+   * policy says, and `coverage.ts` adds that blocker on its own. The author
+   * chooses the *rest* — and the honest default is the body plus the structures
+   * the checks for them exist.
+   *
+   * A closed `ScopeKind` list rather than free strings, because an unrecognised
+   * entry would silently never match a scope and would be a setting that
+   * changes nothing — the §11 failure in a different place.
+   */
+  mandatoryScopes: z
+    .array(
+      z.enum([
+        "body",
+        "headings",
+        "lists",
+        "tables",
+        "sections",
+        "headersFooters",
+        "textBoxes",
+        "fields",
+        "contentControls",
+        "shapes",
+      ]),
+    )
+    .default(["body", "headings"]),
 });
 
 export type ScopePolicy = z.infer<typeof ScopePolicySchema>;

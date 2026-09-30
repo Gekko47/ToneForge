@@ -30,6 +30,7 @@ const SCOPE_FROM_POLICY: Readonly<Record<string, ScopeKind>> = {
   includeBody: "body",
   includeLists: "lists",
   includeTables: "tables",
+  includeSections: "sections",
   includeHeadersFooters: "headersFooters",
   includeTextBoxes: "textBoxes",
   includeFields: "fields",
@@ -216,38 +217,67 @@ export function buildDeterministicCoverage(
    * Derived from the two lists that are already computed, so a scope cannot be
    * simultaneously excluded here and examined there.
    */
-  const excludedScopes = requested.filter(
-    (scope) => host.supported.includes(scope) && !examinedScopes.includes(scope),
-  );
+  const excludedScopes = requested.filter((scope) => !examinedScopes.includes(scope));
 
-  const nodesByType = (type: string): number =>
-    examinedNodeIds.filter(
-      (nodeId) => context.nodes.find((node) => node.nodeId === nodeId)?.type === type,
-    ).length;
+  const nodesByType = (...types: readonly string[]): number =>
+    examinedNodeIds.filter((nodeId) => {
+      const type = context.nodes.find((node) => node.nodeId === nodeId)?.type;
+      return type !== undefined && types.includes(type);
+    }).length;
 
   const paragraphsExamined = nodesByType("paragraph");
   const headingsExamined = nodesByType("heading");
   const listsExamined = nodesByType("listItem");
   const tablesExamined = nodesByType("table");
   const sectionsExamined = nodesByType("section");
-  const headersFootersExamined = nodesByType("headerFooter");
+  /*
+   * Two node types, one scope.
+   *
+   * `DocumentNodeSchema` keeps Word's own distinction between a header and a
+   * footer — they are separate objects with separate `getHeader`/`getFooter`
+   * entries — while the scope policy and the coverage report treat them as one
+   * `headersFooters` scope, because §8.4 gates them together. Summing the two
+   * here is what reconciles those, and a `headerFooter` node type was the
+   * alternative: it would have made this a count of one type while every
+   * acquisition emitted two.
+   */
+  const headersFootersExamined = nodesByType("header", "footer");
   const protectedScopes = context.nodes.some(
     (node) => !node.includedInGovernance && node.protectionReason !== undefined,
   )
     ? requested.filter((scope) => scope === "body" || scope === "headings")
     : [];
 
+  /*
+   * The scopes the author will not accept a partial answer for.
+   *
+   * `body` is added unconditionally, and it is added here rather than left to the
+   * policy: a run that examined part of the body cannot speak for the document,
+   * and a policy that chose otherwise would be a setting that disables the one
+   * guarantee the coverage report exists to make.
+   *
+   * Every *requested* scope that went unexamined is still recorded — as a
+   * blocker when it is mandatory, and as an `excludedScopes` entry when it is
+   * not. That split is the whole of §27 gate 12. Before it, every unexamined
+   * scope became a blocker, so a document whose tables the host could not read
+   * reported "Incomplete" with a reason pointing at a host limitation the user
+   * cannot change; the user's only response was to learn that "Incomplete" is
+   * normal, which is how a genuine partial scan gets believed.
+   */
+  const mandatory = new Set<ScopeKind>(["body", ...context.policy.scope.mandatoryScopes]);
+
   const blockers: CoverageBlocker[] = [];
   requested
     .filter((scope) => !examinedScopes.includes(scope))
     .forEach((scope) => {
+      if (!mandatory.has(scope)) return;
       const isUnsupported = host.unsupported.includes(scope);
       blockers.push(
         CoverageBlockerSchema.parse({
           scope,
           reason: isUnsupported
-            ? `${scope} could not be read in this Word host`
-            : `${scope} was in scope but was not examined`,
+            ? `${scope} is required but could not be read in this Word host`
+            : `${scope} is required but was not examined`,
           cause: isUnsupported ? "unsupportedByHost" : "excludedByPolicy",
         }),
       );
@@ -285,8 +315,22 @@ export function buildDeterministicCoverage(
     }
   }
 
+  /*
+   * What `complete` means, stated once.
+   *
+   * It is *not* "everything requested was examined". A document whose tables the
+   * host cannot read is fully examined for everything it *can* read, and calling
+   * that incomplete would train the user to ignore the word — which is how a
+   * genuine partial scan gets believed. It is "nothing the author insisted on is
+   * missing, and this run saw the whole document": a mandatory blocker, a
+   * narrowed node set, or a run the caller declared incremental each make it
+   * false, for a reason the blocker list states in the user's terms.
+   *
+   * The old `examinedScopes.length === requested.length` condition was the
+   * second half of that, and it meant a table-capability gap on an otherwise
+   * perfect scan reported "Incomplete" with no blocker to explain why.
+   */
   const complete =
-    examinedScopes.length === requested.length &&
     input.incremental !== true &&
     examinedNodeIds.length >= context.nodes.length &&
     blockers.length === 0;

@@ -31,6 +31,19 @@ export const DocumentNodeSchema = z.object({
     "table",
     "tableCell",
     "caption",
+    /*
+     * `section` and the header/footer pair were added with the section scope
+     * (spec §8.4, §8.5).
+     *
+     * `analysis/deterministic/coverage.ts` counts `sectionsExamined` and
+     * `headersFootersExamined` by looking for nodes of these types, so without
+     * them a scan that read every section reported zero sections examined —
+     * indistinguishable from a document that has none. `header` and `footer`
+     * were already here; the count sums them rather than adding a
+     * `headerFooter` type, because Word's own model distinguishes the two and a
+     * merged type would have to choose one.
+     */
+    "section",
     "header",
     "footer",
     "footnote",

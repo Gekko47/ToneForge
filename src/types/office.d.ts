@@ -53,9 +53,12 @@ declare global {
     }
 
     interface SectionCollection {
-      load: (prop: string) => SectionCollection;
+      load: (prop: string | string[]) => SectionCollection;
       items: Section[];
     }
+
+    /** Word JavaScript API (WordApi 1.1): the three header/footer slots. */
+    type HeaderFooterType = "Primary" | "FirstPage" | "EvenPages";
 
     /**
      * Word JavaScript API (WordApi 1.1). A header or footer is not a
@@ -64,27 +67,64 @@ declare global {
      */
     interface Section {
       body: Body;
-      getHeader: (type: "Primary" | "FirstPage" | "EvenPages") => Body;
-      getFooter: (type: "Primary" | "FirstPage" | "EvenPages") => Body;
+      getHeader: (type: HeaderFooterType) => Body;
+      getFooter: (type: HeaderFooterType) => Body;
+      load: (prop: string | string[]) => Section;
+      /**
+       * WordApiDesktop 1.3. **Not** on Word on the web, so a load naming it is
+       * refused with the rest of the transaction. Optional here for that reason:
+       * acquisition reads it in its own guarded transaction rather than folding
+       * it into the shared body/section load.
+       */
+      pageSetup?: PageSetup;
+    }
+
+    /** WordApiDesktop 1.3. Every member below is absent on Word on the web. */
+    interface PageSetup {
+      orientation?: string;
+      topMargin?: number;
+      bottomMargin?: number;
+      leftMargin?: number;
+      rightMargin?: number;
+      pageWidth?: number;
+      pageHeight?: number;
+      load: (prop: string | string[]) => PageSetup;
     }
 
     interface TableCollection {
-      load: (prop: string) => TableCollection;
+      load: (prop: string | string[]) => TableCollection;
       items: Table[];
     }
 
+    /**
+     * Word JavaScript API (WordApi 1.3). Every property below was read from
+     * `Word.Interfaces.TableLoadOptions` rather than assumed:
+     * <https://learn.microsoft.com/javascript/api/word/word.interfaces.tableloadoptions>
+     *
+     * Note what is absent: there is no cell style name. `cellStyleName` on the
+     * DTO stays `null`, which the analyzer reads as "not read".
+     */
     interface Table {
-      load: (prop: string) => Table;
+      style?: string;
+      styleBuiltIn?: string;
+      values?: string[][];
+      rowCount?: number;
+      headerRowCount?: number;
+      load: (prop: string | string[]) => Table;
     }
 
     interface Body {
       text: string;
-      load: (prop: "text" | "tables/items") => Body;
+      load: (prop: string | string[]) => Body;
       paragraphs?: ParagraphCollection;
       /**
        * Word JavaScript API (WordApi 1.3): the tables in this body.
        */
       tables?: TableCollection;
+      /** Word JavaScript API (WordApi 1.1): the body's own style name. */
+      style?: string;
+      styleBuiltIn?: string;
+      font?: Font;
       /**
        * Word JavaScript API: `Body.getRange(rangeLocation)` accepts a
        * RangeLocation ("Start", "End", "All", "Whole", or a custom range

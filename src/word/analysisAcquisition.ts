@@ -6,7 +6,11 @@
  * `runInWord` transaction, then returns an immutable host-neutral context.
  */
 
-import { createGovernanceProfile, type GovernanceProfile } from "../core/domain/GovernanceProfile";
+import {
+  createGovernanceProfile,
+  type GovernanceProfile,
+  type ScopePolicy,
+} from "../core/domain/GovernanceProfile";
 import {
   DocumentSnapshotSchema,
   type DocumentNode,
@@ -26,7 +30,13 @@ import {
   type AnalysisCapabilities,
   type AnalysisContext,
 } from "../analysis/analysisContext";
-import type { FormattingParagraph, FormattingSnapshot } from "../formatting/formattingSnapshot";
+import type {
+  FormattingParagraph,
+  FormattingSnapshot,
+  HeaderFooterSnapshot,
+  SectionSnapshot,
+  TableSnapshot,
+} from "../formatting/formattingSnapshot";
 
 export interface AnalysisAcquisitionOptions {
   profile: StyleProfile;
@@ -68,6 +78,120 @@ interface StyleView {
   font?: FontView;
   load?: (properties: string | string[]) => unknown;
 }
+
+/**
+ * A `Word.Table`, as this module is allowed to read one. Spec §8.3.
+ *
+ * Every name below was read off `Word.Interfaces.TableLoadOptions` rather than
+ * assumed — <https://learn.microsoft.com/javascript/api/word/word.interfaces.tableloadoptions>
+ * — because a name the host does not have refuses the whole transaction, not
+ * the one property. See `LOADABLE_PARAGRAPH_PROPERTIES` for the same argument
+ * applied to paragraphs.
+ *
+ * Note what is absent: `Word.Table` has no cell style name on that list.
+ * `TableSnapshot.cellStyleName` therefore stays `null` — "not read" — and the
+ * analyzer skips that comparison, rather than a table being reported compliant
+ * on evidence nobody collected.
+ */
+interface TableView {
+  style?: string | undefined;
+  styleBuiltIn?: string | undefined;
+  values?: string[][] | undefined;
+  rowCount?: number | undefined;
+  headerRowCount?: number | undefined;
+}
+
+/**
+ * The table properties this module is allowed to request. Spec §8.3.
+ *
+ * Typed as a tuple so `LOADABLE_TABLE_PROPERTIES` cannot hold a name
+ * `Word.Table` does not have, for the reason `LOADABLE_PARAGRAPH_PROPERTIES`
+ * exists: the host refuses the whole request rather than the one bad name.
+ */
+export const LOADABLE_TABLE_PROPERTIES = [
+  "style",
+  "styleBuiltIn",
+  "values",
+  "rowCount",
+  "headerRowCount",
+] as const;
+
+/**
+ * A `Word.PageSetup`. Spec §8.5.
+ *
+ * **WordApiDesktop 1.3, so it is absent on Word on the web** —
+ * <https://learn.microsoft.com/javascript/api/word/word.interfaces.pagesetuploadoptions>.
+ * `Section` and `SectionCollection` are 1.1; only this nested object is
+ * desktop-only. That difference is why it is read in its own guarded
+ * transaction rather than folded into the shared section load: a name the host
+ * does not have costs the entire request, which is how a scan silently loses
+ * every scope it had already collected.
+ */
+interface PageSetupView {
+  orientation?: string | undefined;
+  topMargin?: number | undefined;
+  bottomMargin?: number | undefined;
+  leftMargin?: number | undefined;
+  rightMargin?: number | undefined;
+  pageWidth?: number | undefined;
+  pageHeight?: number | undefined;
+}
+
+/**
+ * The page-setup properties §8.5 is allowed to compare.
+ *
+ * Orientation, the four margins, and the two page dimensions — which is exactly
+ * what `SectionSnapshot` carries and exactly what `checkPageSetup` checks.
+ * Nothing here is inferred from anything else, because a margin derived from
+ * page size and gutter would be a number no author ever asked for.
+ */
+export const PAGE_SETUP_PROPERTIES = [
+  "orientation",
+  "topMargin",
+  "bottomMargin",
+  "leftMargin",
+  "rightMargin",
+  "pageWidth",
+  "pageHeight",
+] as const;
+
+/** A header or footer body, reached through `Section.getHeader`/`getFooter`. */
+interface HeaderFooterView {
+  kind: "header" | "footer";
+  slot: Office.HeaderFooterType;
+  text?: string | undefined;
+  styleName?: string | undefined;
+  font?: FontView | undefined;
+}
+
+/** The live body Office returned for one header/footer slot, before the read. */
+interface PendingHeaderFooter {
+  kind: "header" | "footer";
+  slot: Office.HeaderFooterType;
+  body: Office.Body | undefined;
+}
+
+/** A `Word.Section` with the text it can serve on any WordApi 1.1 host. */
+interface SectionView {
+  text: string;
+  headerFooters: HeaderFooterView[];
+}
+
+/**
+ * The three header/footer slots a section has, and the reason all three are
+ * read rather than just the primary one.
+ *
+ * `required` in the profile is a claim about whether a header is *present*, and
+ * Word will only tell you that by serving an empty one: a section with no
+ * footer still has a primary footer body, it is simply blank. Reading only
+ * `Primary` would leave the first-page and even-page slots permanently
+ * unreported, which is the same false-compliance claim as reading none of them.
+ */
+const HEADER_FOOTER_SLOTS: readonly Office.HeaderFooterType[] = [
+  "Primary",
+  "FirstPage",
+  "EvenPages",
+];
 
 const DEFAULT_MAX_CHARS = 500_000;
 
@@ -199,11 +323,81 @@ function readPlanned<T>(
 export interface AcquisitionLoadPlan {
   /** Whether `document.styles` may be loaded at all. */
   styleCollection: boolean;
+  /** Whether `body.tables` may be loaded. Spec §8.3. */
+  tableCollection: boolean;
+  /** Whether `document.sections` may be loaded. Spec §8.5. */
+  sectionCollection: boolean;
+  /**
+   * Whether `Section.getHeader`/`getFooter` may be called. Spec §8.4.
+   *
+   * Bound to the section collection as well as to its own capability: a header
+   * is only reachable through a section, so the two cannot be gated apart.
+   */
+  headerFooterCollection: boolean;
   /** Paragraph properties to request, base properties included. */
   paragraphProperties: readonly ParagraphProperty[];
   /** Properties deliberately not requested, for honest coverage reporting. */
   skipped: readonly string[];
 }
+
+/**
+ * The structural scopes, each with the capability that must be `true` before
+ * this module may ask for it, and the token acquisition reports when it cannot.
+ *
+ * The tokens are the vocabulary `analysis/deterministic/coverage.ts` matches
+ * against, so they are declared here once rather than spelled at each use — a
+ * token that drifts between the two modules is how a scope reports as examined
+ * while the host was in fact unable to serve it.
+ */
+const STRUCTURAL_SCOPES: readonly {
+  capability: keyof AnalysisCapabilities;
+  plan: "tableCollection" | "sectionCollection" | "headerFooterCollection";
+  token: string;
+  /** Whether the scope is off unless this policy flag is on. */
+  policyFlag?: keyof ScopePolicy;
+  /** Whether the capability above only counts when sections are also readable. */
+  requiresSections?: boolean;
+}[] = [
+  {
+    capability: "supportsTables",
+    plan: "tableCollection",
+    token: "tables",
+    policyFlag: "includeTables",
+  },
+  {
+    capability: "supportsSections",
+    plan: "sectionCollection",
+    token: "sections",
+    policyFlag: "includeSections",
+  },
+  {
+    capability: "supportsHeadersFooters",
+    plan: "headerFooterCollection",
+    token: "headers",
+    policyFlag: "includeHeadersFooters",
+    requiresSections: true,
+  },
+  /*
+   * The same collection, reported under a second token because the remedy is
+   * different: a missing header is a host limitation, while a missing footer is
+   * the same fact the reader already has from the header line, and two blocker
+   * sentences for one collection would be noise.
+   *
+   * It therefore carries the *same* `policyFlag` and the *same* `requiresSections`
+   * as the entry above, and that is the fix for a real defect. Without them this
+   * entry had neither, so it re-enabled the collection on a host whose sections
+   * were unreadable, and on a policy that had switched headers and footers off —
+   * two scans that read a scope the author had excluded, while the plan reported
+   * the collection as served.
+   */
+  {
+    capability: "supportsHeadersFooters",
+    plan: "headerFooterCollection",
+    token: "footers",
+    policyFlag: "includeHeadersFooters",
+    requiresSections: true,
+  },
+];
 
 /**
  * Decide what may be asked of this host before asking for it.
@@ -217,16 +411,57 @@ export interface AcquisitionLoadPlan {
 export function planAcquisitionLoads(
   capabilities: AnalysisCapabilities,
   degraded = false,
+  scope?: ScopePolicy,
 ): AcquisitionLoadPlan {
+  /*
+   * The scope policy decides whether a scope is *wanted*; the capability decides
+   * whether the host can *serve* it. Both are recorded, and only the second is
+   * a host limitation — `coverage.ts` needs to tell the reader which of the two
+   * happened, because the remedy is a setting in one case and a different Word
+   * in the other. Conflating them sends the reader somewhere that will not help.
+   *
+   * An absent `scope` means every structural scope is wanted, which is what a
+   * caller with no policy to consult means. That is deliberately not the same as
+   * "on by default": `ScopePolicySchema` owns the defaults, and this module
+   * should not hold a second copy of them that can drift.
+   */
+  const wanted = (flag: keyof ScopePolicy): boolean => scope === undefined || scope[flag] === true;
+
+  const structural = {
+    tableCollection: false,
+    sectionCollection: false,
+    headerFooterCollection: false,
+  };
+  const structuralSkipped: string[] = [];
+  STRUCTURAL_SCOPES.forEach((entry) => {
+    const capabilityPresent =
+      capabilities[entry.capability] === true &&
+      (!entry.requiresSections || capabilities.supportsSections === true);
+    const enabled =
+      capabilityPresent && (entry.policyFlag === undefined || wanted(entry.policyFlag));
+    if (enabled) {
+      structural[entry.plan] = true;
+      return;
+    }
+    structuralSkipped.push(entry.token);
+  });
+
   if (degraded) {
     return {
       styleCollection: false,
+      tableCollection: false,
+      sectionCollection: false,
+      headerFooterCollection: false,
       paragraphProperties: BASE_PARAGRAPH_PROPERTIES,
-      skipped: ["styles", ...CAPABILITY_PROPERTY_GROUPS.flatMap((group) => [...group.properties])],
+      skipped: [
+        "styles",
+        ...CAPABILITY_PROPERTY_GROUPS.flatMap((group) => [...group.properties]),
+        ...STRUCTURAL_SCOPES.map((entry) => entry.token),
+      ],
     };
   }
 
-  const skipped: string[] = [];
+  const skipped: string[] = [...structuralSkipped];
   const optional: ParagraphProperty[] = [];
   CAPABILITY_PROPERTY_GROUPS.forEach((group) => {
     if (capabilities[group.capability] === true) {
@@ -238,6 +473,7 @@ export function planAcquisitionLoads(
 
   return {
     styleCollection: capabilities.supportsStyles,
+    ...structural,
     paragraphProperties: [...BASE_PARAGRAPH_PROPERTIES, ...optional],
     skipped: capabilities.supportsStyles ? skipped : ["styles", ...skipped],
   };
@@ -249,17 +485,98 @@ interface AcquiredScope {
   analysisText: string;
   paragraphItems: ParagraphView[];
   styleItems: StyleView[];
+  /** Spec §8.3. `null` when the plan did not ask, not "there are none". */
+  tableItems: TableView[] | null;
+  /** Spec §8.4 and §8.5, as one read: headers are reachable only via sections. */
+  sectionItems: SectionView[] | null;
+  /**
+   * Spec §8.5. `null` when this host has no `PageSetup` at all, which is Word on
+   * the web; an entry of `null` is one section whose page setup did not load.
+   */
+  pageSetupItems: Array<PageSetupView | null> | null;
+  /** How many `context.sync()` calls the acquisition actually spent. */
+  syncCount: number;
 }
+
+/**
+ * The scopes acquisition never attempts, whatever the capabilities say.
+ *
+ * Spec §8.6 requires fields, content controls, shapes and text boxes to be
+ * *explicitly* excluded rather than silently unexamined. They belong in the
+ * `unsupported` list for every scan, and unlike `tables` or `sections` no probe
+ * can turn them on: this pass reads paragraphs, tables, sections and
+ * headers/footers, and nothing else. They are named here so the list reads as a
+ * decision rather than as an omission, and so adding a reader for one means
+ * removing it from this list in the same commit.
+ */
+const NEVER_ACQUIRED_SCOPES: readonly string[] = [
+  "fields",
+  "controls",
+  "contentControls",
+  "shapes",
+  "smartArt",
+  "images",
+  "textBoxes",
+  "comments",
+  "footnotes",
+  "endnotes",
+];
+
+/**
+ * Read a property this transaction did not plan to ask for, safely.
+ *
+ * `readPlanned` answers the same question for paragraphs and is typed to the
+ * declared property list, because a paragraph read of an unloaded name throws.
+ * The structural objects are read straight after their own `load` in the same
+ * transaction, so the throw risk is the same and the guard is the same one: a
+ * property the plan did not request reads as `null`, never as a value nobody
+ * loaded.
+ */
+function readStructural<T>(planned: boolean, read: () => T): T | null {
+  if (!planned) return null;
+  try {
+    const value = read();
+    return value === undefined ? null : value;
+  } catch (error: unknown) {
+    logger.warn("Planned structural property could not be read", {
+      ...describeError(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * The header/footer body properties spec §8.4 compares.
+ *
+ * Text, the body style name, and three font properties. A header is a `Body`, so
+ * it has the same surface a body paragraph does and the same limits: there is no
+ * `paragraphFormat` to reach flow controls through, and `bold`/`italic`/
+ * `underline` are the author's emphasis rather than a house convention, so they
+ * are read for evidence but never reported (see `checkHeaderFooterFormatting`,
+ * which reports only what the profile names).
+ */
+const HEADER_FOOTER_PROPERTIES = [
+  "text",
+  "style",
+  "styleBuiltIn",
+  "font/name",
+  "font/size",
+  "font/color",
+] as const;
 
 /** Run one Word request transaction for a given load plan. */
 async function acquireScope(plan: AcquisitionLoadPlan, maxChars: number): Promise<AcquiredScope> {
-  return runInWord(async (context) => {
+  const scope = await runInWord(async (context) => {
     const body = context.document.body;
     const paragraphs = body.paragraphs;
     const styles = plan.styleCollection ? context.document.styles : undefined;
+    const tables = plan.tableCollection ? body.tables : undefined;
+    const sections = plan.sectionCollection ? context.document.sections : undefined;
     body.load("text");
     paragraphs?.load("items");
     styles?.load("items");
+    tables?.load("items");
+    sections?.load("items");
     await context.sync();
 
     const fullText = body.text ?? "";
@@ -268,14 +585,157 @@ async function acquireScope(plan: AcquisitionLoadPlan, maxChars: number): Promis
       ? (paragraphs.items as ParagraphView[])
       : [];
     const styleItems = Array.isArray(styles?.items) ? (styles.items as StyleView[]) : [];
+    const tableItems = Array.isArray(tables?.items) ? (tables.items as Office.Table[]) : [];
+    const sectionItems = Array.isArray(sections?.items) ? (sections.items as Office.Section[]) : [];
+    let syncCount = 1;
 
     paragraphItems.forEach((paragraph) => {
       paragraph.load?.([...plan.paragraphProperties]);
     });
     styleItems.forEach((style) => style.load?.(["name", "nameLocal", "font"]));
+    tableItems.forEach((table) => table.load?.([...LOADABLE_TABLE_PROPERTIES]));
+    // Only the 1.1 members. `pageSetup` is deliberately absent from this list;
+    // see `acquirePageSetup` for why it costs a transaction of its own.
+    sectionItems.forEach((section) => section.load?.(["body/text"]));
     await context.sync();
-    return { context, fullText, analysisText, paragraphItems, styleItems };
+
+    /*
+     * A header or footer is a `Body` returned by a method call, not a collection
+     * member, so it can only be requested after the sections are loaded. The
+     * bodies are requested for *all three* slots: Word serves a blank primary
+     * header for a section that has none, and that blank is the only evidence
+     * that tells `required` apart from "not looked at".
+     */
+    const pendingHeaderFooters: PendingHeaderFooter[] = [];
+    if (plan.headerFooterCollection) {
+      sectionItems.forEach((section) => {
+        /*
+         * Kind outer, slot inner.
+         *
+         * The order is what the DTO presents, and it is the one a reader of a
+         * `headersFooters` list expects: every header for a section, then every
+         * footer. Iterating the slots outermost interleaves them — header,
+         * footer, header — which is a real ordering in the request and a
+         * confusing one in the report.
+         */
+        (["header", "footer"] as const).forEach((kind) => {
+          HEADER_FOOTER_SLOTS.forEach((slot) => {
+            const body = kind === "header" ? section.getHeader(slot) : section.getFooter(slot);
+            body?.load?.([...HEADER_FOOTER_PROPERTIES]);
+            pendingHeaderFooters.push({ kind, slot, body });
+          });
+        });
+      });
+      await context.sync();
+      syncCount += 1;
+    }
+
+    const slotsPerSection = HEADER_FOOTER_SLOTS.length * 2;
+    const sectionViews: SectionView[] | null = plan.sectionCollection
+      ? sectionItems.map((section, index) => ({
+          text: typeof section.body?.text === "string" ? section.body.text : "",
+          headerFooters: pendingHeaderFooters
+            .slice(index * slotsPerSection, (index + 1) * slotsPerSection)
+            .map((view) => ({
+              kind: view.kind,
+              slot: view.slot,
+              text: readStructural(true, () => view.body?.text) ?? undefined,
+              styleName:
+                readStructural(true, () => view.body?.style) ??
+                readStructural(true, () => view.body?.styleBuiltIn) ??
+                undefined,
+              font:
+                readStructural(true, () => view.body?.font as FontView | undefined) ?? undefined,
+            })),
+        }))
+      : null;
+
+    return {
+      context,
+      fullText,
+      analysisText,
+      paragraphItems,
+      styleItems,
+      syncCount,
+      tableItems: plan.tableCollection
+        ? tableItems.map((table) => ({
+            style: readStructural(true, () => table.style) ?? undefined,
+            styleBuiltIn: readStructural(true, () => table.styleBuiltIn) ?? undefined,
+            values: readStructural(true, () => table.values) ?? undefined,
+            rowCount: readStructural(true, () => table.rowCount) ?? undefined,
+            headerRowCount: readStructural(true, () => table.headerRowCount) ?? undefined,
+          }))
+        : null,
+      sectionItems: sectionViews,
+    };
   });
+
+  /*
+   * Page setup, in its own transaction, and only if the sections came back.
+   *
+   * `Section.pageSetup` is WordApiDesktop 1.3 and `Section` itself is 1.1, so a
+   * host can serve the section list and refuse the page setup — that is Word on
+   * the web, exactly. Naming `pageSetup` in the shared load above would get the
+   * *whole* request refused there, taking the body text, the paragraphs and the
+   * styles with it: a document on the web would report as a text-only scan
+   * because one nested desktop-only object was named.
+   *
+   * So it is asked for separately, and a refusal costs this one read. It is
+   * remembered per capability set for the same reason the rich-scope refusal is:
+   * the observer rescans on every keystroke, and a web host would otherwise pay
+   * a failed transaction per edit.
+   */
+  if (scope.sectionItems === null) return { ...scope, pageSetupItems: null };
+
+  const pageSetupItems = await acquirePageSetup();
+  return {
+    ...scope,
+    pageSetupItems,
+    syncCount: scope.syncCount + (pageSetupItems === null ? 0 : 1),
+  };
+}
+
+/**
+ * Read section page setup, remembering a host that refuses it.
+ *
+ * `null` is the answer on Word on the web, and it is not a degraded scan: the
+ * section *text* was read in the main transaction and is unaffected. Only the
+ * geometry is missing, and only the geometry checks are skipped.
+ */
+let pageSetupRefused = false;
+
+async function acquirePageSetup(): Promise<Array<PageSetupView | null> | null> {
+  if (pageSetupRefused) return null;
+  try {
+    return await runInWord(async (context) => {
+      const sections = context.document.sections;
+      sections?.load?.("items");
+      await context.sync();
+      const items = Array.isArray(sections?.items) ? (sections.items as Office.Section[]) : [];
+      items.forEach((section) => {
+        PAGE_SETUP_PROPERTIES.forEach((property) => section.load?.([`pageSetup/${property}`]));
+      });
+      await context.sync();
+      return items.map((section) => (section.pageSetup ?? null) as PageSetupView | null);
+    });
+  } catch (error: unknown) {
+    /*
+     * Expected on Word on the web, so it is a warning and not an error: the
+     * property is genuinely absent there rather than unexpectedly broken. The
+     * acquisition still reports the `sections` scope as unexamined, so a web
+     * host cannot be read as page-setup compliant.
+     */
+    pageSetupRefused = true;
+    logger.warn("Section page setup is not available on this host", {
+      ...describeError(error),
+    });
+    return null;
+  }
+}
+
+/** Reset the remembered page-setup refusal. See `__resetRefusedCapabilities`. */
+export function __resetPageSetupRefusal(): void {
+  pageSetupRefused = false;
 }
 
 /**
@@ -320,9 +780,24 @@ export async function acquireAnalysisContext(
   options: AnalysisAcquisitionOptions,
 ): Promise<AnalysisContext> {
   const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
+  /*
+   * The policy is resolved *before* the load plan, because the plan is what the
+   * policy decides.
+   *
+   * It used to be derived afterwards, and the scope was never passed to
+   * `planAcquisitionLoads` at all — so `includeTables`, `includeSections` and
+   * `includeHeadersFooters` were read by nobody, and every scan requested all
+   * three structural scopes whatever the governance author had switched off. A
+   * scope policy that cannot stop a read is not a scope policy.
+   */
+  const policy = options.policy ?? createGovernanceProfile(options.profile);
   // A remembered refusal is honoured for the same capability set only. A new
   // probe result is new evidence, so it gets a new attempt at the rich scope.
-  let plan = planAcquisitionLoads(options.capabilities, richScopeRefusedFor(options.capabilities));
+  let plan = planAcquisitionLoads(
+    options.capabilities,
+    richScopeRefusedFor(options.capabilities),
+    policy.scope,
+  );
   let acquired: AcquiredScope;
   try {
     acquired = await acquireScope(plan, maxChars);
@@ -336,7 +811,7 @@ export async function acquireAnalysisContext(
       failedProperties: plan.paragraphProperties.join(","),
     });
     rememberRefusal(options.capabilities);
-    plan = planAcquisitionLoads(options.capabilities, true);
+    plan = planAcquisitionLoads(options.capabilities, true, policy.scope);
     acquired = await acquireScope(plan, maxChars);
   }
 
@@ -345,7 +820,6 @@ export async function acquireAnalysisContext(
   // than only at the point of the request.
   const snapshot = buildSnapshot(acquired, maxChars, plan);
   const formatting = buildFormatting(acquired, maxChars, plan);
-  const policy = options.policy ?? createGovernanceProfile(options.profile);
   const governedNodes = snapshot.nodes.map((node) => {
     const reason = node.protectionReason;
     const protectedByPolicy =
@@ -366,7 +840,7 @@ export async function acquireAnalysisContext(
   const acquisition: AcquisitionDiagnostics = {
     runId: `${snapshot.documentId}:${snapshot.contentHash}`,
     acquisitionReadCount: 1,
-    syncCount: 2,
+    syncCount: acquired.syncCount,
     analyzedCharacterCount: acquired.analysisText.length,
     completeDocumentCharacterCount: acquired.fullText.length,
     fullBodyReadCount: 1,
@@ -374,11 +848,18 @@ export async function acquireAnalysisContext(
     structuralCoverage: acquired.paragraphItems.length > 0 ? "partial" : "unsupported",
     // Properties this host would not serve are named here, so a text-only
     // result is never reported as though it were a formatting-aware one.
+    //
+    // Derived from what the plan actually skipped, never from a constant list.
+    // The previous version named `tables`, `headers`, `footers` and `sections`
+    // unconditionally, so a host that served all four — and a scan that compared
+    // them — still reported every one of them as unsupported, and coverage then
+    // refused to call the run complete on the strength of a gap that had been
+    // closed. `NEVER_ACQUIRED_SCOPES` is the part that is genuinely constant,
+    // and it says so.
     unsupported: [
-      ...(acquired.paragraphItems.length > 0
-        ? ["tables", "headers", "footers", "sections", "fields", "controls", "shapes"]
-        : ["wordParagraphCollection"]),
+      ...(acquired.paragraphItems.length > 0 ? [] : ["wordParagraphCollection"]),
       ...plan.skipped,
+      ...NEVER_ACQUIRED_SCOPES,
     ],
     incremental: false,
     incrementalReason:
@@ -394,13 +875,11 @@ export async function acquireAnalysisContext(
   });
 }
 
+/** What the DTO builders need, so neither re-declares the acquired shape. */
+type AcquiredForBuilders = Omit<AcquiredScope, "syncCount">;
+
 function buildSnapshot(
-  acquired: {
-    context: Office.Context;
-    fullText: string;
-    analysisText: string;
-    paragraphItems: ParagraphView[];
-  },
+  acquired: AcquiredForBuilders,
   maxChars: number,
   plan: AcquisitionLoadPlan,
 ): DocumentSnapshot {
@@ -453,6 +932,66 @@ function buildSnapshot(
     });
     offset = endOffset;
   });
+  /*
+   * One node per structural object the scan read.
+   *
+   * Spec §20 counts *what was examined*, and `coverage.ts` counts a table, a
+   * section or a header/footer by looking for a node of that type. Without these
+   * nodes a scan that read every table in the document reported
+   * `tablesExamined: 0` — which reads as "the document has no tables", the exact
+   * false-compliance claim §9 exists to prevent, produced by the count rather
+   * than by any decision.
+   *
+   * `editable: false` on all of them, and that is a real answer rather than a
+   * placeholder. `revisionAdapter` refuses table, section and header/footer
+   * mutation (spec §8.3), and the corresponding findings are all marked
+   * `correctable: false`; a node claiming to be editable would let a planner
+   * target it. They are `includedInGovernance` so the *checks* still run — the
+   * object is examined, it is simply not something this pass may change.
+   */
+  acquired.tableItems?.forEach((_table, index) => {
+    const sourcePath = `body/table/${index}`;
+    const nodeId = buildNodeId("table", sourcePath);
+    nodes.push({
+      nodeId,
+      type: "table",
+      sourcePath,
+      editable: false,
+      includedInGovernance: true,
+      includedInAIReview: false,
+      protectionReason: "read-only-scope",
+    });
+  });
+  acquired.sectionItems?.forEach((_section, index) => {
+    const sourcePath = `body/section/${index}`;
+    const nodeId = buildNodeId("section", sourcePath);
+    nodes.push({
+      nodeId,
+      type: "section",
+      sourcePath,
+      editable: false,
+      includedInGovernance: true,
+      includedInAIReview: false,
+      protectionReason: "read-only-scope",
+    });
+  });
+  acquired.sectionItems?.forEach((section, sectionIndex) => {
+    section.headerFooters.forEach((headerFooter, slotIndex) => {
+      const sourcePath = `body/section/${sectionIndex}/${headerFooter.kind}/${headerFooter.slot}`;
+      const nodeId = buildNodeId("headerFooter", sourcePath);
+      nodes.push({
+        nodeId,
+        type: headerFooter.kind === "header" ? "header" : "footer",
+        text: headerFooter.text,
+        sourcePath,
+        editable: false,
+        includedInGovernance: true,
+        includedInAIReview: false,
+        protectionReason: "read-only-scope",
+      });
+      void slotIndex;
+    });
+  });
   const contentHash = hashDocument(acquired.fullText);
   const structuralHash = hashText(
     nodes.map((node) => `${node.nodeId}:${node.type}:${node.sourcePath}`).join("|"),
@@ -473,23 +1012,18 @@ function buildSnapshot(
     acquisition: {
       paragraphsFromWordCollection: acquired.paragraphItems.length > 0,
       structuralCoverage: acquired.paragraphItems.length > 0 ? "partial" : "unsupported",
-      unsupported:
-        acquired.paragraphItems.length > 0
-          ? ["tables", "headers", "footers", "sections", "fields", "controls", "shapes"]
-          : ["wordParagraphCollection"],
+      unsupported: [
+        ...(acquired.paragraphItems.length > 0 ? [] : ["wordParagraphCollection"]),
+        ...plan.skipped,
+        ...NEVER_ACQUIRED_SCOPES,
+      ],
     },
     nodes,
   });
 }
 
 function buildFormatting(
-  acquired: {
-    context: Office.Context;
-    fullText: string;
-    analysisText: string;
-    paragraphItems: ParagraphView[];
-    styleItems: StyleView[];
-  },
+  acquired: AcquiredForBuilders,
   maxChars: number,
   plan: AcquisitionLoadPlan,
 ): FormattingSnapshot {
@@ -600,6 +1134,9 @@ function buildFormatting(
     text: acquired.analysisText,
     fullText: acquired.fullText,
     paragraphs,
+    tables: buildTables(acquired.tableItems),
+    sections: buildSections(acquired.sectionItems, acquired.pageSetupItems),
+    headersFooters: buildHeaderFooters(acquired.sectionItems),
     capturedAt: new Date().toISOString(),
     fullDocumentHash,
     hash: fullDocumentHash,
@@ -612,6 +1149,137 @@ function buildFormatting(
       unsupported: [...unsupported],
     },
   };
+}
+
+/**
+ * Spec §8.3. A table the scan read, and the properties it could not.
+ *
+ * `columnCount` is derived from `values`, not read: `Word.TableLoadOptions` has
+ * no column-count member, and the row arrays are the only evidence of width on
+ * the load options above. A table with no values reports `null` — "not read" —
+ * rather than zero, so a ragged table is not reported as a zero-column one.
+ *
+ * `headerRow` is likewise not read. `Word.Table` exposes `headerRowCount` and a
+ * first-row *is* a header row only by convention; there is no boolean for it, so
+ * the DTO field stays `null` and `checkTableFormatting` skips that comparison
+ * rather than inferring a structural claim from a row count.
+ */
+function buildTables(items: TableView[] | null): TableSnapshot[] {
+  return (items ?? []).map((table, index) => {
+    const sourcePath = `body/table/${index}`;
+    const columnCount = Array.isArray(table.values)
+      ? table.values.reduce((widest, row) => Math.max(widest, row.length), 0)
+      : null;
+    return {
+      index,
+      nodeId: buildNodeId("table", sourcePath),
+      sourcePath,
+      text: (table.values ?? []).map((row) => row.join("\t")).join("\n"),
+      styleName: fontValue(table.style) ?? fontValue(table.styleBuiltIn),
+      // Not read: see the doc comment. `cellStyleName` likewise — `Word.Table`
+      // has no cell style member on its load options.
+      headerRow: null,
+      headerRowCount: numberOrNull(table.headerRowCount),
+      cellStyleName: null,
+      rowCount: numberOrNull(table.rowCount),
+      columnCount: numberOrNull(columnCount),
+    };
+  });
+}
+
+/**
+ * Spec §8.5. A section and the page geometry the profile can compare.
+ *
+ * `orientation` is normalised rather than passed through: Word reports
+ * `portrait`/`landscape` as strings, and a host that spells it differently
+ * should read as "not read" instead of as a permanent mismatch against the
+ * profile. Every geometry field is `null` on Word on the web, where
+ * `Section.pageSetup` does not exist — and a `null` is what makes
+ * `checkPageSetup` skip rather than invent a deviation.
+ */
+function buildSections(
+  sections: SectionView[] | null,
+  pageSetup: Array<PageSetupView | null> | null,
+): SectionSnapshot[] {
+  return (sections ?? []).map((section, index) => {
+    const sourcePath = `body/section/${index}`;
+    const setup = pageSetup?.[index] ?? null;
+    return {
+      index,
+      nodeId: buildNodeId("section", sourcePath),
+      sourcePath,
+      text: section.text,
+      orientation: normalizeOrientation(setup?.orientation),
+      margins: {
+        top: numberOrNull(setup?.topMargin),
+        bottom: numberOrNull(setup?.bottomMargin),
+        left: numberOrNull(setup?.leftMargin),
+        right: numberOrNull(setup?.rightMargin),
+      },
+      width: numberOrNull(setup?.pageWidth),
+      height: numberOrNull(setup?.pageHeight),
+    };
+  });
+}
+
+/**
+ * Spec §8.4. One entry per header or footer slot of every section.
+ *
+ * `required` is *presence*, not a profile claim: Word serves a blank body for a
+ * header the document does not have, so a non-empty text is the only evidence
+ * that a header exists. That is the honest reading of the profile's
+ * `headersFooters.required` field, which asks whether the document should have
+ * one.
+ *
+ * A blank slot still produces an entry, and its font fields are `null` — the
+ * analyzer skips a comparison it has no evidence for, and a blank header does
+ * not become a finding about a font nobody set.
+ */
+function buildHeaderFooters(sections: SectionView[] | null): HeaderFooterSnapshot[] {
+  const entries: HeaderFooterSnapshot[] = [];
+  (sections ?? []).forEach((section, sectionIndex) => {
+    section.headerFooters.forEach((headerFooter, slotIndex) => {
+      const sourcePath = `body/section/${sectionIndex}/${headerFooter.kind}/${headerFooter.slot}`;
+      const text = headerFooter.text ?? "";
+      entries.push({
+        index: entries.length,
+        nodeId: buildNodeId("headerFooter", sourcePath),
+        sourcePath,
+        kind: headerFooter.kind,
+        text,
+        styleName: fontValue(headerFooter.styleName),
+        required: text.trim().length > 0,
+        ...(headerFooter.font === undefined
+          ? {}
+          : {
+              font: {
+                name: fontValue(headerFooter.font.name),
+                size: numberOrNull(headerFooter.font.size),
+                color: fontValue(headerFooter.font.color),
+                bold: headerFooter.font.bold ?? null,
+                italic: headerFooter.font.italic ?? null,
+                underline: headerFooter.font.underline ?? null,
+              },
+            }),
+      });
+      void slotIndex;
+    });
+  });
+  return entries;
+}
+
+/**
+ * Word's page orientation, or `null` when the host spelled it something else.
+ *
+ * `null` is the answer that keeps a comparison honest: the analyzer skips a
+ * property it did not read, where an unmapped string would be reported as a
+ * deviation from a profile the document may well satisfy.
+ */
+function normalizeOrientation(value: string | undefined): "portrait" | "landscape" | null {
+  if (value === undefined) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "portrait" || normalized === "landscape") return normalized;
+  return null;
 }
 
 function deriveAcquisitionProvenance(

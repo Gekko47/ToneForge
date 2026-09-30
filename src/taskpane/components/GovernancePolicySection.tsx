@@ -105,14 +105,43 @@ const PROTECTION_FLAGS: ReadonlyArray<{
 ];
 
 /**
+ * The scope policy flags that are booleans.
+ *
+ * `ScopePolicy` also carries `mandatoryScopes`, which is a list of scope kinds
+ * rather than a flag. `BooleanScopeFlag` is the difference, derived rather than
+ * written out so a new boolean flag in the schema is usable here without editing
+ * this file, and so a checkbox can never be pointed at the list.
+ */
+type BooleanScopeFlag = {
+  [K in keyof ScopePolicy]: ScopePolicy[K] extends boolean ? K : never;
+}[keyof ScopePolicy];
+
+/** The scope a mandatory-scope checkbox names. Mirrors `ScopeKind` structurally. */
+type MandatoryScope =
+  | "headings"
+  | "lists"
+  | "tables"
+  | "sections"
+  | "headersFooters"
+  | "textBoxes"
+  | "fields"
+  | "contentControls"
+  | "shapes";
+
+/**
  * The scope flags, split by whether turning one on widens or narrows analysis.
  *
  * Narrowing is listed first because it is the destructive direction: every
  * exclusion makes a coverage report smaller, and a policy that excludes enough
  * reads as a clean document.
+ *
+ * `key` is narrowed to the *boolean* scope flags rather than `keyof ScopePolicy`.
+ * `ScopePolicy` also carries `mandatoryScopes`, which is a list, and letting a
+ * checkbox bind to it produced a control typed `boolean` rendering a list — a
+ * compile error here, and in a looser build a checkbox that toggled nothing.
  */
 const SCOPE_FLAGS: ReadonlyArray<{
-  key: keyof ScopePolicy;
+  key: BooleanScopeFlag;
   label: string;
   widens: boolean;
 }> = [
@@ -126,8 +155,69 @@ const SCOPE_FLAGS: ReadonlyArray<{
   { key: "includeFields", label: "Fields", widens: false },
   { key: "includeImages", label: "Images", widens: false },
   { key: "includeTables", label: "Tables", widens: true },
+  // Section geometry. `widens: false` rather than `true`, because the honest
+  // description is that it *narrows* the analysis: page setup is checked instead
+  // of the whole document being read and compared. Both readings are defensible;
+  // listing it under "always included" would put a checkbox there whose default
+  // can be turned off, which is the inconsistency the split exists to avoid.
+  { key: "includeSections", label: "Page setup and margins", widens: false },
   { key: "includeLists", label: "Lists", widens: true },
   { key: "includeBody", label: "Body text", widens: true },
+];
+
+/**
+ * The scopes a policy can insist on, and the checkbox label for each.
+ *
+ * Spec §9 and §27 gate 12. A mandatory scope is one whose absence refuses Apply;
+ * every other gap is a limitation the coverage report states and moves past. The
+ * distinction is the whole of the control, so it is a visible per-scope choice
+ * rather than a hidden constant — and it is only offered for a scope the
+ * analysis scope is currently including, since making an excluded scope
+ * mandatory is a contradiction the reader could not resolve.
+ */
+/**
+ * Whether the analysis scope currently *includes* a given scope kind.
+ *
+ * A mandatory scope the policy has excluded is a contradiction — it asks for an
+ * examination of content the same policy says to ignore — so the checkbox is
+ * disabled rather than silently accepted. `headings` follows `includeBody` and
+ * nothing else, because heading comparison has no separate scope flag: §8.2
+ * treats a document whose headings were not examined as not fully checked even
+ * when every body paragraph was.
+ */
+function scopeIsIncluded(scope: ScopePolicy, kind: MandatoryScope): boolean {
+  switch (kind) {
+    case "headings":
+      return scope.includeBody;
+    case "lists":
+      return scope.includeLists;
+    case "tables":
+      return scope.includeTables;
+    case "sections":
+      return scope.includeSections;
+    case "headersFooters":
+      return scope.includeHeadersFooters;
+    case "textBoxes":
+      return scope.includeTextBoxes;
+    case "fields":
+      return scope.includeFields;
+    case "contentControls":
+      return scope.includeContentControls;
+    case "shapes":
+      return scope.includeShapes;
+  }
+}
+
+const MANDATORY_SCOPE_FLAGS: ReadonlyArray<{ scope: MandatoryScope; label: string }> = [
+  { scope: "headings", label: "Headings must be checked" },
+  { scope: "lists", label: "Lists must be checked" },
+  { scope: "tables", label: "Tables must be checked" },
+  { scope: "sections", label: "Page setup must be checked" },
+  { scope: "headersFooters", label: "Headers and footers must be checked" },
+  { scope: "textBoxes", label: "Text boxes must be checked" },
+  { scope: "fields", label: "Fields must be checked" },
+  { scope: "contentControls", label: "Content controls must be checked" },
+  { scope: "shapes", label: "Shapes must be checked" },
 ];
 
 const SOURCE_LABEL: Readonly<Record<(typeof GOVERNANCE_RULE_SOURCES)[number], string>> = {
@@ -492,6 +582,40 @@ export default function GovernancePolicySection({
             }
           />
         ))}
+        <h4>Must be checked before Apply</h4>
+        <p className="tf-sub">
+          A required scope that the host cannot read — or that a scan did not examine — refuses
+          Apply and names the reason. Everything else is a limitation the coverage report states and
+          moves past. Body text is always required; it cannot be turned off here.
+        </p>
+        {MANDATORY_SCOPE_FLAGS.map((entry) => {
+          const inScope = scopeIsIncluded(draft.scope, entry.scope);
+          const checked = draft.scope.mandatoryScopes.includes(entry.scope);
+          return (
+            <Checkbox
+              key={entry.scope}
+              label={entry.label}
+              title={
+                inScope
+                  ? "Refuse Apply when this scope cannot be read or was not examined."
+                  : "This category is not in the analysis scope, so it can never be examined."
+              }
+              disabled={!inScope}
+              checked={checked}
+              onChange={(_event, value) =>
+                patch({
+                  scope: {
+                    ...draft.scope,
+                    mandatoryScopes:
+                      value === true
+                        ? [...draft.scope.mandatoryScopes, entry.scope]
+                        : draft.scope.mandatoryScopes.filter((scope) => scope !== entry.scope),
+                  },
+                })
+              }
+            />
+          );
+        })}
       </section>
 
       {problem !== null && (
