@@ -78,11 +78,68 @@ export const FormattingParagraphSchema = z.object({
 
 export type FormattingParagraph = z.input<typeof FormattingParagraphSchema>;
 
+export const TableSnapshotSchema = z.object({
+  index: z.number().int().nonnegative(),
+  nodeId: z.string().trim().min(1).optional(),
+  sourcePath: z.string().trim().min(1).optional(),
+  text: z.string().default(""),
+  styleName: z.string().trim().nullable().default(null),
+  headerRow: z.boolean().nullable().default(null),
+  headerRowCount: z.number().int().min(0).max(10).nullable().default(null),
+  cellStyleName: z.string().trim().nullable().default(null),
+  rowCount: z.number().int().min(0).max(1000).nullable().default(null),
+  columnCount: z.number().int().min(0).max(100).nullable().default(null),
+});
+export type TableSnapshot = z.input<typeof TableSnapshotSchema>;
+
+export const SectionSnapshotSchema = z.object({
+  index: z.number().int().nonnegative(),
+  nodeId: z.string().trim().min(1).optional(),
+  sourcePath: z.string().trim().min(1).optional(),
+  text: z.string().default(""),
+  orientation: z.enum(["portrait", "landscape"]).nullable().default(null),
+  margins: z
+    .object({
+      top: z.number().nullable().default(null),
+      bottom: z.number().nullable().default(null),
+      left: z.number().nullable().default(null),
+      right: z.number().nullable().default(null),
+    })
+    .optional(),
+  width: z.number().int().positive().nullable().default(null),
+  height: z.number().int().positive().nullable().default(null),
+});
+export type SectionSnapshot = z.input<typeof SectionSnapshotSchema>;
+
+export const HeaderFooterSnapshotSchema = z.object({
+  index: z.number().int().nonnegative(),
+  nodeId: z.string().trim().min(1).optional(),
+  sourcePath: z.string().trim().min(1).optional(),
+  kind: z.enum(["header", "footer"]).default("header"),
+  text: z.string().default(""),
+  styleName: z.string().trim().nullable().default(null),
+  required: z.boolean().default(false),
+  font: z
+    .object({
+      name: z.string().trim().nullable().default(null),
+      size: z.number().nullable().default(null),
+      color: z.string().trim().nullable().default(null),
+      bold: z.boolean().nullable().default(null),
+      italic: z.boolean().nullable().default(null),
+      underline: z.boolean().nullable().default(null),
+    })
+    .optional(),
+});
+export type HeaderFooterSnapshot = z.input<typeof HeaderFooterSnapshotSchema>;
+
 export const FormattingSnapshotSchema = z.object({
   id: z.string().trim().min(1),
   text: z.string(),
   fullText: z.string().default(""),
-  paragraphs: z.array(FormattingParagraphSchema),
+  paragraphs: z.array(FormattingParagraphSchema).default([]),
+  tables: z.array(TableSnapshotSchema).default([]),
+  sections: z.array(SectionSnapshotSchema).default([]),
+  headersFooters: z.array(HeaderFooterSnapshotSchema).default([]),
   capturedAt: z.string().datetime(),
   fullDocumentHash: z.string().trim().optional(),
   hash: z.string().trim().optional(),

@@ -206,6 +206,82 @@ describe("runDeterministicReview", () => {
     expect(report.coverage.complete).toBe(false);
     expect(report.coverage.blockers.length).toBeGreaterThan(0);
   });
+
+  it("reports table and section metadata deviations for T19/T20", async () => {
+    const formatting = {
+      id: "engine-test",
+      text: "A table and a header.",
+      fullText: "A table and a header.",
+      paragraphs: [],
+      capturedAt: "2026-01-01T00:00:00.000Z",
+      tables: [
+        {
+          index: 0,
+          nodeId: "table-1",
+          sourcePath: "body/table/0",
+          styleName: "Table Grid",
+          headerRow: false,
+          headerRowCount: 1,
+          cellStyleName: "Table Cell",
+          rowCount: 2,
+          columnCount: 2,
+        },
+      ],
+      sections: [
+        {
+          index: 0,
+          nodeId: "section-1",
+          sourcePath: "body/section/0",
+          orientation: "portrait",
+          margins: { top: 36, bottom: 36, left: 72, right: 72 },
+          width: 5000,
+          height: 7000,
+        },
+      ],
+      headersFooters: [
+        {
+          index: 0,
+          nodeId: "header-1",
+          sourcePath: "header/primary/0",
+          kind: "header",
+          styleName: "Heading 1",
+          font: { name: "Calibri", size: 12, color: "#000000", bold: false, italic: false },
+          required: true,
+        },
+      ],
+    } as FormattingSnapshot;
+
+    const profile = StyleProfileSchema.parse({
+      ...REVIEW_PROFILE,
+      formatting: {
+        ...REVIEW_PROFILE.formatting,
+        tables: { styleName: "Table Normal", supported: true, headerRow: true, headerRowCount: 2 },
+        page: { orientation: "landscape", supported: true },
+        headersFooters: { styleName: "Header", required: true, supported: true },
+      },
+    });
+
+    const context = {
+      ...contextFor("A table and a header.", profile, formatting),
+      capabilities: {
+        ...FULL_CAPABILITIES,
+        supportsTables: true,
+        supportsHeadersFooters: true,
+        supportsSections: true,
+      },
+    };
+    const report = await runDeterministicReview({ context });
+
+    expect(report.findings.some((finding) => finding.category === "formatting.tableStyle")).toBe(
+      true,
+    );
+    expect(report.findings.some((finding) => finding.category === "formatting.pageSetup")).toBe(
+      true,
+    );
+    expect(report.findings.some((finding) => finding.category === "formatting.headerFooter")).toBe(
+      true,
+    );
+  });
 });
 
 describe("summarize", () => {

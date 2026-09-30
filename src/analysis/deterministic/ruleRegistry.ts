@@ -228,12 +228,7 @@ export interface DeterministicRule {
  * rather than the result of an audit that cannot see a missing body. T19 and
  * T20 attach the bodies and these entries come out.
  */
-export const METADATA_ONLY_PROFILE_PATHS: readonly string[] = [
-  "language.locale",
-  "formatting.tables",
-  "formatting.page",
-  "formatting.headersFooters",
-];
+export const METADATA_ONLY_PROFILE_PATHS: readonly string[] = ["language.locale"];
 
 /**
  * Every field a deterministic profile exposes, as dotted paths.
@@ -650,10 +645,8 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "table",
     category: "formatting.tableStyle",
     profilePaths: ["formatting.tables"],
-    // Not correctable until the rule has a body. A `correctable: true` on a rule
-    // that produces no finding promises an "Approve" the review cannot offer,
-    // and T19 is what makes the promise true.
     correctable: false,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.tableStyle"]),
   },
   {
     id: "formatting/page",
@@ -662,6 +655,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     category: "formatting.pageSetup",
     profilePaths: ["formatting.page"],
     correctable: false,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.pageSetup"]),
   },
   {
     id: "formatting/headersFooters",
@@ -669,8 +663,8 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "headerFooter",
     category: "formatting.headerFooter",
     profilePaths: ["formatting.headersFooters"],
-    // Not correctable until the rule has a body. T20 is what makes it true.
     correctable: false,
+    analyze: (ruleContext) => formatting(ruleContext, ["formatting.headerFooter"]),
   },
   {
     id: "structure/headingHierarchy",

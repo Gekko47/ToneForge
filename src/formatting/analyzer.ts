@@ -50,6 +50,12 @@ export interface FormattingCapabilities {
   supportsParagraphFormat: boolean;
   /** Whether the host serves a list item's level. */
   supportsListLevel: boolean;
+  /** Whether the host serves table metadata and cell styling. */
+  supportsTables?: boolean;
+  /** Whether the host serves header/footer collections. */
+  supportsHeadersFooters?: boolean;
+  /** Whether the host serves section/page metadata. */
+  supportsSections?: boolean;
 }
 
 export interface FormattingCheckOptions {
@@ -69,7 +75,18 @@ export interface FormattingCheckOptions {
 
 export function findFormattingIssues(options: FormattingCheckOptions): Finding[] {
   const { snapshot, profile, structure, capabilities } = options;
-  if (snapshot.paragraphs.length === 0) return [];
+  const paragraphs = snapshot.paragraphs ?? [];
+  const tables = snapshot.tables ?? [];
+  const sections = snapshot.sections ?? [];
+  const headersFooters = snapshot.headersFooters ?? [];
+  if (
+    paragraphs.length === 0 &&
+    tables.length === 0 &&
+    sections.length === 0 &&
+    headersFooters.length === 0
+  ) {
+    return [];
+  }
   return [
     ...checkEmptyStyle(snapshot, profile),
     ...checkBodyStyle(snapshot, profile, capabilities),
@@ -77,6 +94,9 @@ export function findFormattingIssues(options: FormattingCheckOptions): Finding[]
     ...checkHeadingStyle(snapshot, profile, capabilities),
     ...checkDirectFormatting(snapshot, profile),
     ...checkListFormatting(snapshot, profile, capabilities),
+    ...checkTableFormatting(snapshot, profile, capabilities),
+    ...checkHeaderFooterFormatting(snapshot, profile, capabilities),
+    ...checkPageSetup(snapshot, profile, capabilities),
     ...checkHeadingHierarchy(snapshot, structure),
     ...checkUnknownStyles(snapshot, structure, capabilities),
     ...checkEmptyHeadings(snapshot, structure),
@@ -242,6 +262,7 @@ function makeFinding(params: {
   evidence: string;
   paragraph?: FormattingParagraph;
   profilePath: string;
+  nodeIds?: readonly string[];
   /** The value the profile wants, carried through the finding metadata. */
   expectedValue?: unknown;
   /** The value the host read, carried through the finding metadata. */
@@ -274,7 +295,7 @@ function makeFinding(params: {
     evidence: params.evidence,
     confidence: 1,
     ruleId: params.category,
-    nodeIds: params.paragraph?.nodeId ? [params.paragraph.nodeId] : [],
+    nodeIds: params.nodeIds ?? (params.paragraph?.nodeId ? [params.paragraph.nodeId] : []),
     source: "deterministic",
     risk: "none",
     reversible: true,
@@ -325,6 +346,10 @@ function paragraphPrecondition(
 
 function paragraphRange(paragraph: FormattingParagraph): Range {
   return { start: paragraph.index, end: paragraph.index + 1, unit: "paragraph" };
+}
+
+function sectionRange(index: number): Range {
+  return { start: index, end: index + 1, unit: "section" };
 }
 
 /** A style-identity deviation, reported against the standard that wanted it. */
@@ -660,6 +685,334 @@ function checkListFormatting(
         }),
       );
     }
+    return findings;
+  });
+}
+
+function checkTableFormatting(
+  snapshot: FormattingSnapshot,
+  profile: DocumentFormattingProfile,
+  capabilities: FormattingCapabilities,
+): Finding[] {
+  const standard = profile.tables;
+  const tables = snapshot.tables ?? [];
+  if (!standard || !standard.supported || capabilities.supportsTables !== true) return [];
+
+  return tables.flatMap((table) => {
+    const findings: Finding[] = [];
+    const tableText = table.text ?? "";
+    const styleName = (table.styleName ?? "").trim();
+    if (
+      standard.styleName &&
+      styleName &&
+      styleName.toLowerCase() !== standard.styleName.toLowerCase()
+    ) {
+      findings.push(
+        makeFinding({
+          category: "formatting.tableStyle",
+          range: sectionRange(table.index),
+          message: `Table carries "${styleName}" but the profile expects "${standard.styleName}"`,
+          severity: "warning",
+          evidence: tableText.slice(0, 40),
+          paragraph: undefined,
+          profilePath: "formatting.tables.styleName",
+          expected: standard.styleName,
+          expectedValue: standard.styleName,
+          actualValue: styleName,
+          nodeIds: table.nodeId ? [table.nodeId] : [],
+          correctable: false,
+          correctionReason:
+            "The table style is advisory only; ToneForge does not safely rewrite table formatting in this host.",
+          occurrenceGroupKey: `formatting.tables.styleName|${standard.styleName}`,
+        }),
+      );
+    }
+
+    if (
+      standard.headerRow !== undefined &&
+      table.headerRow !== null &&
+      table.headerRow !== standard.headerRow
+    ) {
+      findings.push(
+        makeFinding({
+          category: "formatting.tableStyle",
+          range: sectionRange(table.index),
+          message: `Table header row is ${String(table.headerRow)} but the profile expects ${String(standard.headerRow)}`,
+          severity: "warning",
+          evidence: tableText.slice(0, 40),
+          profilePath: "formatting.tables.headerRow",
+          expected: String(standard.headerRow),
+          expectedValue: standard.headerRow,
+          actualValue: table.headerRow,
+          nodeIds: table.nodeId ? [table.nodeId] : [],
+          correctable: false,
+          correctionReason:
+            "Table structure changes are not safe to mutate in batch; this finding is reported for review.",
+          occurrenceGroupKey: `formatting.tables.headerRow|${String(standard.headerRow)}`,
+        }),
+      );
+    }
+
+    if (
+      standard.headerRowCount !== undefined &&
+      table.headerRowCount !== null &&
+      table.headerRowCount !== standard.headerRowCount
+    ) {
+      findings.push(
+        makeFinding({
+          category: "formatting.tableStyle",
+          range: sectionRange(table.index),
+          message: `Table has ${table.headerRowCount} header rows but the profile expects ${standard.headerRowCount}`,
+          severity: "warning",
+          evidence: tableText.slice(0, 40),
+          profilePath: "formatting.tables.headerRowCount",
+          expected: String(standard.headerRowCount),
+          expectedValue: standard.headerRowCount,
+          actualValue: table.headerRowCount,
+          nodeIds: table.nodeId ? [table.nodeId] : [],
+          correctable: false,
+          correctionReason:
+            "Header rows are structural table metadata and are reported without a safe rewrite.",
+          occurrenceGroupKey: `formatting.tables.headerRowCount|${standard.headerRowCount}`,
+        }),
+      );
+    }
+
+    if (
+      standard.cellStyleName &&
+      table.cellStyleName &&
+      table.cellStyleName.toLowerCase() !== standard.cellStyleName.toLowerCase()
+    ) {
+      findings.push(
+        makeFinding({
+          category: "formatting.tableStyle",
+          range: sectionRange(table.index),
+          message: `Table cells carry "${table.cellStyleName}" but the profile expects "${standard.cellStyleName}"`,
+          severity: "warning",
+          evidence: tableText.slice(0, 40),
+          profilePath: "formatting.tables.cellStyleName",
+          expected: standard.cellStyleName,
+          expectedValue: standard.cellStyleName,
+          actualValue: table.cellStyleName,
+          nodeIds: table.nodeId ? [table.nodeId] : [],
+          correctable: false,
+          correctionReason:
+            "Cell styling is host-dependent and not safe to mutate without a verified table adapter.",
+          occurrenceGroupKey: `formatting.tables.cellStyleName|${standard.cellStyleName}`,
+        }),
+      );
+    }
+
+    return findings;
+  });
+}
+
+function checkHeaderFooterFormatting(
+  snapshot: FormattingSnapshot,
+  profile: DocumentFormattingProfile,
+  capabilities: FormattingCapabilities,
+): Finding[] {
+  const standard = profile.headersFooters;
+  const headersFooters = snapshot.headersFooters ?? [];
+  if (!standard || !standard.supported || capabilities.supportsHeadersFooters !== true) return [];
+
+  return headersFooters.flatMap((headerFooter) => {
+    const findings: Finding[] = [];
+    const headerFooterText = headerFooter.text ?? "";
+    const styleName = (headerFooter.styleName ?? "").trim();
+    if (
+      standard.styleName &&
+      styleName &&
+      styleName.toLowerCase() !== standard.styleName.toLowerCase()
+    ) {
+      findings.push(
+        makeFinding({
+          category: "formatting.headerFooter",
+          range: sectionRange(headerFooter.index),
+          message: `${headerFooter.kind} carries "${styleName}" but the profile expects "${standard.styleName}"`,
+          severity: "warning",
+          evidence: headerFooterText.slice(0, 40),
+          profilePath: "formatting.headersFooters.styleName",
+          expected: standard.styleName,
+          expectedValue: standard.styleName,
+          actualValue: styleName,
+          nodeIds: headerFooter.nodeId ? [headerFooter.nodeId] : [],
+          correctable: false,
+          correctionReason:
+            "Header/footer styling is scoped to the Word host and is reported without a safe rewrite.",
+          occurrenceGroupKey: `formatting.headersFooters.styleName|${standard.styleName}`,
+        }),
+      );
+    }
+
+    if (standard.font) {
+      const allowed = ["name", "size", "color", "bold", "italic", "underline"] as const;
+      for (const property of allowed) {
+        const expected = standard.font[property];
+        const actual = headerFooter.font?.[property];
+        if (expected === undefined || actual === null || actual === undefined) continue;
+        if (actual !== expected) {
+          findings.push(
+            makeFinding({
+              category: "formatting.headerFooter",
+              range: sectionRange(headerFooter.index),
+              message: `${headerFooter.kind} ${property} is ${String(actual)} but the profile expects ${String(expected)}`,
+              severity: "warning",
+              evidence: headerFooterText.slice(0, 40),
+              profilePath: `formatting.headersFooters.font.${property}`,
+              expected: String(expected),
+              expectedValue: expected,
+              actualValue: actual,
+              nodeIds: headerFooter.nodeId ? [headerFooter.nodeId] : [],
+              correctable: false,
+              correctionReason:
+                "Header/footer font settings are host-scoped and not safely rewritten in-place.",
+              occurrenceGroupKey: `formatting.headersFooters.font.${property}|${String(expected)}`,
+            }),
+          );
+        }
+      }
+    }
+
+    if (standard.required !== undefined && headerFooter.required !== standard.required) {
+      findings.push(
+        makeFinding({
+          category: "formatting.headerFooter",
+          range: sectionRange(headerFooter.index),
+          message: `${headerFooter.kind} required flag is ${String(headerFooter.required)} but the profile expects ${String(standard.required)}`,
+          severity: "warning",
+          evidence: headerFooterText.slice(0, 40),
+          profilePath: "formatting.headersFooters.required",
+          expected: String(standard.required),
+          expectedValue: standard.required,
+          actualValue: headerFooter.required,
+          nodeIds: headerFooter.nodeId ? [headerFooter.nodeId] : [],
+          correctable: false,
+          correctionReason:
+            "Header/footer presence is a structural policy decision, not a safe formatting rewrite.",
+          occurrenceGroupKey: `formatting.headersFooters.required|${String(standard.required)}`,
+        }),
+      );
+    }
+
+    return findings;
+  });
+}
+
+function checkPageSetup(
+  snapshot: FormattingSnapshot,
+  profile: DocumentFormattingProfile,
+  capabilities: FormattingCapabilities,
+): Finding[] {
+  const standard = profile.page;
+  const sections = snapshot.sections ?? [];
+  if (!standard || !standard.supported || capabilities.supportsSections !== true) return [];
+
+  return sections.flatMap((section) => {
+    const findings: Finding[] = [];
+    const sectionText = section.text ?? "";
+    const expectedOrientation = standard.orientation;
+    if (expectedOrientation && section.orientation && section.orientation !== expectedOrientation) {
+      findings.push(
+        makeFinding({
+          category: "formatting.pageSetup",
+          range: sectionRange(section.index),
+          message: `Page orientation is ${section.orientation} but the profile expects ${expectedOrientation}`,
+          severity: "warning",
+          evidence: sectionText.slice(0, 40),
+          profilePath: "formatting.page.orientation",
+          expected: expectedOrientation,
+          expectedValue: expectedOrientation,
+          actualValue: section.orientation,
+          nodeIds: section.nodeId ? [section.nodeId] : [],
+          correctable: false,
+          correctionReason:
+            "Page layout changes are host-scoped and are reported without a safe rewrite.",
+          occurrenceGroupKey: `formatting.page.orientation|${expectedOrientation}`,
+        }),
+      );
+    }
+
+    const margins = standard.margins;
+    if (margins) {
+      const edges = ["top", "bottom", "left", "right"] as const;
+      for (const edge of edges) {
+        const expected = margins[edge];
+        const actual = section.margins?.[edge];
+        if (expected === undefined || actual === null || actual === undefined) continue;
+        if (actual !== expected) {
+          findings.push(
+            makeFinding({
+              category: "formatting.pageSetup",
+              range: sectionRange(section.index),
+              message: `Page margin ${edge} is ${String(actual)} but the profile expects ${String(expected)}`,
+              severity: "warning",
+              evidence: sectionText.slice(0, 40),
+              profilePath: `formatting.page.margins.${edge}`,
+              expected: String(expected),
+              expectedValue: expected,
+              actualValue: actual,
+              nodeIds: section.nodeId ? [section.nodeId] : [],
+              correctable: false,
+              correctionReason:
+                "Page margins are structural settings and are not safely rewritten in the deterministic planner.",
+              occurrenceGroupKey: `formatting.page.margins.${edge}|${String(expected)}`,
+            }),
+          );
+        }
+      }
+    }
+
+    if (
+      standard.width !== undefined &&
+      section.width !== null &&
+      section.width !== standard.width
+    ) {
+      findings.push(
+        makeFinding({
+          category: "formatting.pageSetup",
+          range: sectionRange(section.index),
+          message: `Page width is ${section.width} but the profile expects ${standard.width}`,
+          severity: "warning",
+          evidence: sectionText.slice(0, 40),
+          profilePath: "formatting.page.width",
+          expected: String(standard.width),
+          expectedValue: standard.width,
+          actualValue: section.width,
+          nodeIds: section.nodeId ? [section.nodeId] : [],
+          correctable: false,
+          correctionReason:
+            "Page size adjustments are structural and not safe to mutate in a deterministic batch.",
+          occurrenceGroupKey: `formatting.page.width|${standard.width}`,
+        }),
+      );
+    }
+
+    if (
+      standard.height !== undefined &&
+      section.height !== null &&
+      section.height !== standard.height
+    ) {
+      findings.push(
+        makeFinding({
+          category: "formatting.pageSetup",
+          range: sectionRange(section.index),
+          message: `Page height is ${section.height} but the profile expects ${standard.height}`,
+          severity: "warning",
+          evidence: sectionText.slice(0, 40),
+          profilePath: "formatting.page.height",
+          expected: String(standard.height),
+          expectedValue: standard.height,
+          actualValue: section.height,
+          nodeIds: section.nodeId ? [section.nodeId] : [],
+          correctable: false,
+          correctionReason:
+            "Page size adjustments are structural and not safe to mutate in a deterministic batch.",
+          occurrenceGroupKey: `formatting.page.height|${standard.height}`,
+        }),
+      );
+    }
+
     return findings;
   });
 }
