@@ -5,83 +5,104 @@ description: Protect document text and secrets in LLM prompts — require explic
 
 # LLM Privacy
 
-Raw document text must never leave the add-in without explicit user opt-in.
-API keys are stored only in `Office.roamingSettings` and redacted in logs.
+Raw document text must never leave the add-in without explicit user opt-in, and
+no API key is ever persisted by the add-in.
 
 ## When to use
 
 - Building or modifying prompt templates in `src/ai/prompts/`.
-- Adding or extending LLM providers in `src/ai/providers/`.
-- Configuring settings UI for API keys (Stage 07+).
+- Adding or extending providers in `src/ai/providers/` or `src/ai/gateway/`.
+- Handling credentials or connection state.
 - Debugging redaction, retry, or abort behavior.
 
 ## Rules
 
 ### 1. Prompt builders throw unless `includeRawText: true`
 
-All prompt builders in `src/ai/prompts/` (`buildProfilePrompt`,
-`buildDeviationPrompt`, `buildRewritePrompt`) require an
-`includeRawText: boolean` option. When `false` (the default), they throw:
+Every builder in `src/ai/prompts/` (`buildProfilePrompt`, `buildDeviationPrompt`,
+`buildRewritePrompt`, and the spot prompts) requires an `includeRawText` option
+and throws when it is not `true`:
 
+```text
+"buildProfilePrompt requires includeRawText: true — raw document text must not
+leave the add-in without explicit user opt-in"
 ```
-"buildProfilePrompt requires includeRawText: true — raw document text must
-not leave the add-in without explicit user opt-in"
-```
 
-- Never bypass this check. If a prompt needs text, the caller must pass
-  `includeRawText: true` **and** the user must have explicitly opted in via
-  the Settings UI.
-- Do not add a new prompt builder without this gate.
+Never bypass this. A new prompt builder gets the same gate. Validate every
+response with a Zod schema; never trust raw model output.
 
-**Evidence:** `src/ai/prompts/profilePrompts.ts` lines 48-52, 77-80;
-`toneforge-llm` skill "Rules" section.
+**Evidence:** `src/ai/prompts/profilePrompts.ts`; `src/ai/prompts/rewritePrompts.ts`.
 
-### 2. Validate LLM outputs with Zod
+### 2. The add-in never persists a credential
 
-All LLM responses are parsed with a Zod schema (`ProfileResponseSchema`,
-`DeviationResponseSchema`, etc.). Unknown fields are stripped; missing
-required fields produce a typed error. Never trust raw model output.
+Not in `Office.roamingSettings`, not in `localStorage`, not in the bundle, not in
+a URL, not in a log line.
 
-**Evidence:** `src/ai/prompts/profilePrompts.ts` lines 19-41.
+- `src/core/domain/ProviderConnection.ts` has **no field capable of holding a
+  secret**. A test reflects over the schema so a future field cannot quietly
+  reintroduce one.
+- The browser-held `apiKey` credential mode was removed entirely (ADR-0049).
+  Auth modes are now `oauth`, `deploymentManaged`, `brokerApiKey`, and `none`.
+- `src/core/config/env.ts` holds **no secret field** by design. Webpack compiles
+  only an allowlisted, non-secret environment set. The gitignored `.env` is read
+  only by the Node-side development broker.
+- Legacy `openAiApiKey` values are stripped on migration and legacy storage keys
+  purged, while consent is preserved.
 
-### 3. API keys never enter source code
+**Evidence:** `src/core/domain/ProviderConnection.ts`; `src/core/config/env.ts`;
+`docs/privacy-security.md`; ADR-0049.
 
-API keys are entered only through the Settings UI and stored in
-`Office.roamingSettings`. They are validated at startup by
-`src/core/config/env.ts` (Zod). `.env` is gitignored; `.env.example` is the
-template. Never commit a real key.
+### 3. OpenRouter's key is transient and gateway-held
 
-**Evidence:** `docs/privacy-security.md`; `src/core/config/env.ts` lines 13-24;
-`.env.example`.
+OpenRouter is the one provider taking a user-held key. It lives in **component
+state only**, is submitted **once** over the loopback same-origin and
+nonce-protected channel, and is **dropped when the request settles**, success or
+failure. Only the opaque connection reference is persisted, and the key is held
+in the **local development gateway's memory** (ADR-0050). It is kept in
+`OpenRouterConnectionSettings.tsx`, a separate component, so it cannot leak into
+`LlmSettingsDraft` — which has no field that could hold one.
 
-### 4. Redact secrets in logs and LLM payloads
+**Evidence:** `src/taskpane/components/OpenRouterConnectionSettings.tsx`;
+`scripts/dev-gateway.mjs`; ADR-0050.
 
-- `src/shared/utils/logger.ts` redacts any context field whose name matches
-  `/key|token|secret|password|auth/i`.
-- `OpenAiAdapter.redact()` strips emails, card numbers, API keys
-  (`sk-`/`pk-`/`rk-`/`whsec-`), bearer tokens, and long hex/base64 secrets
-  before logging.
-- Telemetry is disabled by default (`TELEMETRY_DISABLED=1`). No analytics
+### 4. One consent governs one feature
+
+`semanticOptIn` and `consistencyReviewConsent` are independent; the spot and
+full-document consents are retired and kept only for migration. None implies
+another. `consistencyReviewConsent` defaults to `false`, migration sets it to
+`false` rather than deriving it, and `normalizeSettings` re-derives every consent
+flag from a strict boolean so a stored `"yes"` cannot read as permission.
+
+**Evidence:** `docs/privacy-security.md`; ADR-0052.
+
+### 5. Redact secrets and content in logs and payloads
+
+- `src/shared/utils/redaction.ts` is the shared implementation;
+  `redactSensitiveText` strips credential-shaped, prompt-content, and
+  document-content fields from logs and recursive error context.
+- `OpenAiAdapter.redact()` and the gateway adapters strip emails, card numbers,
+  API keys (`sk-`/`pk-`/`rk-`/`whsec-`), bearer tokens, and long hex or base64
+  secrets before logging.
+- Telemetry is disabled by default (`TELEMETRY_DISABLED=1`); no analytics
   endpoint is configured.
 
-**Evidence:** `src/shared/utils/logger.ts` lines 12-22;
-`src/ai/providers/openaiAdapter.ts` lines 29-53;
-`docs/privacy-security.md`.
+**Evidence:** `src/shared/utils/redaction.ts`; `src/ai/providers/gatewayAdapter.ts`.
 
-### 5. Honor AbortSignal for cancellable requests
+### 6. Honor AbortSignal for cancellable requests
 
-All LLM requests accept an `AbortSignal`. Caller cancellation is
-non-retryable; internal timeout is retryable. Use `withRetry()` from
+All LLM requests accept an `AbortSignal`. Caller cancellation is non-retryable;
+an internal timeout is retryable. Use `withRetry()` from
 `src/ai/providers/retry.ts` for transient failures.
 
-**Evidence:** `src/ai/providers/openaiAdapter.ts` lines 5-13;
-`src/ai/providers/retry.ts`; ADR-0011.
+**Evidence:** `src/ai/providers/LlmProvider.ts`; `src/ai/providers/retry.ts`;
+ADR-0011.
 
 ## Referenced resources
 
-- `src/ai/prompts/` — prompt builders with `includeRawText` gate
-- `src/ai/providers/openaiAdapter.ts` — redaction patterns
-- `src/shared/utils/logger.ts` — log redaction
-- `src/core/config/env.ts` — env validation
+- `src/ai/prompts/` — prompt builders with the `includeRawText` gate
+- `src/ai/gateway/gatewayClient.ts` — the only module that talks to a credential service
+- `src/core/domain/ProviderConnection.ts` — non-secret by construction
+- `src/core/config/env.ts` — env validation, no secret fields
 - `docs/privacy-security.md` — privacy posture
-- `docs/decision-log.md` — ADR-0011
+- `docs/decision-log.md` — ADR-0011, ADR-0049, ADR-0050, ADR-0052
+- `.cline/skills/toneforge-llm/SKILL.md` — the Cline equivalent of this rule

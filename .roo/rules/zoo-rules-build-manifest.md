@@ -18,22 +18,25 @@ typecheck → lint → format → test → build → manifest validate.
 
 ### 1. Run the full verification chain before commit
 
-`npm run verify` runs, in order:
+`npm run verify` runs the `toneforge-repository-v1` graph from
+`scripts/verification-graph.mjs`, in this order:
 
-```bash
-npm run typecheck   # tsc --noEmit
-npm run lint        # eslint src tests --max-warnings 0
-npm run format      # prettier --check .
-npm run test        # vitest run
-npm run build       # webpack --config webpack.prod.js
-npm run validate    # node scripts/validate-manifest.mjs
+```text
+typecheck -> lint -> format -> secret-scan -> docs -> skills
+           -> test -> coverage -> build-artifacts -> built-secret-scan
+           -> manifest -> package -> package-check
 ```
 
-- All six must pass. A failing step blocks the commit.
-- Never commit with a partial run (e.g. skipping `format` or `validate`).
+- All stages must pass. A failing stage blocks the commit.
+- Never commit with a partial run.
+- The summary names the **owner** of a failure: `repository-code` is ours to
+  fix, `dependency-install` usually means the registry or lockfile moved, and
+  `build-package` points at `dist/` or the staged release.
+- **A green automated run is never a release claim.** The `word-host-evidence`
+  gate is recorded as `pending` because it is satisfied only by a person in a
+  real Word host (ADR-0051).
 
-**Evidence:** `package.json` lines 30-33; `.cline/rules/toneforge.md`
-"Before committing" checklist.
+**Evidence:** `scripts/verification-graph.mjs`; `package.json`.
 
 ### 2. Lint with zero warnings
 

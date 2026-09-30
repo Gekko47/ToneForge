@@ -2185,3 +2185,82 @@ validate` green throughout. The procedure was correct and had been run. This
     control ids are in separate namespaces per Microsoft for _some_ surfaces, so
     this is deliberately scoped to the `ToneForge` tab rather than applied
     across every manifest the tool might read.
+
+## ADR-0083: Agent governance lives in `.cline` and `.roo`, and neither is allowed to drift
+
+- Amends: ADR-0031 (additive layering) and the Stage 03 scope in
+  [`ROADMAP.md`](../ROADMAP.md)
+- Status: Accepted (2026-09-30)
+- **Context**: The repository shipped Stage 03 with a single governance file
+  (`.cline/rules/toneforge.md`) and four skills under `.roo/skills/`. Nothing was
+  wrong with the arrangement, and nothing in it was enforced either: Cline has no
+  skills, so a Cline user got four Zoo rules and no Cline skills at all.
+
+  Auditing the `.roo` content against the code found it had drifted badly, and
+  the drift was not cosmetic:
+
+  - **Credentials were described wrongly.** The rules stated that API keys "are
+    stored only in `Office.roamingSettings`". ADR-0049 removed that mode
+    entirely, and `ProviderConnection` now has no field capable of holding a
+    secret, with a test reflecting over the schema to keep it that way. A rule
+    that tells an assistant keys live in `roamingSettings` is a rule that invites
+    the exact regression ADR-0049 was written to prevent.
+  - **The module map described a repository that does not exist.**
+    `src/analysis/`, `src/rules/`, `src/formatting/`, `src/changes/`, and
+    `src/reformat/` were all listed as "planned" and "do not create early". All
+    are implemented. `src/ui/` was listed and never existed.
+  - **The state version was six releases out of date** — v1 against a real v13.
+  - **The apply path was stale**: `STAGE_01_PASSED` framed as the gate, with the
+    Stage 18 smoke helpers still described as usable. ADR-0058 deleted them
+    because they made the user-facing claim "Track Changes can never be
+    bypassed" untrue.
+  - **The deterministic-first exception was absent entirely.** ADR-0052 makes
+    `src/analysis/consistency/` the single sanctioned non-deterministic engine.
+    No rule or skill mentioned it, so nothing warned an assistant away from
+    treating a second one as ordinary.
+
+  The failure mode is the interesting part. Stale governance is worse than none,
+  because it is read as current and confidently acted on. Nothing in the
+  verification graph would have caught any of it: `skills:validate` checked
+  frontmatter and that referenced paths existed, and every stale claim above
+  pointed at a file that does exist.
+
+- **Decision**:
+  1. `.cline/skills/` holds six skills — `toneforge-scaffold`,
+     `toneforge-architecture`, `toneforge-officejs`, `toneforge-llm`,
+     `toneforge-testing`, and `toneforge-consistency`. The two new ones cover
+     module boundaries and the C1–C10 engine, neither of which any skill
+     described.
+  2. `.cline/rules/` holds an always-on `toneforge.md` plus seven path-scoped
+     rules using Cline's `paths:` frontmatter, so a rule loads when the matching
+     files are in context rather than on every request.
+  3. `.roo/skills/` and `.roo/rules/` are **kept and corrected**, not deleted.
+     Two assistants are in use here, and deleting one tool's governance to save
+     duplication would push whoever uses it back to unmanaged work.
+  4. `scripts/validate-skills.mjs` now validates both roots, each against its own
+     expected skill set, and a missing reference is a failure with no
+     planned-path allowance. Every module these skills reference is implemented,
+     so a skill pointing at a directory that was never built is a defect rather
+     than a forward-looking note.
+  5. Skills state what has _not_ been verified — the open host gate, the
+     uncalibrated consistency checks, the model never having run — so a reader
+     cannot mistake a typed contract for an integration.
+- **Consequences**:
+  - Correctness first: the credential claim in rule 3 is the one that mattered
+    most. It is now stated as what the code does — OpenRouter's key lives in
+    component state, is submitted once, and is dropped when the request settles,
+    with the credential held by the **local development gateway's memory** and
+    never by the add-in.
+  - Two sets will drift again unless both are checked, which is why the
+    validator covers both roots rather than just one.
+  - The graph does not prove the guidance is _correct_, only that it is
+    well-formed and that its references resolve. Governance files are prose, and
+    a prose claim about code can rot the moment the code changes. The Cline and
+    Roo sets are now corrected against a 2026-09-30 reading of the repository;
+    a later change to `ProviderConnection`, the apply path, or the state version
+    must update them in the same commit or it re-creates this defect.
+  - The duplicate ADR numbers already in this log (two entries carry ADR-0080)
+    remain outstanding, as ADR-0082 recorded.
+- **Evidence**: `.cline/skills/`, `.cline/rules/`, `.roo/skills/`,
+  `.roo/rules/`, `scripts/validate-skills.mjs`, `npm run skills:validate`, and
+  `docs/stages/03-cline-governance.md`.

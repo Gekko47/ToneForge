@@ -38,14 +38,17 @@ Mirror the source path: `src/word/documentReader.ts` →
 
 ## Coverage thresholds
 
-Global thresholds in `vitest.config.ts` (v8 provider, `src/**/*.ts(x)`):
+[`vitest.config.ts`](../../../vitest.config.ts) uses the v8 provider and enforces
+**80%** lines, statements, functions, and branches. The `include` list is
+`src/analysis`, `src/changes`, `src/core`, `src/formatting`, `src/reformat`,
+`src/rules`, `src/shared`, `src/style`, `src/word`, `src/ai`, and
+`src/commands`.
 
-- 80% lines, statements, functions, branches.
-
-No per-directory overrides are configured today. Future deterministic
-engines (`src/rules/`, `src/formatting/`, `src/changes/` per
-`docs/architecture.md`) must hold 80%+ before their stage gates pass —
-treat that as a stage-gate expectation, not a Vitest config override.
+No per-directory overrides are configured, and you should not add one. If a
+module legitimately cannot reach 80%, document the gap in
+[`docs/project-state.md`](../../../docs/project-state.md) as "PASS WITH
+DOCUMENTED LIMITATION" rather than lowering the threshold. If coverage collapses
+unexpectedly, check for case-duplicated paths first (ADR-0034).
 
 ## Commands
 
@@ -58,29 +61,31 @@ npm run test:coverage  # with coverage report
 ## Mocking Office
 
 `tests/setup.ts` provides a minimal `Office` mock with `run`,
-`roamingSettings`, and `InsertBreakBehavior`. Import
-`tests/fixtures/sampleDocs.ts` for shared test data. Note
+`roamingSettings`, and `InsertBreakBehavior`. Import shared data from
+[`tests/fixtures/`](../../../tests/fixtures/). Note
 `vitest.config.ts` sets `mockReset: true, clearMocks: true,
 restoreMocks: true` — re-establish `vi.fn()` behavior per test where needed.
 
 ## Deterministic vs. semantic
 
-- Deterministic engines (`rules/`, `formatting/`, `style/metrics` when they
-  land per `docs/architecture.md`) are pure functions — test directly.
-- Semantic engines depend on `LlmProvider` — always use `MockAdapter` in
-  tests (`{ provider: "mock" }`); never hit the live network.
+- Deterministic engines (`rules/`, `formatting/`, `style/`) are pure functions —
+  test directly.
+- Semantic and consistency code depends on `LlmProvider` — always use
+  `MockAdapter` in tests (`{ provider: "mock" }`); never hit the live network.
+  A mocked result is a typed contract, not an integration.
 
-## Tools and permissions
+## Host evidence is not a test
 
-This skill is an instruction package — it registers no new executable tools.
-It uses the standard terminal/test runner and the `filesystem` MCP server.
-No extra dependencies beyond `devDependencies` in `package.json`
-(`vitest`, `jsdom`, `@testing-library/*`).
+A passing suite never closes the Word-host gate. A real host is verified by a
+person, in Word, recorded in
+[`docs/manual-verification.md`](../../../docs/manual-verification.md). Do not
+write a test, or a comment, that claims it does.
 
 ## Referenced resources
 
-- `vitest.config.ts` — runner, coverage, aliases
-- `tests/setup.ts` — Office/fetch/localStorage mocks
-- `tests/fixtures/sampleDocs.ts` — shared test data
-- `src/ai/providers/mockAdapter.ts` — deterministic LLM double
-- `docs/architecture.md` — future deterministic module boundaries
+- [`vitest.config.ts`](../../../vitest.config.ts) — runner, coverage, aliases
+- [`tests/setup.ts`](../../../tests/setup.ts) — Office/fetch/localStorage mocks
+- [`tests/fixtures/`](../../../tests/fixtures/) — shared test data
+- [`src/ai/providers/mockAdapter.ts`](../../../src/ai/providers/mockAdapter.ts) — deterministic LLM double
+- [`docs/manual-verification.md`](../../../docs/manual-verification.md) — the human host gate
+- [`.cline/skills/toneforge-testing/SKILL.md`](../../../.cline/skills/toneforge-testing/SKILL.md) — the Cline equivalent of this skill

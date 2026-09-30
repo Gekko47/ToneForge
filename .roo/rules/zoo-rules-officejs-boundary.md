@@ -48,37 +48,55 @@ flow through `ChangePlan` → `applyChangePlan()` in `revisionAdapter.ts`.
 
 - ESLint enforces this: `ui/*` (`taskpane/`, `commands/`) may not import
   `word/revisionAdapter` directly — mutations go through the orchestrator.
-- `applyChangePlan()` is gated on `STAGE_01_PASSED` (Stage 01 hard gate) and
-  refuses stale plans on `docHash` mismatch.
+- The production apply chain is `prepareTrackedEditing()` in
+  `src/reformat/trackedEditing.ts`, which runs a fresh non-destructive host
+  probe and arms the adapter only when the **complete** plan is supported, then
+  `applyReviewedPlan()` in `src/reformat/orchestrator.ts`, which re-checks
+  freshness, refuses conflicts and protected ranges, establishes managed Track
+  Changes, and reports mutation and verification outcomes separately.
+- **Do not reintroduce a mutation bypass.** The Stage 18 smoke helpers
+  (`SmokePanel`, `smokePlan`, `smokeApply`, `enableSmokeMutations`) were deleted
+  because they made the user-facing claim "Track Changes can never be bypassed"
+  untrue (ADR-0058). `setStage01Passed()` is called from `prepareTrackedEditing`
+  only, and stays false until a real host has been probed.
 
-**Evidence:** `docs/architecture.md` "One mutation path"; ADR-0005;
-`eslint.config.mjs` lines 110-128; `src/word/revisionAdapter.ts` lines 44-80.
+**Evidence:** `docs/architecture.md` "One mutation path";
+`src/word/revisionAdapter.ts`; `src/reformat/trackedEditing.ts`;
+`src/reformat/orchestrator.ts`; ADR-0005; ADR-0058.
 
 ### 3. Probes are non-destructive by default
 
-`probeWordCapabilities()` takes no arguments and is always non-destructive.
-It inspects the host object model only — no `insertText`, `insertParagraph`,
-or `insertBreak`. There is no opt-in mutation path.
-
-- If you need to test a live write, implement it as a separate, explicitly
-  opt-in utility (deferred to Stage 27). Do not relax the probe.
+`probeWordCapabilities()` takes no arguments and is always non-destructive. It
+inspects the host object model only — no `insertText`, `insertParagraph`,
+or `insertBreak`. There is no opt-in mutation path in a probe.
 
 **Evidence:** ADR-0012 in `docs/decision-log.md`;
-`src/word/capabilityProbe.ts` lines 43-57.
+`src/word/capabilityProbe.ts`.
 
 ### 4. Use local Office.js types, not `@types/office.js`
 
 Office.js type declarations live in `src/types/office.d.ts` and are included
 via `tsconfig.json`. Do not add `@types/office.js` as a dependency.
 
-**Evidence:** `toneforge-officejs` skill "Type declarations";
-`tsconfig.json` `include` array.
+**Evidence:** `tsconfig.json` `include` array.
+
+### 5. A mocked host never closes the host gate
+
+`npm run host:matrix` currently reports hosts with **0 fully passing**. Real
+Word verification is a human step, recorded in
+`docs/manual-verification.md`. Unit mocks do not change that, and no comment or
+test should imply otherwise.
 
 ## Referenced resources
 
 - `src/shared/office/officeHelpers.ts` — `runInWord`, `isOfficeReady`, `context`
+- `src/word/analysisAcquisition.ts` — the production analysis read
+- `src/word/documentReader.ts` — compatibility text/structured reader
 - `src/word/revisionAdapter.ts` — sole mutation path
+- `src/reformat/trackedEditing.ts` — `prepareTrackedEditing`
 - `src/word/capabilityProbe.ts` — non-destructive probe
 - `src/types/office.d.ts` — local Office.js declarations
+- `docs/manual-verification.md` — the human host gate
 - `docs/architecture.md` — module boundaries
-- `docs/decision-log.md` — ADR-0005, ADR-0012, ADR-0013
+- `docs/decision-log.md` — ADR-0005, ADR-0012, ADR-0058
+- `.cline/skills/toneforge-officejs/SKILL.md` — the Cline equivalent of this rule

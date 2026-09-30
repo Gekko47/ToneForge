@@ -32,13 +32,16 @@ logging a warning. Users must never see a startup crash from bad state.
 ### 2. Migrations run before schema parse
 
 `loadState()` calls `migrate(raw)` before `StateSchema.parse`. Migration is
-versioned (`version` field; v0→v1 is implemented). Legacy state is upgraded
+versioned (`CURRENT_STATE_VERSION`, currently 13). Legacy state is upgraded
 on load, not discarded.
 
-- When adding a new state version, add a migration step in
-  `src/core/state/migration.ts` and bump the `version` in `StateSchema`.
+- When adding a new state version, **add** a migration step — do not edit an
+  existing one, since earlier versions may still be in a user's storage.
+- Bump `CURRENT_STATE_VERSION` and `STORAGE_KEY`, and add the previous key to
+  `LEGACY_STORAGE_KEYS` so it is read and then purged.
 - Migrations must preserve existing values over defaults and only fill
   missing fields.
+- New consent flags are **set** to `false`, never derived from another flag.
 
 **Evidence:** ADR-0015 in `docs/decision-log.md`;
 `src/core/state/migration.ts`.
@@ -50,10 +53,20 @@ back to `localStorage` when the Office runtime is unavailable (e.g. unit
 tests). Always call `saveAsync()` on roamingSettings so changes survive
 add-in close.
 
-- The storage key is versioned: `ToneForge.State.v1`.
-- If both stores are available, write to both to prevent divergence.
+- The storage key is versioned. `CURRENT_STATE_VERSION` is **13** and
+  `STORAGE_KEY` is `ToneForge.State.v13`; v12 and earlier are in
+  `LEGACY_STORAGE_KEYS`.
+- `ProfileRecord` is the single persisted store for a profile: one mutable
+  draft, immutable published versions with explicit activation and
+  restore-as-draft, and an append-only revision audit trail capped at the
+  newest 20 plus every published revision. A `ChangePlan` cites the exact
+  integer revision it was built from.
+- **Persisted state never holds a credential.** It carries provider, model,
+  broker configuration, and consent only. Legacy `openAiApiKey` values are
+  stripped and legacy keys purged while consent is preserved.
+- Optional settings are omitted when cleared rather than persisted as `""`.
 
-**Evidence:** `src/core/state/persistence.ts` lines 34-80, STORAGE_KEY;
+**Evidence:** `src/core/state/persistence.ts`; `src/core/domain/ProfileRecord.ts`;
 ADR-0007.
 
 ### 4. State schema is Zod-validated

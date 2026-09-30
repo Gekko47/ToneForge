@@ -56,29 +56,42 @@ includes it.
 ## Safety — one mutation path
 
 - Never mutate Word directly from rules or UI. Route all mutations through `src/word/revisionAdapter.ts` (`applyChangePlan`).
-- `applyChangePlan()` refuses to mutate until `setStage01Passed(true)` (Stage 01 gate). Before the gate it returns `applied: false` with a "Stage 01 … not passed" error per change.
-- It also validates the plan and refuses stale plans on `docHash` mismatch.
+- The production chain is `prepareTrackedEditing()` in `src/reformat/trackedEditing.ts` — a fresh non-destructive probe that arms the adapter only when the **complete** plan is supported — then `applyReviewedPlan()` in `src/reformat/orchestrator.ts`, which re-checks freshness, refuses conflicts and protected ranges, establishes managed Track Changes, applies in reverse offset order, and reports mutation and verification separately.
+- **Do not reintroduce a mutation bypass.** The Stage 18 smoke helpers (`SmokePanel`, `smokePlan`, `smokeApply`, `enableSmokeMutations`) were deleted because they made the user-facing claim "Track Changes can never be bypassed" untrue (ADR-0058). `setStage01Passed()` is called from `prepareTrackedEditing` only, and stays false until a real host has been probed.
 - Always call `context.sync()` after loading properties.
-- Wrap host calls in try/catch and record failures as capability flags (see `src/word/capabilityProbe.ts` — non-destructive, `dryRun: true` default).
+- Wrap host calls in try/catch and record failures as capability flags (see `src/word/capabilityProbe.ts` — non-destructive).
+
+## Reading
+
+- `src/word/analysisAcquisition.ts` — the production single-pass analysis read, producing identity, structured nodes, formatting provenance, and explicit unsupported scope.
+- `src/word/documentReader.ts` — the compatibility text and structured reader.
+- `src/word/sourceLocator.ts` — selection and paragraph location.
 
 ## Testing
 
 `tests/setup.ts` provides a minimal `Office` mock (`run`, `roamingSettings`,
 `InsertBreakBehavior`). Use it to test `word/` modules without a live Word
-instance. Fixtures live in `tests/fixtures/sampleDocs.ts`.
+instance. Fixtures live in `tests/fixtures/`.
+
+Live Word verification is a **human** gate: `npm run host:matrix` currently
+reports 0 fully passing hosts, and the evidence is recorded in
+`docs/manual-verification.md`. A mock never closes it.
 
 ## Tools and permissions
 
 This skill is an instruction package — it registers no new executable tools.
-Live Word verification requires sideloading (`npm run dev` + `npm run sideload`)
-and cannot run headless; unit tests use the `tests/setup.ts` mock instead.
+Live Word verification requires sideloading (`npm run sideload`) and cannot run
+headless; unit tests use the `tests/setup.ts` mock instead.
 
 ## Referenced resources
 
-- `src/word/capabilityProbe.ts` — Stage 01 probe (`probeWordCapabilities`)
-- `src/word/documentReader.ts` — chunked read with stable doc ID + FNV hash fallback
-- `src/word/revisionAdapter.ts` — sole mutation path, `STAGE_01_PASSED` gate
+- `src/word/capabilityProbe.ts` — non-destructive probe
+- `src/word/analysisAcquisition.ts` — production acquisition
+- `src/word/documentReader.ts` — compatibility reader
+- `src/word/revisionAdapter.ts` — sole mutation path
+- `src/reformat/trackedEditing.ts` — `prepareTrackedEditing`
 - `src/shared/office/officeHelpers.ts` — `runInWord`, readiness checks
 - `src/types/office.d.ts` — local Office.js declarations
-- `tests/setup.ts` — Office mock for tests
-- `docs/stages/01-officejs-spike.md`, `docs/stages/18-revision-adapter.md`
+- `docs/manual-verification.md` — the human host gate
+- `docs/decision-log.md` — ADR-0005, ADR-0012, ADR-0058
+- `.cline/skills/toneforge-officejs/SKILL.md` — the Cline equivalent of this skill

@@ -32,58 +32,70 @@ Trigger phrases: "scaffold a new module", "add a new stage", "set up ToneForge",
 
 Current `src/` tree (verified):
 
-| Concern         | Location                                               |
-| --------------- | ------------------------------------------------------ |
-| Canonical types | `src/core/domain/`                                     |
-| Env config      | `src/core/config/`                                     |
-| Persistence     | `src/core/state/`                                      |
-| LLM providers   | `src/ai/providers/`                                    |
-| Prompt builders | `src/ai/prompts/`                                      |
-| Word boundary   | `src/word/`                                            |
-| Office helpers  | `src/shared/office/`                                   |
-| Shared utils    | `src/shared/utils/`                                    |
-| UI taskpane     | `src/taskpane/`                                        |
-| Ribbon commands | `src/commands/`                                        |
-| Office.js types | `src/types/office.d.ts`                                |
-| Tests           | `tests/unit/`, `tests/integration/`, `tests/fixtures/` |
+| Concern                     | Location                                               |
+| --------------------------- | ------------------------------------------------------ |
+| Canonical types and schemas | `src/core/domain/`                                     |
+| Env config                  | `src/core/config/`                                     |
+| Persistence and migrations  | `src/core/state/`                                      |
+| LLM providers and gateway   | `src/ai/providers/`, `src/ai/gateway/`                 |
+| Prompt builders             | `src/ai/prompts/`                                      |
+| Word access boundary        | `src/word/`                                            |
+| Office helpers              | `src/shared/office/`                                   |
+| Shared utils                | `src/shared/utils/`                                    |
+| Deterministic rules         | `src/rules/`, `src/formatting/`, `src/style/`          |
+| Analysis orchestration      | `src/analysis/`, `src/analysis/consistency/`           |
+| Change planning             | `src/changes/`                                         |
+| Reformat orchestrator       | `src/reformat/`                                        |
+| UI task pane                | `src/taskpane/`                                        |
+| Ribbon commands             | `src/commands/`                                        |
+| Office.js types             | `src/types/office.d.ts`                                |
+| Tests                       | `tests/unit/`, `tests/integration/`, `tests/fixtures/` |
 
-Planned modules per [`docs/architecture.md`](../../../docs/architecture.md) (do not create early — follow `ROADMAP.md` stage scope):
-
-| Concern             | Planned location                              |
-| ------------------- | --------------------------------------------- |
-| Deterministic rules | `src/rules/`, `src/formatting/`, `src/style/` |
-| Semantic analysis   | `src/analysis/`                               |
-| Change planning     | `src/changes/`                                |
-
-> UI lives in `src/taskpane/` (not `src/ui/`). Do not create `src/ui/` — use `src/taskpane/` and `src/taskpane/pages/`.
+> UI lives in `src/taskpane/` (not `src/ui/`), with `pages/`, `components/`,
+> `settings/`, `workflow/`, `state/`, and `troubleshooting/` subfolders. Do not
+> create `src/ui/`. A new deterministic module must be pure: if it needs Word, a
+> model, or the screen, it does not belong in `src/rules/`, `src/formatting/`, or
+> `src/style/`.
 
 ## Verification
 
-```bash
-npm run typecheck
-npm run lint
-npm run format
-npm run test
-npm run build
-npm run validate
-npm run verify        # all of the above in order
-npm run stage:verify  # stage-gate checks
+`npm run verify` runs the `toneforge-repository-v1` graph from
+`scripts/verification-graph.mjs`, in order:
+
+```text
+typecheck -> lint -> format -> secret-scan -> docs -> skills
+           -> test -> coverage -> build-artifacts -> built-secret-scan
+           -> manifest -> package -> package-check
 ```
+
+Useful individually: `npm run typecheck`, `lint`, `format`, `test`,
+`test:coverage`, `skills:validate`, `docs:validate`, `validate`, `build`, and
+`host:matrix`.
+
+**The graph is not the whole gate.** A green automated run is never a release
+claim. The Word-host evidence gate is human, recorded in
+`docs/manual-verification.md`, and stays open until a person runs the add-in
+(ADR-0051).
 
 ## Tools and permissions
 
 This skill is an instruction package — it registers no new executable tools.
-It uses standard agent file-edit, search, and terminal tools plus the
-`filesystem` and `git` MCP servers declared in the repository's Roo MCP
-configuration. That configuration is machine-local and gitignored, so it is
-intentionally untracked and must never be committed.
+It uses standard agent file-edit, search, and terminal tools. The Roo MCP
+configuration is machine-local and gitignored, so it is intentionally untracked
+and must never be committed.
+
+Live Word verification requires sideloading (`npm run sideload`) and cannot run
+headless. Live LLM calls require a credential in the gitignored `.env` consumed
+by the Node-side development broker. Unit tests must stay offline: use
+`MockAdapter` and the injected `fetch` doubles.
 
 ## Referenced resources
 
-- `ROADMAP.md` — stage ordering and gates
-- `docs/project-state.md` — per-stage PASS/BLOCKED status
+- `ROADMAP.md` — canonical stage ordering and status
 - `docs/architecture.md` — module boundaries and data flow
 - `docs/decision-log.md` — ADRs; update when making architectural choices
-- `docs/onboarding.md` — setup and stage protocol
+- `docs/onboarding.md` — setup, verification, and troubleshooting
+- `docs/privacy-security.md` — privacy posture
+- `docs/manual-verification.md` — the human host gate
 - `.cline/rules/toneforge.md` — governance hard rules
-- `scripts/stage-verify.mjs`, `scripts/validate-manifest.mjs`, `scripts/release-check.mjs`
+- `scripts/verification-graph.mjs` — the ordered graph

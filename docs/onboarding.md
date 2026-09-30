@@ -87,6 +87,40 @@ This configuration is additive: `npm run dev`, `npm run sideload`, and
 `npm run stop` remain the separate terminal workflow and the supported
 recovery path.
 
+## AI assistant governance
+
+Agent instructions live in two places, and both are checked by
+`npm run skills:validate`.
+
+**Rules** (always active) are in [`.cline/rules/`](../.cline/rules/) for Cline
+and [`.roo/rules/`](../.roo/rules/) for Roo Code. `.cline/rules/toneforge.md` is
+the always-on governance file: mandatory reading, the stage protocol, the hard
+rules, commit conventions, and the pre-commit checklist. The remaining rules are
+scoped with `paths:` frontmatter, so a rule loads when the files it governs are in
+context.
+
+**Skills** (loaded on demand) are in
+[`.cline/skills/`](../.cline/skills/) and [`.roo/skills/`](../.roo/skills/):
+
+| Skill                    | Covers                                                        |
+| ------------------------ | ------------------------------------------------------------- |
+| `toneforge-scaffold`     | Where a file belongs, and the verification chain              |
+| `toneforge-architecture` | Module boundaries and the deterministic-first exception       |
+| `toneforge-officejs`     | Reading Word, the single mutation path, tracked-editing gates |
+| `toneforge-llm`          | Providers, the gateway, credentials, consents                 |
+| `toneforge-testing`      | Vitest, mocks, coverage                                       |
+| `toneforge-consistency`  | The cross-report consistency engine (C1–C10)                  |
+
+`.cline` is the fuller set; `.roo` is the Roo Code equivalent and is kept in
+sync. Both state what has **not** been verified — the open Word-host gate, the
+uncalibrated consistency checks, the model never having run — so a mocked result
+is not mistaken for an integration. See ADR-0083.
+
+If you change the credential model, the apply path, the state version, or a
+module boundary, update the affected skill and rule **in the same commit**.
+Governance files are prose, and the validator only proves they are well-formed
+and that their references resolve — it cannot tell you the claim is still true.
+
 ### Visual Studio Code debugger (Word on the web, Chrome and Edge)
 
 [`.vscode/launch.json`](../.vscode/launch.json) also provides **Word on the Web

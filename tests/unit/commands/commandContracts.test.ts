@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -14,6 +14,34 @@ function repositoryPath(relativePath: string): string {
 }
 
 describe("command and manifest contracts", () => {
+  it("validates both the Cline and the Roo skill roots", async () => {
+    // Both sets exist and are governed, so the `skills` stage of the graph has
+    // to cover both. Checking one would let the other drift silently, which is
+    // exactly how the old rules came to describe a state schema six versions
+    // behind and a credential model that had been removed (ADR-0083).
+    const { execFileSync } = await import("node:child_process");
+    const output = execFileSync(process.execPath, [repositoryPath("scripts/validate-skills.mjs")], {
+      encoding: "utf8",
+    });
+
+    expect(output).toContain(".cline/skills/");
+    expect(output).toContain(".roo/skills/");
+    expect(output).toContain("2 skill root(s) validated");
+
+    // Every expected skill of each root is actually present, rather than the
+    // validator reporting success over a directory that lost a skill.
+    for (const skill of [
+      "toneforge-scaffold",
+      "toneforge-architecture",
+      "toneforge-officejs",
+      "toneforge-llm",
+      "toneforge-testing",
+      "toneforge-consistency",
+    ]) {
+      expect(existsSync(repositoryPath(`.cline/skills/${skill}/SKILL.md`))).toBe(true);
+    }
+  });
+
   it("records XML as navigation-only with a shared default task-pane destination", async () => {
     const definitions = JSON.parse(
       readFileSync(repositoryPath("src/commands/commandDefinitions.json"), "utf8"),

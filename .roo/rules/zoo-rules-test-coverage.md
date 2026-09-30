@@ -49,18 +49,21 @@ src/ai/providers/registry.ts → tests/unit/ai/providers/registry.test.ts
 
 ### 3. Meet coverage thresholds
 
-Global thresholds in `vitest.config.ts` (v8 provider, `src/**/*.ts(x)`):
-80% lines, statements, functions, branches.
+Global thresholds in `vitest.config.ts` (v8 provider): 80% lines, statements,
+functions, and branches, with no per-directory overrides. The `include` list is
+`src/analysis`, `src/changes`, `src/core`, `src/formatting`, `src/reformat`,
+`src/rules`, `src/shared`, `src/style`, `src/word`, `src/ai`, and
+`src/commands`.
 
-- Future deterministic engines (`src/rules/`, `src/formatting/`,
-  `src/changes/`) must hold 80%+ before their stage gates pass — treat this
-  as a stage-gate expectation, not a Vitest config override.
-- No per-directory overrides are configured today. If a module legitimately
-  cannot reach 80%, document the gap in `docs/project-state.md` as a
-  "PASS WITH DOCUMENTED LIMITATION" rather than lowering the threshold.
+- Treat 80% as a stage-gate expectation for new modules, not a Vitest config
+  override.
+- If a module legitimately cannot reach 80%, do not lower the threshold and do
+  not add an override. Document the gap in `docs/project-state.md` as "PASS WITH
+  DOCUMENTED LIMITATION".
+- If coverage collapses unexpectedly, check for case-duplicated paths first —
+  that defect previously halved the global figure (ADR-0034).
 
-**Evidence:** `vitest.config.ts` lines 13-23; `toneforge-testing` skill
-"Coverage thresholds".
+**Evidence:** `vitest.config.ts`.
 
 ### 4. Use shared fixtures, not inline test data
 
