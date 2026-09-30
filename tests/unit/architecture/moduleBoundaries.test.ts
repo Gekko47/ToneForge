@@ -148,6 +148,103 @@ describe("the ESLint boundary scopes are live", () => {
     expect(messages.join(" ")).toMatch(/must not call the consistency engine/);
   });
 
+  /*
+   * The bare-directory form of every restricted import, in one table.
+   *
+   * Each scope in `eslint.config.mjs` lists a bare form (`"../../word"`)
+   * alongside its subpath form (`"../../word/documentReader"`) precisely because
+   * a directory import resolves through the directory's index to the same module
+   * and a subpath-only glob would not match it. That reasoning is stated in the
+   * config, and stating it is not the same as checking it: a scope listing only
+   * subpaths looks identical in review and is a hole exactly where a boundary is
+   * easiest to cross.
+   *
+   * So this table is the mechanical half of the claim. Removing any one bare
+   * pattern from the config fails the case that names it, and the failure says
+   * which boundary lost its guard rather than that "no violations" — the
+   * outcome a project with no restrictions also produces.
+   *
+   * Grouped by the scope that owns the restriction, and the whole group is
+   * exercised for each restricted directory it names.
+   */
+  const BARE_DIRECTORY_CASES: readonly {
+    /** Where the probe is linted, so the scope under `src/` selects. */
+    filePath: string;
+    /** The import as written, including the bare directory. */
+    specifier: string;
+    /** The message the scope is expected to produce. */
+    message: RegExp;
+  }[] = [
+    // core/domain may import only zod and shared/utils.
+    ...["../word", "../ai", "../taskpane", "../commands"].map((specifier) => ({
+      filePath: "src/core/domain/probe.ts",
+      specifier,
+      message: /core\/domain must stay Office-free/,
+    })),
+    // rules/ and formatting/ are the two deterministic engines.
+    ...["../ai", "../word", "../taskpane", "../commands"].flatMap((specifier) => [
+      { filePath: "src/rules/probe.ts", specifier, message: /rules\/ must stay deterministic/ },
+      {
+        filePath: "src/formatting/probe.ts",
+        specifier,
+        message: /formatting\/ must stay deterministic/,
+      },
+    ]),
+    // changes/ is pure: no analysis, no rules, no UI, no Word.
+    ...[
+      "../analysis",
+      "../rules",
+      "../formatting",
+      "../style",
+      "../ai",
+      "../word",
+      "../taskpane",
+      "../commands",
+    ].map((specifier) => ({
+      filePath: "src/changes/probe.ts",
+      specifier,
+      message: /changes\/ must stay pure/,
+    })),
+    // The deterministic engine, including the orchestrator and the planner.
+    ...[
+      "../../ai",
+      "../../word",
+      "../../taskpane",
+      "../../commands",
+      "../../reformat",
+      "../../changes",
+    ].map((specifier) => ({
+      filePath: "src/analysis/deterministic/probe.ts",
+      specifier,
+      message: /must stay deterministic/,
+    })),
+    // The one sanctioned non-deterministic engine (ADR-0052).
+    ...["../../word", "../../taskpane", "../../commands", "../../reformat", "../../changes"].map(
+      (specifier) => ({
+        filePath: "src/analysis/consistency/probe.ts",
+        specifier,
+        message: /analysis\/consistency\/ must not reach/,
+      }),
+    ),
+    // word/ must not reach the consistency engine at all.
+    {
+      filePath: "src/word/probe.ts",
+      specifier: "../analysis/consistency",
+      message: /must not call the consistency engine/,
+    },
+  ];
+
+  it.each(BARE_DIRECTORY_CASES)(
+    "refuses a bare directory import at $filePath: $specifier",
+    async ({ filePath, specifier, message }) => {
+      const messages = await boundaryViolations(
+        filePath,
+        `import { x } from "${specifier}";\nexport const y = x;\n`,
+      );
+      expect(messages.join(" ")).toMatch(message);
+    },
+  );
+
   it("permits the imports each boundary is supposed to allow", async () => {
     expect(
       await boundaryViolations(
