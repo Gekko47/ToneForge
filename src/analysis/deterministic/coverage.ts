@@ -48,20 +48,23 @@ const SCOPE_FROM_POLICY: Readonly<Record<string, ScopeKind>> = {
  * §9 exists to prevent. A token that appears here and is not in `SCOPE_KINDS`
  * is ignored rather than guessed at.
  */
-const ACQUISITION_TOKEN_TO_SCOPE: Readonly<Record<string, ScopeKind>> = {
-  tables: "tables",
-  headers: "headersFooters",
-  footers: "headersFooters",
-  headersFooters: "headersFooters",
-  sections: "sections",
-  textBoxes: "textBoxes",
-  fields: "fields",
-  contentControls: "contentControls",
-  controls: "contentControls",
-  shapes: "shapes",
-  images: "shapes",
-  smartArt: "shapes",
-};
+/** The scope names, keyed by the lowercased acquisition token that names them. */
+const ACQUISITION_TOKEN_TO_SCOPE: Readonly<Record<string, ScopeKind>> = Object.fromEntries(
+  Object.entries({
+    tables: "tables",
+    headers: "headersFooters",
+    footers: "headersFooters",
+    headersFooters: "headersFooters",
+    sections: "sections",
+    textBoxes: "textBoxes",
+    fields: "fields",
+    contentControls: "contentControls",
+    controls: "contentControls",
+    shapes: "shapes",
+    images: "shapes",
+    smartArt: "shapes",
+  } satisfies Record<string, ScopeKind>).map(([token, scope]) => [token.toLowerCase(), scope]),
+);
 
 /**
  * Capability names whose absence means a scope cannot be examined.
@@ -87,6 +90,19 @@ export interface DeterministicCoverageInput {
   coverage?: CoverageReport | null;
   /** The nodes this run examined. Defaults to every acquired node. */
   examinedNodeIds?: readonly string[];
+  /**
+   * True when the caller examined a strict subset of the document.
+   *
+   * Declared rather than derived, because the observer hands this module a
+   * context whose `nodes` have *already* been narrowed to the examined ones. The
+   * shortfall check below compares `examinedNodeIds` against `context.nodes`, so
+   * on that path the two are equal by construction and an incremental scan
+   * examining one paragraph of fifty reported itself complete — the exact
+   * false-compliance claim spec §9 exists to prevent.
+   */
+  incremental?: boolean;
+  /** Why the run was partial, in the user's terms. */
+  incrementalReason?: string;
 }
 
 function unique(values: readonly string[]): string[] {
@@ -228,13 +244,28 @@ export function buildDeterministicCoverage(
   // an incremental scan reporting whole-document compliance, and it is separate
   // from the scope comparison because a narrowed run can have every scope
   // "examined" and still have looked at a fraction of the nodes.
-  if (examinedNodeIds.length < context.nodes.length) {
-    const skipped = context.nodes.length - examinedNodeIds.length;
+  const shortfall = Math.max(0, context.nodes.length - examinedNodeIds.length);
+  if (input.incremental === true || shortfall > 0) {
+    /*
+     * Two routes to the same blocker, and both are needed.
+     *
+     * `shortfall` covers a caller that acquired the whole document and then
+     * narrowed the examined set. `incremental` covers the observer, which
+     * narrows `context.nodes` itself before calling — there the two counts are
+     * equal by construction, so the arithmetic above is always zero and the run
+     * would otherwise report itself complete on the strength of a scope
+     * comparison it never made against the rest of the document.
+     */
+    const reason =
+      shortfall > 0
+        ? `This run examined ${examinedNodeIds.length} of ${context.nodes.length} acquired nodes; ${shortfall} were not looked at`
+        : (input.incrementalReason ??
+          "This run examined only the nodes Word reported as changed; the rest of the document was not looked at.");
     if (!blockers.some((blocker) => blocker.scope === "body")) {
       blockers.push(
         CoverageBlockerSchema.parse({
           scope: "body",
-          reason: `This run examined ${examinedNodeIds.length} of ${context.nodes.length} acquired nodes; ${skipped} were not looked at`,
+          reason,
           cause: "excludedByPolicy",
         }),
       );
@@ -243,6 +274,7 @@ export function buildDeterministicCoverage(
 
   const complete =
     examinedScopes.length === requested.length &&
+    input.incremental !== true &&
     examinedNodeIds.length >= context.nodes.length &&
     blockers.length === 0;
 

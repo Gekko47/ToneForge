@@ -270,7 +270,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
        * up describing the same narrow scan as different amounts of work.
        */
       const incrementalReason = narrowed
-        ? `Word reported ${full.nodes.length - examinedNodeIds.length} changed paragraph(s); ` +
+        ? `Word reported ${examinedNodeIds.length} changed paragraph(s); ` +
           `this run examined ${examinedNodeIds.length} of ${full.nodes.length} acquired nodes. ` +
           "Findings for the rest are not shown until a full scan."
         : undefined;

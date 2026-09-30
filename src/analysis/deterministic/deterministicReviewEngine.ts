@@ -205,9 +205,22 @@ export async function runDeterministicReview(
   }
 
   const examinedNodeIds = resolveExaminedNodeIds(context.nodes, options.examinedNodeIds);
+  /*
+   * `incremental` and `incrementalReason` travel with the call rather than being
+   * re-derived here. The observer narrows `context.nodes` to the examined nodes
+   * before it calls, so coverage cannot detect the shortfall from the node
+   * counts it is given — and a run that looked at one paragraph of fifty would
+   * otherwise report itself complete. The caller's own words are also the
+   * better blocker text: coverage would otherwise have to invent a sentence
+   * about a scan it never saw.
+   */
   const coverage = buildDeterministicCoverage({
     context,
     examinedNodeIds,
+    ...(options.incremental === undefined ? {} : { incremental: options.incremental }),
+    ...(options.incrementalReason === undefined
+      ? {}
+      : { incrementalReason: options.incrementalReason }),
   });
   const profile = deterministicProfileOf(policy.profile);
   const examinedNodes = context.nodes.filter((node) => examinedNodeIds.includes(node.nodeId));
