@@ -57,7 +57,19 @@ describe("deterministic rule registry", () => {
    */
   it("does not count a rule with no body as covering a profile field", () => {
     const bodyless = allRules().filter((rule) => rule.analyze === undefined);
-    expect(bodyless.length).toBeGreaterThan(0);
+    /*
+     * Every rule has a body today, so this loop currently has nothing to
+     * iterate. The precondition that used to assert `bodyless.length > 0` was
+     * removed rather than kept: it asserted that an *incomplete* registry still
+     * existed, which is the opposite of what this audit is for. It passed only
+     * because the tables, page-setup and header/footer rules were declared
+     * without bodies, so it would have started failing the moment the work it
+     * was standing in for actually landed — a test that breaks on success.
+     *
+     * The invariant is still checked, over whatever rules exist: a bodyless
+     * rule's profile fields must be excused rather than credited. If a future
+     * rule is declared before its body is written, this catches it.
+     */
     bodyless.forEach((rule) => {
       rule.profilePaths.forEach((path) => {
         /*
@@ -70,6 +82,17 @@ describe("deterministic rule registry", () => {
         expect(METADATA_ONLY_PROFILE_PATHS).toContain(path);
       });
     });
+  });
+
+  it("gives every rule a body, so no profile field rests on a declared-but-dead rule", () => {
+    // The positive form of the audit above, and the assertion that actually
+    // holds. Every rule in `DETERMINISTIC_RULES` must be able to run: a rule
+    // with a category the user can see but no `analyze` is a setting that looks
+    // configurable and changes nothing.
+    const bodyless = DETERMINISTIC_RULES.filter((rule) => rule.analyze === undefined).map(
+      (rule) => rule.id,
+    );
+    expect(bodyless).toEqual([]);
   });
 
   it("gives every rule a unique id and category", () => {

@@ -155,4 +155,25 @@ export const FormattingSnapshotSchema = z.object({
     .optional(),
 });
 
-export type FormattingSnapshot = z.input<typeof FormattingSnapshotSchema>;
+/**
+ * The shape consumers actually receive.
+ *
+ * `z.input` is the type a caller must *supply*, and it makes every field with a
+ * `.default()` optional — so `snapshot.paragraphs` came out as possibly
+ * undefined and every consumer that indexes it had to guard. But a snapshot is
+ * only ever handed around after `FormattingSnapshotSchema.parse`, where the
+ * defaults have already been applied: the host exposed no tables, so `tables`
+ * is `[]`, not absent. Typing the collection as required says exactly that, and
+ * the intersection keeps `z.input`'s tolerance for the fields callers really do
+ * omit (`hash`, `coverage`, `analysisEnd`).
+ *
+ * `tables`, `sections` and `headersFooters` stay optional in the type because a
+ * hand-built fixture legitimately omits them, and because "this snapshot was
+ * taken before the scope existed" is a real state — unlike `paragraphs`, which
+ * every snapshot has.
+ */
+type FormattingSnapshotInput = z.input<typeof FormattingSnapshotSchema>;
+
+export type FormattingSnapshot = FormattingSnapshotInput & {
+  paragraphs: FormattingParagraph[];
+};

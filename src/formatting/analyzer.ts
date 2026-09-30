@@ -262,6 +262,14 @@ function makeFinding(params: {
   evidence: string;
   paragraph?: FormattingParagraph;
   profilePath: string;
+  /**
+   * Read-only at the call site, copied on the way into the finding.
+   *
+   * `Finding.nodeIds` is a mutable `string[]`, so assigning a readonly array to
+   * it would claim a mutability nobody has. Most callers pass nothing and get the
+   * paragraph's own node; a table or section caller passes its own ids, which are
+   * copied rather than aliased.
+   */
   nodeIds?: readonly string[];
   /** The value the profile wants, carried through the finding metadata. */
   expectedValue?: unknown;
@@ -295,7 +303,9 @@ function makeFinding(params: {
     evidence: params.evidence,
     confidence: 1,
     ruleId: params.category,
-    nodeIds: params.nodeIds ?? (params.paragraph?.nodeId ? [params.paragraph.nodeId] : []),
+    // Spread rather than assigned: the spread is what turns the readonly
+    // parameter into the mutable array `Finding` carries.
+    nodeIds: [...(params.nodeIds ?? (params.paragraph?.nodeId ? [params.paragraph.nodeId] : []))],
     source: "deterministic",
     risk: "none",
     reversible: true,
@@ -714,7 +724,9 @@ function checkTableFormatting(
           message: `Table carries "${styleName}" but the profile expects "${standard.styleName}"`,
           severity: "warning",
           evidence: tableText.slice(0, 40),
-          paragraph: undefined,
+          // No `paragraph`: a table is not a paragraph. Under
+          // `exactOptionalPropertyTypes` an explicit `undefined` means "present
+          // and null", so the field has to be omitted rather than blanked.
           profilePath: "formatting.tables.styleName",
           expected: standard.styleName,
           expectedValue: standard.styleName,
