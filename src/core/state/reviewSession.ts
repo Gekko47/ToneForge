@@ -65,8 +65,18 @@ export function ensureReviewSession(identity: ReviewSessionIdentity): {
 } {
   const wanted = ReviewSessionIdentitySchema.parse(identity);
   const stored = loadReviewSession();
+  /*
+   * Computed once, outside the branch.
+   *
+   * It was previously derived twice: once to decide whether to keep the stored
+   * session, and again in the return to populate `invalidatedBy`. Two calls to
+   * the same pure function cannot disagree today, but the second one is a
+   * second statement of the same fact, and the pane shows the result as *why*
+   * the user's approvals are gone — so a future edit to one and not the other
+   * would report a reason the branch never acted on.
+   */
+  const changed = stored === null ? [] : changedIdentityFields(stored.identity, wanted);
   if (stored !== null) {
-    const changed = changedIdentityFields(stored.identity, wanted);
     if (changed.length === 0) return { session: stored, invalidatedBy: [] };
     logger.info("Deterministic review session invalidated", { changed });
   }
@@ -76,17 +86,7 @@ export function ensureReviewSession(identity: ReviewSessionIdentity): {
     updatedAt: new Date().toISOString(),
   });
   writeSession(fresh);
-  return {
-    session: fresh,
-    invalidatedBy: stored === null ? [] : changedIdentityFieldsOf(stored, wanted),
-  };
-}
-
-function changedIdentityFieldsOf(
-  stored: DeterministicReviewSession,
-  wanted: ReviewSessionIdentity,
-): string[] {
-  return changedIdentityFields(stored.identity, wanted);
+  return { session: fresh, invalidatedBy: changed };
 }
 
 /**
