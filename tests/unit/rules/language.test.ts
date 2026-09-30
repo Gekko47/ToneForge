@@ -68,6 +68,43 @@ describe("findTerminologyIssues", () => {
     expect(findings[0]?.expected).toBe("Programme");
   });
 
+  it("reports a term from the banned list, which the scanner previously never read", () => {
+    /*
+     * `language.bannedTerms` was declared in the registry as read by
+     * `language/banned` and consumed nothing: this function scanned
+     * `rules.terminology` and the legacy record, never the banned list. A
+     * setting the user could change that changed nothing — the exact spec §11
+     * failure the registry audit exists to catch.
+     */
+    const findings = findTerminologyIssues({
+      text: "Please utilize the dashboard.",
+      rules: profile({ bannedTerms: ["utilize"] }),
+    });
+
+    expect(categories(findings)).toEqual(["language.bannedTerm"]);
+    expect(findings[0]?.range).toEqual({ start: 7, end: 14, unit: "character" });
+    expect(findings[0]?.severity).toBe("error");
+    // An empty `expected` is how a banned term is distinguished from a
+    // substitution, and it is what makes the planner build a deleteRange.
+    expect(findings[0]?.expected).toBe("");
+    expect(findings[0]?.deterministic?.profilePath).toBe("language.bannedTerms");
+  });
+
+  it("matches a banned term case-insensitively and only as a whole word", () => {
+    const capitalised = findTerminologyIssues({
+      text: "Please Utilize the dashboard.",
+      rules: profile({ bannedTerms: ["utilize"] }),
+    });
+    expect(categories(capitalised)).toEqual(["language.bannedTerm"]);
+
+    // Banning `utilize` is not a claim about `utilization`.
+    const longer = findTerminologyIssues({
+      text: "The utilization rate rose.",
+      rules: profile({ bannedTerms: ["utilize"] }),
+    });
+    expect(longer).toEqual([]);
+  });
+
   it("does not match inside a longer word by default", () => {
     const findings = findTerminologyIssues({
       text: "A colorful display.",
@@ -437,6 +474,80 @@ describe("findNumberIssues", () => {
     expect(categories(findings)).toEqual(["language.number.range"]);
     expect(findings[0]?.deterministic?.correctionAvailable).toBe(true);
   });
+
+  /*
+   * A separator inside a chain of digits is not a range.
+   *
+   * `2026-05-31` satisfies the range pattern three times over, and each match
+   * looked exactly like `10-20`. Under an en-dash profile the rule therefore
+   * reported three range deviations on an ISO date and offered to rewrite its
+   * hyphens — corrupting a date that `findDateIssues` in the same file is
+   * simultaneously reporting as the wrong shape. Reported, never corrected.
+   */
+  it("reports but does not correct a separator inside a digit chain", () => {
+    const findings = findNumberIssues({
+      text: "Signed on 2026-05-31.",
+      rules: profile({ numbers: { rangeStyle: "enDash" } }),
+    });
+
+    const ranges = findings.filter((f: Finding) => f.category === "language.number.range");
+    expect(ranges.length).toBeGreaterThan(0);
+    ranges.forEach((range: Finding) => {
+      expect(range.deterministic?.correctionAvailable).toBe(false);
+      // No batch key either: a key claims every occurrence wants one edit.
+      expect(range.deterministic?.safeBatchKey).toBeUndefined();
+    });
+  });
+
+  it("still corrects a standalone range that merely sits near a chain", () => {
+    const findings = findNumberIssues({
+      text: "Pages 10-20 of the 2026-05-31 edition.",
+      rules: profile({ numbers: { rangeStyle: "enDash" } }),
+    });
+
+    const correctable = findings.filter(
+      (f: Finding) =>
+        f.category === "language.number.range" && f.deterministic?.correctionAvailable === true,
+    );
+    expect(correctable).toHaveLength(1);
+    expect("Pages 10-20 of the 2026-05-31 edition."[correctable[0]!.range.start]).toBe("-");
+  });
+
+  it("does not read a thousands group mark as a decimal separator", () => {
+    // A figure is the one thing a formatting tool must not alter. `1,000` and
+    // `4,200,000` are grouped, and the previous lookaround reported a
+    // decimal-separator deviation at every group mark.
+    const grouped = findNumberIssues({
+      text: "The total was 1,000 and then 4,200,000.",
+      rules: profile({ numbers: { decimalSeparator: "dot" } }),
+    });
+    expect(categories(grouped)).not.toContain("language.number.decimalSeparator");
+
+    // A real decimal under the same profile is still reported, and corrected.
+    const decimal = findNumberIssues({
+      text: "It cost 3,50 units.",
+      rules: profile({ numbers: { decimalSeparator: "dot" } }),
+    });
+    expect(categories(decimal)).toEqual(["language.number.decimalSeparator"]);
+    expect(decimal[0]?.expected).toBe(".");
+    expect(decimal[0]?.deterministic?.correctionAvailable).toBe(true);
+  });
+
+  it("reports an ambiguous separator without offering to decide it", () => {
+    /*
+     * `0,1234` is neither a clean decimal nor a clean thousands group, and the
+     * two readings differ by a factor of a thousand. Reporting it tells the
+     * reader a convention was broken; correcting it would pick one for them.
+     */
+    const findings = findNumberIssues({
+      text: "The value was 0,1234 units.",
+      rules: profile({ numbers: { decimalSeparator: "dot" } }),
+    });
+
+    expect(categories(findings)).toEqual(["language.number.decimalSeparator"]);
+    expect(findings[0]?.deterministic?.correctionAvailable).toBe(false);
+    expect(findings[0]?.deterministic?.safeBatchKey).toBeUndefined();
+  });
 });
 
 describe("findDateIssues", () => {
@@ -510,13 +621,63 @@ describe("findCurrencyIssues", () => {
 
 describe("findUnitIssues", () => {
   it("reports a unit written tight where the profile wants a space", () => {
+    /*
+     * `symbols` is declared, and it has to be: the rule matches the symbols the
+     * profile names, not any short word after a digit. The previous shape-based
+     * match (`\p{L}{1,4}`) reported "3 items" and "2 March" as units and offered
+     * to insert a space, which is a confident wrong edit to prose.
+     */
+    const findings = findUnitIssues({
+      text: "It weighs 10kg.",
+      rules: profile({ units: { valueSpacing: "space", symbols: { kilogram: "kg" } } }),
+    });
+
+    expect(categories(findings)).toEqual(["language.unit.spacing"]);
+    expect(findings[0]?.expected).toBe(" ");
+  });
+
+  it("says nothing about a short word the profile has not declared a unit", () => {
+    // The regression the symbol restriction exists to prevent.
+    const findings = findUnitIssues({
+      text: "There were 3 items and 2 March deadlines.",
+      rules: profile({ units: { valueSpacing: "space", symbols: { kilogram: "kg" } } }),
+    });
+
+    expect(findings).toEqual([]);
+  });
+
+  it("says nothing at all when the profile declares no units", () => {
+    // A house that has not said which words are its units has not asked this
+    // rule to fire. A default list would be ToneForge guessing.
     const findings = findUnitIssues({
       text: "It weighs 10kg.",
       rules: profile({ units: { valueSpacing: "space" } }),
     });
 
+    expect(findings).toEqual([]);
+  });
+
+  it("matches a declared symbol whole, not as the prefix of a longer word", () => {
+    const findings = findUnitIssues({
+      text: "It weighs 10kilos.",
+      rules: profile({ units: { valueSpacing: "space", symbols: { kilogram: "kg" } } }),
+    });
+
+    expect(findings).toEqual([]);
+  });
+
+  it("prefers the longest declared symbol where two share a prefix", () => {
+    const findings = findUnitIssues({
+      text: "It weighs 10mg.",
+      rules: profile({
+        units: { valueSpacing: "space", symbols: { gram: "g", milligram: "mg" } },
+      }),
+    });
+
     expect(categories(findings)).toEqual(["language.unit.spacing"]);
-    expect(findings[0]?.expected).toBe(" ");
+    // "It weighs 10mg." — the `10` ends at 12, so the zero-width gap that needs a
+    // space inserted sits at 12, immediately before the `mg`.
+    expect(findings[0]?.range).toEqual({ start: 12, end: 12, unit: "character" });
   });
 
   it("reports a unit symbol capitalised where the profile wants lower case", () => {

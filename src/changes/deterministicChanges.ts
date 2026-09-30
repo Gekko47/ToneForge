@@ -431,7 +431,26 @@ export function planDeterministicChange(finding: Finding): Change[] {
       return single(deleteChange(finding));
 
     case "houseStyle.terminology": {
-      const replacement = quotedReplacement(finding.message);
+      /*
+       * `expected` first, the message second.
+       *
+       * The rule already decided the replacement and wrote it into `expected`,
+       * including the source's own capitalisation. Re-parsing the message to
+       * recover it works only while the message quotes the replacement in a
+       * shape `quotedReplacement` recognises — and its character class excludes
+       * the apostrophe, so a house term containing one (`author's manual`)
+       * produced no capture at all and the finding silently offered no
+       * correction. Reading the value the rule computed is also the same
+       * contract the typography and language categories above already use.
+       *
+       * The empty string is excluded so a genuinely empty expectation still
+       * falls through to the message-based answer rather than producing a
+       * deleteRange from a field that was never populated.
+       */
+      const replacement =
+        typeof finding.expected === "string" && finding.expected.length > 0
+          ? finding.expected
+          : quotedReplacement(finding.message);
       return replacement === null ? [] : single(textChange(finding, replacement));
     }
 

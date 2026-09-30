@@ -368,6 +368,82 @@ describe("findTypographyIssues", () => {
     });
   });
 
+  /*
+   * A spacing finding's range must cover the gap and nothing else.
+   *
+   * Both rules below matched one character wider than the gap, so the planner
+   * replaced text the finding was only pointing at: the currency symbol with the
+   * space case, and the word before the bracket with the parenthetical case.
+   * These assert the range, because "a finding was reported" was true before and
+   * said nothing about what applying it would have destroyed.
+   */
+  it("measures a currency symbol's gap without covering the symbol", () => {
+    const findings = findTypographyIssues({
+      text: "The cost was $ 100.",
+      rules: { ...defaultRules, currencySpacing: "tight" },
+    });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.category).toBe("typography.punctuation");
+    // The single space, and only the single space. The `$` at index 13 is
+    // outside it, so the correction removes the gap and keeps the symbol.
+    expect(findings[0]?.range).toEqual({ start: 14, end: 15, unit: "character" });
+    expect(findings[0]?.evidence).toBe(" ");
+  });
+
+  it("reports a tight currency symbol as a zero-width gap to insert into", () => {
+    const findings = findTypographyIssues({
+      text: "The cost was $100.",
+      rules: { ...defaultRules, currencySpacing: "spaced" },
+    });
+
+    expect(findings).toHaveLength(1);
+    // Zero-width, immediately after the symbol: the planner turns this into an
+    // insert of one space rather than a replacement over the `$`.
+    expect(findings[0]?.range).toEqual({ start: 14, end: 14, unit: "character" });
+    expect(findings[0]?.expected).toBe(" ");
+  });
+
+  it("says nothing about a currency symbol already spaced as the profile wants", () => {
+    const findings = findTypographyIssues({
+      text: "The cost was $ 100.",
+      rules: { ...defaultRules, currencySpacing: "spaced" },
+    });
+
+    expect(findings).toEqual([]);
+  });
+
+  it("says nothing about a bracket that already has its space", () => {
+    // The setting asks for a space, and this text has one. The previous rule
+    // reported it anyway, which is the failure the function's own note warns
+    // about: a rule that fires on correct text teaches the reader to ignore it.
+    const findings = findTypographyIssues({
+      text: "See the note (below) for detail.",
+      rules: { ...defaultRules, spaceBeforeParenthesis: true },
+    });
+
+    expect(findings).toEqual([]);
+  });
+
+  it("never puts the word before a bracket inside the finding's range", () => {
+    /*
+     * The load-bearing assertion: whatever the rule reports, applying it must
+     * not touch the word. The old match began at the non-space character, so
+     * its range covered `note` and the correction replaced the word.
+     */
+    const findings = findTypographyIssues({
+      text: "See the note(below) for detail.",
+      rules: { ...defaultRules, spaceBeforeParenthesis: true },
+    });
+
+    expect(findings).toHaveLength(1);
+    const [finding] = findings;
+    // Zero-width, immediately before the bracket at index 12.
+    expect(finding?.range).toEqual({ start: 12, end: 12, unit: "character" });
+    expect("See the note(below) for detail.".slice(12, 12)).toBe("");
+    expect("See the note(below) for detail."[12]).toBe("(");
+  });
+
   it("reports multiple issue categories for mixed input", () => {
     const findings = findTypographyIssues({
       text: 'He said "don\'t..." -- really',

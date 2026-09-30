@@ -308,10 +308,37 @@ export function findTerminologyIssues(options: LanguageCheckOptions): Finding[] 
       scope: {},
     }));
 
+  /*
+   * The banned-term list, as terminology rules.
+   *
+   * `language.bannedTerms` is a plain list of words the house has forbidden, and
+   * this function scanned `rules.terminology` and the legacy record but not it —
+   * so the setting was declared in the registry as read by `language/banned` and
+   * changed nothing, which is the spec §11 failure the audit exists to catch.
+   * A banned term becomes a rule with *no* `replacement`, which is exactly how
+   * the scanner below already says "remove this", so the two paths converge on
+   * one implementation rather than two.
+   *
+   * Mandatory and case-insensitive because a banned word is forbidden however it
+   * is capitalised, and whole-word because banning "utilise" is not a claim
+   * about "utilisation".
+   */
+  const banned: TerminologyRule[] = rules.bannedTerms
+    .map((term) => term.trim())
+    .filter((term) => term.length > 0)
+    .map((term) => ({
+      id: `banned:${term}`,
+      source: term,
+      caseSensitive: false,
+      wholeWord: true,
+      severity: "mandatory" as const,
+      scope: {},
+    }));
+
   const findings: Finding[] = [];
   const claimed: Range[] = [];
 
-  [...rules.terminology, ...legacy]
+  [...rules.terminology, ...legacy, ...banned]
     .flatMap((rule) =>
       findMatches(text, termPattern(rule.source, rule.wholeWord, rule.caseSensitive)).map(
         (range) => ({ rule, range }),
@@ -561,9 +588,40 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
 
   const wanted = numbers.decimalSeparator === "comma" ? "," : ".";
   const unwanted = numbers.decimalSeparator === "comma" ? "." : ",";
+  /*
+   * A comma between digits is not necessarily a decimal separator: `1,000` and
+   * `4,200,000` are grouped thousands. The lookaround matched every one of them,
+   * so a document written with comma grouping under a dot-decimal profile
+   * reported a decimal-separator deviation at each group mark and offered to
+   * rewrite `1,000` as `1.000` — a figure altered by a punctuation rule.
+   *
+   * The group is recognised structurally rather than by counting commas: a
+   * separator preceded by one to three digits from a non-digit boundary and
+   * followed by exactly three digits is a thousands group mark, whatever the
+   * profile's own `thousandsSeparator` says, because `1,000` is grouped whether
+   * or not the house asked for it.
+   */
+  const isGroupMark = (index: number): boolean => {
+    if (unwanted !== ",") return false;
+    let leading = 0;
+    while (index - leading > 0 && /\d/u.test(text[index - leading - 1] ?? "")) leading += 1;
+    if (leading < 1 || leading > 3) return false;
+    const boundary = text[index - leading - 1];
+    if (boundary !== undefined && /\d/u.test(boundary)) return false;
+    const after = /^\d{3}(?!\d)/u.exec(text.slice(index + 1));
+    return after !== null;
+  };
   [...text.matchAll(new RegExp(`(?<=\\d)\\${unwanted}(?=\\d)`, "g"))].forEach((match) => {
     const start = match.index;
     if (start === undefined) return;
+    if (isGroupMark(start)) return;
+    /*
+     * A separator that is neither a clean decimal nor a clean group is
+     * ambiguous: `0,1234` could be either, and picking one rewrites a figure.
+     * Those are reported so the reader knows a convention was broken, and marked
+     * non-correctable so nothing offers to decide it.
+     */
+    const ambiguous = unwanted === "," && /^\d{3,}(?!\d)/u.test(text.slice(start + 1));
     findings.push(
       makeFinding({
         category: "language.number.decimalSeparator",
@@ -574,8 +632,10 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
         severity: "warning",
         actual: unwanted,
         expected: wanted,
-        correctionAvailable: true,
-        safeBatchKey: `decimal:${wanted}`,
+        // A figure is the one thing a formatting tool must not alter, so an
+        // ambiguous run is pointed at and left for the user to resolve.
+        correctionAvailable: !ambiguous,
+        ...(ambiguous ? {} : { safeBatchKey: `decimal:${wanted}` }),
       }),
     );
   });
@@ -661,17 +721,54 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
    * is how an unrelated separator test ended up reporting this.
    */
   const rangePattern = /(?<=\d)\s*(?:[-–—]|to)\s*(?=\d)/gu;
+  /*
+   * Whether this match is one separator in a longer chain of digits.
+   *
+   * `2026-05-31` matches three times over — `2026-`, `-05`, `-31` — and each
+   * match is individually indistinguishable from a range. The rule therefore
+   * reported three range deviations on an ISO date and offered to rewrite its
+   * hyphens as en dashes, corrupting a date that another rule in this same file
+   * (`findDateIssues`) is simultaneously reporting as the wrong date *shape*.
+   *
+   * A chain is detected by looking outward: a separator is part of one when
+   * either side's digit run is itself continued by another separator. A
+   * standalone `10-20` has nothing beyond either run and stays correctable.
+   */
+  const partOfChain = (start: number, end: number): boolean => {
+    let left = start;
+    while (left > 0 && /\d/u.test(text[left - 1] ?? "")) left -= 1;
+    let right = end;
+    while (right < text.length && /\d/u.test(text[right] ?? "")) right += 1;
+    const before = left > 0 ? text[left - 1] : undefined;
+    const after = right < text.length ? text[right] : undefined;
+    return (
+      (before !== undefined && /[-–—]/u.test(before) && /\d/u.test(text[left - 2] ?? "")) ||
+      (after !== undefined && /[-–—]/u.test(after) && /\d/u.test(text[right + 1] ?? ""))
+    );
+  };
   [...text.matchAll(rangePattern)].forEach((match) => {
     const start = match.index;
     if (start === undefined) return;
     const found = match[0];
     const foundTo = /(^|\s)to(\s|$)/u.test(found);
     const foundDash = found.includes("-") ? "-" : found.includes("–") ? "–" : "—";
-    // Skip only when the form found is the form wanted. The earlier version
-    // skipped a `to` form under a dash profile and a dash form under a `to`
-    // profile — that is, it skipped exactly the two cases that are wrong.
-    if (foundTo === wantsTo) return;
-    if (!wantsTo && foundDash === dash) return;
+    /*
+     * Skip only when the form found is the form wanted, and compare the axis
+     * the profile actually constrains.
+     *
+     * The previous test was `foundTo === wantsTo`, which returns early for
+     * *every* dash under a dash profile — `10-20` with an en-dash profile is
+     * `false === false`, so the finding was dropped before it was built and
+     * dash corrections were unreachable in practice. Under a dash profile the
+     * question is which dash, not whether the word `to` appeared; only a `to`
+     * profile constrains the axis `foundTo` measures.
+     */
+    if (wantsTo) {
+      if (foundTo) return;
+    } else if (!foundTo && foundDash === dash) {
+      return;
+    }
+    const chained = partOfChain(start, start + found.length);
     findings.push(
       makeFinding({
         category: "language.number.range",
@@ -682,10 +779,16 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
         severity: "warning",
         actual: found,
         expected: wantsTo ? " to " : dash,
-        // Rewriting a range's punctuation is safe. Rewriting it as words is
-        // not, and it is a different profile, so that form offers nothing.
-        correctionAvailable: !wantsTo,
-        safeBatchKey: `range:${numbers.rangeStyle}`,
+        /*
+         * Rewriting a range's punctuation is safe. Rewriting it as words is not,
+         * and neither is rewriting one separator inside a chain: the dash may be
+         * a date's or an identifier's, and only the author knows which. Those
+         * are reported so the deviation is visible, with no correction and no
+         * batch key, because a batch key is a claim that every occurrence wants
+         * the same edit.
+         */
+        correctionAvailable: !wantsTo && !chained,
+        ...(wantsTo || chained ? {} : { safeBatchKey: `range:${numbers.rangeStyle}` }),
       }),
     );
   });
@@ -864,33 +967,56 @@ export function findUnitIssues(options: LanguageCheckOptions): Finding[] {
 
   /*
    * A number followed by a short word is not always a measurement — "3 items",
-   * "2 March" — so the correction is offered but never assumed. The finding
-   * carries a batch key, and spec §13's other preconditions still apply.
+   * "2 March" — so the marker is built from the unit symbols the profile has
+   * actually declared rather than from "one to four letters".
+   *
+   * The profile's `units.symbols` record is the only place a house states which
+   * words are its units, and it is the same record the capitalisation check
+   * below already reads. A shape-based match had no way to consult it, so it
+   * reported "3 items" as a unit needing a space and offered to insert one —
+   * a confident, wrong correction to prose, on a rule whose whole job is
+   * measurements.
+   *
+   * With no symbols configured there is nothing to match and the rule is
+   * silent. That is the honest answer rather than a default list: a house that
+   * has not said which words are its units has not asked this rule to fire.
    */
-  gapsBefore(text, /\p{L}{1,4}\b/gu).forEach(({ start, end }) => {
-    const gap = text.slice(start, end);
-    // Skip only when the gap already *is* the wanted form. The other two
-    // spacing rules read the same way; an inverted comparison here made this
-    // rule fire on every correctly-spaced unit and stay silent on every
-    // tight one, which is the exact inverse of what it exists to do.
-    if (gap.length > 0 === wantsSpace) return;
-    findings.push(
-      makeFinding({
-        category: "language.unit.spacing",
-        ruleId: "language/units",
-        profilePath: "language.units.valueSpacing",
-        range: { start, end, unit: "character" },
-        message: wantsSpace
-          ? "A unit is separated from its value by a space"
-          : "A unit is written tight against its value",
-        severity: "warning",
-        actual: gap,
-        expected: wantsSpace ? " " : "",
-        correctionAvailable: true,
-        safeBatchKey: `unitSpacing:${units.valueSpacing}`,
-      }),
-    );
-  });
+  const symbols = Object.values(units.symbols)
+    .map((symbol) => symbol.trim())
+    .filter((symbol) => symbol.length > 0);
+  if (symbols.length === 0) return findings;
+  // Longest first, so "mg" is preferred over "g" where both are declared, and
+  // every alternative is bounded so `10kg.` cannot match on the `k`.
+  const alternatives = [...new Set(symbols)]
+    .sort((left, right) => right.length - left.length)
+    .map(escapeRegExp)
+    .join("|");
+  gapsBefore(text, new RegExp(`(?:${alternatives})(?![\\p{L}\\p{N}])`, "gu")).forEach(
+    ({ start, end }) => {
+      const gap = text.slice(start, end);
+      // Skip only when the gap already *is* the wanted form. The other two
+      // spacing rules read the same way; an inverted comparison here made this
+      // rule fire on every correctly-spaced unit and stay silent on every
+      // tight one, which is the exact inverse of what it exists to do.
+      if (gap.length > 0 === wantsSpace) return;
+      findings.push(
+        makeFinding({
+          category: "language.unit.spacing",
+          ruleId: "language/units",
+          profilePath: "language.units.valueSpacing",
+          range: { start, end, unit: "character" },
+          message: wantsSpace
+            ? "A unit is separated from its value by a space"
+            : "A unit is written tight against its value",
+          severity: "warning",
+          actual: gap,
+          expected: wantsSpace ? " " : "",
+          correctionAvailable: true,
+          safeBatchKey: `unitSpacing:${units.valueSpacing}`,
+        }),
+      );
+    },
+  );
 
   if (units.capitalisation === "lower") {
     Object.keys(units.symbols).forEach((name) => {

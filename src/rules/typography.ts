@@ -643,12 +643,24 @@ function checkPercentageSpacing(text: string, rules: TypographyRules): Finding[]
   });
 }
 
-/** Spacing between a currency symbol and its amount; `none` defers to currency. */
+/**
+ * Spacing between a currency symbol and its amount.
+ *
+ * The match is the whitespace only. The previous pattern matched the symbol and
+ * the gap together, so the reported range covered the currency mark of a
+ * figure like `$100` as well as its gap, and applying the correction replaced
+ * the symbol with a space — deleting the currency mark. The symbol is excluded
+ * here and asserted with a lookbehind, so the gap is located without consuming
+ * it, and a tight symbol yields a zero-width range the planner inserts into.
+ */
 function checkCurrencySpacing(text: string, rules: TypographyRules): Finding[] {
   if (rules.currencySpacing === "none") return [];
   return spacingFindings({
     text,
-    matches: findMatches(text, /[$£€¥][ \t]*/gu),
+    // `*`, not `+`: a symbol written tight has no gap at all, and that is the
+    // deviation the `spaced` setting exists to report. Requiring one or more
+    // whitespace characters made the tight case unmatchable.
+    matches: findMatches(text, /(?<=[$£€¥])[ \t]*(?=\d)/gu),
     wantsSpace: rules.currencySpacing === "spaced",
     category: "typography.punctuation",
     profilePath: "typography.currencySpacing",
@@ -663,22 +675,47 @@ function checkCurrencySpacing(text: string, rules: TypographyRules): Finding[] {
  * Off by default, and it is worth being explicit about why: the convention runs
  * the other way in most house styles, and a rule that fires on correct text
  * teaches the reader to ignore the panel it appears in.
+ *
+ * The match is the gap alone. The previous pattern began with a non-space
+ * character, so the reported range covered the word before the bracket as well
+ * as its gap, and correcting `word (x)` replaced the word itself with a space.
+ * Only the whitespace is measured now, and a zero-width gap is accepted: a
+ * bracket written tight against its word has no gap to match, and refusing
+ * zero-length ranges is precisely how the case this rule exists to report went
+ * unreported.
  */
 function checkSpaceBeforeParenthesis(text: string, rules: TypographyRules): Finding[] {
   if (!rules.spaceBeforeParenthesis) return [];
-  return findMatches(text, /\S[ \t]*(?=[([])/g)
-    .filter((m) => m.end > m.start)
-    .map((m) =>
+  const findings: Finding[] = [];
+  // The capture is the gap, so the range is measured from the group rather than
+  // from the match — the match starts one character early on the word.
+  [...text.matchAll(/\S([ \t]*)(?=[([])/g)].forEach((match) => {
+    const [whole, gap] = match;
+    const start = match.index;
+    if (start === undefined || whole === undefined || gap === undefined) return;
+    /*
+     * Only the *missing* space is a deviation, which is the one case a
+     * zero-length range reports. The previous filter dropped zero-length ranges
+     * and kept the ones with a gap, so the rule reported correctly-spaced text
+     * and stayed silent on the deviation the setting exists to catch.
+     */
+    if (gap.length > 0) return;
+    const gapStart = start + whole.length;
+    findings.push(
       makeFinding({
         category: "typography.punctuation",
-        range: { start: m.start, end: m.end, unit: "character" },
+        // Zero-width, immediately before the bracket: the planner turns this
+        // into an insert of one space rather than a replacement over the word.
+        range: { start: gapStart, end: gapStart, unit: "character" },
         message: "An opening bracket is separated from the word before it",
         severity: "warning",
-        evidence: text.slice(m.start, m.end),
+        evidence: gap,
         expected: " ",
         profilePath: "typography.spaceBeforeParenthesis",
       }),
     );
+  });
+  return findings;
 }
 
 /** A required space on both sides of a hyphen used as a compound marker. */
