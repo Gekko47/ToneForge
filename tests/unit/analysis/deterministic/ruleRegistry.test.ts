@@ -45,6 +45,33 @@ describe("deterministic rule registry", () => {
     });
   });
 
+  /*
+   * A rule with no body must not make a setting look wired.
+   *
+   * The audit previously counted every declared `profilePaths` entry, including
+   * those of rules with no `analyze`. `formatting/tables`, `formatting/page` and
+   * `formatting/headersFooters` are declared and body-less, so all three passed
+   * the §11 audit while nothing read them — the exact "setting the user can
+   * change that changes nothing" the audit exists to prevent. They are excused
+   * explicitly instead, which is a claim someone can review.
+   */
+  it("does not count a rule with no body as covering a profile field", () => {
+    const bodyless = allRules().filter((rule) => rule.analyze === undefined);
+    expect(bodyless.length).toBeGreaterThan(0);
+    bodyless.forEach((rule) => {
+      rule.profilePaths.forEach((path) => {
+        /*
+         * Excused, not covered. `unwiredProfilePaths` subtracts the excuse list,
+         * so the honest statement is that the path is not *credited to a rule
+         * that cannot run* — which is what makes the exception reviewable. The
+         * earlier audit credited it, and that is how three settings nobody read
+         * passed a check whose whole purpose is catching them.
+         */
+        expect(METADATA_ONLY_PROFILE_PATHS).toContain(path);
+      });
+    });
+  });
+
   it("gives every rule a unique id and category", () => {
     const ids = allRules().map((rule) => rule.id);
     const categories = allRules().map((rule) => rule.category);

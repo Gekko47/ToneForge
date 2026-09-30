@@ -217,8 +217,23 @@ export interface DeterministicRule {
  * case, kept because a future house-specific rule needs it and removing it
  * would discard a stored value for no gain. The list is the reason the audit
  * can insist every field is either wired *or* excused.
+ *
+ * The three `formatting` entries are a different kind of exception from
+ * `locale`, and the distinction matters. A rule *is* declared for each of them
+ * (`formatting/tables`, `formatting/page`, `formatting/headersFooters`), but
+ * each is declared with no `analyze` and `correctable: false`: the setting is
+ * reachable from the profile and no check consumes it yet. `unwiredProfilePaths`
+ * therefore counts only rules that can run, which is what makes these three
+ * appear — and listing them here is the honest record that the gap is known
+ * rather than the result of an audit that cannot see a missing body. T19 and
+ * T20 attach the bodies and these entries come out.
  */
-export const METADATA_ONLY_PROFILE_PATHS: readonly string[] = ["language.locale"];
+export const METADATA_ONLY_PROFILE_PATHS: readonly string[] = [
+  "language.locale",
+  "formatting.tables",
+  "formatting.page",
+  "formatting.headersFooters",
+];
 
 /**
  * Every field a deterministic profile exposes, as dotted paths.
@@ -732,9 +747,18 @@ function isCovered(path: string, covered: readonly string[]): boolean {
  *
  * The list the audit asserts is empty. A non-empty result is the spec §11
  * failure mode exactly: a setting the user can change that changes nothing.
+ *
+ * A rule with no `analyze` does not count as covering anything. The engine
+ * dispatches on `analyze` (`rule.analyze === undefined ? [] : ...`), so a
+ * declared-but-body-less rule reads no profile field at all — and counting its
+ * `profilePaths` here is what let `formatting/tables`, `formatting/page` and
+ * `formatting/headersFooters` pass the audit while doing nothing. A rule that
+ * cannot run cannot make a setting wired.
  */
 export function unwiredProfilePaths(): readonly string[] {
-  const covered = DETERMINISTIC_RULES.flatMap((rule) => [...rule.profilePaths]);
+  const covered = DETERMINISTIC_RULES.filter((rule) => rule.analyze !== undefined).flatMap(
+    (rule) => [...rule.profilePaths],
+  );
   const excused = new Set<string>(METADATA_ONLY_PROFILE_PATHS);
   return PROFILE_FIELD_PATHS.filter(
     (path) => !isCovered(path, covered) && !isCovered(path, [...excused]),
