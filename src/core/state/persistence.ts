@@ -33,10 +33,11 @@ import {
   type IgnoredFinding,
   type ReviewedFinding,
 } from "../domain/Finding";
+import { DeterministicReviewSessionSchema } from "../domain/ReviewSession";
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(12),
+  version: z.number().int().nonnegative().default(13),
   profileRecords: z.record(z.string().uuid(), ProfileRecordSchema).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
@@ -84,6 +85,24 @@ const StateSchema = z.object({
    * `ReviewedFinding` and `occurrenceIdentity` for why that identity is exact.
    */
   reviewedFindings: z.array(ReviewedFindingSchema).default([]),
+  /**
+   * v13. The review session: the identity this run's approvals are bound to,
+   * and the approvals themselves.
+   *
+   * Separate from `reviewedFindings` because the two answer different
+   * questions and expire differently. `reviewedFindings` records "the user has
+   * seen this occurrence" as a durable fact about their work, pruned when the
+   * occurrence leaves the document. A session decision is a consent to a
+   * specific correction, and it is only consent while the document, the
+   * profile, the governance policy and the examined scope are all exactly what
+   * they were — so it carries its own identity and is discarded wholesale when
+   * any of it moves. See `src/core/domain/ReviewSession.ts`.
+   *
+   * Nullable rather than defaulted: `null` means no review has been started, and
+   * an empty session would be indistinguishable from one whose every approval
+   * had just been invalidated.
+   */
+  deterministicReviewSession: DeterministicReviewSessionSchema.nullable().default(null),
   settings: z
     .object({
       openAiBaseUrl: z.string().url().optional(),
@@ -129,8 +148,9 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v12";
+const STORAGE_KEY = "ToneForge.State.v13";
 const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v12",
   "ToneForge.State.v11",
   "ToneForge.State.v10",
   "ToneForge.State.v9",

@@ -91,6 +91,7 @@ describe("persistence with Office roamingSettings", () => {
       activeSemanticProfileId: null,
       ignoredFindings: [],
       reviewedFindings: [],
+      deterministicReviewSession: null,
       activeProfileId: null,
       governanceProfiles: {},
       governanceHistory: {},
@@ -122,6 +123,7 @@ describe("persistence with Office roamingSettings", () => {
         activeSemanticProfileId: null,
         ignoredFindings: [],
         reviewedFindings: [],
+        deterministicReviewSession: null,
         activeProfileId: null,
         settings: { telemetryDisabled: false },
       });
@@ -140,6 +142,7 @@ describe("persistence with Office roamingSettings", () => {
         activeSemanticProfileId: null,
         ignoredFindings: [],
         reviewedFindings: [],
+        deterministicReviewSession: null,
         activeProfileId: null,
         settings: {},
       });
@@ -158,6 +161,7 @@ describe("persistence with Office roamingSettings", () => {
         activeSemanticProfileId: null,
         ignoredFindings: [],
         reviewedFindings: [],
+        deterministicReviewSession: null,
         activeProfileId: null,
         settings: { telemetryDisabled: true },
       });
@@ -179,6 +183,7 @@ describe("persistence with Office roamingSettings", () => {
             activeSemanticProfileId: null,
             ignoredFindings: [],
             reviewedFindings: [],
+            deterministicReviewSession: null,
             activeProfileId: null,
             settings: { telemetryDisabled: true },
           });

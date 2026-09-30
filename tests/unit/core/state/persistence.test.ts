@@ -48,6 +48,7 @@ describe("persistence", () => {
       activeSemanticProfileId: null,
       ignoredFindings: [],
       reviewedFindings: [],
+      deterministicReviewSession: null,
       activeProfileId: null,
       settings: {
         llmProvider: "mock",

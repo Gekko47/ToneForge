@@ -20,9 +20,10 @@ import {
   type IgnoredFinding,
   type ReviewedFinding,
 } from "../domain/Finding";
+import { DeterministicReviewSessionSchema } from "../domain/ReviewSession";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 12;
+export const CURRENT_STATE_VERSION = 13;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
@@ -91,6 +92,8 @@ export function migrate(raw: unknown): PersistedState {
       return migrateV10ToV11(obj);
     case 11:
       return migrateV11ToV12(obj);
+    case 12:
+      return migrateV12ToV13(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -107,12 +110,35 @@ function defaultState(): PersistedState {
     activeSemanticProfileId: null,
     ignoredFindings: [],
     reviewedFindings: [],
+    deterministicReviewSession: null,
     governanceProfiles: DEFAULT_GOVERNANCE_PROFILES,
     governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
     settings: { ...DEFAULT_SETTINGS },
     providerConnections: {},
   };
+}
+
+/**
+ * v12 -> v13: add the review session, starting empty.
+ *
+ * **No back-migration, deliberately.** A v12 store has `reviewedFindings` —
+ * durable "the user has seen this" records — but it has no session and no
+ * identity those records were ever bound to. Promoting them to approvals would
+ * mean asserting a document revision, a profile revision, a governance revision
+ * and a coverage fingerprint that were never recorded, and then applying a
+ * correction to a document on the strength of a guess about which document it
+ * was. That is a fabricated consent, which is the one failure worse than losing
+ * a convenience. The user's decision on this point was explicit: invalidate
+ * wholesale, carry nothing, no users to lose anything for.
+ *
+ * So the session starts `null` — "no review has been started" — which is also
+ * distinguishable from an empty session, so the pane can say why the list is
+ * empty rather than implying approvals were discarded.
+ */
+function migrateV12ToV13(obj: Record<string, unknown>): PersistedState {
+  const current = readCurrentState(obj);
+  return { ...current, version: CURRENT_STATE_VERSION, deterministicReviewSession: null };
 }
 
 /**
@@ -335,6 +361,7 @@ function readCurrentState(obj: Record<string, unknown>): PersistedState {
     activeSemanticProfileId: null,
     ignoredFindings: normalizeIgnoredFindings(obj.ignoredFindings),
     reviewedFindings: normalizeReviewedFindings(obj.reviewedFindings),
+    deterministicReviewSession: normalizeReviewSession(obj.deterministicReviewSession),
     governanceProfiles: normalizeGovernanceProfiles(obj.governanceProfiles),
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, obj.governanceProfiles),
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
@@ -357,6 +384,7 @@ function readLegacyState(obj: Record<string, unknown>): PersistedState {
     activeSemanticProfileId: null,
     ignoredFindings: [],
     reviewedFindings: [],
+    deterministicReviewSession: null,
     activeProfileId,
     governanceProfiles,
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, governanceProfiles),
@@ -560,6 +588,20 @@ function occurrenceKeyOf(entry: IgnoredFinding): string {
     entry.range.start,
     entry.range.end,
   ].join("@");
+}
+
+/**
+ * Recover the review session from a current-version store.
+ *
+ * Validated as a whole rather than field by field: a session whose identity does
+ * not parse is a session whose decisions cannot be bound to anything, and the
+ * honest reading of that is "no session" rather than a partially reconstructed
+ * one whose approvals apply to an identity ToneForge had to invent.
+ */
+function normalizeReviewSession(raw: unknown): PersistedState["deterministicReviewSession"] {
+  if (raw === null || raw === undefined) return null;
+  const parsed = DeterministicReviewSessionSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }
 
 /**

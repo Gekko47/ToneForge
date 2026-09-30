@@ -43,6 +43,7 @@ function state(records: ProfileRecord[], activeProfileId: string | null = null):
     activeSemanticProfileId: null,
     ignoredFindings: [],
     reviewedFindings: [],
+    deterministicReviewSession: null,
     governanceProfiles: {},
     governanceHistory: {},
     activeGovernanceProfileId: null,
