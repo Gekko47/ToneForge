@@ -2264,3 +2264,91 @@ validate` green throughout. The procedure was correct and had been run. This
 - **Evidence**: `.cline/skills/`, `.cline/rules/`, `.roo/skills/`,
   `.roo/rules/`, `scripts/validate-skills.mjs`, `npm run skills:validate`, and
   `docs/stages/03-cline-governance.md`.
+
+## ADR-0084: A property name the host does not have is a compile error, and the flow controls are left unread
+
+- Amends: ADR-0056 (analysis acquisition is gated on probed capabilities and
+  degrades to text) — its guard covers properties whose absence the host
+  declares, and says nothing about a name the host has never heard of
+- Status: Accepted (2026-09-30)
+- **Context**: Analysis acquisition asks Word for a paragraph's properties with
+  `load([...])`. Word does not decline the one name it cannot serve — it rejects
+  the entire call with a generic `GeneralException`, so a single bad name costs
+  every other property in the same request. That is why
+  `planAcquisitionLoads` builds its request from the capability probe rather
+  than from the shape of the API we wish existed.
+
+  That guard only covers properties whose _absence the host declares_. It cannot
+  cover a name the host has never heard of, and two of those have shipped:
+
+  - `keepNext`, `keepLines` and `pageBreakBefore` were requested from
+    `Word.Paragraph`, which has none of them. They are properties of
+    `Word.ParagraphFormat`.
+  - `21ce84d` replaced those three with a request for `paragraphFormat` on the
+    paragraph, on the premise that this was the way to reach
+    `Word.ParagraphFormat`. It is not. Microsoft's `Word.Paragraph` reference
+    lists no such member, and `Word.ParagraphFormat` names only
+    `Word.ConditionalStyle` and `Word.Style` as its users. The commit moved the
+    defect up one level rather than removing it.
+
+  Nothing caught either. `tsc` passed, because acquisition typed its paragraph
+  double locally with `load?: (properties: string | string[]) => unknown`, so
+  every name was a valid `string`. `src/types/office.d.ts` is a hand-rolled
+  subset — `interface Paragraph` declares four members — so it is not an
+  authority either. And the host doubles in `tests/setup.ts` and
+  `analysisAcquisitionDegradedScope.test.ts` serve whatever name they are asked
+  for; the degraded-scope double modelled _"throws if you read what you did not
+  load"_ but not _"rejects a name I do not have"_.
+
+  The consequence was silent. A rejected transaction triggers the in-session
+  text-only fallback, so the scan still completed and still produced findings —
+  without indentation, spacing or alignment, which is a formatting-coverage loss
+  the coverage report cannot distinguish from a paragraph that happens to match.
+
+- **Decision**:
+  1. `LOADABLE_PARAGRAPH_PROPERTIES` in `src/word/analysisAcquisition.ts` is the
+     single declared list, typed `as const` so `ParagraphProperty` is a union.
+     `CAPABILITY_PROPERTY_GROUPS`, `readPlanned` and
+     `AcquisitionLoadPlan.paragraphProperties` all take that type. Adding a name
+     Word does not have is a compile error.
+  2. The list is annotated with the reference it is derived from, because a
+     declared list can only say a name is _absent_, never that it is _wrong_.
+  3. `analysisAcquisitionDegradedScope.test.ts` carries an **independent** copy
+     of the property list and its host double now rejects any request outside it,
+     with `GeneralException`, independently of the `ItemNotFound` path. The two
+     lists are compared by a test, so a name added to one and not the other
+     fails the suite. This is the check that survives the case the compiler
+     cannot: someone who adds a plausible name to both the module's list and its
+     own tests.
+  4. `tests/setup.ts` keeps `paragraphFormat` on the **Range** double, where it
+     is real and `revisionAdapter` uses it, with a comment recording that the
+     same name on a paragraph is not, and why.
+  5. The flow controls are not examined. `keepNext`, `keepLines` and
+     `pageBreakBefore` are `null` in the DTO, the answer "not read", and the
+     analyzer skips a comparison it has no evidence for.
+- **Consequences**:
+  - Spec §6's `ParagraphStandard` compares style name, font, alignment, spacing
+    and indentation, and does **not** compare pagination, on every host. The
+    profile fields `keepWithNext`, `keepLinesTogether` and `pageBreakBefore`
+    remain editable and remain in the diff, and are compared against `null`.
+    That gap is real and is recorded rather than papered over; closing it
+    requires an API that can serve those values, and until one exists a request
+    for them costs the whole paragraph-format family on a real host.
+  - The two lists must be edited together, which is the intent. It is a
+    deliberate second statement of the same fact, not a duplicate to be
+    deduplicated: one copy cannot check itself.
+  - **This is not verified against a Word host.** The argument that the old
+    request was rejected comes from Microsoft's published API reference, not from
+    an observed failure, and the new checks are assertions about the test double
+    rather than about Word. `npm run host:matrix` reports 0 fully passing hosts
+    and `word-host-evidence` remains open. A real Desktop Word scan is what would
+    confirm that the paragraph-format family now survives, and until one runs
+    this ADR records a documented limitation, not a verified fix (ADR-0051).
+  - `src/types/office.d.ts` remains a loose subset. Making it an authority for
+    property names is a separate piece of work and was deliberately not folded
+    in here.
+- **Evidence**: `src/word/analysisAcquisition.ts`,
+  `tests/unit/word/analysisAcquisitionDegradedScope.test.ts`,
+  `tests/unit/word/analysisAcquisitionLoads.test.ts`, `tests/setup.ts`, commits
+  `21ce84d` and `04a888a`, and
+  <https://learn.microsoft.com/javascript/api/word/word.paragraph>.

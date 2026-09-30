@@ -71,52 +71,88 @@ interface StyleView {
 
 const DEFAULT_MAX_CHARS = 500_000;
 
+/**
+ * Every paragraph property name this module is allowed to request.
+ *
+ * **Authority**: Microsoft's `Word.Paragraph` reference, which lists the members
+ * a paragraph can load — <https://learn.microsoft.com/javascript/api/word/word.paragraph>.
+ * `keepNext`, `keepLines` and `pageBreakBefore` are *not* on it, and neither is
+ * `paragraphFormat`: `Word.ParagraphFormat` is reached through
+ * `Word.Style.paragraphFormat` and `Word.ConditionalStyle.paragraphFormat`, not
+ * through a paragraph. Check that page before adding a name here.
+ *
+ * **Why a declared list rather than free strings.** A name the host does not
+ * have is not a partial read: Word rejects the whole `load` with a generic
+ * `GeneralException`, taking every other property in the same request with it.
+ * That is the failure this file builds its request from the probe result to
+ * avoid, so a typo must not be able to reintroduce it. Typed as a tuple so the
+ * element type below is a union — `CAPABILITY_PROPERTY_GROUPS` cannot hold a
+ * name outside it, and neither can `readPlanned`. Both accepted any `string`
+ * before, which is how `paragraphFormat` compiled and shipped in 21ce84d.
+ *
+ * This is a compile-time gate, not a runtime one. It cannot tell you a name is
+ * *wrong*, only that it is not on this list — so adding a plausible-sounding
+ * entry here still requires reading the reference above. The independent check
+ * that catches that is in `analysisAcquisitionDegradedScope.test.ts`, where the
+ * host double carries its own copy of the property list.
+ */
+export const LOADABLE_PARAGRAPH_PROPERTIES = [
+  "text",
+  "uniqueLocalId",
+  "style",
+  "styleBuiltIn",
+  "isListItem",
+  "listItem",
+  "alignment",
+  "lineSpacing",
+  "spaceAfter",
+  "spaceBefore",
+  // Spec §6's `ParagraphStandard`. These three are what a paragraph standard
+  // can be compared against beyond style name and font, so without them a body
+  // or heading standard could only ever check the narrowest thing it read.
+  "leftIndent",
+  "rightIndent",
+  "firstLineIndent",
+  "font",
+] as const;
+
+/** One property name a `Word.Paragraph` can serve. */
+export type ParagraphProperty = (typeof LOADABLE_PARAGRAPH_PROPERTIES)[number];
+
 /** Properties requested on every host. Text alone is the floor of any scope. */
-const BASE_PARAGRAPH_PROPERTIES: readonly string[] = ["text", "uniqueLocalId"];
+const BASE_PARAGRAPH_PROPERTIES: readonly ParagraphProperty[] = ["text", "uniqueLocalId"];
 
 /** Optional property groups, each bound to one probed capability. */
 const CAPABILITY_PROPERTY_GROUPS: readonly {
   capability: keyof AnalysisCapabilities;
-  properties: readonly string[];
+  properties: readonly ParagraphProperty[];
 }[] = [
   { capability: "supportsStyles", properties: ["style", "styleBuiltIn"] },
   { capability: "supportsListLevel", properties: ["isListItem", "listItem"] },
   {
     capability: "supportsParagraphFormat",
+    /*
+     * No flow controls, and so no `paragraphFormat` to reach them through.
+     *
+     * `keepWithNext` and `keepTogether` are properties of `Word.ParagraphFormat`,
+     * which a paragraph cannot reach — see the reference named above. Asking for
+     * a name the API lacks costs this whole group, not the one name: the request
+     * is rejected and `alignment`, the indents and the spacing go with it, which
+     * is how a scan silently loses its formatting coverage while still looking
+     * clean.
+     *
+     * The fields stay `null` in the DTO, the answer "not read", and the analyzer
+     * skips a comparison it has no evidence for. They remain editable in the
+     * profile until an API that can serve them exists; see ADR-0084.
+     */
     properties: [
       "alignment",
       "lineSpacing",
       "spaceAfter",
       "spaceBefore",
-      // Spec §6's `ParagraphStandard`. These four are the whole of what a
-      // paragraph standard can be compared against, so without them a body or
-      // heading standard could only ever check style name and font — and a
-      // rule that reports "matches the profile" would be reporting the
-      // narrowest thing it happened to read.
       "leftIndent",
       "rightIndent",
       "firstLineIndent",
-      /*
-       * No `paragraphFormat`, and no flow controls with it.
-       *
-       * `keepWithNext` and `keepTogether` live on `Word.ParagraphFormat`, and
-       * `Word.Paragraph` has no `paragraphFormat` property to reach them
-       * through — Microsoft's own reference for `Word.Paragraph` lists no such
-       * member, and `Word.ParagraphFormat` names only `Word.ConditionalStyle`
-       * and `Word.Style` as its users. The earlier version of this group asked
-       * for `paragraphFormat` by name on that basis.
-       *
-       * Asking a paragraph for a property it does not have is not a partial
-       * read. Word rejects the whole request with a generic `GeneralException`,
-       * which costs `alignment`, the indents and the spacing in this group
-       * rather than the one name that was wrong — the same failure that made
-       * this file build its request from the probe result in the first place.
-       *
-       * So the flow controls are simply not examined. `keepNext`, `keepLines`
-       * and `pageBreakBefore` stay `null`, which is the answer "not read", and
-       * the analyzer skips those comparisons rather than inventing a value.
-       * Reaching them properly needs an API that exists.
-       */
     ],
   },
   { capability: "supportsCharacterFormat", properties: ["font"] },
@@ -137,8 +173,16 @@ const CAPABILITY_PROPERTY_GROUPS: readonly {
  * defence, not the first: a host can accept `load("listItem")` and still refuse
  * to serve it for one particular paragraph, and that must cost one property
  * rather than the whole scan.
+ *
+ * `property` is a `ParagraphProperty`, not a `string`, for the same reason the
+ * load groups are: a read of a name outside the declared list is a name no
+ * paragraph has, and it would otherwise compile.
  */
-function readPlanned<T>(plan: AcquisitionLoadPlan, property: string, read: () => T): T | null {
+function readPlanned<T>(
+  plan: AcquisitionLoadPlan,
+  property: ParagraphProperty,
+  read: () => T,
+): T | null {
   if (!plan.paragraphProperties.includes(property)) return null;
   try {
     const value = read();
@@ -156,7 +200,7 @@ export interface AcquisitionLoadPlan {
   /** Whether `document.styles` may be loaded at all. */
   styleCollection: boolean;
   /** Paragraph properties to request, base properties included. */
-  paragraphProperties: readonly string[];
+  paragraphProperties: readonly ParagraphProperty[];
   /** Properties deliberately not requested, for honest coverage reporting. */
   skipped: readonly string[];
 }
@@ -183,7 +227,7 @@ export function planAcquisitionLoads(
   }
 
   const skipped: string[] = [];
-  const optional: string[] = [];
+  const optional: ParagraphProperty[] = [];
   CAPABILITY_PROPERTY_GROUPS.forEach((group) => {
     if (capabilities[group.capability] === true) {
       optional.push(...group.properties);

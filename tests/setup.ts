@@ -39,6 +39,21 @@ const officeMock = {
             insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
             paragraphs: { load: vi.fn(), items: [] },
             font: { name: "", size: 0, color: "", load: vi.fn(), set: vi.fn() },
+            /*
+             * Range.paragraphFormat, which is real — Word exposes it on a range,
+             * and `revisionAdapter` sets paragraph formatting through one. The
+             * comment is here because the *same name on a paragraph* is not real,
+             * and this mock is a plausible thing to copy when building a paragraph
+             * double.
+             *
+             * That mistake was made for real: 21ce84d added "paragraphFormat" to
+             * the paragraph load plan on the assumption it was the way to reach
+             * `Word.ParagraphFormat` from a paragraph, and so asked Word for a
+             * property that does not exist there. The request is rejected whole,
+             * which cost every other property in that group too. Do not read this
+             * as evidence that a paragraph has one — see ADR-0084, and
+             * `LOADABLE_PARAGRAPH_PROPERTIES` for the names a paragraph does have.
+             */
             paragraphFormat: { set: vi.fn() },
             listFormat: { set: vi.fn() },
             style: "",

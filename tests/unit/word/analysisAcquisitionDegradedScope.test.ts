@@ -19,6 +19,7 @@ import {
   __resetRefusedCapabilities,
   acquireAnalysisContext,
   planAcquisitionLoads,
+  LOADABLE_PARAGRAPH_PROPERTIES,
 } from "../../../src/word/analysisAcquisition";
 import type { AnalysisCapabilities } from "../../../src/analysis/analysisContext";
 import { StyleProfileSchema } from "../../../src/core/domain/StyleProfile";
@@ -132,6 +133,43 @@ function hostError(message: string, code: string): Error {
   return error;
 }
 
+/**
+ * The property names a `Word.Paragraph` actually has.
+ *
+ * **Written out independently of the module under test, and that is the whole
+ * point.** `analysisAcquisition.ts` declares its own list to make a bad name a
+ * compile error, but a list cannot tell you a name is *wrong* — only that it is
+ * not on that list. Someone who adds `"indent"` to the module's list satisfies
+ * both its compiler and its own tests, and the scan degrades on a real host
+ * exactly as before.
+ *
+ * So this copy is the second, independent statement of what a paragraph has,
+ * and the test below compares the two. Adding a name to one and not the other
+ * fails the suite, which is the moment a plausible-sounding entry gets checked
+ * against the reference:
+ * <https://learn.microsoft.com/javascript/api/word/word.paragraph>
+ *
+ * Note what is absent, because each of these cost a real scan its whole
+ * paragraph-format family: `paragraphFormat` (reached through a style, not a
+ * paragraph), `keepNext`, `keepLines`, `pageBreakBefore`.
+ */
+const HOST_PARAGRAPH_PROPERTIES: ReadonlySet<string> = new Set([
+  "text",
+  "uniqueLocalId",
+  "style",
+  "styleBuiltIn",
+  "isListItem",
+  "listItem",
+  "alignment",
+  "lineSpacing",
+  "spaceAfter",
+  "spaceBefore",
+  "leftIndent",
+  "rightIndent",
+  "firstLineIndent",
+  "font",
+]);
+
 /** Number of `Office.run` transactions the current host has served. */
 let TRANSACTIONS = 0;
 
@@ -172,13 +210,28 @@ function installHost(failRichScope: boolean | "always"): void {
     },
     host: { name: "Word", version: "16.0" },
     /*
-     * The request context rejects the whole `sync` when a transaction asked for
-     * an optional property family, which is how a host refuses to serve one.
-     * A text-only transaction always succeeds.
+     * The request context rejects the whole `sync` in two distinct ways.
+     *
+     * An unknown property name is the host's `GeneralException`: Word does not
+     * decline one name and serve the rest, it refuses the transaction. This
+     * check is what makes that a *detectable* condition in the suite rather than
+     * a silent degradation — the same fallback the real host triggers, so a bad
+     * name now costs the formatting family here too.
+     *
+     * It runs before, and independently of, `failures.remaining`: a name the
+     * host does not have is always refused, on every transaction, and is not a
+     * thing a host recovers from.
      */
     sync: async () => {
+      const unknown = [...requested].filter((property) => !HOST_PARAGRAPH_PROPERTIES.has(property));
       const askedOptional = [...requested].some((property) => !isBaseProperty(property));
       requested.clear();
+      if (unknown.length > 0) {
+        throw hostError(
+          `The property '${unknown[0]}' does not exist on Word.Paragraph.`,
+          "GeneralException",
+        );
+      }
       if (askedOptional && failures.remaining > 0) {
         failures.remaining -= 1;
         throw hostError("The property is not available on this host.", "ItemNotFound");
@@ -239,7 +292,7 @@ describe("acquireAnalysisContext degraded scope", () => {
      * host; catching the throw afterwards would hide the defect rather than
      * remove it, and would still cost a round trip per paragraph per property.
      */
-    const requested = new Set(planAcquisitionLoads(ALL_ON, true).paragraphProperties);
+    const requested = new Set<string>(planAcquisitionLoads(ALL_ON, true).paragraphProperties);
     expect(READS.filter((property) => !requested.has(property))).toEqual([]);
   });
 
@@ -391,5 +444,80 @@ describe("acquireAnalysisContext degraded scope", () => {
 
     // A capable host is never remembered as refusing, so no scan degrades.
     expect(TRANSACTIONS).toBe(3);
+  });
+});
+
+/*
+ * The load plan against a host that knows what a paragraph has.
+ *
+ * This is the check that survives the next bad name. The module declares its own
+ * list of loadable properties so that a typo is a compile error, but a declared
+ * list is only as good as the person who edited it: adding `"indent"` satisfies
+ * the compiler, satisfies the module's own tests, and still degrades every real
+ * scan. `HOST_PARAGRAPH_PROPERTIES` above is written independently, so the two
+ * have to agree.
+ *
+ * The names excluded below are not an arbitrary set. Each of them has already
+ * cost this repository a full paragraph-format family on a live host, which is
+ * why this file exists.
+ */
+describe("the acquisition load plan against a real Word.Paragraph", () => {
+  it("requests only property names a Word paragraph actually has", () => {
+    // The property the module may request at all, not merely the ones the current
+    // plan happens to ask for: a name added to a capability group tomorrow has to
+    // pass this too.
+    const unknown = LOADABLE_PARAGRAPH_PROPERTIES.filter(
+      (property) => !HOST_PARAGRAPH_PROPERTIES.has(property),
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  it("asks a capable host for nothing this host would refuse as a bad name", async () => {
+    /*
+     * The end-to-end version, and the one that would have caught 21ce84d.
+     *
+     * `installHost(false)` never refuses an optional family, so the only thing
+     * that can fail the rich transaction is a name the host does not have. The
+     * scan degrading here is the signal — silently, because
+     * `acquireAnalysisContext` catches the failure and retries text-only exactly
+     * as it does against a real host.
+     */
+    installHost(false);
+
+    await acquireAnalysisContext({ profile: PROFILE, capabilities: ALL_ON });
+
+    // One transaction means the rich request was accepted. Two means the host
+    // rejected it and the fallback took over.
+    expect(TRANSACTIONS).toBe(1);
+    expect(READS).toEqual(expect.arrayContaining(["alignment", "leftIndent", "font"]));
+  });
+
+  it.each([
+    ["paragraphFormat", "reached through a style, not a paragraph"],
+    ["keepNext", "a Word.ParagraphFormat name, spelled the Word.js way"],
+    ["keepLines", "a Word.ParagraphFormat name"],
+    ["pageBreakBefore", "no JavaScript equivalent at all"],
+  ])("never requests %s", (property) => {
+    [
+      planAcquisitionLoads(ALL_ON),
+      planAcquisitionLoads(ALL_ON, true),
+      ...(
+        [
+          "supportsStyles",
+          "supportsListLevel",
+          "supportsParagraphFormat",
+          "supportsCharacterFormat",
+        ] as const
+      ).map((family) => planAcquisitionLoads({ ...ALL_ON, [family]: false })),
+    ].forEach((plan) => {
+      expect(plan.paragraphProperties).not.toContain(property);
+      expect(plan.skipped).not.toContain(property);
+    });
+  });
+
+  it("keeps the declared list free of duplicates, which would mask a rename", () => {
+    // A duplicate here is invisible in every other assertion — the plan carries
+    // the name twice and nothing says the second copy means something different.
+    expect(new Set(LOADABLE_PARAGRAPH_PROPERTIES).size).toBe(LOADABLE_PARAGRAPH_PROPERTIES.length);
   });
 });
