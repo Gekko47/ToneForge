@@ -276,6 +276,16 @@ export const DETERMINISTIC_REVIEW_FIXTURES: readonly DeterministicFixture[] = [
     text: "A plain document with nothing out of the ordinary.",
     profile: REVIEW_PROFILE,
     expectedCategories: [],
+    /*
+     * The expectation here is negative, and that is the point of the case. A
+     * scope the host could not examine must not produce a finding, and must not
+     * be silently folded into a clean verdict either — the run is incomplete and
+     * the coverage block says which scope is missing.
+     */
+    absentCategories: {
+      "formatting.tableStyle":
+        "The tables scope was requested but the host could not read it. Silence here is not compliance; the coverage block carries the shortfall instead.",
+    },
   },
   {
     name: "profile revision between scan and apply",

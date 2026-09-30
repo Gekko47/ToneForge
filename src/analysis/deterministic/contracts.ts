@@ -22,10 +22,7 @@ import type { Finding } from "../../core/domain/Finding";
 import type { AnalysisContext, AnalysisIdentity } from "../analysisContext";
 import type { DocumentNode } from "../../core/domain/DocumentSnapshot";
 import type { ResolvedPolicy } from "../../core/domain/ResolvedPolicy";
-import {
-  DeterministicFindingMetadataSchema,
-  type DeterministicFindingMetadata,
-} from "../../core/domain/Finding";
+import type { DeterministicFindingMetadata } from "../../core/domain/Finding";
 import type { Change } from "../../core/domain/Change";
 import type { DeterministicStyleProfile } from "../../core/domain/StyleProfile";
 
@@ -291,8 +288,27 @@ export function asDeterministicFinding(finding: Finding): DeterministicFinding |
  * question.
  */
 export function metadataOf(finding: DeterministicFinding): DeterministicFindingMetadata {
-  return finding.deterministic ?? DeterministicFindingMetadataSchema.parse({ profilePath: "" });
+  return finding.deterministic ?? EMPTY_METADATA;
 }
+
+/**
+ * The metadata a finding carries when its rule attached none.
+ *
+ * A frozen module constant rather than a `parse` on every call. The earlier
+ * version parsed `{ profilePath: "" }` at the call site, and that threw: the
+ * field is `min(1)`, precisely so a rule cannot declare an empty profile path.
+ * The two decisions are both right and together they made the helper throw on
+ * every finding produced by a rule that has not been updated yet — which is all
+ * of them at the point of writing, so every scan failed and the observer
+ * reported a scan error instead of findings.
+ *
+ * The empty default is the honest answer and is stated as one, rather than
+ * papered over by loosening the schema: a finding with no declared path is
+ * exactly what it is, and the §11 audit is the thing that should notice.
+ */
+const EMPTY_METADATA: DeterministicFindingMetadata = Object.freeze({
+  profilePath: "",
+});
 
 /** Whether a finding offers a correction the planner can act on. */
 export function isCorrectable(finding: DeterministicFinding): boolean {

@@ -11,7 +11,10 @@
  * `commands`; `taskpane` must never import `word/revisionAdapter` directly.
  */
 
-import { checkConsistency, type ConsistencyReport } from "../analysis/consistencyChecker";
+import {
+  runDeterministicReview,
+  type DeterministicReviewReport,
+} from "../analysis/deterministic/deterministicReviewEngine";
 import { buildCoverage } from "../analysis/coverage";
 import { acquireAnalysisContext } from "../word/analysisAcquisition";
 import type { AnalysisContext } from "../analysis/analysisContext";
@@ -28,7 +31,6 @@ import { createGovernanceProfile, type GovernanceProfile } from "../core/domain/
 import { resolveResolvedPolicy } from "../core/domain/ResolvedPolicy";
 import type { Change } from "../core/domain/Change";
 import type { ChangePlan } from "../core/domain/ChangePlan";
-import type { LlmSemanticProvider } from "../ai/providers/LlmProvider";
 import type { DocumentSnapshot as StructuredDocumentSnapshot } from "../core/domain/DocumentSnapshot";
 import { prepareTrackedEditing } from "./trackedEditing";
 
@@ -36,10 +38,6 @@ export interface ReformatOptions {
   profile: StyleProfile;
   policy?: GovernanceProfile;
   capabilities?: AnalysisCapabilities;
-  includeRawText?: boolean;
-  signal?: AbortSignal;
-  /** Injected semantic provider; tests use MockAdapter only. */
-  registry?: LlmSemanticProvider;
   /** Optional pre-built formatting snapshot; when absent the orchestrator reads one. */
   formattingSnapshot?: FormattingSnapshot;
   /** Optional max chars for snapshot reads. */
@@ -61,7 +59,18 @@ export interface ReformatOptions {
 
 export interface ReformatResult {
   context: AnalysisContext;
-  report: ConsistencyReport;
+  report: DeterministicReviewReport;
+  /**
+   * The shared coverage report, for the coverage banner, the export path and
+   * the Troubleshooting diagnostics.
+   *
+   * Separate from `report.coverage` on purpose. The deterministic projection's
+   * `complete` means "every requested scope was examined"; this one's means "no
+   * unexpected processing gap". A single field named `complete` answering two
+   * questions is how a coverage banner ends up agreeing with an Apply gate that
+   * disagrees with it.
+   */
+  sharedCoverage: ReturnType<typeof buildCoverage>;
   plan: ChangePlan;
   results: ApplyWithTrackingResult["results"];
   tracking: ApplyWithTrackingResult["tracking"];
@@ -125,15 +134,7 @@ const FALLBACK_CAPABILITIES = {
  * (ADR-0058).
  */
 export async function reformatDocument(options: ReformatOptions): Promise<ReformatResult> {
-  const {
-    profile,
-    includeRawText = false,
-    signal,
-    registry,
-    maxChars,
-    preview = false,
-    currentDocHash,
-  } = options;
+  const { profile, maxChars, preview = false, currentDocHash } = options;
   const readLimit = maxChars ?? DEFAULT_MAX_CHARS;
   const policy: GovernanceProfile = options.policy ?? createGovernanceProfile(profile);
   const resolvedPolicy = resolveResolvedPolicy(profile, policy);
@@ -152,12 +153,9 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
 
   // Step 2: Analyze. Every engine consumes the same identity, text, nodes, and
   // formatting DTO; the acquisition service is the only analysis read.
-  let report = await checkConsistency({
+  const report = await runDeterministicReview({
     context: { ...context, formatting },
     resolvedPolicy,
-    includeRawText,
-    ...(signal ? { signal } : {}),
-    ...(registry ? { registry } : {}),
   });
 
   // Step 3: Plan. The author's rules ride along so a rule can withhold a
@@ -180,13 +178,14 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     profileId: profile.id,
     profileRevision: profile.revision,
   });
-  report = withCoverageCounts(report, { ...context, formatting }, plan.changes.length, 0);
+  const plannedCoverage = withCoverageCounts({ ...context, formatting }, plan.changes.length, 0);
 
   // Step 4: Preview or apply. Preview never enters the mutation adapter.
   if (preview || plan.changes.length === 0) {
     return {
       context,
       report,
+      sharedCoverage: plannedCoverage,
       plan,
       results: [],
       tracking: { managed: false },
@@ -204,6 +203,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     return {
       context,
       report,
+      sharedCoverage: plannedCoverage,
       plan,
       results: [],
       tracking: { managed: false },
@@ -221,6 +221,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     return {
       context,
       report,
+      sharedCoverage: plannedCoverage,
       plan,
       results: plan.changes.map((change) => ({
         changeId: change.id,
@@ -246,6 +247,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     return {
       context,
       report,
+      sharedCoverage: plannedCoverage,
       plan,
       results: [],
       tracking: { managed: false },
@@ -261,6 +263,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     return {
       context,
       report,
+      sharedCoverage: plannedCoverage,
       plan,
       results: plan.changes.map((change) => ({
         changeId: change.id,
@@ -293,8 +296,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     hashDocument(verificationSnapshot.fullText ?? verificationSnapshot.text);
   const allApplied =
     applyResult.results.length > 0 && applyResult.results.every((result) => result.applied);
-  report = withCoverageCounts(
-    report,
+  const appliedCoverage = withCoverageCounts(
     { ...context, formatting },
     plan.changes.length,
     allApplied ? applyResult.results.length : 0,
@@ -303,6 +305,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     return {
       context,
       report,
+      sharedCoverage: appliedCoverage,
       plan,
       results: applyResult.results.map((result) => ({
         changeId: result.changeId,
@@ -327,6 +330,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     return {
       context,
       report,
+      sharedCoverage: appliedCoverage,
       plan,
       results: applyResult.results.map((result) => ({
         ...result,
@@ -345,6 +349,7 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   return {
     context,
     report,
+    sharedCoverage: appliedCoverage,
     plan,
     results: applyResult.results,
     tracking: applyResult.tracking,
@@ -355,22 +360,31 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   };
 }
 
+/**
+ * The shared coverage report, with the plan's own counts folded in.
+ *
+ * Kept off the deterministic report. That report carries a
+ * `DeterministicCoverage` projection whose `complete` means "every requested
+ * scope was examined", and the shared report's `complete` means "no
+ * unexpected processing gap". Attaching one to the other would mean a field
+ * named `complete` answering two different questions depending on which object
+ * a caller picked up — and the Apply gate reads it.
+ *
+ * So the two stay separate objects on the result, each answering its own
+ * question, and the pane is given both.
+ */
 function withCoverageCounts(
-  report: ConsistencyReport,
   context: AnalysisContext,
   plannedChangeCount: number,
   appliedChangeCount: number,
-): ConsistencyReport {
-  return {
-    ...report,
-    coverage: buildCoverage({
-      nodes: context.nodes,
-      text: context.text,
-      acquisition: context.acquisition,
-      plannedChangeCount,
-      appliedChangeCount,
-    }),
-  };
+) {
+  return buildCoverage({
+    nodes: context.nodes,
+    text: context.text,
+    acquisition: context.acquisition,
+    plannedChangeCount,
+    appliedChangeCount,
+  });
 }
 
 export interface ApplyReviewedPlanOptions {

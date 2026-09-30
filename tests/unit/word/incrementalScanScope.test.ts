@@ -12,15 +12,15 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   acquireAnalysisContext: vi.fn(),
-  checkConsistency: vi.fn(),
+  runDeterministicReview: vi.fn(),
 }));
 
 vi.mock("../../../src/word/analysisAcquisition", () => ({
   acquireAnalysisContext: mocks.acquireAnalysisContext,
 }));
 
-vi.mock("../../../src/analysis/consistencyChecker", () => ({
-  checkConsistency: mocks.checkConsistency,
+vi.mock("../../../src/analysis/deterministic/deterministicReviewEngine", () => ({
+  runDeterministicReview: mocks.runDeterministicReview,
 }));
 
 import { createDocumentObserver } from "../../../src/word/documentObserver";
@@ -70,7 +70,7 @@ function change(overrides: Partial<WordParagraphChange> = {}): WordParagraphChan
 
 /** The options the observer passed to the checker on its most recent run. */
 function lastCheck() {
-  const call = mocks.checkConsistency.mock.calls.at(-1);
+  const call = mocks.runDeterministicReview.mock.calls.at(-1);
   if (call === undefined) throw new Error("no scan ran");
   return call[0] as {
     context: { nodes: ReadonlyArray<{ nodeId: string }> };
@@ -97,7 +97,7 @@ async function scan(payload: WordParagraphChange | undefined): Promise<void> {
   observer.startObserver();
   // The start scan is the baseline; the change under test is the second one.
   await flush();
-  mocks.checkConsistency.mockClear();
+  mocks.runDeterministicReview.mockClear();
   observer.onDocumentChanged(payload);
   await flush();
   observer.stopObserver();
@@ -114,7 +114,7 @@ describe("incremental scan scope", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.acquireAnalysisContext.mockImplementation(async () => context());
-    mocks.checkConsistency.mockImplementation(async () => ({
+    mocks.runDeterministicReview.mockImplementation(async () => ({
       findings: [],
       coverage: {
         complete: true,
@@ -201,7 +201,7 @@ describe("incremental scan scope", () => {
     });
     observer.startObserver();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    mocks.checkConsistency.mockClear();
+    mocks.runDeterministicReview.mockClear();
 
     observer.onDocumentChanged(change({ uniqueLocalIds: ["n1"] }));
     observer.onDocumentChanged(change({ uniqueLocalIds: ["n3"] }));
@@ -225,7 +225,7 @@ describe("incremental scan scope", () => {
     });
     observer.startObserver();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    mocks.checkConsistency.mockClear();
+    mocks.runDeterministicReview.mockClear();
 
     observer.onDocumentChanged(change({ uniqueLocalIds: ["n1"] }));
     observer.onDocumentChanged(change({ requiresFullRescan: true }));

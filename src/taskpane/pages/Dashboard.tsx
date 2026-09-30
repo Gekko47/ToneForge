@@ -27,6 +27,7 @@ import StaleBanner from "../components/StaleBanner";
 import PendingChanges from "../components/PendingChanges";
 import IgnoredFindings from "../components/IgnoredFindings";
 import { toFindings, type ConsistencyReport } from "../../analysis/consistency";
+import type { buildCoverage } from "../../analysis/coverage";
 import { findingFingerprint } from "../findingFingerprint";
 import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
 import { decidePreview, isFullScan } from "../autoPreview";
@@ -125,11 +126,17 @@ export function resolveGovernanceProfile(
 
 type PendingPlan = {
   plan: ChangePlan;
-  coverage: {
-    complete: boolean;
-    unsupported?: readonly string[];
-    unprocessed?: readonly string[];
-  } | null;
+  /**
+   * The shared coverage report, for the readiness banner.
+   *
+   * Read from `sharedCoverage` rather than the deterministic report's own
+   * `coverage`: this banner is about whether the *plan* can be applied, and the
+   * plan gate reads the shared report's `complete` — "no unexpected processing
+   * gap" — not the deterministic projection's "every requested scope was
+   * examined". Two different questions, and a banner that quoted the wrong one
+   * would disagree with the button it explains.
+   */
+  coverage: ReturnType<typeof buildCoverage> | null;
 };
 
 /**
@@ -145,7 +152,7 @@ export function resolvePendingPlan(reformatResult: ReformatResult | null): Pendi
   if (!reformatResult?.plan) return null;
   return {
     plan: reformatResult.plan,
-    coverage: reformatResult.report.coverage ?? null,
+    coverage: reformatResult.sharedCoverage,
   };
 }
 
@@ -588,9 +595,8 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           profile: activeProfile,
           preview: true,
           // Deterministic only. The scan that produced these findings was
-          // deterministic too, so letting the model add its own would make the
-          // preview describe a document state the findings never saw.
-          includeRawText: false,
+          // deterministic too, and this path has no provider parameter at all
+          // — spec §3.2 moved semantic review out of the reformat pipeline.
           policy: resolveGovernanceProfile(persisted, activeProfile),
           /*
            * The probed capabilities, not a fallback.
@@ -1474,7 +1480,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
              */
             findings={reformatResult?.report.findings ?? findings}
             coverage={pendingPlan?.coverage ?? null}
-            exportCoverage={reformatResult?.report.coverage ?? null}
+            exportCoverage={reformatResult?.sharedCoverage ?? null}
             applyDisabledReason={readiness.reason}
             onOpenSettings={() => setPage("settings")}
             onApply={() => applyPendingPlan(pendingPlan)}

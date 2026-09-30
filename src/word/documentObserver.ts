@@ -10,11 +10,13 @@
 import { debounce } from "../shared/utils/debounce";
 import { describeError, logger } from "../shared/utils/logger";
 import { createRunId } from "../analysis/incrementalCoordinator";
-import { checkConsistency } from "../analysis/consistencyChecker";
+import { runDeterministicReview } from "../analysis/deterministic/deterministicReviewEngine";
+import { buildCoverage } from "../analysis/coverage";
 import { acquireAnalysisContext } from "./analysisAcquisition";
 import type { AnalysisCapabilities } from "../analysis/analysisContext";
 import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
 import { type CoverageReport } from "../core/domain/DocumentSnapshot";
+import type { DeterministicCoverage } from "../analysis/deterministic/contracts";
 import { type StyleProfile } from "../core/domain/StyleProfile";
 import { type Finding } from "../core/domain/Finding";
 import type { WordParagraphChange } from "./wordParagraphEvents";
@@ -48,7 +50,19 @@ export interface DocumentObserverStatus {
    */
   hostUnavailable: boolean;
   findings: Finding[];
+  /**
+   * The shared coverage report, for the diagnostics the coverage banner and
+   * the Troubleshooting panel read.
+   *
+   * Kept alongside `deterministicCoverage` rather than replaced by it: the
+   * shared report carries the per-node-type counts and the acquisition
+   * diagnostics, and the deterministic projection carries the requested-versus-
+   * -examined distinction spec §9 needs. Collapsing them would lose one or the
+   * other, and the two are read by different surfaces for different questions.
+   */
   coverage: CoverageReport | null;
+  /** The deterministic review's own account of what it did and did not check. */
+  deterministicCoverage: DeterministicCoverage | null;
   currentRunId: string | null;
   lastAcceptedRunId: string | null;
   documentVersion: string;
@@ -81,6 +95,7 @@ interface ObserverState {
   dirtyCount: number;
   stale: boolean;
   coverage: CoverageReport | null;
+  deterministicCoverage: DeterministicCoverage | null;
   error: string | null;
   hostUnavailable: boolean;
   debouncedScan: (() => void) | null;
@@ -177,6 +192,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     stale: false,
     hostUnavailable: false,
     coverage: null,
+    deterministicCoverage: null,
     error: null,
     debouncedScan: null,
     scope: null,
@@ -236,27 +252,42 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       const narrowed =
         scope !== null && examinedNodes.length > 0 && examinedNodes.length < full.nodes.length;
       const examinedNodeIds = (narrowed ? examinedNodes : full.nodes).map((node) => node.nodeId);
-      const skippedCount = full.nodes.length - examinedNodeIds.length;
       const context = narrowed ? { ...full, nodes: examinedNodes } : full;
-      const report = await checkConsistency({
+      /*
+       * One sentence about the shortfall, shared by both reports.
+       *
+       * The deterministic report and the shared coverage report are two
+       * projections of the same run, so they must not state the shortfall in
+       * two slightly different words — that is how a banner and a verdict end
+       * up describing the same narrow scan as different amounts of work.
+       */
+      const incrementalReason = narrowed
+        ? `Word reported ${full.nodes.length - examinedNodeIds.length} changed paragraph(s); ` +
+          `this run examined ${examinedNodeIds.length} of ${full.nodes.length} acquired nodes. ` +
+          "Findings for the rest are not shown until a full scan."
+        : undefined;
+      const report = await runDeterministicReview({
         context,
-        includeRawText: false,
+        ...(narrowed ? { examinedNodeIds, incremental: true } : {}),
+        ...(incrementalReason === undefined ? {} : { incrementalReason }),
+      });
+      if (isObsolete()) return;
+
+      const coverage = buildCoverage({
+        nodes: context.nodes,
+        text: context.text,
+        acquisition: context.acquisition,
         ...(narrowed
           ? {
               examinedNodeIds,
               incremental: true,
-              incrementalReason:
-                `Word reported ${skippedCount} changed paragraph(s); this run examined ` +
-                `${examinedNodeIds.length} of ${full.nodes.length} acquired nodes. Findings for ` +
-                "the rest are not shown until a full scan.",
+              ...(incrementalReason === undefined ? {} : { incrementalReason }),
             }
           : {}),
       });
-      if (isObsolete()) return;
-
-      const coverage = report.coverage ?? null;
       state.findings = report.findings;
       state.coverage = coverage;
+      state.deterministicCoverage = report.coverage;
       state.lastScan = new Date().toISOString();
       state.lastAcceptedRunId = runId;
       state.dirtyCount = examinedNodeIds.length;
@@ -321,6 +352,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
               : state.stale,
         findings: state.findings,
         coverage: state.coverage,
+        deterministicCoverage: state.deterministicCoverage,
         currentRunId: state.runId,
         lastAcceptedRunId: state.lastAcceptedRunId,
         documentVersion: state.documentVersion,

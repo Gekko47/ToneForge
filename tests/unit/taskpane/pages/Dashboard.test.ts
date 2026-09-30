@@ -34,9 +34,18 @@ function makePlan(id: string): ChangePlan {
 describe("resolvePendingPlan", () => {
   it("keeps the plan paired with the coverage from its own run", () => {
     const reformatPlan = makePlan("reformat");
+    /*
+     * `sharedCoverage`, not `report.coverage`.
+     *
+     * The two are different questions. The deterministic report's coverage
+     * projection answers "was every requested scope examined"; the shared report
+     * answers "was there an unexpected processing gap", and it is the second the
+     * Apply gate reads. A test that seeded the first and asserted on the result
+     * would pass while the banner quoted a field nothing had populated.
+     */
     const pending = resolvePendingPlan({
       plan: reformatPlan,
-      report: { coverage: { complete: true, unprocessed: [] } },
+      sharedCoverage: { complete: true, unprocessed: [] },
     } as never);
 
     expect(pending?.plan).toBe(reformatPlan);

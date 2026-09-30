@@ -7,8 +7,6 @@ import * as planner from "../../src/changes/planner";
 import * as revisionAdapter from "../../src/word/revisionAdapter";
 import { setStage01Passed } from "../../src/word/revisionAdapter";
 import type { WordCapabilities } from "../../src/word/capabilityProbe";
-import { withSemanticHelpers } from "../../src/ai/providers/LlmProvider";
-import { MockAdapter } from "../../src/ai/providers/mockAdapter";
 import { v4 as uuidv4 } from "uuid";
 import { StyleProfileSchema } from "../../src/core/domain/StyleProfile";
 import { SAMPLE_PROFILE } from "../fixtures/sampleDocs";
@@ -158,12 +156,14 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
     });
 
     expect(result.report.profileId).toBe(PROFILE.id);
-    expect(result.report.docHash).toMatch(/^[0-9a-f]{8}$/);
-    expect(result.plan.docHash).toBe(result.report.docHash);
+    // The deterministic report names the document by its identity rather than
+    // by a bare hash, so the plan and the report are compared through the field
+    // each one actually has.
+    expect(result.report.documentIdentity.contentHash).toMatch(/^[0-9a-f]{8}$/);
+    expect(result.plan.docHash).toBe(result.report.documentIdentity.contentHash);
     expect(result.plan.baseDocId).toBe("doc-1");
     expect(result.plan.stale).toBe(false);
     expect(result.results.length).toBeGreaterThan(0);
@@ -186,7 +186,6 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
       formattingSnapshot: makeFormattingSnapshot("Hello world"),
     });
 
@@ -206,7 +205,6 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
     });
 
     expect(result.report.summary.total).toBe(0);
@@ -225,7 +223,6 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
       preview: true,
       currentDocHash: "preview-stale-hash",
     });
@@ -245,7 +242,6 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
       currentDocHash: "stale-hash",
     });
 
@@ -263,7 +259,6 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
     });
 
     expect(result.results.length).toBeGreaterThan(0);
@@ -274,65 +269,24 @@ describe("reformatDocument integration", () => {
     expect(applySpy).not.toHaveBeenCalled();
   });
 
-  it("propagates caller abort", async () => {
-    installOffice("hello world");
-    const controller = new AbortController();
-    controller.abort();
-
-    await expect(
-      reformatDocument({
-        profile: PROFILE,
-        includeRawText: true,
-        signal: controller.signal,
-        registry: withSemanticHelpers(new MockAdapter({ defaultResponse: "[]" })),
-      }),
-    ).rejects.toThrow();
-  });
-
-  it("runs semantic analysis when includeRawText is true", async () => {
-    installOffice("hello world");
-    setStage01Passed(true, FULL_CAPABILITIES);
-    const registry = withSemanticHelpers(
-      new MockAdapter({
-        defaultResponse: JSON.stringify([
-          {
-            deviation: "Too casual",
-            severity: "medium",
-            suggestion: "Use formal tone",
-            anchor: "hello world",
-          },
-        ]),
-      }),
-    );
-    const completeSpy = vi.spyOn(registry, "complete");
-
-    const result = await reformatDocument({
-      profile: PROFILE,
-      includeRawText: true,
-      registry,
-    });
-
-    expect(result.report.summary.byKind.semantic).toBe(1);
-    expect(completeSpy).toHaveBeenCalledTimes(1);
-    expect(result.applied).toBe(true);
-  });
-
-  it("skips semantic analysis when raw-text opt-in is false", async () => {
-    installOffice("hello world");
-    setStage01Passed(true, FULL_CAPABILITIES);
-    const registry = withSemanticHelpers(new MockAdapter({ defaultResponse: "[]" }));
-    const completeSpy = vi.spyOn(registry, "complete");
-
-    const result = await reformatDocument({
-      profile: PROFILE,
-      includeRawText: false,
-      registry,
-    });
-
-    expect(result.report.summary.byKind.semantic).toBe(0);
-    expect(completeSpy).not.toHaveBeenCalled();
-    expect(result.applied).toBe(true);
-  });
+  /*
+   * Spec §3.2 removed semantic analysis from this path, and with it the three
+   * tests that asserted it: the abort propagation, the "runs semantic when
+   * includeRawText is true" case, and the "skips semantic when false" case.
+   *
+   * They are deleted rather than repointed at the new engine. Each asserted
+   * behaviour that no longer exists — including the `signal` and `registry`
+   * parameters, which the new options type does not have — and a test rewritten
+   * to assert something else under the same name would be a test whose name
+   * promised one thing and whose body checked another.
+   *
+   * What replaces the zero-LLM guarantee is not an absence of coverage: the
+   * ESLint scope over `src/analysis/deterministic/**` makes an `ai` import a
+   * build failure, and `tests/unit/analysis/deterministic/` asserts the report
+   * type cannot carry a semantic finding. The second of those is stronger than
+   * a spy on `registry.complete` ever was — a spy proves a given mock was not
+   * called; a type cannot prove it was called.
+   */
 
   it("uses a provided formatting snapshot without reading a second snapshot", async () => {
     installOffice("hello world");
@@ -341,11 +295,12 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
       formattingSnapshot: makeFormattingSnapshot("hello world"),
     });
 
-    expect(result.report.summary.byKind.formatting).toBe(0);
+    // No formatting findings, because the supplied snapshot has no paragraphs
+    // to compare. The summary buckets are the three the Review UI groups by.
+    expect(result.report.summary.byCategoryGroup.formatting).toBe(0);
     expect(result.applied).toBe(true);
     expect(formattingSpy).not.toHaveBeenCalled();
   });
@@ -356,7 +311,6 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
     });
 
     expect(result.results.length).toBeGreaterThan(0);
@@ -375,7 +329,6 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
     });
 
     expect(result.plan.changes.length).toBeGreaterThan(0);
@@ -395,7 +348,6 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
       allowConflictingApply: false,
     });
 
@@ -416,7 +368,6 @@ describe("reformatDocument integration", () => {
 
     const result = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
       allowConflictingApply: true,
     });
 
@@ -593,7 +544,6 @@ describe("reformatDocument integration", () => {
     setStage01Passed(true, FULL_CAPABILITIES);
     const preview = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
       preview: true,
     });
     const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
@@ -623,7 +573,6 @@ describe("reformatDocument integration", () => {
     setStage01Passed(true, FULL_CAPABILITIES);
     const preview = await reformatDocument({
       profile: PROFILE,
-      includeRawText: false,
       preview: true,
     });
     const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");

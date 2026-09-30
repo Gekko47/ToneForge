@@ -11,11 +11,17 @@ export {
 export { unifyFindings, type UnifyOptions } from "./unifiedFindings";
 export { detectSemanticDeviations, type DeviationOptions } from "./deviationEngine";
 export {
-  checkConsistency,
-  type CheckConsistencyOptions,
-  type ConsistencyReport,
-  type ConsistencySummary,
-  ConsistencyReportSchema,
-  ConsistencySummarySchema,
-} from "./consistencyChecker";
+  runDeterministicReview,
+  groupFindings,
+  summarize,
+  type DeterministicReviewReport,
+} from "./deterministic/deterministicReviewEngine";
+export type {
+  DeterministicFinding,
+  DeterministicFindingGroup,
+  DeterministicReviewOptions,
+  DeterministicReviewSummary,
+  DeterministicCoverage,
+  ScopeKind,
+} from "./deterministic/contracts";
 export { buildCoverage, type CoverageOptions } from "./coverage";
