@@ -373,6 +373,82 @@ describe("findFormattingIssues", () => {
       ]);
       expect(categories(findings)).not.toContain("formatting.listLevel");
     });
+
+    it("groups a list style deviation by the style the profile wants", () => {
+      // Spec §13: a group is one correction, so every list paragraph wanting
+      // "List Paragraph" is one decision. Grouping on the category alone would
+      // merge them with paragraphs wanting a different list style.
+      const findings = run(
+        [
+          { ...paragraph(0, "One"), styleName: "List Bullet" },
+          { ...paragraph(1, "Two"), styleName: "List Number" },
+        ],
+        {
+          profile: profile({
+            bodyStyle: { styleName: "Normal" },
+            lists: { styleName: "List Paragraph", supported: true },
+          }),
+        },
+      );
+      const styles = findings.filter((f) => f.category === "formatting.listStyle");
+      expect(styles).toHaveLength(2);
+      expect(new Set(styles.map((f) => f.deterministic?.occurrenceGroupKey)).size).toBe(1);
+    });
+
+    it("offers a safe batch for a list style deviation, which applyStyle makes safe", () => {
+      // `applyStyle` of one named Word style to N list paragraphs is the same
+      // edit N times, exactly as it is for a body paragraph.
+      const findings = run([{ ...paragraph(0, "One"), styleName: "List Bullet" }], {
+        profile: profile({
+          bodyStyle: { styleName: "Normal" },
+          lists: { styleName: "List Paragraph", supported: true },
+        }),
+      });
+      const style = findings.find((f) => f.category === "formatting.listStyle");
+      expect(style?.deterministic?.safeBatchKey).toBe("style:formatting.lists|List Paragraph");
+    });
+
+    it("groups a level deviation by the level the profile wants", () => {
+      const findings = run(
+        [
+          { ...paragraph(0, "One"), styleName: "List Bullet", listLevel: 2 },
+          { ...paragraph(1, "Two"), styleName: "List Bullet", listLevel: 3 },
+        ],
+        {
+          profile: profile({
+            bodyStyle: { styleName: "Normal" },
+            lists: { level: 0, supported: true },
+          }),
+        },
+      );
+      const levels = findings.filter((f) => f.category === "formatting.listLevel");
+      expect(levels).toHaveLength(2);
+      expect(
+        levels.every((f) => f.deterministic?.occurrenceGroupKey === "formatting.lists.level|0"),
+      ).toBe(true);
+    });
+
+    it("never offers a safe batch for a level deviation, which rewrites list structure", () => {
+      // `setListLevel` on a paragraph the host calls a list item is the
+      // structurally ambiguous change spec §13 says never goes in bulk, so the
+      // group is visible but batch approval is refused.
+      const findings = run([{ ...paragraph(0, "One"), styleName: "List Bullet", listLevel: 2 }], {
+        profile: profile({
+          bodyStyle: { styleName: "Normal" },
+          lists: { level: 0, supported: true },
+        }),
+      });
+      const level = findings.find((f) => f.category === "formatting.listLevel");
+      expect(level?.deterministic?.occurrenceGroupKey).toBeDefined();
+      expect(level?.deterministic?.safeBatchKey).toBeUndefined();
+    });
+
+    it("never offers a safe batch for a level on a non-list style", () => {
+      const findings = run([{ ...paragraph(0, "Deep item"), listLevel: 3 }]);
+      const level = findings.find((f) => f.category === "formatting.listLevel");
+      expect(level?.deterministic?.occurrenceGroupKey).toBe("structure.listLevelIntegrity|0");
+      expect(level?.deterministic?.safeBatchKey).toBeUndefined();
+    });
   });
 
   describe("document integrity", () => {

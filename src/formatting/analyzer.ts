@@ -579,6 +579,12 @@ function checkListFormatting(
             expected: lists.styleName,
             expectedValue: lists.styleName,
             actualValue: styleName,
+            // Grouped by the style the profile wants, and batch-safe for the
+            // same reason a body style is: `applyStyle` of one named Word style
+            // to N list paragraphs is the same edit N times, and applying a
+            // style cannot destroy author emphasis.
+            occurrenceGroupKey: `formatting.lists.styleName|${lists.styleName}`,
+            safeBatchKey: `style:formatting.lists|${lists.styleName}`,
           }),
         );
       }
@@ -600,6 +606,12 @@ function checkListFormatting(
           expected: "List level 0",
           expectedValue: 0,
           actualValue: level,
+          // Grouped so the occurrences are visible as one problem, and never
+          // batch-safe: `setListLevel` on a paragraph the host calls a list item
+          // rewrites list structure, which is the structurally ambiguous change
+          // spec §13 says never to offer in bulk. The user repairs these one at a
+          // time, having looked at where the indent came from.
+          occurrenceGroupKey: "structure.listLevelIntegrity|0",
         }),
       );
       return findings;
@@ -623,6 +635,12 @@ function checkListFormatting(
           expected: `List level ${lists.level}`,
           expectedValue: lists.level,
           actualValue: level,
+          // Grouped by the level the profile wants — two list paragraphs at
+          // level 2 under a level-1 standard are one problem, not two — and
+          // never batch-safe, for the same reason as the integrity case above:
+          // `setListLevel` rewrites list structure, which §13 says never goes in
+          // bulk.
+          occurrenceGroupKey: `formatting.lists.level|${lists.level}`,
         }),
       );
     }
