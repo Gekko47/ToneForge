@@ -25,9 +25,17 @@
 
 import { logger } from "../shared/utils/logger";
 
-/** The control ids this module owns. They must match the manifest exactly. */
+/**
+ * The control ids this module owns. They must match the manifest exactly.
+ *
+ * The group is `ToneForgeProfileGroup` rather than `ToneForgeProfile` because a
+ * ribbon surface requires every UI element id to be unique, and the group
+ * contains a control with the shorter name. Sharing it made Word refuse the
+ * whole manifest, which presented as "This add-in is no longer available" with
+ * no ribbon at all. See ADR-0082.
+ */
 export const SEMANTIC_RIBBON_TAB = "ToneForge";
-export const SEMANTIC_RIBBON_GROUP = "ToneForgeProfile";
+export const SEMANTIC_RIBBON_GROUP = "ToneForgeProfileGroup";
 export const SEMANTIC_RIBBON_CONTROL = "ToneForgeSemanticControl";
 
 /**

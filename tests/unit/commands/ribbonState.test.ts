@@ -3,6 +3,7 @@ import {
   semanticButtonEnabled,
   syncSemanticRibbon,
   SEMANTIC_RIBBON_CONTROL,
+  SEMANTIC_RIBBON_GROUP,
 } from "../../../src/commands/ribbonState";
 
 function setOffice(value: unknown): void {
@@ -38,7 +39,10 @@ describe("syncSemanticRibbon", () => {
         {
           id: "ToneForge",
           groups: [
-            { id: "ToneForgeProfile", controls: [{ id: SEMANTIC_RIBBON_CONTROL, enabled: true }] },
+            {
+              id: SEMANTIC_RIBBON_GROUP,
+              controls: [{ id: SEMANTIC_RIBBON_CONTROL, enabled: true }],
+            },
           ],
         },
       ],

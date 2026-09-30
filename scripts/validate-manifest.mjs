@@ -333,6 +333,55 @@ function validateResourceIdLength(xml, errors) {
 }
 
 /**
+ * Reject a UI element id used twice on the same ribbon surface.
+ *
+ * Word requires every UI element id — tab, group, and control alike — to be
+ * unique across a ribbon surface, and a repeat makes it reject the *entire*
+ * manifest. The log line is specific ("Duplicate UI element id specified ... id:
+ * ToneForgeProfile") while the user sees only "This add-in is no longer
+ * available", so the symptom reads as a broken sideload procedure when it is a
+ * manifest defect.
+ *
+ * The cause here was a group and a control inside it sharing a name, introduced
+ * by renaming the group to match its label. Every other group in the manifest
+ * ends in `Group`; that one did not, and nothing in this repository noticed,
+ * because the parity check compares the two manifests against each other and
+ * both were edited together. That is the same class of defect as ADR-0080's:
+ * a host rule the repository has no check for.
+ *
+ * Ribbon ids only. Resource ids (`Icon.32x32`, `Taskpane.Url`) are a separate
+ * namespace with their own rule — the 32-character cap, enforced by
+ * `validateResourceIdLength` — and reusing a name across the two is legal.
+ */
+function validateUniqueUiElementIds(xml, errors) {
+  // Ribbon ids only, so the scan is bounded to the tab that carries the ribbon.
+  const tabStart = xml.indexOf('<OfficeTab id="ToneForge">');
+  const tabEnd = tabStart === -1 ? -1 : xml.indexOf("</OfficeTab>", tabStart);
+  if (tabEnd === -1) return;
+  const tab = xml.slice(tabStart, tabEnd);
+
+  const seen = new Map();
+  const reported = new Set();
+  const elements = /<(Tab|Group|Control)\b[^>]*\bid="([^"]*)"/g;
+  for (const match of tab.matchAll(elements)) {
+    const kind = match[1];
+    const id = match[2];
+    if (kind === undefined || id === undefined) continue;
+    const previous = seen.get(id);
+    if (previous === undefined) {
+      seen.set(id, kind);
+      continue;
+    }
+    // A pair is one defect however many times it recurs.
+    if (reported.has(id)) continue;
+    reported.add(id);
+    errors.push(
+      `manifest.xml UI element id "${id}" is used by both a <${previous}> and a <${kind}> on the ToneForge ribbon; Word requires these ids to be unique and rejects the entire manifest, which presents as "This add-in is no longer available"`,
+    );
+  }
+}
+
+/**
  * Reject a `Control` that omits its required `xsi:type`.
  *
  * Microsoft documents `xsi:type` as required on `Control` — Button, Menu, or
@@ -430,6 +479,7 @@ export async function validateManifests({
     // two paths is a check the test suite cannot exercise.
     validateResourceIdLength(xml, errors);
     validateControlType(xml, errors);
+    validateUniqueUiElementIds(xml, errors);
     validateCommandParity(manifest, xml, definitions, errors);
   }
 

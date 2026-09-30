@@ -110,7 +110,7 @@
                   ]
                 },
                 {
-                  "id": "ToneForgeProfile",
+                  "id": "ToneForgeProfileGroup",
                   "label": "Profile",
                   "controls": [
                     {

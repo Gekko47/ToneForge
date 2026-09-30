@@ -174,8 +174,19 @@
                 `SEMANTIC_RIBBON_CONTROL` in src/commands/ribbonState.ts exactly, or
                 the enable request targets a control the host does not have and the
                 button stays greyed out with nothing to explain why.
+
+                The group id is `ToneForgeProfileGroup`, not `ToneForgeProfile`.
+                Word requires every UI element id on a ribbon surface to be unique
+                across the whole surface, and this group contains a control called
+                `ToneForgeProfile`. Sharing the name made Word reject the entire
+                manifest with "Duplicate UI element id specified" and show only
+                "This add-in is no longer available" — the whole ribbon disappeared
+                over a two-word collision, and `npm run validate` was green
+                throughout because the parity check only compares the two manifests
+                against each other. Every other group here ends in `Group`; this
+                one now does too.
               -->
-              <Group id="ToneForgeProfile">
+              <Group id="ToneForgeProfileGroup">
                 <Label resid="ToneForge.ProfileGroupLabel" />
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16" />

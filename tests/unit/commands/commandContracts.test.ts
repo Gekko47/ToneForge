@@ -139,6 +139,53 @@ describe("command and manifest contracts", () => {
     );
   });
 
+  it("rejects a UI element id used twice, which voids the whole manifest", async () => {
+    /*
+     * Word requires every tab, group, and control id on a ribbon surface to be
+     * unique, and a repeat makes it refuse the entire manifest. The Profile
+     * group and the Profile control inside it both carried `ToneForgeProfile`,
+     * introduced when the group was renamed to match its label; every other
+     * group in the file ends in `Group` and that one did not.
+     *
+     * Word's own log named it precisely — "Duplicate UI element id specified ...
+     * id:ToneForgeProfile" — while Word itself showed only "This add-in is no
+     * longer available". Nothing in this repository caught it: the parity check
+     * compares the two manifests against each other, and both were edited
+     * together, so they agreed on a manifest the host would not load.
+     */
+    const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as unknown;
+    const broken = readFileSync(repositoryPath("manifest.xml"), "utf8").replace(
+      '<Group id="ToneForgeProfileGroup">',
+      '<Group id="ToneForgeProfile">',
+    );
+    expect(broken).not.toBe(readFileSync(repositoryPath("manifest.xml"), "utf8"));
+
+    const errors = await validateManifests({ manifest, xml: broken, runOfficialValidator: false });
+    expect(errors).toContain(
+      'manifest.xml UI element id "ToneForgeProfile" is used by both a <Group> and a <Control> on the ToneForge ribbon; Word requires these ids to be unique and rejects the entire manifest, which presents as "This add-in is no longer available"',
+    );
+  });
+
+  it("keeps every real ribbon UI element id unique", async () => {
+    // The assertion that would have failed before the rename. It reads the
+    // manifest rather than trusting the validator, so a future edit that
+    // reuses a group or control id is caught with the pair named.
+    const xml = readFileSync(repositoryPath("manifest.xml"), "utf8");
+    const tabStart = xml.indexOf('<OfficeTab id="ToneForge">');
+    const tab = xml.slice(tabStart, xml.indexOf("</OfficeTab>", tabStart));
+    const owners = new Map<string, string>();
+    const collisions: string[] = [];
+    for (const match of tab.matchAll(/<(Tab|Group|Control)\b[^>]*\bid="([^"]*)"/g)) {
+      const kind = match[1] ?? "";
+      const id = match[2] ?? "";
+      const previous = owners.get(id);
+      if (previous !== undefined) collisions.push(`${id} (<${previous}> and <${kind}>)`);
+      else owners.set(id, kind);
+    }
+    expect(owners.size).toBeGreaterThan(0);
+    expect(collisions).toEqual([]);
+  });
+
   it("keeps every real resource id within the host limit", async () => {
     // The assertion that would have failed before the rename. It reads the
     // manifest rather than trusting the validator, so a future edit that

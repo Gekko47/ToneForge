@@ -2115,3 +2115,73 @@ listItem, alignment, lineSpacing, spaceAfter, spaceBefore, font` as
     rule to be exceeded will still reach the log before it reaches this
     repository; the log is the feedback channel, and adding a check is the
     response.
+
+## ADR-0082: A ribbon UI element id is unique across the surface, and the check is in the repository
+
+- Amends: ADR-0080 (the sideloadable manifest is checked against the host's
+  rules, not only for internal consistency)
+- Status: Accepted (2026-09-30)
+- **Context**: Development sideloading stopped working again, with the same
+  dialog as ADR-0080 — "This add-in is no longer available" — and `npm run
+validate` green throughout. The procedure was correct and had been run. This
+  time the Office runtime log named the cause directly:
+
+  ```text
+  Unexpected  Duplicate UI element id specified
+              SolutionId:96df86d6-...  Control Type:Button  id:ToneForgeProfile
+  ```
+
+  Word requires every tab, group, and control id on a ribbon surface to be
+  unique, and a repeat makes it reject the _entire_ manifest. `manifest.xml`
+  declared `<Group id="ToneForgeProfile">` and, inside it,
+  `<Control xsi:type="Button" id="ToneForgeProfile">`. Every other group in the
+  file ends in `Group` — `ToneForgeGroup`, `ToneForgeGovernanceGroup`,
+  `ToneForgeAIReviewGroup`, `ToneForgeChangesGroup` — and this one did not, so the
+  group had been renamed at some point to match its label and taken a name a
+  control already held.
+
+  ADR-0080's two checks could not see it, and neither can the parity check from
+  ADR-0073: both manifests were edited together, so they agreed on a manifest
+  the host would not load. The unified JSON manifest is schema-validated and the
+  XML fallback is not, exactly as ADR-0080 recorded — and the published schema
+  does not express ribbon-wide id uniqueness either, since that is a host rule
+  rather than a structural one.
+
+- **Decision**:
+  - The group is renamed `ToneForgeProfileGroup` in both manifests, and
+    `SEMANTIC_RIBBON_GROUP` in `src/commands/ribbonState.ts` moves with it. The
+    group and the control keep their distinct identities; the collision was
+    never a reason to rename the control, which is the id the semantic ribbon
+    update addresses and which appears in `ribbonState.ts`, the tests, and the
+    host.
+  - `scripts/validate-manifest.mjs` gains `validateUniqueUiElementIds`, which
+    rejects any `Tab`, `Group`, or `Control` id used more than once inside the
+    `ToneForge` ribbon, naming the pair of element kinds. It runs in
+    `validateManifests` alongside ADR-0080's checks, for the same reason: a
+    check that only runs on one of the two entry points is a check the suite
+    cannot exercise.
+  - The scan is bounded to the ribbon tab and covers ribbon ids only. Resource
+    ids (`Icon.32x32`, `Taskpane.Url`) are a different namespace with a
+    different rule — the 32-character cap, already enforced by
+    `validateResourceIdLength` — and a name shared between the two namespaces is
+    legal.
+  - A second test reads the real `manifest.xml` and asserts every ribbon id is
+    unique, so the assertion does not depend on the validator being correct.
+- **Consequences**:
+  - ADR-0080's closing note predicted this: the next host rule to be exceeded
+    would reach the log before it reached this repository, and adding a check is
+    the response. That is now twice true, and the pattern is the procedure worth
+    keeping — read `%LOCALAPPDATA%\Temp\OfficeAddins.log.txt` before clearing a
+    cache or re-running a sideload, because it converts a guess into a line.
+  - A manifest defect is total. Every ribbon control vanished over one repeated
+    id, which is why a symptom reported as "the add-in does not load" is a
+    manifest fault until the log says otherwise.
+  - The duplicate ADR-0080 (this entry is 0082; two entries carry 0080) is
+    still outstanding and is tracked for the documentation pass. It did not
+    affect this defect, but a decision log with two different decisions under one
+    number is the same class of problem as two UI elements under one id: the
+    reference no longer identifies one thing.
+  - The check encodes one specific host rule, not a general schema. Group and
+    control ids are in separate namespaces per Microsoft for _some_ surfaces, so
+    this is deliberately scoped to the `ToneForge` tab rather than applied
+    across every manifest the tool might read.
