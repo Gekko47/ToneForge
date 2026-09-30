@@ -106,13 +106,29 @@ function resolveLanguage(
    * `wholeWord`, `severity` and `scope`, and a literal would have to restate
    * those defaults to satisfy the type — which is exactly the place a default
    * can drift from the schema without a test noticing.
+   *
+   * Built from the *entries*, not from the keys. `unique(Object.keys(...))`
+   * trimmed each key and then looked the replacement up with the trimmed key,
+   * so a governance author who wrote `" color "` produced a rule whose
+   * `replacement` was `undefined` — and an absent replacement is how a
+   * terminology rule says "banned term", so the rule would have deleted the
+   * word instead of rewriting it. Trimming each side and skipping an entry
+   * whose trimmed source or replacement is empty keeps a whitespace-padded
+   * record behaving like the clean one it was meant to be.
    */
   const governed = TerminologyRuleSchema.array().parse(
-    unique(Object.keys(terminology.preferredTerms)).map((source) => ({
-      id: `governance:${source}`,
-      source,
-      replacement: terminology.preferredTerms[source],
-    })),
+    Object.entries(terminology.preferredTerms).flatMap(([source, replacement]) => {
+      const trimmedSource = source.trim();
+      const trimmedReplacement = replacement.trim();
+      if (trimmedSource.length === 0 || trimmedReplacement.length === 0) return [];
+      return [
+        {
+          id: `governance:${trimmedSource}`,
+          source: trimmedSource,
+          replacement: trimmedReplacement,
+        },
+      ];
+    }),
   );
   const governedSources = new Set(governed.map((rule) => rule.source));
   return LanguageConventionProfileSchema.parse({
