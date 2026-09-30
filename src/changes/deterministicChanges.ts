@@ -176,7 +176,15 @@ function makeChange(params: {
   });
 }
 
-function textPrecondition(finding: Finding, expected: string): ChangePrecondition {
+/**
+ * The exact text a text change expects to find.
+ *
+ * Named `_finding` because the precondition is the text alone: a text
+ * precondition is compared against a range, and a range is not identified by
+ * the finding that proposed it. Paragraph-scoped changes use
+ * `formattingPrecondition` below, which does carry node identity.
+ */
+function textPrecondition(_finding: Finding, expected: string): ChangePrecondition {
   return { kind: "text", expectedText: expected };
 }
 

@@ -98,7 +98,22 @@ export default [
         {
           patterns: [
             {
-              group: ["**/word/*", "**/ai/*", "**/taskpane/*", "**/commands/*"],
+              // Every bare form is listed alongside its subpath form. A directory
+              // import such as "../../word" resolves through the directory's
+              // index.ts to the same module, and a subpath-only glob would not
+              // match it — so a scope listing only subpaths has a hole in it
+              // exactly where a boundary is easiest to cross. (Written as line
+              // comments: a block comment here would terminate on the glob text.)
+              group: [
+                "**/word",
+                "**/word/*",
+                "**/ai",
+                "**/ai/*",
+                "**/taskpane",
+                "**/taskpane/*",
+                "**/commands",
+                "**/commands/*",
+              ],
               message:
                 "core/domain must stay Office-free: allowed imports are zod and shared/utils only (architecture.md).",
             },
@@ -146,7 +161,16 @@ export default [
         {
           patterns: [
             {
-              group: ["**/ai/*", "**/word/*", "**/taskpane/*", "**/commands/*"],
+              group: [
+                "**/ai",
+                "**/ai/*",
+                "**/word",
+                "**/word/*",
+                "**/taskpane",
+                "**/taskpane/*",
+                "**/commands",
+                "**/commands/*",
+              ],
               message:
                 "rules/ must stay deterministic: allowed imports are core/domain and shared/utils only (architecture.md).",
             },
@@ -166,7 +190,16 @@ export default [
         {
           patterns: [
             {
-              group: ["**/ai/*", "**/word/*", "**/taskpane/*", "**/commands/*"],
+              group: [
+                "**/ai",
+                "**/ai/*",
+                "**/word",
+                "**/word/*",
+                "**/taskpane",
+                "**/taskpane/*",
+                "**/commands",
+                "**/commands/*",
+              ],
               message:
                 "formatting/ must stay deterministic: allowed imports are core/domain and shared/utils only (architecture.md).",
             },
@@ -245,9 +278,23 @@ export default [
                 "**/taskpane/*",
                 "**/commands",
                 "**/commands/*",
+                /*
+                 * The orchestrator and the planner, for the same reason the
+                 * consistency scope lists them (ADR-0052). A rule that could
+                 * import `reformat/` could reach `word/revisionAdapter` through
+                 * it, and one that could import `changes/` could build a plan
+                 * and hand it to something that writes. The deterministic
+                 * engine's claim is that it produces findings from an
+                 * AnalysisContext and nothing else; these two are how that claim
+                 * would stop being true without any local change looking wrong.
+                 */
+                "**/reformat",
+                "**/reformat/*",
+                "**/changes",
+                "**/changes/*",
               ],
               message:
-                "analysis/deterministic/ must stay deterministic: no provider, no Word, no UI. It consumes an AnalysisContext (architecture.md).",
+                "analysis/deterministic/ must stay deterministic: no provider, no Word, no UI, no orchestrator, no planner. It consumes an AnalysisContext and emits findings (architecture.md, ADR-0052).",
             },
           ],
         },
@@ -309,13 +356,21 @@ export default [
           patterns: [
             {
               group: [
+                "**/analysis",
                 "**/analysis/*",
+                "**/rules",
                 "**/rules/*",
+                "**/formatting",
                 "**/formatting/*",
+                "**/style",
                 "**/style/*",
+                "**/ai",
                 "**/ai/*",
+                "**/word",
                 "**/word/*",
+                "**/taskpane",
                 "**/taskpane/*",
+                "**/commands",
                 "**/commands/*",
               ],
               message:
