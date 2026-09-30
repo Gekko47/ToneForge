@@ -32,6 +32,8 @@ import { findingFingerprint } from "../findingFingerprint";
 import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
 import { decidePreview, isFullScan } from "../autoPreview";
 import { reviewFinding, reviewedPlan } from "../reviewGate";
+import { approvedIdentities, unapprovableReason } from "../approvalControls";
+import { clearReviewDecision, saveReviewDecision } from "../../core/state/reviewSession";
 import { reviewIdentity, occurrenceKey } from "../occurrenceIdentity";
 import { setupStatusFromState } from "../setupStatus";
 import { describeOpenFindings, summarizeOpenFindings } from "../findingsSummary";
@@ -178,6 +180,21 @@ function reviewedIdentities(state: PersistedState): ReadonlySet<string> {
   // hand-edited store is a real caller and a pane that cannot render because of
   // one missing list is worse than one that shows the findings unreviewed.
   return new Set((state.reviewedFindings ?? []).map((entry) => entry.identity));
+}
+
+/**
+ * The occurrences the user skipped, read from the review session.
+ *
+ * A skip is a decision about *this* review, not a permanent set-aside, so it
+ * lives in the session (spec §16) and expires with it. Ignore remains the
+ * permanent one and keeps its own store.
+ */
+function skippedIdentities(state: PersistedState): ReadonlySet<string> {
+  return new Set(
+    (state.deterministicReviewSession?.decisions ?? [])
+      .filter((entry) => entry.decision === "skipped")
+      .map((entry) => entry.identity),
+  );
 }
 
 /**
@@ -397,6 +414,15 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * makes the write and the re-render the same event.
    */
   const reviewedKeys = reviewedIdentities(persisted);
+  /*
+   * Skipped occurrences, kept apart from the approved set.
+   *
+   * Spec §15: Approve means "include this correction in the reviewed plan" and
+   * Skip means "exclude this occurrence from the current review". They are
+   * different decisions, so they cannot share one set — a skip recorded in the
+   * approved set would put a change the user declined into the document.
+   */
+  const skippedKeys = skippedIdentities(persisted);
   const observerRef = useRef<ReturnType<typeof createDocumentObserver> | null>(null);
   /**
    * The document the held preview was built from.
@@ -970,6 +996,69 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * nothing. Any pending plan is dropped too: it was planned against the text
    * as it was, and Apply refuses a plan whose hash no longer matches.
    */
+  /**
+   * Skip: leave this occurrence out of the current review, keep it in the list.
+   *
+   * Spec §15. Deliberately *not* Ignore: Ignore removes the finding from the list
+   * and needs a Restore, which is a different decision. A skip records the
+   * occurrence in the review session so the card reads "Skipped" and the
+   * reviewed-only projection excludes it, and the finding stays visible and
+   * described above it.
+   *
+   * No plan is consulted. Skipping is declining, and declining needs no
+   * correction to decline — so it works before a preview exists, which is
+   * exactly the case where a user who does not want one change queued needs it.
+   */
+  function skipOne(finding: Finding): void {
+    const identity = reviewIdentity(finding);
+    try {
+      saveReviewDecision({
+        identity,
+        ruleId: finding.ruleId ?? finding.category,
+        category: finding.category,
+        decision: "skipped",
+        expected: finding.expected ?? null,
+        decidedAt: new Date().toISOString(),
+      });
+      // A review entry is the store the projection narrows by, so a skip has to
+      // clear it or the change would still be written.
+      clearReviewedFinding(identity);
+      setReviewNote("Skipped. This occurrence stays in the document unchanged.");
+      announcement.announce("Occurrence skipped.");
+    } catch (error: unknown) {
+      setReviewNote(
+        `That decision could not be recorded: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Undo decision: withdraw whatever was decided about this occurrence.
+   *
+   * Clears both records, because they are the same decision stored twice — the
+   * legacy review entry the projection narrows by, and the session entry the
+   * card reads. Clearing one and leaving the other would produce a card reading
+   * "Undecided" over a change that is still queued.
+   */
+  function undoOne(finding: Finding): void {
+    const identity = reviewIdentity(finding);
+    clearReviewedFinding(identity);
+    try {
+      clearReviewDecision(identity);
+    } catch {
+      /*
+       * No session in force is the normal case here, not a failure.
+       *
+       * A review can exist without a session — the store carries both, and a
+       * session is only established by a full review run. Withdrawing the review
+       * is the part that matters for the plan, so a missing session is a no-op
+       * rather than a message on screen for a button that did the right thing.
+       */
+    }
+    setReviewNote("Decision undone. This occurrence can be reviewed again.");
+    announcement.announce("Decision undone.");
+  }
+
   function rescanNow(): void {
     previewedDocHashRef.current = null;
     setReformatResult(null);
@@ -1207,6 +1296,15 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * all the user's to apply, which is the exact thing the reviewed-only list
    * exists to prevent. `reviewedPlan` now refuses to be resolved that way.
    */
+  /*
+   * The approved set, with skips removed.
+   *
+   * `reviewedPlan` narrows the plan to these identities, so a skipped occurrence
+   * must not be in the set it is given. Filtering here rather than inside
+   * `reviewedPlan` keeps the projection honest about what it was asked for, and
+   * `approvedIdentities` is the one place the two sets are reconciled.
+   */
+  const approvedKeys = approvedIdentities(reviewedKeys, skippedKeys);
   const projection =
     reviewedOnly === null
       ? ({
@@ -1214,7 +1312,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           plan: null,
           reason: "No preview has been built for this document yet.",
         } as const)
-      : reviewedPlan(reviewedOnly.plan, reviewedKeys, previewFindings);
+      : reviewedPlan(reviewedOnly.plan, approvedKeys, previewFindings);
   pendingPlanRef.current =
     projection.kind === "reviewed" ? { ...reviewedOnly!, plan: projection.plan } : null;
   previewPlanRef.current = reviewedOnly?.plan ?? null;
@@ -1328,7 +1426,11 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                 findings={findings}
                 selectedIndex={workflow.planReview.selectedFindingIndex}
                 reviewedKeys={reviewedKeys}
+                skippedKeys={skippedKeys}
                 onReview={reviewOne}
+                onSkip={skipOne}
+                onUndo={undoOne}
+                approveRefusal={unapprovableReason}
                 onIgnore={(findingId) => {
                   const finding = findings.find((item) => item.id === findingId);
                   if (finding) ignoreFinding(finding);

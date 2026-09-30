@@ -99,20 +99,60 @@ describe("Phase C task-pane components", () => {
     expect(screen.getByText(/Current AI review/)).toBeInTheDocument();
   });
 
-  it("exposes finding navigation, review, and ignore actions", async () => {
+  it("exposes navigation, approve, skip and ignore as separate actions", async () => {
+    // Spec §15: Approve, Skip and Ignore are three different decisions about
+    // three different things, and the card offers each one. A card that merged
+    // them into "Review" told the user nothing about what pressing it did.
     const item = finding();
     const onReview = vi.fn();
     const onIgnore = vi.fn();
-    render(<FindingCard finding={item} onReview={onReview} onIgnore={onIgnore} />);
+    const onSkip = vi.fn();
+    render(
+      <FindingCard
+        finding={item}
+        onReview={onReview}
+        onIgnore={onIgnore}
+        onSkip={onSkip}
+        onUndo={vi.fn()}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Go to text" }));
     expect(goToFinding).toHaveBeenCalledWith(item);
     expect(await screen.findByText("Selected the finding range.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
     fireEvent.click(screen.getByRole("button", { name: "Ignore" }));
     expect(onReview).toHaveBeenCalledWith(item);
+    expect(onSkip).toHaveBeenCalledWith(item);
     expect(onIgnore).toHaveBeenCalledWith(item.id);
-    expect(screen.queryByRole("button", { name: "Apply" })).not.toBeInTheDocument();
+    // No card-level write control. Apply lives in Pending Changes and is the
+    // only thing that mutates the document.
+    expect(screen.queryByRole("button", { name: /Apply/ })).not.toBeInTheDocument();
+  });
+
+  it("offers Approve with a stated reason when no correction exists", () => {
+    // Spec §14.7. A finding the planner cannot correct still needs a decision,
+    // so Skip is offered; Approve is disabled and says why, rather than being
+    // offered and quietly doing nothing.
+    const item = finding({
+      deterministic: {
+        profilePath: "formatting.bodyStyle.alignment",
+        correctionAvailable: false,
+        correctionReason: "A property override is corrected by applying the configured Word style.",
+      },
+    });
+    render(
+      <FindingCard
+        finding={item}
+        onReview={vi.fn()}
+        onSkip={vi.fn()}
+        onUndo={vi.fn()}
+        approveRefusal={"A property override is corrected by applying the configured Word style."}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Skip" })).toBeEnabled();
   });
 
   it("leaves the working state and reports a failure when navigation rejects", async () => {

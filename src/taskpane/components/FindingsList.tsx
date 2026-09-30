@@ -21,6 +21,18 @@ export interface FindingsListProps {
   selectedIndex?: number | null;
   onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
+  /** Skip: leave this occurrence out of this review, keep it in the list. */
+  onSkip?: ((finding: Finding) => void) | undefined;
+  /** Undo decision: withdraw what was decided so it can be decided again. */
+  onUndo?: ((finding: Finding) => void) | undefined;
+  /**
+   * Why a finding cannot be approved, per finding.
+   *
+   * Computed by the caller from `unapprovableReason` rather than derived here,
+   * so the card and the review gate cannot disagree about whether a correction
+   * exists. A finding with a reason still offers Skip.
+   */
+  approveRefusal?: ((finding: Finding) => string | null) | undefined;
   /**
    * Occurrence identities of the reviews the user has already produced.
    *
@@ -36,6 +48,8 @@ export interface FindingsListProps {
    * a single flag would mark every card at once.
    */
   reviewedKeys?: ReadonlySet<string>;
+  /** Occurrences the user has skipped, so their cards read "Skipped". */
+  skippedKeys?: ReadonlySet<string>;
 }
 
 export default function FindingsList({
@@ -45,7 +59,11 @@ export default function FindingsList({
   selectedIndex = null,
   onReview,
   onIgnore,
+  onSkip,
+  onUndo,
+  approveRefusal,
   reviewedKeys,
+  skippedKeys,
 }: FindingsListProps): React.ReactNode {
   const [visibleCount, setVisibleCount] = React.useState(pageSize);
   if (findings.length === 0) {
@@ -70,7 +88,11 @@ export default function FindingsList({
               selected={index === selectedIndex}
               onReview={onReview}
               onIgnore={onIgnore}
+              onSkip={onSkip}
+              onUndo={onUndo}
               reviewed={reviewedKeys?.has(reviewIdentity(finding)) === true}
+              skipped={skippedKeys?.has(reviewIdentity(finding)) === true}
+              approveRefusal={approveRefusal?.(finding) ?? null}
             />
           ))}
       </div>

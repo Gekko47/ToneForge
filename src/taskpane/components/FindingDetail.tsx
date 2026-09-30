@@ -27,6 +27,7 @@
 import React, { useState } from "react";
 import type { Finding } from "../../core/domain/Finding";
 import { goToFinding } from "../findingNavigation";
+import { approvalControls } from "../approvalControls";
 import EvidenceSplit from "./EvidenceSplit";
 
 /** The two statements a cross-report finding compared. */
@@ -52,8 +53,29 @@ export interface FindingDetailProps {
   locationNote?: string | undefined;
   onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
+  /**
+   * Approve: include this exact correction in the reviewed plan (spec §15).
+   *
+   * Named separately from `onSkip` because they are different decisions about
+   * different things. Approve is consent to write; Skip is a decision to leave
+   * this occurrence out of *this* review while it stays visible in the list. One
+   * button doing both is what §15 replaces.
+   */
+  onSkip?: ((finding: Finding) => void) | undefined;
+  /** Undo decision: withdraw whatever was decided, so it can be decided again. */
+  onUndo?: ((finding: Finding) => void) | undefined;
   /** True once the finding has been through the review gate. */
   reviewed?: boolean;
+  /** True once the finding has been skipped, which is a different decision. */
+  skipped?: boolean;
+  /**
+   * Why Approve cannot lead anywhere, or `null`.
+   *
+   * Supplied by the caller from `unapprovableReason`, so a finding the planner
+   * cannot correct still offers Skip — declining is always available — while
+   * Approve is absent rather than present and inert.
+   */
+  approveRefusal?: string | null;
 }
 
 export default function FindingDetail({
@@ -62,7 +84,11 @@ export default function FindingDetail({
   locationNote,
   onReview,
   onIgnore,
+  onSkip,
+  onUndo,
   reviewed = false,
+  skipped = false,
+  approveRefusal = null,
 }: FindingDetailProps): React.ReactNode {
   const [navigationState, setNavigationState] = useState<
     { status: "idle" } | { status: "working" } | { status: "message"; message: string }
@@ -87,9 +113,23 @@ export default function FindingDetail({
    * the user reviewed, so reading it here made the label depend on a value the
    * pane had to patch back in after every scan.
    */
-  const statusLabel = reviewed
-    ? "Reviewed"
-    : finding.status.charAt(0).toUpperCase() + finding.status.slice(1);
+  const controls = approvalControls({
+    decision: reviewed ? "approved" : skipped ? "skipped" : null,
+    approveRefusal,
+  });
+  /*
+   * The decision, in words.
+   *
+   * The old single "Reviewed" label covered every state a finding could be in —
+   * queued, declined, or unapprovable — so it told the user none of them. Spec
+   * §15 wants the decision named, and this is the sentence on the card.
+   */
+  const statusLabel =
+    controls.kind === "approved"
+      ? "Approved"
+      : controls.kind === "skipped"
+        ? "Skipped"
+        : finding.status.charAt(0).toUpperCase() + finding.status.slice(1);
 
   async function handleGoToText(): Promise<void> {
     setNavigationState({ status: "working" });
@@ -176,32 +216,63 @@ export default function FindingDetail({
         >
           {navigationState.status === "working" ? "Going to text…" : "Go to text"}
         </button>
-        {onReview && (
-          <button type="button" onClick={() => onReview(finding)} disabled={reviewed}>
-            {reviewed ? "Reviewed" : "Review"}
+        {/*
+          Approve, Skip and Undo decision (spec §15).
+
+          Approve is disabled — with the reason stated to assistive technology —
+          for a finding the planner cannot correct, rather than offered and inert.
+          Skip stays available there, because declining something is always a
+          real decision. Undo replaces both once either has been made, which is
+          the only way back once a decision is recorded.
+        */}
+        {onReview && controls.kind === "undecided" && (
+          <button
+            type="button"
+            onClick={() => onReview(finding)}
+            disabled={!controls.canApprove}
+            aria-describedby={
+              controls.approveReason === null ? undefined : `finding-approve-blocked-${finding.id}`
+            }
+          >
+            Approve
           </button>
+        )}
+        {onSkip && controls.kind !== "approved" && (
+          <button type="button" onClick={() => onSkip(finding)}>
+            Skip
+          </button>
+        )}
+        {onUndo && controls.kind !== "undecided" && (
+          <button type="button" onClick={() => onUndo(finding)}>
+            Undo decision
+          </button>
+        )}
+        {controls.kind === "undecided" && controls.approveReason !== null && (
+          <span id={`finding-approve-blocked-${finding.id}`} className="sr-only">
+            {controls.approveReason}
+          </span>
         )}
         {onIgnore && (
           <button
             type="button"
             onClick={() => onIgnore(finding.id)}
             /*
-             * Disabled once reviewed, and it has to be: reviewing admits a change
+             * Disabled once decided, and it has to be: approving admits a change
              * to Apply and ignoring withdraws the finding, so a button offering
              * both is a finding that is simultaneously queued and set aside. The
              * store refuses the ignore as well, so this is not only a UI
              * courtesy — a caller that bypassed it would corrupt the two.
              */
-            disabled={reviewed}
-            aria-describedby={reviewed ? "finding-ignore-blocked" : undefined}
+            disabled={controls.kind !== "undecided"}
+            aria-describedby={controls.kind === "undecided" ? undefined : "finding-ignore-blocked"}
           >
-            {reviewed ? "Reviewed" : "Ignore"}
+            Ignore
           </button>
         )}
-        {reviewed && onIgnore ? (
+        {controls.kind !== "undecided" && onIgnore ? (
           <span id="finding-ignore-blocked" className="sr-only">
-            This finding is already reviewed and waiting in Pending changes. Set it aside by
-            rejecting the change instead.
+            This finding has already been decided. Undo the decision first if you would rather set
+            it aside.
           </span>
         ) : null}
       </nav>

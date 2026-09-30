@@ -22,6 +22,14 @@ export interface FindingCardProps {
   selected?: boolean;
   onReview?: ((finding: Finding) => void) | undefined;
   onIgnore?: ((findingId: string) => void) | undefined;
+  /** Skip: leave this occurrence out of this review, keep it in the list. */
+  onSkip?: ((finding: Finding) => void) | undefined;
+  /** Undo decision: withdraw what was decided so it can be decided again. */
+  onUndo?: ((finding: Finding) => void) | undefined;
+  /** True once this occurrence has been skipped. */
+  skipped?: boolean;
+  /** Why this finding cannot be approved, or `null`. */
+  approveRefusal?: string | null;
   /**
    * True when this finding has already been sent through the review gate.
    *
@@ -36,7 +44,11 @@ export default function FindingCard({
   selected = false,
   onReview,
   onIgnore,
+  onSkip,
+  onUndo,
   reviewed = false,
+  skipped = false,
+  approveRefusal = null,
 }: FindingCardProps): React.ReactNode {
   const cardRef = useRef<HTMLElement | null>(null);
 
@@ -69,7 +81,11 @@ export default function FindingCard({
         finding={finding}
         onReview={onReview}
         onIgnore={onIgnore}
+        onSkip={onSkip}
+        onUndo={onUndo}
         reviewed={reviewed}
+        skipped={skipped}
+        approveRefusal={approveRefusal}
       />
     </article>
   );
