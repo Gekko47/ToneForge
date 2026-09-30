@@ -184,7 +184,7 @@ None beyond the current repository baseline.
 4. Ensure observer and full-document UI do not claim complete coverage when required scope is unsupported.
 5. Replace the misleading finding `Apply` action with a truthful Review status entry point, Go to text, and Ignore. Central plan navigation remains a Phase 2 B23 responsibility because a finding alone does not create an apply-able plan.
 6. Implement pending plan Reject as a real state transition.
-7. Remove the second plan-level Apply surface from [`ReformatPanel`](../src/taskpane/components/ReformatPanel.tsx).
+7. Remove the second plan-level Apply surface from `ReformatPanel`.
 8. Move acquisition counters and technical coverage metrics to [`DebuggingPanel`](../src/taskpane/components/DebuggingPanel.tsx).
 9. Fix blank optional broker URL persistence.
 10. Surface source-navigation asynchronous success and failure.
@@ -264,7 +264,7 @@ Phase 0 complete; state migration and provider-consent contracts stable.
 - Manual sample-capture evidence in supported Word hosts.
 
 Phase 1 verification passed with [`resolveResolvedPolicy()`](../src/core/domain/ResolvedPolicy.ts)
-consumed by [`checkConsistency()`](../src/analysis/consistencyChecker.ts) and
+consumed by `checkConsistency()` and
 [`reformatDocument()`](../src/reformat/orchestrator.ts), plus
 [`learnStyleDraft()`](../src/style/learnStyle.ts) and the Learn Style entry point
 in [`Profile.tsx`](../src/taskpane/pages/Profile.tsx). Draft editing, approval

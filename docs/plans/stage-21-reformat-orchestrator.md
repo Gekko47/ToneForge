@@ -27,7 +27,7 @@
 - Stage 17 change planning PASS: [`planChanges()`](src/changes/planner.ts), [`detectConflicts()`](src/changes/conflictDetector.ts), [`markStale()`](src/changes/staleGuard.ts).
 - Stage 18 revision adapter PASS WITH DOCUMENTED LIMITATION: [`applyChangePlan()`](src/word/revisionAdapter.ts), [`applyChangePlanWithTracking()`](src/word/revisionAdapter.ts), [`setStage01Passed()`](src/word/revisionAdapter.ts), [`validatePlanBeforeApply()`](src/word/revisionAdapter.ts).
 - Stage 19 semantic deviation PASS: [`detectSemanticDeviations()`](src/analysis/deviationEngine.ts).
-- Stage 20 consistency checker PASS: [`checkConsistency()`](src/analysis/consistencyChecker.ts), [`ConsistencyReportSchema`](src/analysis/consistencyChecker.ts).
+- Stage 20 consistency checker PASS: `checkConsistency()`, `ConsistencyReportSchema`.
 - Stage 01 hard gate partially closed: Desktop Word live smoke recorded in [manual-verification.md](docs/manual-verification.md); web plus Mac pending, deferred to Stage 27.
 
 ### 2.3 Required inputs
@@ -60,7 +60,7 @@
 
 ### 2.6 Dependencies
 
-- Upstream: [documentReader.ts](src/word/documentReader.ts) → [consistencyChecker.ts](src/analysis/consistencyChecker.ts) → [planner.ts](src/changes/planner.ts) → [revisionAdapter.ts](src/word/revisionAdapter.ts).
+- Upstream: [documentReader.ts](src/word/documentReader.ts) → consistencyChecker.ts → [planner.ts](src/changes/planner.ts) → [revisionAdapter.ts](src/word/revisionAdapter.ts).
 - Downstream: Stage 22 [staleGuard.ts](src/changes/staleGuard.ts) will harden re-hash before apply; orchestrator must expose `docHash` and `stale` without preempting Stage 22 UI confirmation.
 - Boundary: `src/reformat` may import `core/domain`, `analysis`, `changes`, `word/documentReader`, `word/formattingReader`, `word/revisionAdapter`, `ai/providers`, `shared/utils`; must never import `taskpane` or `commands`; `taskpane` must never import `revisionAdapter` directly.
 
@@ -90,12 +90,12 @@
 
 - Call [`getDocumentSnapshot()`](src/word/documentReader.ts) for `text`, `id`, `hash`.
 - Call [`getFormattingSnapshot()`](src/word/formattingReader.ts) optionally; on `id: unavailable` proceed text-only.
-- Short-circuit empty text to empty [ConsistencyReport](src/analysis/consistencyChecker.ts) plus empty [ChangePlan](src/core/domain/ChangePlan.ts); no LLM call.
+- Short-circuit empty text to empty ConsistencyReport plus empty [ChangePlan](src/core/domain/ChangePlan.ts); no LLM call.
 - Responsibility: Code mode; capability: `toneforge-officejs`.
 
 ### Step 2 — Analyze via checker
 
-- Delegate to [`checkConsistency()`](src/analysis/consistencyChecker.ts) with `text`, `profile`, `snapshot`, `docHash`, `includeRawText`, `signal`, `registry`.
+- Delegate to `checkConsistency()` with `text`, `profile`, `snapshot`, `docHash`, `includeRawText`, `signal`, `registry`.
 - Preserve `profileId` plus `docHash` plus `summary` for report traceability.
 - Log and skip transient provider failures; rethrow caller abort.
 - Responsibility: Code mode; capability: `toneforge-llm` plus `toneforge-testing` with [`MockAdapter`](src/ai/providers/mockAdapter.ts).
@@ -167,7 +167,7 @@ flowchart TD
 ## 6. Measurable milestones and success criteria
 
 - M1 Snapshot wired: [`getDocumentSnapshot()`](src/word/documentReader.ts) plus [`getFormattingSnapshot()`](src/word/formattingReader.ts) return DTOs; empty text short-circuits.
-- M2 Analyze plus plan composed: [`checkConsistency()`](src/analysis/consistencyChecker.ts) output feeds [`planChanges()`](src/changes/planner.ts); `profileId` plus `docHash` preserved end to end.
+- M2 Analyze plus plan composed: `checkConsistency()` output feeds [`planChanges()`](src/changes/planner.ts); `profileId` plus `docHash` preserved end to end.
 - M3 Tracked apply wired: [`applyChangePlanWithTracking()`](src/word/revisionAdapter.ts) returns `managed` plus counts; gate refusal tested.
 - M4 Smoke superseded: production path is [reformatDocument()](src/reformat/orchestrator.ts); legacy `smokeApply.ts` helpers are deprecated and retained only for the Stage 18 live-smoke harness; Dashboard redirection is deferred by explicit scope.
 - M5 Verify green: full [`verify`](package.json) plus [`stage:verify`](package.json) pass; [project-state.md](docs/project-state.md) updated; stage gate PASS.

@@ -603,9 +603,10 @@ function checkListFormatting(
           evidence: paragraph.text.slice(0, 40),
           paragraph,
           profilePath: "structure.listLevelIntegrity",
-          expected: "List level 0",
-          expectedValue: 0,
           actualValue: level,
+          correctable: false,
+          correctionReason:
+            "ToneForge cannot safely infer the correct list level from a non-list paragraph style.",
           // Grouped so the occurrences are visible as one problem, and never
           // batch-safe: `setListLevel` on a paragraph the host calls a list item
           // rewrites list structure, which is the structurally ambiguous change

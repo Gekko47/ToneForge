@@ -68,7 +68,7 @@ This file is the evidence record only.
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 3.2 Ignore list      | [`persistIgnore`](../src/core/state/persistence.ts:592) dedupes on **fingerprint only** — the identity of a rule, not an occurrence. Ignoring a second occurrence of the same rule deletes the first, and Restore is all-or-nothing per rule. |
 | 5.8 Auto-preview     | The preview is built, but it calls `reformatDocument` with no capabilities and reports protection exclusions as acquisition gaps, so the plan it produces is permanently coverage-incomplete and Apply never enables.                         |
-| 5.10 Dead components | [`ReformatPanel.tsx`](../src/taskpane/components/ReformatPanel.tsx) and [`GovernanceDashboard.tsx`](../src/taskpane/components/GovernanceDashboard.tsx) are unimported but still in the tree, carrying hardcoded colours.                     |
+| 5.10 Dead components | `ReformatPanel.tsx` and `GovernanceDashboard.tsx` are unimported but still in the tree, carrying hardcoded colours.                                                                                                                           |
 
 ## Deviated, with a recorded reason
 

@@ -6,7 +6,7 @@
 ## 1. Authoritative alignment
 
 - [`ROADMAP.md`](../../ROADMAP.md) is the authoritative current status and sequencing source.
-- The original Stage 20 implementation remains in [`src/analysis/consistencyChecker.ts`](../../src/analysis/consistencyChecker.ts) and its tests; its current status is recorded in the Stage 20 row of [`ROADMAP.md`](../../ROADMAP.md).
+- The original Stage 20 implementation remains in `src/analysis/consistencyChecker.ts` and its tests; its current status is recorded in the Stage 20 row of [`ROADMAP.md`](../../ROADMAP.md).
 - [`docs/architecture.md`](../architecture.md) defines the current analysis boundary. The checker performs no mutation.
 - [`docs/decision-log.md`](docs/decision-log.md:157) ADRs ADR-0019 through ADR-0024 plus ADR-0006 deterministic-first, ADR-0011 retry/abort, ADR-0013 boundaries govern this stage.
 
@@ -44,7 +44,7 @@ type ConsistencyReport = {
 
 ## 4. Inputs and behavior
 
-Inputs to [`checkConsistency()`](src/analysis/consistencyChecker.ts:1):
+Inputs to `checkConsistency()`:
 
 - `text: string` target text; empty or whitespace-only short-circuits to empty findings with zeroed summary, no LLM call.
 - `profile: StyleProfile` validated via [`StyleProfileSchema`](src/core/domain/StyleProfile.ts:80).
@@ -56,7 +56,7 @@ Inputs to [`checkConsistency()`](src/analysis/consistencyChecker.ts:1):
 
 ## 5. Downstream compatibility for Stages 21–22
 
-- Stage 21 [`src/reformat/orchestrator.ts`](src/reformat/orchestrator.ts:1) will call `getDocumentSnapshot` from [`src/word/documentReader.ts`](src/word/documentReader.ts:39), then [`checkConsistency()`](src/analysis/consistencyChecker.ts:1), then planner from [`src/changes/planner.ts`](src/changes/planner.ts:29), then [`applyChangePlan()`](src/word/revisionAdapter.ts:1). Findings-only keeps this composition clean.
+- Stage 21 [`src/reformat/orchestrator.ts`](src/reformat/orchestrator.ts:1) will call `getDocumentSnapshot` from [`src/word/documentReader.ts`](src/word/documentReader.ts:39), then `checkConsistency()`, then planner from [`src/changes/planner.ts`](src/changes/planner.ts:29), then [`applyChangePlan()`](src/word/revisionAdapter.ts:1). Findings-only keeps this composition clean.
 - Stage 22 [`src/changes/staleGuard.ts`](src/changes/staleGuard.ts:1) consumes `docHash` from the report for re-hash comparison before apply.
 - [`suggestedChangeId`](src/core/domain/Finding.ts:35) preserved through [`unifyFindings()`](src/analysis/unifiedFindings.ts:104) for planner traceability.
 
@@ -83,9 +83,9 @@ flowchart TD
 
 ## 6. Implementation steps for Code mode
 
-1. Create [`src/analysis/consistencyChecker.ts`](src/analysis/consistencyChecker.ts:1) with `CheckConsistencyOptions`, `ConsistencyReportSchema`, `ConsistencyReport`, `ConsistencySummary`, and async [`checkConsistency()`](src/analysis/consistencyChecker.ts:1). Honor [`tsconfig.json`](tsconfig.json:1) strict, [`exactOptionalPropertyTypes`](tsconfig.json:1), [`noUncheckedIndexedAccess`](tsconfig.json:1); no [`any`](eslint.config.mjs:40); use [`import type`](eslint.config.mjs:45).
+1. Create `src/analysis/consistencyChecker.ts` with `CheckConsistencyOptions`, `ConsistencyReportSchema`, `ConsistencyReport`, `ConsistencySummary`, and async `checkConsistency()`. Honor [`tsconfig.json`](tsconfig.json:1) strict, [`exactOptionalPropertyTypes`](tsconfig.json:1), [`noUncheckedIndexedAccess`](tsconfig.json:1); no [`any`](eslint.config.mjs:40); use [`import type`](eslint.config.mjs:45).
 2. Update [`src/analysis/index.ts`](src/analysis/index.ts:1) barrel to re-export checker and report types.
-3. Add [`tests/unit/analysis/consistencyChecker.test.ts`](tests/unit/analysis/consistencyChecker.test.ts:1) near [`tests/unit/analysis/deviationEngine.test.ts`](tests/unit/analysis/deviationEngine.test.ts:1) and [`tests/unit/analysis/unifiedFindings.test.ts`](tests/unit/analysis/unifiedFindings.test.ts:1). Cover empty text, deterministic-only, formatting absent versus present, semantic skipped versus [`MockAdapter`](src/ai/providers/mockAdapter.ts:1) success, invalid entries skipped, opt-in refusal, abort passthrough, ordering determinism, summary counts, `profileId` and `docHash` propagation. Reuse [`tests/fixtures/sampleDocs.ts`](tests/fixtures/sampleDocs.ts:1).
+3. Add `tests/unit/analysis/consistencyChecker.test.ts` near [`tests/unit/analysis/deviationEngine.test.ts`](tests/unit/analysis/deviationEngine.test.ts:1) and [`tests/unit/analysis/unifiedFindings.test.ts`](tests/unit/analysis/unifiedFindings.test.ts:1). Cover empty text, deterministic-only, formatting absent versus present, semantic skipped versus [`MockAdapter`](src/ai/providers/mockAdapter.ts:1) success, invalid entries skipped, opt-in refusal, abort passthrough, ordering determinism, summary counts, `profileId` and `docHash` propagation. Reuse [`tests/fixtures/sampleDocs.ts`](tests/fixtures/sampleDocs.ts:1).
 4. Run [`npm run test`](package.json:22) focused on `tests/unit/analysis`, then full suite; run [`npm run lint`](package.json:25) with zero warnings; meet 80% lines, statements, functions, branches per [`vitest.config.ts`](vitest.config.ts:13).
 5. Run the ordered verification chain documented in [`ROADMAP.md`](../../ROADMAP.md).
 6. Update the canonical status and evidence index when a gate result changes.

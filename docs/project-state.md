@@ -99,7 +99,7 @@ supersede the canonical status table in [`ROADMAP.md`](../ROADMAP.md).
 - [`trackedEditing.ts`](../src/reformat/trackedEditing.ts) performs a fresh,
   plan-specific host preparation at every strict Apply and maps every change to
   its required capability.
-- [`ReformatPanel.tsx`](../src/taskpane/components/ReformatPanel.tsx) is
+- `ReformatPanel.tsx` is
   preview-only: it presents before/after data, provenance, and scope state, but
   does not expose a competing Apply or Reject action. The exact plan is reviewed
   in Pending Changes, where the single Apply path calls

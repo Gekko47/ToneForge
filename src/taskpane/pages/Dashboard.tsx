@@ -33,7 +33,12 @@ import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
 import { decidePreview, isFullScan } from "../autoPreview";
 import { reviewFinding, reviewedPlan } from "../reviewGate";
 import { approvedIdentities, unapprovableReason } from "../approvalControls";
-import { clearReviewDecision, saveReviewDecision } from "../../core/state/reviewSession";
+import {
+  clearReviewDecision,
+  ensureReviewSession,
+  loadReviewSession,
+  saveReviewDecision,
+} from "../../core/state/reviewSession";
 import { reviewIdentity, occurrenceKey } from "../occurrenceIdentity";
 import { setupStatusFromState } from "../setupStatus";
 import { describeOpenFindings, summarizeOpenFindings } from "../findingsSummary";
@@ -49,9 +54,6 @@ import {
   ignoreFinding as persistIgnore,
   loadState,
   restoreFinding,
-  saveReviewedFinding,
-  clearReviewedFinding,
-  pruneStaleReviews,
 } from "../../core/state/persistence";
 import { selectActiveProfile } from "../../core/state/profileSelectors";
 import { usePersistedState } from "../state/usePersistedState";
@@ -175,11 +177,11 @@ export function resolvePendingPlan(reformatResult: ReformatResult | null): Pendi
  * Reading from the store makes the write and the render the same event.
  */
 function reviewedIdentities(state: PersistedState): ReadonlySet<string> {
-  // Tolerated as absent rather than assumed present. `PersistedState` is
-  // Zod-defaulted, so a real store always has it, but a partial mock or a
-  // hand-edited store is a real caller and a pane that cannot render because of
-  // one missing list is worse than one that shows the findings unreviewed.
-  return new Set((state.reviewedFindings ?? []).map((entry) => entry.identity));
+  return new Set(
+    (state.deterministicReviewSession?.decisions ?? [])
+      .filter((entry) => entry.decision === "approved")
+      .map((entry) => entry.identity),
+  );
 }
 
 /**
@@ -382,6 +384,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * disabled by this flag.
    */
   const autoScan = persisted.settings.autoScan;
+  const activeGovernanceProfile = resolveGovernanceProfile(persisted, activeProfile);
   const [page, setPage] = useState<DashboardPage>("review");
   /*
    * Open by default, and opened *for* the user when findings arrive.
@@ -461,6 +464,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const previewFindingsRef = useRef<readonly Finding[]>([]);
   /** Why a reviewed finding did not become a pending change, if it did not. */
   const [reviewNote, setReviewNote] = useState<string | null>(null);
+  const [expiredDecisionCount, setExpiredDecisionCount] = useState(0);
   /*
    * Coverage starts collapsed, but an *incomplete* analysis overrides that: it
    * is a warning the user has to act on, and hiding it behind a toggle is how
@@ -685,8 +689,28 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     const observer = createDocumentObserver({
       // No `debounceMs`: the observer's own default is the single place this is
       // decided, and a second copy here is one more number to forget to change.
-      onStatus: setStatus,
+      onStatus: (nextStatus) => {
+        const acceptedPhase =
+          nextStatus.phase === "fresh" ||
+          nextStatus.phase === "clean" ||
+          nextStatus.phase === "incomplete";
+        if (acceptedPhase && nextStatus.reviewSessionIdentity !== null) {
+          const previousSession = loadReviewSession();
+          const { invalidatedBy } = ensureReviewSession(nextStatus.reviewSessionIdentity);
+          if (invalidatedBy.length > 0) {
+            const expiredCount = previousSession?.decisions.length ?? 0;
+            setExpiredDecisionCount(expiredCount);
+            if (expiredCount > 0) {
+              setReviewNote(
+                `${expiredCount} review decision${expiredCount === 1 ? "" : "s"} expired because the document, profile, governance policy, or checked scope changed. Review the findings again.`,
+              );
+            }
+          }
+        }
+        setStatus(nextStatus);
+      },
       profile: activeProfile,
+      policy: activeGovernanceProfile,
       capabilities: caps === null ? UNPROBED_CAPABILITIES : toAnalysisCapabilities(caps),
     });
     // A plan built under the previous profile cannot answer for this one, so
@@ -727,7 +751,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     // `autoScan` is a dependency, not a captured value: toggling the setting
     // while the pane is open has to take effect, and without it this effect
     // would never re-run.
-  }, [activeProfileKey, caps, autoScan]);
+  }, [activeProfileKey, activeGovernanceProfile.version, caps, autoScan]);
 
   /*
    * The instruction that arrived with the pane, held so the page that owns the
@@ -963,16 +987,24 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
      * correction" for a finding that had one.
      */
     const decision = reviewFinding(finding, previewPlanRef.current, previewFindingsRef.current);
-    saveReviewedFinding({
-      identity: reviewIdentity(finding),
-      findingId: finding.id,
-      category: finding.category,
-      range: finding.range,
-      nodeIds: finding.nodeIds,
-      reviewedAt: new Date().toISOString(),
-      changeId: decision.kind === "pending" ? decision.change.changeId : null,
-      noChangeReason: decision.kind === "pending" ? null : decision.reason,
-    });
+    if (decision.kind === "pending") {
+      try {
+        saveReviewDecision({
+          identity: reviewIdentity(finding),
+          ruleId: finding.ruleId ?? finding.category,
+          category: finding.category,
+          decision: "approved",
+          expected: finding.expected ?? null,
+          decidedAt: new Date().toISOString(),
+        });
+        setExpiredDecisionCount(0);
+      } catch (error: unknown) {
+        setReviewNote(
+          `That decision could not be recorded: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return;
+      }
+    }
     /*
      * Both outcomes speak through the one pane-wide live region rather than
      * adding a second `role="status"` beside the list. A review that produced no
@@ -1020,9 +1052,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         expected: finding.expected ?? null,
         decidedAt: new Date().toISOString(),
       });
-      // A review entry is the store the projection narrows by, so a skip has to
-      // clear it or the change would still be written.
-      clearReviewedFinding(identity);
+      setExpiredDecisionCount(0);
       setReviewNote("Skipped. This occurrence stays in the document unchanged.");
       announcement.announce("Occurrence skipped.");
     } catch (error: unknown) {
@@ -1042,9 +1072,9 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   function undoOne(finding: Finding): void {
     const identity = reviewIdentity(finding);
-    clearReviewedFinding(identity);
     try {
       clearReviewDecision(identity);
+      setExpiredDecisionCount(0);
     } catch {
       /*
        * No session in force is the normal case here, not a failure.
@@ -1105,7 +1135,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
       setReviewNote("That change is no longer part of this review.");
       return;
     }
-    clearReviewedFinding(reviewIdentity(owner));
+    clearReviewDecision(reviewIdentity(owner));
     setReviewNote("Removed from Pending changes. Nothing was applied to the document.");
   }
 
@@ -1125,23 +1155,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * scan has read the document — so a review persisted from a previous session
    * cannot be pruned before the first scan of this one has looked.
    */
-  useEffect(() => {
-    if (status === null || status.phase === "scanning") return;
-    const live = new Set(
-      withoutIgnored(status.findings, persisted.ignoredFindings).map((finding) =>
-        reviewIdentity(finding),
-      ),
-    );
-    const stored = persisted.reviewedFindings ?? [];
-    if (stored.every((entry) => live.has(entry.identity))) return;
-    pruneStaleReviews(live);
-  }, [
-    status?.documentVersion,
-    status?.phase,
-    persisted.reviewedFindings,
-    persisted.ignoredFindings,
-  ]);
-
   if (
     page === "settings" ||
     page === "profile" ||
@@ -1338,15 +1351,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * how many expired is the difference between a decision being respected and a
    * decision being quietly forgotten.
    */
-  const liveIdentities = new Set(findings.map((finding) => reviewIdentity(finding)));
-  const expiredReviews = (persisted.reviewedFindings ?? []).filter(
-    (entry) => !liveIdentities.has(entry.identity),
-  ).length;
-  /*
-   * Only counted here. The reviews themselves are dropped by the effect above the
-   * early return, which has to sit there so the hook order cannot differ between
-   * renders.
-   */
   /**
    * One readiness decision, shared by the Apply button and the host banner.
    *
@@ -1454,13 +1458,11 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                 expired review; the user reviews again, which is the direction
                 that fails safe.
               */}
-              {expiredReviews > 0 && (
+              {expiredDecisionCount > 0 && (
                 <p className="tf-sub">
-                  {expiredReviews} reviewed finding{expiredReviews === 1 ? "" : "s"} no longer match
-                  {expiredReviews === 1 ? "es" : ""} this document, because the text changed after{" "}
-                  {expiredReviews === 1 ? "it was" : "they were"} reviewed. Review{" "}
-                  {expiredReviews === 1 ? "it" : "them"} again to include{" "}
-                  {expiredReviews === 1 ? "it" : "them"} in Pending changes.
+                  {expiredDecisionCount} review decision{expiredDecisionCount === 1 ? "" : "s"}{" "}
+                  expired because the document or review policy changed. Review the findings again
+                  before adding changes to Pending changes.
                 </p>
               )}
             </>

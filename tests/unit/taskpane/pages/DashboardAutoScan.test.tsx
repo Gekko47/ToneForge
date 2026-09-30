@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
 import { createRecord } from "../../../../src/core/domain/ProfileRecord";
+import { reviewIdentity } from "../../../../src/taskpane/occurrenceIdentity";
+import { sampleFinding } from "../../../fixtures/sampleDocs";
 
 /**
  * `settings.autoScan` was persisted and defaulted but read nowhere.
@@ -220,6 +222,16 @@ describe("the whole-document action row", () => {
         hostUnavailable: false,
         findings: [],
         coverage: { complete: true, acquisition: { incremental: true } },
+        reviewSessionIdentity: {
+          documentId: "doc-1",
+          documentVersion: "v1",
+          contentHash: "content-1",
+          structuralHash: "structure-1",
+          profileId: "44444444-4444-4444-8444-444444444444",
+          profileRevision: 1,
+          governancePolicyRevision: 1,
+          coverageFingerprint: "coverage-1",
+        },
         currentRunId: "r1",
         lastAcceptedRunId: "r1",
         documentVersion: "v1",
@@ -277,5 +289,57 @@ describe("the whole-document action row", () => {
     expect(observers.some((observer) => observer?.onDocumentChanged.mock.calls.length > 0)).toBe(
       true,
     );
+  });
+
+  it("binds Skip to the accepted scan's review session", async () => {
+    const finding = sampleFinding();
+    const identity = {
+      documentId: "doc-1",
+      documentVersion: "v1",
+      contentHash: "content-1",
+      structuralHash: "structure-1",
+      profileId: "44444444-4444-4444-8444-444444444444",
+      profileRevision: 1,
+      governancePolicyRevision: 1,
+      coverageFingerprint: "coverage-1",
+    };
+    render(<Dashboard />);
+    const emit = mocks.emitStatus;
+    expect(emit).not.toBeNull();
+
+    act(() => {
+      emit?.({
+        phase: "fresh",
+        lastScan: "2026-01-01T00:00:00.000Z",
+        dirtyCount: 1,
+        stale: false,
+        hostUnavailable: false,
+        findings: [finding],
+        coverage: { complete: true },
+        deterministicCoverage: { complete: true },
+        reviewSessionIdentity: identity,
+        currentRunId: "r1",
+        lastAcceptedRunId: "r1",
+        documentVersion: "v1",
+        supersededRuns: 0,
+        error: null,
+      });
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
+
+    const state = mocks.loadState();
+    expect(state).toMatchObject({
+      deterministicReviewSession: {
+        identity,
+        decisions: [
+          {
+            identity: reviewIdentity(finding),
+            decision: "skipped",
+          },
+        ],
+      },
+    });
+    expect(state.reviewedFindings ?? []).toEqual([]);
   });
 });

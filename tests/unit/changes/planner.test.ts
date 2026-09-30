@@ -355,7 +355,7 @@ describe("planChanges", () => {
     expect(soleChange(plan).payload).toEqual({ styleName: "Heading 2" });
   });
 
-  it("maps list-level findings to the level the rule expected", () => {
+  it("plans only an explicit valid list-level target", () => {
     const integrity = planFor([
       finding({
         category: "formatting.listLevel",
@@ -363,7 +363,11 @@ describe("planChanges", () => {
         end: 5,
         unit: "paragraph",
         message: 'Paragraph has list level 2 but style "List Paragraph" is not a list style',
-        deterministic: { profilePath: "structure.listLevelIntegrity", expected: 0 },
+        deterministic: {
+          profilePath: "structure.listLevelIntegrity",
+          correctionAvailable: false,
+          correctionReason: "The correct level cannot be inferred safely.",
+        },
       }),
     ]);
     const profileDriven = planFor([
@@ -377,19 +381,33 @@ describe("planChanges", () => {
       }),
     ]);
 
-    expect(soleChange(integrity)).toMatchObject({ type: "setListLevel", payload: { level: 0 } });
+    expect(integrity.changes).toEqual([]);
     expect(soleChange(profileDriven)).toMatchObject({
       type: "setListLevel",
       payload: { level: 0 },
     });
   });
 
-  it("falls back to level zero when a list finding names no expected level", () => {
+  it("does not invent a list level when a finding has no expected target", () => {
     const plan = planFor([
       finding({ category: "formatting.listLevel", start: 4, end: 5, unit: "paragraph" }),
     ]);
 
-    expect(soleChange(plan)).toMatchObject({ type: "setListLevel", payload: { level: 0 } });
+    expect(plan.changes).toEqual([]);
+  });
+
+  it("rejects a list-level target outside Word's supported range", () => {
+    const plan = planFor([
+      finding({
+        category: "formatting.listLevel",
+        start: 4,
+        end: 5,
+        unit: "paragraph",
+        deterministic: { profilePath: "formatting.lists.level", expected: 9 },
+      }),
+    ]);
+
+    expect(plan.changes).toEqual([]);
   });
 
   it("retains semantic findings for future review without inventing a change", () => {

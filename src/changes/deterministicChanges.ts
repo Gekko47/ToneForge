@@ -471,7 +471,15 @@ export function planDeterministicChange(finding: Finding): Change[] {
 
     case "formatting.listLevel": {
       const expected = finding.deterministic?.expected;
-      return single(listLevelChange(finding, typeof expected === "number" ? expected : 0));
+      if (
+        typeof expected !== "number" ||
+        !Number.isInteger(expected) ||
+        expected < 0 ||
+        expected > 8
+      ) {
+        return [];
+      }
+      return single(listLevelChange(finding, expected));
     }
 
     default:

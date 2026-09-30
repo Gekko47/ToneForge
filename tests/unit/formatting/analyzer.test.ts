@@ -365,6 +365,9 @@ describe("findFormattingIssues", () => {
       const level = findings.filter((f) => f.category === "formatting.listLevel");
       expect(level).toHaveLength(1);
       expect(level[0]?.deterministic?.profilePath).toBe("structure.listLevelIntegrity");
+      expect(level[0]?.expected).toBeUndefined();
+      expect(level[0]?.deterministic?.correctionAvailable).toBe(false);
+      expect(level[0]?.deterministic?.correctionReason).toContain("cannot safely infer");
     });
 
     it("does not flag a list level on a list style", () => {

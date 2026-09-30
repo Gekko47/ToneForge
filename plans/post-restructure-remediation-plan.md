@@ -64,7 +64,7 @@ my position, so implementation does not repeat them:
 | 5.5–5.7               | Ignore list, summary counts, coverage section                    | Built                                 | —                                                                                                                                                                                                                                              |
 | 5.8                   | Auto-preview                                                     | Built, capability propagation missing | See D5.                                                                                                                                                                                                                                        |
 | 5.9                   | Apply All                                                        | Deviated, recorded                    | Deliberate removal as a gate bypass.                                                                                                                                                                                                           |
-| 5.10                  | Safe Reformat removed                                            | Done, dead code remains               | [`ReformatPanel.tsx`](../src/taskpane/components/ReformatPanel.tsx), [`GovernanceDashboard.tsx`](../src/taskpane/components/GovernanceDashboard.tsx) unimported.                                                                               |
+| 5.10                  | Safe Reformat removed                                            | Done, dead code remains               | `ReformatPanel.tsx`, `GovernanceDashboard.tsx` unimported.                                                                                                                                                                                     |
 | 6.1                   | Semantic fields off the deterministic editor                     | Built                                 | —                                                                                                                                                                                                                                              |
 | 6.1b                  | Duplicate read-only profile sections                             | Not built                             | D6.                                                                                                                                                                                                                                            |
 | 6.2                   | Save writes deterministic fields only                            | Built                                 | —                                                                                                                                                                                                                                              |
@@ -250,7 +250,7 @@ display; give the editor a single page-owned heading.
 ### D7 — Controls do not follow the global theme
 
 - Hardcoded colours survive: [`ProfileEditor.sectionStyle`](../src/taskpane/components/ProfileEditor.tsx:85)
-  (`#edebe9`), [`ReformatPanel`](../src/taskpane/components/ReformatPanel.tsx:39)
+  (`#edebe9`), `ReformatPanel`
   (`#a4262c`, `#0b6a0b`).
 - Inline style objects across `PendingChanges`, `CoverageBanner`,
   `GovernanceDashboard`, `ConsistencyReviewResults`, `SemanticProfileEditor` and

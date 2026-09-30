@@ -264,7 +264,7 @@ and nothing is highlighted, scrolled to, or announced as selected.
 
 **Defect B — Review.** [`Dashboard.tsx:454`](../src/taskpane/pages/Dashboard.tsx)
 `markForReview` mutates a React copy of `status.findings`. The next observer
-emission overwrites it. Worse, [`GovernanceDashboard.tsx:58`](../src/taskpane/components/GovernanceDashboard.tsx)
+emission overwrites it. Worse, `GovernanceDashboard.tsx:58`
 counts `reviewed` as **open**, so a reviewed finding still inflates the
 mandatory count.
 
@@ -333,7 +333,7 @@ during render.
 **Current defect.** `loadState()` is called in three render bodies:
 [`Dashboard.tsx:521`](../src/taskpane/pages/Dashboard.tsx),
 [`Dashboard.tsx:638`](../src/taskpane/pages/Dashboard.tsx), and
-[`ReformatPanel.tsx:52`](../src/taskpane/components/ReformatPanel.tsx).
+`ReformatPanel.tsx:52`.
 Nothing re-renders when a Settings section saves, so a consent or provider change
 made in Settings is not visible until the user navigates away and back. The
 OpenRouter component already documents the same trap it hit
@@ -619,7 +619,7 @@ explains why in one sentence.
 [`useAnnouncement`](../src/taskpane/settings/useAnnouncement.ts) was written
 to collapse bursts of status updates into one announcement after a quiet period.
 It is not used. Meanwhile
-[`GovernanceDashboard.tsx:71`](../src/taskpane/components/GovernanceDashboard.tsx),
+`GovernanceDashboard.tsx:71`,
 [`PendingChanges.tsx:112`](../src/taskpane/components/PendingChanges.tsx),
 [`FindingCard.tsx:112`](../src/taskpane/components/FindingCard.tsx),
 [`ProfileRecordSection.tsx:215`](../src/taskpane/components/ProfileRecordSection.tsx),
@@ -878,7 +878,7 @@ locally verified target span"`. The planner therefore cannot produce a change.
 The observer hard-codes `includeRawText: false`
 ([`documentObserver.ts:157`](../src/word/documentObserver.ts)), and
 ReformatPanel sets it from `semanticOptIn` with no registry
-([`ReformatPanel.tsx:53`](../src/taskpane/components/ReformatPanel.tsx),
+(`ReformatPanel.tsx:53`,
 line 74 passes a registry only when injected), so the semantic engine falls back
 to [`MockAdapter`](../src/analysis/deviationEngine.ts). Enabling
 `semanticOptIn` today can only produce mock output.
@@ -930,8 +930,8 @@ defined in [`taskpane.css:24`](../src/taskpane/taskpane.css):
   `#fff5f5`
 - [`CoverageBanner.tsx:27`](../src/taskpane/components/CoverageBanner.tsx) —
   `#a4262c`, `#0b6a0b`, `#fff5f5`, `#f5fff5`
-- [`ReformatPanel.tsx:39`](../src/taskpane/components/ReformatPanel.tsx)
-- [`GovernanceDashboard.tsx:69`](../src/taskpane/components/GovernanceDashboard.tsx)
+- `ReformatPanel.tsx:39`
+- `GovernanceDashboard.tsx:69`
 
 Replace with `--tf-danger`, `--tf-success`, `--tf-warning-bg`,
 `--tf-warning-border`, `--tf-border` (lines 10-14) and Fluent v8 components

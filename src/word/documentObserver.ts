@@ -19,6 +19,7 @@ import { type CoverageReport } from "../core/domain/DocumentSnapshot";
 import type { DeterministicCoverage } from "../analysis/deterministic/contracts";
 import { type StyleProfile } from "../core/domain/StyleProfile";
 import { type Finding } from "../core/domain/Finding";
+import type { ReviewSessionIdentity } from "../core/domain/ReviewSession";
 import type { WordParagraphChange } from "./wordParagraphEvents";
 
 export type DocumentScanPhase =
@@ -63,6 +64,8 @@ export interface DocumentObserverStatus {
   coverage: CoverageReport | null;
   /** The deterministic review's own account of what it did and did not check. */
   deterministicCoverage: DeterministicCoverage | null;
+  /** Identity that approvals for the accepted deterministic report bind to. */
+  reviewSessionIdentity: ReviewSessionIdentity | null;
   currentRunId: string | null;
   lastAcceptedRunId: string | null;
   documentVersion: string;
@@ -96,6 +99,7 @@ interface ObserverState {
   stale: boolean;
   coverage: CoverageReport | null;
   deterministicCoverage: DeterministicCoverage | null;
+  reviewSessionIdentity: ReviewSessionIdentity | null;
   error: string | null;
   hostUnavailable: boolean;
   debouncedScan: (() => void) | null;
@@ -196,6 +200,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     hostUnavailable: false,
     coverage: null,
     deterministicCoverage: null,
+    reviewSessionIdentity: null,
     error: null,
     debouncedScan: null,
     scope: null,
@@ -291,6 +296,16 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       state.findings = report.findings;
       state.coverage = coverage;
       state.deterministicCoverage = report.coverage;
+      state.reviewSessionIdentity = {
+        documentId: report.documentIdentity.documentId,
+        documentVersion: report.documentIdentity.documentVersion,
+        contentHash: report.documentIdentity.contentHash,
+        structuralHash: report.documentIdentity.structuralHash,
+        profileId: report.profileId,
+        profileRevision: report.profileRevision,
+        governancePolicyRevision: context.policy.version,
+        coverageFingerprint: report.coverage.coverageFingerprint,
+      };
       state.lastScan = new Date().toISOString();
       state.lastAcceptedRunId = runId;
       state.dirtyCount = examinedNodeIds.length;
@@ -356,6 +371,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
         findings: state.findings,
         coverage: state.coverage,
         deterministicCoverage: state.deterministicCoverage,
+        reviewSessionIdentity: state.reviewSessionIdentity,
         currentRunId: state.runId,
         lastAcceptedRunId: state.lastAcceptedRunId,
         documentVersion: state.documentVersion,

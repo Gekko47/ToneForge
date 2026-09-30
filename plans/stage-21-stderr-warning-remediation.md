@@ -52,11 +52,11 @@ defense-in-depth).
 
 ### W3/W4 — `Semantic consistency check failed; continuing …` (checker throw + invalid JSON)
 
-Path: [`consistencyChecker.ts`](src/analysis/consistencyChecker.ts:145)
+Path: `consistencyChecker.ts`
 `detectSemanticDeviations()` rejects (`network down` after `withRetry`, or
 `Semantic deviation response is not valid JSON` from
 [`deviationEngine.ts`](src/analysis/deviationEngine.ts:94)) → caught at
-[`consistencyChecker.ts`](src/analysis/consistencyChecker.ts:146) → warn + log
+`consistencyChecker.ts` → warn + log
 → `semantic = []`. The returned report is indistinguishable from a clean run
 with zero semantic findings: the provider error is masked and missing semantic
 findings look like successful validation.
