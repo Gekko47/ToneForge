@@ -192,13 +192,25 @@ describe("planChanges", () => {
   });
 
   it("maps capitalization findings to the cased character", () => {
+    /*
+     * The sentence-case rule is the expanded `language.capitalisation` one, and
+     * it writes the cased character into `expected` rather than leaving the
+     * planner to derive it from an excerpt. The legacy `houseStyle` sentence-case
+     * check has no owner on purpose: running both put two findings on the same
+     * character and the two resulting changes conflicted.
+     */
     const sentenceCase = planFor([
       finding({
-        category: "houseStyle.capitalization.sentenceCase",
+        category: "language.capitalisation.sentenceCase",
         start: 0,
         end: 1,
         message: "Start the sentence with uppercase “c”",
         evidence: "c",
+        expected: "C",
+        deterministic: {
+          profilePath: "language.capitalisation.sentenceCase",
+          correctionAvailable: true,
+        },
       }),
     ]);
     const titleCase = planFor([
@@ -239,7 +251,7 @@ describe("planChanges", () => {
   it("maps banned terms to non-reversible deletions", () => {
     const plan = planFor([
       finding({
-        category: "houseStyle.bannedTerm",
+        category: "language.bannedTerm",
         start: 3,
         end: 9,
         message: "Remove banned term “term”",

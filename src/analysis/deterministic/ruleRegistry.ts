@@ -28,6 +28,7 @@ import {
   type DeterministicStyleProfile,
 } from "../../core/domain/StyleProfile";
 import { findTypographyIssues } from "../../rules/typography";
+import { findHouseStyleIssues } from "../../rules/houseStyle";
 import {
   findAbbreviationIssues,
   findCapitalisationIssues,
@@ -346,6 +347,21 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "text",
     category: "typography.decimalSeparator",
     /*
+     * Declared rather than inferred, and the reason it is long: this rule runs
+     * two scanners, so its findings arrive under six different categories. The
+     * previous declaration named one of them, which made the registry describe a
+     * rule the engine was not running. The parity test in
+     * `tests/unit/changes/deterministicChanges.test.ts` is what caught it.
+     */
+    emits: [
+      "typography.decimalSeparator",
+      "typography.thousandsSeparator",
+      "language.number.decimalSeparator",
+      "language.number.percentageSpacing",
+      "language.number.range",
+      "language.number.spelling",
+    ],
+    /*
      * The number-word threshold, the negative-number convention and the range
      * style are declared here rather than left for T8 to add, because the
      * registry audit failed on exactly these three while they were missing. A
@@ -404,6 +420,11 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "typography.spaceAfterHyphen",
     ],
     correctable: true,
+    // T9 added the five spacing settings to `typography.ts` but this rule was
+    // never given a body, so the settings it declares were readable and did
+    // nothing. The body is the whole of the fix: a rule that reads a profile
+    // section is the claim that the section is wired.
+    analyze: (ruleContext) => typography(ruleContext, ["typography.punctuation"]),
   },
   {
     id: "language/terminology",
@@ -421,10 +442,39 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     id: "language/banned",
     group: "language",
     scope: "text",
-    category: "houseStyle.bannedTerm",
+    category: "language.bannedTerm",
+    emits: ["language.bannedTerm"],
     profilePaths: ["language.bannedTerms"],
     correctable: true,
     analyze: (ruleContext) => language(ruleContext, findTerminologyIssues, ["language.bannedTerm"]),
+  },
+  {
+    /*
+     * The legacy title-case word list, and only that.
+     *
+     * `findHouseStyleIssues` also reports sentence case, and that check is left
+     * unemitted on purpose: `language/capitalisation` below already reports the
+     * same thing from the normative section, so running both put two findings on
+     * the same character and the planner then built two overlapping changes and
+     * refused the plan as conflicting. The title-case word list has no
+     * equivalent in the expanded section, so it keeps its own owner until the
+     * legacy record is retired.
+     */
+    id: "language/legacyTitleCase",
+    group: "language",
+    scope: "text",
+    category: "houseStyle.capitalization.titleCase",
+    emits: ["houseStyle.capitalization.titleCase"],
+    profilePaths: ["language.capitalisation.headingCase"],
+    correctable: true,
+    analyze: (ruleContext) =>
+      selectCategories(
+        findHouseStyleIssues({
+          text: ruleContext.context.text,
+          rules: ruleContext.policy.houseStyle,
+        }),
+        ["houseStyle.capitalization.titleCase"],
+      ) as DeterministicFinding[],
   },
   {
     id: "language/capitalisation",
@@ -455,6 +505,11 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "language",
     scope: "text",
     category: "language.abbreviation",
+    emits: [
+      "language.abbreviation",
+      "language.abbreviation.prohibited",
+      "language.abbreviation.firstUse",
+    ],
     profilePaths: [
       "language.abbreviations.approved",
       "language.abbreviations.preferredExpanded",
@@ -473,6 +528,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "language",
     scope: "text",
     category: "language.date",
+    emits: ["language.date", "language.date.ambiguous", "language.date.format"],
     profilePaths: ["language.dates.formats", "language.dates.requireUnambiguous"],
     // Reported, never corrected: converting between date shapes means deciding
     // which field is the day, and `31/05/2026` is exactly the case where
@@ -486,6 +542,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "language",
     scope: "text",
     category: "language.currency",
+    emits: ["language.currency", "language.currency.representation", "language.currency.spacing"],
     profilePaths: [
       "language.currency.representation",
       "language.currency.symbolSpacing",
@@ -505,6 +562,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "language",
     scope: "text",
     category: "language.unit",
+    emits: ["language.unit", "language.unit.spacing", "language.unit.capitalisation"],
     profilePaths: [
       "language.units.valueSpacing",
       "language.units.capitalisation",
@@ -577,7 +635,10 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "table",
     category: "formatting.tableStyle",
     profilePaths: ["formatting.tables"],
-    correctable: true,
+    // Not correctable until the rule has a body. A `correctable: true` on a rule
+    // that produces no finding promises an "Approve" the review cannot offer,
+    // and T19 is what makes the promise true.
+    correctable: false,
   },
   {
     id: "formatting/page",
@@ -593,7 +654,8 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "headerFooter",
     category: "formatting.headerFooter",
     profilePaths: ["formatting.headersFooters"],
-    correctable: true,
+    // Not correctable until the rule has a body. T20 is what makes it true.
+    correctable: false,
   },
   {
     id: "structure/headingHierarchy",
@@ -610,7 +672,12 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "paragraph",
     category: "formatting.emptyHeading",
     profilePaths: ["structure.reportEmptyHeadings"],
-    correctable: true,
+    // Reported, never corrected. The only change that would "resolve" an empty
+    // heading is a deletion, and a deletion is a structural edit the user may
+    // have staged deliberately; restyling it to `Normal` produces a blank body
+    // paragraph rather than removing anything. Declared false so the rule-level
+    // answer matches what the finding itself says.
+    correctable: false,
     analyze: (ruleContext) => formatting(ruleContext, ["formatting.emptyHeading"]),
   },
   {
@@ -619,7 +686,11 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "paragraph",
     category: "formatting.unknownStyle",
     profilePaths: ["structure.reportUnknownStyles"],
-    correctable: true,
+    // Reported, never corrected. A custom style is the author's own document
+    // structure; replacing it with a built-in would discard it. The finding says
+    // the name is one ToneForge has no table entry for, which is a statement
+    // about the recogniser rather than a defect.
+    correctable: false,
     analyze: (ruleContext) => formatting(ruleContext, ["formatting.unknownStyle"]),
   },
 ];

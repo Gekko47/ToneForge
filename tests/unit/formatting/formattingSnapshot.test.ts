@@ -112,7 +112,6 @@ describe("formatting barrel exports", () => {
     expect(formattingIndex.FormattingParagraphSchema).toBe(FormattingParagraphSchema);
     expect(formattingIndex.ParagraphAlignmentSchema).toBe(ParagraphAlignmentSchema);
     expect(formattingIndex.findFormattingIssues).toBeDefined();
-    expect(formattingIndex.normalizeFormatting).toBeDefined();
     expect(formattingIndex.lookupWordStyle).toBeDefined();
     expect(formattingIndex.WORD_STYLE_MAPPING).toBeDefined();
     expect(formattingIndex.HEADING_STYLE_NAMES).toBeDefined();
