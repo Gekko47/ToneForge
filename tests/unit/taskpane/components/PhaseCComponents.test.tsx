@@ -169,12 +169,17 @@ describe("Phase C task-pane components", () => {
       />,
     );
 
-    expect(screen.getByText("Before: --")).toBeInTheDocument();
-    expect(screen.getByText("After: —")).toBeInTheDocument();
+    // Before and after are separate labelled rows on the card (spec §17), not a
+    // single "Before: x" string, so the reader can see which is which without
+    // parsing the value.
+    expect(screen.getByText("Before")).toBeInTheDocument();
+    expect(screen.getByText("After")).toBeInTheDocument();
+    expect(screen.getByText("--")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
     // The buttons name their scope. "Apply" beside a table of one said nothing
     // about what it would write, and "Reject" read as refusing one change rather
     // than the whole list beside it.
-    expect(screen.getByRole("button", { name: "Apply 1 reviewed change" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Apply 1 with Track Changes" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Reject all" }));
     expect(onReject).toHaveBeenCalledOnce();
     expect(screen.getByText("Changes rejected.")).toBeInTheDocument();

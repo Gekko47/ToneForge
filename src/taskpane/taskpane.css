@@ -392,28 +392,79 @@ button:disabled {
   gap: 0.5rem;
 }
 
-/* The pending-changes table is five columns wide in a pane that can be 320px
-   across. Scrolling beats squeezing every cell to one unreadable word. */
-.tf-pending-table-scroll {
-  overflow-x: auto;
-  margin-bottom: 1rem;
+/* Pending Changes is a list of cards, not a table (spec §17). The table it
+   replaced was five columns wide in a pane that can be 320px across, so every
+   cell was one word wide and the wrapper scrolled horizontally — a horizontally
+   scrolling list of corrections is a list nobody can read at a glance. One card
+   per change gives the before/after comparison the full width it needs. */
+.tf-pending-cards {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-.tf-pending-table {
-  width: 100%;
-  border-collapse: collapse;
+.tf-pending-card {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+  background: var(--tf-surface);
 }
 
-.tf-pending-table th,
-.tf-pending-table td {
-  padding: 0.5rem;
-  text-align: left;
-  border-bottom: 1px solid var(--tf-border);
-  vertical-align: top;
+.tf-pending-card-heading {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
 }
 
-.tf-pending-table th {
-  border-bottom-width: 2px;
+.tf-pending-card-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+/* The labels are small and the values are not, so the reader can see which is
+   which at a glance without reading either. */
+.tf-pending-card-label {
+  margin: 0.25rem 0 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tf-muted);
+}
+
+.tf-pending-card-value {
+  margin: 0;
+}
+
+.tf-pending-card-state {
+  margin: 0.5rem 0 0.25rem;
+  color: var(--tf-muted);
+}
+
+.tf-pending-card-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* The sticky footer carries the two counts and the one button that writes, so it
+   is where the user is looking when they decide. `bottom: 0` inside the section
+   rather than `position: fixed`, which would float over other pages.
+
+   A solid background and a top border are load-bearing rather than decorative:
+   cards scroll *under* the footer, and a translucent one would show the text it
+   is covering, which is exactly the ambiguity a sticky footer exists to remove. */
+.tf-pending-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0;
+  background: var(--tf-surface);
+  border-top: 1px solid var(--tf-border);
 }
 
 .tf-conflict-list {

@@ -48,6 +48,7 @@ import {
   loadState,
   restoreFinding,
   saveReviewedFinding,
+  clearReviewedFinding,
   pruneStaleReviews,
 } from "../../core/state/persistence";
 import { selectActiveProfile } from "../../core/state/profileSelectors";
@@ -978,6 +979,47 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     announcement.announce("Re-scanning the document.");
   }
 
+  /**
+   * Build the preview on demand, for the case auto-preview declined.
+   *
+   * The auto-preview effect already handles the ordinary case, so this exists for
+   * a narrowed scan: a partial read cannot produce a whole-document plan, and the
+   * effect asks the observer for a full scan instead. Pressing Preview requests
+   * the same thing explicitly rather than presenting a control that duplicates a
+   * button the user cannot see.
+   */
+  function buildPreviewNow(): void {
+    previewedDocHashRef.current = null;
+    observerRef.current?.onDocumentChanged();
+    announcement.announce("Rebuilding the preview for this document.");
+  }
+
+  /**
+   * Take one change out of Pending Changes.
+   *
+   * This withdraws the review that admitted the change, so the reviewed-only
+   * projection drops it on the next render. It does not touch the document and
+   * does not reject the remaining changes — that is what "Reject all" is for.
+   *
+   * Resolved through the change's finding rather than through the change id,
+   * because the store is keyed on the occurrence identity the review gate uses,
+   * and a change id from the preview run is not an identity that store holds.
+   */
+  function removeOneFromPending(changeId: string): void {
+    const change = reviewedOnly?.plan.changes.find((entry) => entry.id === changeId);
+    if (change === undefined || change.findingId === undefined) {
+      setReviewNote("That change is no longer part of this review.");
+      return;
+    }
+    const owner = previewFindings.find((entry) => entry.id === change.findingId);
+    if (owner === undefined) {
+      setReviewNote("That change is no longer part of this review.");
+      return;
+    }
+    clearReviewedFinding(reviewIdentity(owner));
+    setReviewNote("Removed from Pending changes. Nothing was applied to the document.");
+  }
+
   /*
    * Drop the expired reviews once the scan has settled.
    *
@@ -1458,6 +1500,19 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             emptyReason={pendingEmptyReason}
             totalCount={totalPlannedChanges}
             reviewedCount={reviewedChangeCount}
+            /*
+             * Preview, offered only where the pane can build one. The effect above
+             * already previews automatically on a settled scan, so this control
+             * exists for the case that effect declines — a narrowed scan, which
+             * needs a full rescan before a plan can be built at all.
+             */
+            {...(pendingPlan === null ? { onPreview: buildPreviewNow } : {})}
+            /*
+             * Remove takes one change out of Pending Changes by withdrawing the
+             * review that put it there. It does not reject the rest, which is what
+             * "Reject all" is for.
+             */
+            onRemove={(changeId) => removeOneFromPending(changeId)}
             /*
              * The preview's findings, not the observer's, and deliberately so.
              * Each change carries a `findingId` from the run that planned it, so

@@ -11,7 +11,7 @@ import { sampleFinding } from "../../../fixtures/sampleDocs";
 import { reviewIdentity } from "../../../../src/taskpane/occurrenceIdentity";
 import type { Change } from "../../../../src/core/domain/Change";
 
-/** One applied-able change, so PendingChanges renders its table and actions. */
+/** One applied-able change, so PendingChanges renders its card and actions. */
 function planWithOneChange(): ReturnType<typeof createTestPlan> {
   return createTestPlan("hash", "base", [
     {
@@ -205,9 +205,10 @@ describe("PendingChanges apply readiness", () => {
   it("offers Apply with no reason when the host is ready", async () => {
     const onApply = vi.fn().mockResolvedValue(true);
     render(<PendingChanges plan={plan} findings={[]} onApply={onApply} />);
-    // The label names how many changes it will write. A bare "Apply" beside a
-    // table of one did not say so, and beside a longer table it was worse.
-    const apply = screen.getByRole("button", { name: "Apply 1 reviewed change" });
+    // The label names how many changes it will write *and* that they are tracked.
+    // Spec §17: "Apply 14 with Track Changes". A bare "Apply" said neither, and a
+    // user pressing it could not tell whether the edit was reversible.
+    const apply = screen.getByRole("button", { name: "Apply 1 with Track Changes" });
     expect(apply).toBeEnabled();
     await userEvent.click(apply);
     expect(onApply).toHaveBeenCalledOnce();
@@ -237,10 +238,74 @@ describe("PendingChanges apply readiness", () => {
     expect(screen.getByText(/no changes are ready to apply/i)).toBeInTheDocument();
   });
 
-  it("gives the preview table a caption and column headers", () => {
+  it("renders one card per change rather than a table", () => {
     render(<PendingChanges plan={plan} findings={[]} onApply={vi.fn()} />);
-    expect(screen.getByRole("table")).toHaveAccessibleName();
-    expect(screen.getAllByRole("columnheader")).toHaveLength(5);
+    // Spec §17 replaces the five-column table with cards. The table is what
+    // forced a horizontal scroll in a 320px pane, so its absence is the point.
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Approved changes" })).toBeInTheDocument();
+    expect(screen.getByTestId("tf-card-44444444-4444-4444-4444-444444444444")).toBeInTheDocument();
+  });
+
+  it("states the approved and awaiting-review counts in the footer", () => {
+    // Spec §17's sticky footer: "14 approved / 3 awaiting review". The awaiting
+    // count is the difference between what was proposed and what is listed, so a
+    // user can tell a deliberate narrowing from lost work without doing the sum.
+    render(<PendingChanges plan={plan} findings={[]} onApply={vi.fn()} totalCount={4} />);
+    expect(screen.getByText(/1 approved/)).toBeInTheDocument();
+    expect(screen.getByText(/3 awaiting review/)).toBeInTheDocument();
+  });
+
+  it("shows a card's before and after from the finding the change names", () => {
+    // The card resolves its finding by `change.findingId`, so the finding has to
+    // carry the id the change names — a plan and a findings array that merely
+    // happen to coexist are not a linked pair.
+    const linked = sampleFinding({ actual: "program", expected: "programme" });
+    const linkedPlan = {
+      ...plan,
+      changes: plan.changes.map((change) => ({ ...change, findingId: linked.id })),
+    };
+    render(<PendingChanges plan={linkedPlan} findings={[linked]} onApply={vi.fn()} />);
+    expect(screen.getByText("program")).toBeInTheDocument();
+    expect(screen.getByText("programme")).toBeInTheDocument();
+  });
+
+  it("says the text is unavailable rather than leaving a blank on the card", () => {
+    // The plan carries a finding id that no supplied finding matches, so the card
+    // has no before/after. An empty row reads as a change with no content; the
+    // sentence says what is actually missing.
+    const linkedPlan = {
+      ...plan,
+      changes: plan.changes.map((change) => ({ ...change, findingId: "no-such-finding" })),
+    };
+    render(<PendingChanges plan={linkedPlan} findings={[]} onApply={vi.fn()} />);
+    expect(screen.getAllByText("Not available for this change").length).toBeGreaterThan(0);
+  });
+
+  it("offers no Go to text for a change with no finding behind it", () => {
+    // The plan's change names no finding, so there is nothing to navigate to.
+    // A button that reported a navigation the pane cannot perform is the same
+    // class of failure as a disabled Apply with no stated reason.
+    render(<PendingChanges plan={plan} findings={[]} onApply={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Go to text" })).not.toBeInTheDocument();
+  });
+
+  it("does not offer Remove when the caller cannot remove anything", () => {
+    render(<PendingChanges plan={plan} findings={[]} onApply={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+  });
+
+  it("offers Preview only when the caller can build one", async () => {
+    const onPreview = vi.fn();
+    const { rerender } = render(
+      <PendingChanges plan={null} findings={[]} totalCount={4} onPreview={onPreview} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Preview 4 changes" }));
+    expect(onPreview).toHaveBeenCalledOnce();
+
+    // Without a handler the control is absent rather than inert.
+    rerender(<PendingChanges plan={null} findings={[]} totalCount={4} />);
+    expect(screen.queryByRole("button", { name: /Preview/ })).not.toBeInTheDocument();
   });
 });
 
