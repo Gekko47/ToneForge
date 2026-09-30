@@ -39,6 +39,9 @@ const ALL_ON: AnalysisCapabilities = {
   supportsParagraphResolution: true,
   supportsHighlight: true,
   supportsContextMenuApi: true,
+  supportsTables: false,
+  supportsHeadersFooters: false,
+  supportsSections: false,
   hostName: "Word",
   hostVersion: "16",
 };
@@ -61,6 +64,12 @@ const SERVED_VALUES: Record<string, unknown> = {
   lineSpacing: 12,
   spaceAfter: 8,
   spaceBefore: 0,
+  leftIndent: 36,
+  rightIndent: 0,
+  firstLineIndent: -18,
+  keepNext: true,
+  keepLines: false,
+  pageBreakBefore: false,
   font: {
     name: "Calibri",
     size: 11,
@@ -266,6 +275,63 @@ describe("acquireAnalysisContext degraded scope", () => {
     const paragraph = context.formatting.paragraphs[0];
     expect(paragraph?.listLevel).toBeNull();
     expect(paragraph?.unsupportedProperties ?? []).not.toContain("listLevel");
+  });
+
+  /*
+   * Indentation and the three flow controls. `0` and `false` are *values* here,
+   * not absences: Word reports a real zero indent and a real "do not keep
+   * lines together". Coercing either to null would tell a formatting check that
+   * the property was not read, which is the one claim it must never make.
+   */
+  it("carries indentation and flow controls into the DTO on a capable host", async () => {
+    installHost(false);
+
+    const context = await acquireAnalysisContext({
+      profile: PROFILE,
+      capabilities: ALL_ON,
+    });
+
+    const paragraph = context.formatting.paragraphs[0];
+    expect(paragraph?.leftIndent).toBe(36);
+    expect(paragraph?.rightIndent).toBe(0);
+    expect(paragraph?.firstLineIndent).toBe(-18);
+    expect(paragraph?.keepNext).toBe(true);
+    // A false flag and a zero indent are values. Reporting them as "not read"
+    // would make a check report a clean paragraph it never actually saw.
+    expect(paragraph?.keepLines).toBe(false);
+    expect(paragraph?.pageBreakBefore).toBe(false);
+    expect(paragraph?.unsupportedProperties ?? []).toEqual([]);
+  });
+
+  it("reports a flow property as unsupported only when the rich scope asked for it", async () => {
+    // A host that serves the family but omits one property still has to say so,
+    // or a formatting check would treat "absent" as "correct".
+    SERVED_VALUES.keepNext = undefined;
+    try {
+      installHost(false);
+      const context = await acquireAnalysisContext({
+        profile: PROFILE,
+        capabilities: ALL_ON,
+      });
+      expect(context.formatting.paragraphs[0]?.unsupportedProperties ?? []).toContain("keepNext");
+    } finally {
+      SERVED_VALUES.keepNext = true;
+    }
+  });
+
+  it("does not blame the host for a flow property the degraded scope never requested", async () => {
+    installHost(true);
+
+    const context = await acquireAnalysisContext({
+      profile: PROFILE,
+      capabilities: ALL_ON,
+    });
+
+    const paragraph = context.formatting.paragraphs[0];
+    expect(paragraph?.keepNext).toBeNull();
+    expect(paragraph?.leftIndent).toBeNull();
+    expect(paragraph?.unsupportedProperties ?? []).not.toContain("keepNext");
+    expect(paragraph?.unsupportedProperties ?? []).not.toContain("leftIndent");
   });
 
   it("keeps text as the floor of every scope", () => {

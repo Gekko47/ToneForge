@@ -268,6 +268,70 @@ describe("probeWordCapabilities", () => {
     setOffice(fullOffice());
     expect((await probeWordCapabilities()).supportsRibbonUpdate).toBe(false);
   });
+
+  /*
+   * Tables, sections and headers/footers. Each flag defaults to `false` and the
+   * checks that would consume it refuse to run when it is false, so a host that
+   * hides a collection produces "not examined" rather than a clean document.
+   */
+  it("detects the body table collection", async () => {
+    setOffice(
+      fullOffice({
+        document: {
+          body: { text: "", load: vi.fn(), getRange: vi.fn(), tables: { items: [] } },
+          getSelection: vi.fn(),
+          styles: { name: "", load: vi.fn(), items: [] },
+          load: vi.fn(),
+        },
+      }),
+    );
+    expect((await probeWordCapabilities()).supportsTables).toBe(true);
+  });
+
+  it("reports no table support on a host without the collection", async () => {
+    setOffice(fullOffice());
+    expect((await probeWordCapabilities()).supportsTables).toBe(false);
+  });
+
+  it("detects the document section collection", async () => {
+    setOffice(
+      fullOffice({
+        document: {
+          body: { text: "", load: vi.fn(), getRange: vi.fn() },
+          getSelection: vi.fn(),
+          styles: { name: "", load: vi.fn(), items: [] },
+          sections: { load: vi.fn(), items: [{ getHeader: vi.fn(), getFooter: vi.fn() }] },
+          load: vi.fn(),
+        },
+      }),
+    );
+    const caps = await probeWordCapabilities();
+    expect(caps.supportsSections).toBe(true);
+    expect(caps.supportsHeadersFooters).toBe(true);
+  });
+
+  /*
+   * A header or footer is a `Body` returned by `Section.getHeader(type)`, not a
+   * member of a `headers`/`footers` collection. A section that cannot hand one
+   * back is a host without header/footer access even though the section itself
+   * loaded, which is why the two flags are probed separately.
+   */
+  it("reports no header or footer access when a section cannot return one", async () => {
+    setOffice(
+      fullOffice({
+        document: {
+          body: { text: "", load: vi.fn(), getRange: vi.fn() },
+          getSelection: vi.fn(),
+          styles: { name: "", load: vi.fn(), items: [] },
+          sections: { load: vi.fn(), items: [{ body: {} }] },
+          load: vi.fn(),
+        },
+      }),
+    );
+    const caps = await probeWordCapabilities();
+    expect(caps.supportsSections).toBe(true);
+    expect(caps.supportsHeadersFooters).toBe(false);
+  });
 });
 
 /*
@@ -299,6 +363,9 @@ describe("toAnalysisCapabilities", () => {
       supportsParagraphResolution: true,
       supportsHighlight: true,
       supportsContextMenuApi: true,
+      supportsTables: false,
+      supportsHeadersFooters: false,
+      supportsSections: false,
       supportsRibbonUpdate: true,
       hostName: "Word" as const,
       hostVersion: "16.0",
@@ -329,6 +396,9 @@ describe("toAnalysisCapabilities", () => {
         supportsParagraphResolution: false,
         supportsHighlight: false,
         supportsContextMenuApi: false,
+        supportsTables: false,
+        supportsHeadersFooters: false,
+        supportsSections: false,
         supportsRibbonUpdate: false,
         hostName: "unknown" as const,
         hostVersion: null,

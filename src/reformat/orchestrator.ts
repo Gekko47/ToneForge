@@ -113,6 +113,9 @@ const FALLBACK_CAPABILITIES = {
   supportsParagraphResolution: false,
   supportsHighlight: false,
   supportsContextMenuApi: false,
+  supportsTables: false,
+  supportsHeadersFooters: false,
+  supportsSections: false,
   hostName: "unknown" as const,
   hostVersion: null,
 };

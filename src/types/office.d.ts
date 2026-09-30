@@ -40,15 +40,51 @@ declare global {
       body: Body;
       selection: Range;
       styles: Styles;
+      /**
+       * Word JavaScript API (WordApi 1.1): `Document.sections` is the
+       * `SectionCollection` of the document. Optional here because a host
+       * predating the requirement set does not expose it, and the add-in
+       * treats its absence as "sections unsupported" rather than an error.
+       */
+      sections?: SectionCollection;
       url?: string;
       id?: string;
       getSelection(): Range;
     }
 
+    interface SectionCollection {
+      load: (prop: string) => SectionCollection;
+      items: Section[];
+    }
+
+    /**
+     * Word JavaScript API (WordApi 1.1). A header or footer is not a
+     * collection member: `getHeader`/`getFooter` return the header/footer
+     * `Body` for one `HeaderFooterType`.
+     */
+    interface Section {
+      body: Body;
+      getHeader: (type: "Primary" | "FirstPage" | "EvenPages") => Body;
+      getFooter: (type: "Primary" | "FirstPage" | "EvenPages") => Body;
+    }
+
+    interface TableCollection {
+      load: (prop: string) => TableCollection;
+      items: Table[];
+    }
+
+    interface Table {
+      load: (prop: string) => Table;
+    }
+
     interface Body {
       text: string;
-      load: (prop: "text") => Body;
+      load: (prop: "text" | "tables/items") => Body;
       paragraphs?: ParagraphCollection;
+      /**
+       * Word JavaScript API (WordApi 1.3): the tables in this body.
+       */
+      tables?: TableCollection;
       /**
        * Word JavaScript API: `Body.getRange(rangeLocation)` accepts a
        * RangeLocation ("Start", "End", "All", "Whole", or a custom range

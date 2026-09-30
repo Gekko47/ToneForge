@@ -41,6 +41,9 @@ const FULL_CAPABILITIES: AnalysisCapabilities = {
   supportsParagraphResolution: true,
   supportsHighlight: true,
   supportsContextMenuApi: true,
+  supportsTables: false,
+  supportsHeadersFooters: false,
+  supportsSections: false,
   hostName: "Word",
   hostVersion: "16.0",
 };

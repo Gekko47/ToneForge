@@ -17,6 +17,9 @@ const ALL_ON: AnalysisCapabilities = {
   supportsParagraphResolution: true,
   supportsHighlight: true,
   supportsContextMenuApi: true,
+  supportsTables: false,
+  supportsHeadersFooters: false,
+  supportsSections: false,
   hostName: "Word",
   hostVersion: "16",
 };
@@ -53,6 +56,32 @@ describe("planAcquisitionLoads", () => {
     const plan = planAcquisitionLoads({ ...ALL_ON, supportsParagraphFormat: false });
     expect(plan.paragraphProperties).toContain("font");
     expect(plan.paragraphProperties).not.toContain("lineSpacing");
+  });
+
+  /*
+   * Indentation and the three flow controls arrive with the paragraph-format
+   * family. Loading them separately would be a second transaction for one
+   * paragraph, and Word serves them or refuses them together.
+   */
+  it("asks for indentation and the flow controls with the paragraph-format family", () => {
+    const plan = planAcquisitionLoads(ALL_ON);
+    [
+      "leftIndent",
+      "rightIndent",
+      "firstLineIndent",
+      "keepNext",
+      "keepLines",
+      "pageBreakBefore",
+    ].forEach((property) => {
+      expect(plan.paragraphProperties).toContain(property);
+    });
+  });
+
+  it("withholds the flow controls from a host without paragraph format", () => {
+    const plan = planAcquisitionLoads({ ...ALL_ON, supportsParagraphFormat: false });
+    ["leftIndent", "keepNext", "pageBreakBefore"].forEach((property) => {
+      expect(plan.paragraphProperties).not.toContain(property);
+    });
   });
 
   it("drops every optional property in the degraded scope", () => {

@@ -30,6 +30,20 @@ export interface AnalysisCapabilities {
    * the declared menu — see the note on `WordCapabilities.supportsContextMenuApi`.
    */
   supportsContextMenuApi: boolean;
+  /**
+   * Whether the host serves `document.tables`.
+   *
+   * Part of spec §8.3. Absent from the original probe because nothing read
+   * tables; declared now so a table standard on the profile produces a coverage
+   * limitation rather than a silent pass. Defaults to `false` at every site
+   * that builds this object, because "not probed" and "probed and absent" must
+   * produce the same answer and `false` is the answer that is safe.
+   */
+  supportsTables: boolean;
+  /** Whether the host serves header and footer collections. Spec §8.4. */
+  supportsHeadersFooters: boolean;
+  /** Whether the host serves section properties. Spec §8.5. */
+  supportsSections: boolean;
   hostName: "Word" | "Excel" | "PowerPoint" | "unknown";
   hostVersion: string | null;
 }

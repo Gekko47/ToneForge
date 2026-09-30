@@ -43,6 +43,19 @@ export const FormattingParagraphSchema = z.object({
   spaceAfter: z.number().min(0).max(100).nullable().default(null),
   spaceBefore: z.number().min(0).max(100).nullable().default(null),
   listLevel: z.number().int().min(0).max(8).nullable().default(null),
+  /**
+   * Indentation in points. `null` means "not read", never "zero": a host
+   * without `supportsParagraphFormat` is a different claim from a paragraph
+   * that genuinely has no indent, and conflating them lets a degraded scan
+   * report a clean document.
+   */
+  leftIndent: z.number().nullable().default(null),
+  rightIndent: z.number().nullable().default(null),
+  firstLineIndent: z.number().nullable().default(null),
+  /** Word paragraph flow controls: keep with next, keep lines together, page break before. */
+  keepNext: z.boolean().nullable().default(null),
+  keepLines: z.boolean().nullable().default(null),
+  pageBreakBefore: z.boolean().nullable().default(null),
   fontName: z.string().trim().nullable().default(null),
   fontSize: z.number().nullable().default(null),
   fontColor: z.string().trim().nullable().default(null),

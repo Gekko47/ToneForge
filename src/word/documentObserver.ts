@@ -151,6 +151,9 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     supportsParagraphResolution: false,
     supportsHighlight: false,
     supportsContextMenuApi: false,
+    supportsTables: false,
+    supportsHeadersFooters: false,
+    supportsSections: false,
     hostName: "unknown" as const,
     hostVersion: null,
   };

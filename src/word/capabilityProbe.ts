@@ -47,6 +47,12 @@ export interface WordCapabilities {
   supportsContextMenuApi: boolean;
   /** Whether `Office.ribbon.requestUpdate` is reachable (RibbonApi 1.1). */
   supportsRibbonUpdate: boolean;
+  /** Whether `document.tables` is reachable and iterable. Spec §8.3. */
+  supportsTables: boolean;
+  /** Whether `document.sections[i].headers` is reachable. Spec §8.4. */
+  supportsHeadersFooters: boolean;
+  /** Whether `document.sections` is reachable. Spec §8.5. */
+  supportsSections: boolean;
   hostName: "Word" | "Excel" | "PowerPoint" | "unknown";
   hostVersion: string | null;
 }
@@ -82,6 +88,9 @@ export function toAnalysisCapabilities(capabilities: WordCapabilities): Analysis
     supportsParagraphResolution: capabilities.supportsParagraphResolution,
     supportsHighlight: capabilities.supportsHighlight,
     supportsContextMenuApi: capabilities.supportsContextMenuApi,
+    supportsTables: capabilities.supportsTables,
+    supportsHeadersFooters: capabilities.supportsHeadersFooters,
+    supportsSections: capabilities.supportsSections,
     hostName: capabilities.hostName,
     hostVersion: capabilities.hostVersion,
   };
@@ -103,6 +112,9 @@ const DEFAULT_CAPABILITIES: WordCapabilities = {
   supportsHighlight: false,
   supportsContextMenuApi: false,
   supportsRibbonUpdate: false,
+  supportsTables: false,
+  supportsHeadersFooters: false,
+  supportsSections: false,
   hostName: "unknown",
   hostVersion: null,
 };
@@ -301,6 +313,58 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
         const result = await runInWordSafe(async (context) => {
           const range = getProbeRange(context);
           return range !== null && hasMethod(range, "highlight");
+        });
+        return result === true;
+      },
+    ],
+    // Tables, headers/footers and sections are read-only inspections of the
+    // object model. Each defaults to `false`, so a host that hides the
+    // collection makes the corresponding checks refuse to run rather than
+    // silently report a clean document.
+    //
+    // `Word.Body.tables` (WordApi 1.3) and `Word.Document.sections`
+    // (WordApi 1.1) are the real entry points. There is no `Section.headers`
+    // or `Section.footers` collection: a header or footer is a `Body` reached
+    // through `Section.getHeader(type)` / `Section.getFooter(type)`, so the
+    // presence of those two methods is the capability.
+    [
+      "supportsTables",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const body = context.document.body;
+          if (!body || typeof body.load !== "function") return false;
+          body.load("tables/items");
+          await context.sync();
+          return Array.isArray(body.tables?.items);
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsHeadersFooters",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const sections = context.document.sections;
+          if (!sections || typeof sections.load !== "function") return false;
+          sections.load("items");
+          await context.sync();
+          const items = Array.isArray(sections.items) ? sections.items : [];
+          return items.every(
+            (section) => hasMethod(section, "getHeader") && hasMethod(section, "getFooter"),
+          );
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsSections",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const sections = context.document.sections;
+          if (!sections || typeof sections.load !== "function") return false;
+          sections.load("items");
+          await context.sync();
+          return Array.isArray(sections.items);
         });
         return result === true;
       },

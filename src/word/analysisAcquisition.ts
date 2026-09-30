@@ -45,6 +45,12 @@ interface ParagraphView {
   lineSpacing?: number;
   spaceAfter?: number;
   spaceBefore?: number;
+  leftIndent?: number;
+  rightIndent?: number;
+  firstLineIndent?: number;
+  keepNext?: boolean;
+  keepLines?: boolean;
+  pageBreakBefore?: boolean;
   font?: FontView;
   listItem?: { level?: number };
   load?: (properties: string | string[]) => unknown;
@@ -80,7 +86,23 @@ const CAPABILITY_PROPERTY_GROUPS: readonly {
   { capability: "supportsListLevel", properties: ["isListItem", "listItem"] },
   {
     capability: "supportsParagraphFormat",
-    properties: ["alignment", "lineSpacing", "spaceAfter", "spaceBefore"],
+    properties: [
+      "alignment",
+      "lineSpacing",
+      "spaceAfter",
+      "spaceBefore",
+      // Spec §6's `ParagraphStandard`. These four are the whole of what a
+      // paragraph standard can be compared against, so without them a body or
+      // heading standard could only ever check style name and font — and a
+      // rule that reports "matches the profile" would be reporting the
+      // narrowest thing it happened to read.
+      "leftIndent",
+      "rightIndent",
+      "firstLineIndent",
+      "keepNext",
+      "keepLines",
+      "pageBreakBefore",
+    ],
   },
   { capability: "supportsCharacterFormat", properties: ["font"] },
 ];
@@ -434,6 +456,12 @@ function buildFormatting(
      */
     const unsupportedProperties: string[] =
       listLevel === null && plan.paragraphProperties.includes("listItem") ? ["listLevel"] : [];
+    PLANNED_FLOW_PROPERTIES.forEach((property) => {
+      const value = readPlanned(plan, property, () => paragraph[property]);
+      if (value === null && plan.paragraphProperties.includes(property)) {
+        unsupportedProperties.push(property);
+      }
+    });
     return {
       index,
       nodeId,
@@ -445,6 +473,16 @@ function buildFormatting(
       spaceAfter: readPlanned(plan, "spaceAfter", () => paragraph.spaceAfter),
       spaceBefore: readPlanned(plan, "spaceBefore", () => paragraph.spaceBefore),
       listLevel: typeof listLevel === "number" ? listLevel : null,
+      leftIndent: numberOrNull(readPlanned(plan, "leftIndent", () => paragraph.leftIndent)),
+      rightIndent: numberOrNull(readPlanned(plan, "rightIndent", () => paragraph.rightIndent)),
+      firstLineIndent: numberOrNull(
+        readPlanned(plan, "firstLineIndent", () => paragraph.firstLineIndent),
+      ),
+      keepNext: booleanOrNull(readPlanned(plan, "keepNext", () => paragraph.keepNext)),
+      keepLines: booleanOrNull(readPlanned(plan, "keepLines", () => paragraph.keepLines)),
+      pageBreakBefore: booleanOrNull(
+        readPlanned(plan, "pageBreakBefore", () => paragraph.pageBreakBefore),
+      ),
       fontName: fontValue(font?.name),
       fontSize: font?.size ?? null,
       fontColor: fontValue(font?.color),
@@ -572,6 +610,30 @@ function plannedStyleName(paragraph: ParagraphView, plan: AcquisitionLoadPlan): 
     return (style as { name: string }).name.trim();
   }
   return "Normal";
+}
+
+/**
+ * Paragraph indentation and flow properties carried through the DTO.
+ *
+ * They are grouped because they share one truthiness rule: Word reports
+ * `false` and `0` for a real value, so the absence of a value is the only
+ * thing that becomes `null`.
+ */
+const PLANNED_FLOW_PROPERTIES = [
+  "leftIndent",
+  "rightIndent",
+  "firstLineIndent",
+  "keepNext",
+  "keepLines",
+  "pageBreakBefore",
+] as const;
+
+function numberOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanOrNull(value: boolean | null | undefined): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function fontValue(value: string | undefined): string | null {
