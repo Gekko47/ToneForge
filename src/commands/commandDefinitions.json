@@ -57,10 +57,10 @@
   },
   {
     "id": "ToneForgeSemantic",
-    "label": "Check Semantic Style",
+    "label": "Semantic Review",
     "jsonAction": "executeFunction",
     "xmlAction": "ShowTaskpane",
-    "navigationTarget": "semantic",
+    "navigationTarget": "semantic-review",
     "xmlNavigationTarget": "default"
   }
 ]

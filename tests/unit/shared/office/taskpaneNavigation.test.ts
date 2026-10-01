@@ -7,20 +7,33 @@ import {
 } from "../../../../src/shared/office/taskpaneNavigation";
 
 describe("taskpane navigation instructions", () => {
-  it("round-trips the semantic destination with its read-selection action", () => {
+  it("round-trips the semantic-review destination with its read-selection action", () => {
     // The context-menu path. Dropping the action here would mean the pane opens
-    // on the Semantic tab with nothing selected, and the user has to select the
+    // on Semantic Review with nothing selected, and the user has to select the
     // same text again after already right-clicking it.
-    setTaskpaneTarget("semantic", "read-selection");
-    expect(consumeTaskpaneTarget()).toEqual({ target: "semantic", action: "read-selection" });
+    setTaskpaneTarget("semantic-review", "read-selection");
+    expect(consumeTaskpaneTarget()).toEqual({
+      target: "semantic-review",
+      action: "read-selection",
+    });
   });
 
   it("carries no action for an ordinary open", () => {
     // An action must be something the command asked for, never a default. A
     // destination that always worked would let a plain "open this page" button
     // start work the user never requested.
-    setTaskpaneTarget("semantic");
-    expect(consumeTaskpaneTarget()).toEqual({ target: "semantic" });
+    setTaskpaneTarget("semantic-review");
+    expect(consumeTaskpaneTarget()).toEqual({ target: "semantic-review" });
+  });
+
+  it("drops the retired `semantic` target rather than guessing what it meant", () => {
+    // Renamed in P9. The instruction lives in storage for the length of one
+    // pane session, so the only value that can be stale is one written by a
+    // build that has just been replaced — and guessing is worse than dropping:
+    // a bare "semantic" could mean either of the two pages, and sending it to
+    // the wrong one is a silent wrong answer rather than an obvious no-op.
+    window.localStorage.setItem(TASKPANE_NAVIGATION_KEY, JSON.stringify({ target: "semantic" }));
+    expect(consumeTaskpaneTarget()).toBeNull();
   });
 
   it("keeps the scan action working, so the second action did not displace it", () => {
@@ -73,13 +86,13 @@ describe("taskpane navigation instructions", () => {
     // means.
     window.localStorage.setItem(
       TASKPANE_NAVIGATION_KEY,
-      JSON.stringify({ target: "semantic", action: "delete-document" }),
+      JSON.stringify({ target: "semantic-review", action: "delete-document" }),
     );
-    expect(consumeTaskpaneTarget()).toEqual({ target: "semantic" });
+    expect(consumeTaskpaneTarget()).toEqual({ target: "semantic-review" });
   });
 
   it("consumes the instruction once, so a stale one cannot re-fire later", () => {
-    setTaskpaneTarget("semantic", "read-selection");
+    setTaskpaneTarget("semantic-review", "read-selection");
     expect(consumeTaskpaneTarget()).not.toBeNull();
     expect(consumeTaskpaneTarget()).toBeNull();
   });

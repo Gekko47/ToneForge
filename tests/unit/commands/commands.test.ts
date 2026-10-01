@@ -6,7 +6,7 @@ import {
   openFindings,
   openPendingChanges,
   openProfile,
-  openSemanticStyle,
+  openSemanticReview,
   openTroubleshooting,
   reviewForConsistency,
   scanNow,
@@ -102,11 +102,14 @@ describe("command entry points", () => {
         navigationTarget: "debugging",
       },
       {
+        // Relabelled in P9. "Check Semantic Style" named the style page, and the
+        // command opens the review; the label followed the page rather than the
+        // action, so a user pressing it got somewhere the label did not describe.
         id: "ToneForgeSemantic",
-        label: "Check Semantic Style",
+        label: "Semantic Review",
         jsonAction: "executeFunction",
         xmlAction: "ShowTaskpane",
-        navigationTarget: "semantic",
+        navigationTarget: "semantic-review",
       },
     ]);
   });
@@ -144,9 +147,9 @@ describe("command entry points", () => {
    */
   it("asks the pane to read the selection for the semantic command", async () => {
     setOffice({ addin: { showAsTaskpane: vi.fn().mockResolvedValue(undefined) } });
-    await openSemanticStyle();
+    await openSemanticReview();
     expect(consumeTaskpaneTarget()).toEqual({
-      target: "semantic",
+      target: "semantic-review",
       action: "read-selection",
     });
   });
@@ -158,7 +161,10 @@ describe("command entry points", () => {
     // silently ship a different product.
     setOffice({ addin: { showAsTaskpane: vi.fn().mockResolvedValue(undefined) } });
     await ToneForgeSemantic();
-    expect(consumeTaskpaneTarget()).toEqual({ target: "semantic", action: "read-selection" });
+    expect(consumeTaskpaneTarget()).toEqual({
+      target: "semantic-review",
+      action: "read-selection",
+    });
   });
 
   /**

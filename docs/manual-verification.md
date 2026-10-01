@@ -404,6 +404,47 @@ control that works everywhere. **Record the host and version that declined —
 do not record "Word has no selection events", which is a claim about a product
 rather than about a build.**
 
+## Open gate — the two semantic destinations (P9)
+
+The split shipped in P7 and was made navigable in P9: one ribbon command
+labelled **Semantic Review**, opening `semantic-review`, and a second pane
+destination `semantic-style` reached from the drawer and from the Review page.
+Nothing below can be checked from a test run — the destination is a host
+behaviour, and the labels are read by Word, not by us.
+
+**Requires the full sideload cycle** (`npm run stop` → close every Word window →
+`npm run sideload`), because the label and supertip live in the manifest and
+Word caches the manifest at registration. A pane refresh shows the old labels.
+
+Per host (Windows desktop, Mac desktop, Word on the web):
+
+1. Confirm the ribbon control reads **"Semantic Review"** and its supertip says
+   a revision is approved **on the Semantic Review page**. A supertip naming
+   Deterministic Review is the pre-P9 text and means Word is holding a cached
+   manifest.
+2. Right-click a paragraph and confirm the context-menu entry reads the same
+   thing. The two manifests are separate files; one updated and one stale shows
+   up here and nowhere else.
+3. Press the ribbon control with a selection active. Confirm the pane opens
+   **Semantic Review** and the selection is already read — it must not need
+   selecting again.
+4. Press it with **nothing** selected. Confirm the pane opens and says the
+   selection is empty rather than reviewing the whole document.
+5. Open the drawer. Confirm **Semantic Review** and **Semantic Style** are both
+   present, adjacent, and that neither is labelled "Semantic".
+6. From the Review page, press **Semantic Style**. Confirm the style editor
+   opens; press its breadcrumb and confirm it returns to **Semantic Review**, not
+   to Deterministic Review.
+7. With **no** deterministic profile configured, open Home and press
+   "Set up semantic style profile". Confirm it lands on Semantic Style. The
+   style editor is the one page that can _create_ a profile, so it must be
+   reachable without one.
+8. Confirm the control is still disabled when no semantic style profile exists,
+   and that learning one turns it on without a Word restart.
+
+Record the host and version for each. A label that is correct in one manifest and
+stale in the other is a passing build and a wrong product, so check both.
+
 ## Open gate — live accessibility evidence
 
 The accessibility claims in `docs/accessibility.md` are covered by jsx-a11y lint

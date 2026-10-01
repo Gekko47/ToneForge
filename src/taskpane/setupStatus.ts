@@ -48,7 +48,18 @@ export interface SetupItem {
 
 export type SetupItemId = "deterministicProfile" | "semanticProfile" | "llmProvider";
 
-export type SetupDestination = "profile" | "semantic" | "settings";
+/**
+ * Where a blocked setup item sends the user.
+ *
+ * `semantic-style`, not `semantic-review`, because this item is about *creating*
+ * a profile and the only control that creates one lives on the style page. It
+ * used to say `semantic`, which is the same class of defect this file's
+ * neighbouring rename already caused elsewhere: a destination whose name does
+ * not name the page it opens, and therefore an arrival mapping that quietly
+ * stops matching. P10 splits the capability this item gates; the destination
+ * itself is settled here.
+ */
+export type SetupDestination = "profile" | "semantic-style" | "settings";
 
 export interface SetupStatus {
   items: readonly SetupItem[];
@@ -91,10 +102,10 @@ export function setupStatus(state: PersistedState, providerUsable: boolean): Set
       ready: semanticReady,
       blocked: semanticReady
         ? null
-        : "Semantic rewrite and the measured-style comparison are unavailable until a semantic " +
-          "style profile exists. Create an empty one by hand, or run Learn Style on a sample.",
-      destination: "semantic",
-      control: "Semantic → Semantic profiles → Create empty profile",
+        : "Semantic Review and the measured-style comparison are unavailable until a semantic " +
+          "style profile exists. Create an empty one by hand, or learn one from a sample.",
+      destination: "semantic-style",
+      control: "Semantic Style → Semantic profiles → Create empty profile",
     },
     {
       id: "llmProvider",
@@ -102,7 +113,7 @@ export function setupStatus(state: PersistedState, providerUsable: boolean): Set
       ready: providerUsable,
       blocked: providerUsable
         ? null
-        : "The consistency check and the semantic rewrite are unavailable until a provider is " +
+        : "The consistency check and semantic review are unavailable until a provider is " +
           "connected. Deterministic review, scanning, and applying corrections are unaffected.",
       destination: "settings",
       control: "Settings → Provider and privacy → Provider",
@@ -127,7 +138,7 @@ export function setupStatusFromState(state: PersistedState): SetupStatus {
  * Expressed as named capabilities rather than as "is the checklist complete",
  * because the three items gate different things. A user with no provider can
  * still scan and apply; a user with no semantic profile can still do everything
- * except rewrite. Collapsing that to one boolean is what produced a first run
+ * except review semantically. Collapsing that to one boolean is what produced a first run
  * that felt entirely switched off.
  */
 export type Capability =

@@ -1,3 +1,16 @@
+/**
+ * The typed command registry: the single source for manifest action ids, labels,
+ * navigation destinations and handlers.
+ *
+ * **One command per destination, and the build enforces it.**
+ * `duplicateNavigationTargets()` fails when two commands claim one target, which
+ * is why Semantic Style is a second *pane* destination reached from the drawer
+ * and from the Review page rather than a second ribbon button (D10). The
+ * alternative — a "Semantic Style" button — would either have needed a distinct
+ * target or would have failed the check, and in both cases the user would see two
+ * buttons for one feature.
+ */
+
 import { z } from "zod";
 import type { TaskpaneTarget } from "../shared/office/taskpaneNavigation";
 import commandDefinitionData from "./commandDefinitions.json";
@@ -6,7 +19,7 @@ import {
   openGovernancePolicy,
   openPendingChanges,
   openProfile,
-  openSemanticStyle,
+  openSemanticReview,
   openTroubleshooting,
   reviewForConsistency,
   scanNow,
@@ -43,7 +56,7 @@ const CommandDefinitionSchema = z.object({
     "governance-policy",
     "pending-changes",
     "debugging",
-    "semantic",
+    "semantic-review",
   ]),
 });
 
@@ -56,7 +69,7 @@ const handlers: Readonly<Record<(typeof commandDefinitions)[number]["id"], Comma
   ToneForgeGovernancePolicy: openGovernancePolicy,
   ToneForgePendingChanges: openPendingChanges,
   ToneForgeTroubleshooting: openTroubleshooting,
-  ToneForgeSemantic: openSemanticStyle,
+  ToneForgeSemantic: openSemanticReview,
 };
 
 export const COMMAND_REGISTRY = commandDefinitions.map((definition): CommandDefinition => {

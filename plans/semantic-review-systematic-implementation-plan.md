@@ -1682,7 +1682,7 @@ it is the route that sends the most of someone's writing.
    attribution the evidence card shows. The rule it applies — selection wins
    when non-empty — is the same one, and the component says so in a comment.
 
-### P9 — Terminology and navigation
+#### P9 — Terminology and navigation _(LANDED 2026-10-01)_
 
 1. `semantic-review` / `semantic-style` targets; header; Dashboard routing in
    both branches; command registry; `commandDefinitions.json` label.
@@ -1697,6 +1697,48 @@ it is the route that sends the most of someone's writing.
    [`commandHandlers.ts:99`](../src/commands/commandHandlers.ts:99)).
 5. ADR-0070's sideload procedure (`npm run stop` → close Word → `npm run
 sideload`) is a **manual** step and is recorded, not automated.
+
+**Exit, as met.** 1: `TaskpaneDestination` now has `semantic-review` and
+`semantic-style`; the drawer lists both, adjacent, and the old single `semantic`
+page is gone from it. The `semanticStyleOpen` boolean is deleted — the
+destination _is_ the state, so a second representation of the same fact could
+drift and had already been argued about in a comment. Both branches of
+`Dashboard` route both pages, so the style editor is reachable with no
+deterministic profile. 2: both manifests carry the new label, new supertip and
+new context-menu wording. 3: one command, one target, and the test still says
+so. 4: `ToneForgeSemantic` kept, delegating to the renamed `openSemanticReview`.
+5: recorded in `docs/manual-verification.md`; still a human step.
+
+**Deviations.**
+
+1. **`SetupDestination` moved to `semantic-style`, and that is P10's file.**
+   `setupStatus.ts` had its own `"semantic"` destination, structurally unrelated
+   to `TaskPaneDestination` but passed to the same `navigate`. The type stopped
+   compiling the moment the pane destination was renamed, which is the correct
+   outcome: a destination that does not name a page it can open is a destination
+   whose arrival mapping quietly stops matching — the exact defect the module's
+   own note on `review` already records. It points at `semantic-style` because
+   that item is about _creating_ a profile and the create control lives there.
+   P10 splits the capability this item gates; the destination is settled here.
+2. **The stale `semantic` target is dropped, not translated.** The instruction
+   lives in storage for the length of one pane session, so the only value that
+   can be stale is one written by a build that has just been replaced.
+   Translating it would mean guessing which of two pages the old name meant, and
+   a wrong guess is a silent wrong answer where a drop is an obvious no-op.
+   `isTarget` already drops unrecognised values, so the behaviour needed no
+   change — only a test saying it is deliberate.
+3. **The two drawer entries are ordered next to each other on purpose.** Not in
+   the plan. The style editor previously sat with the policy pages, which is
+   where it was before the split and where nobody found it; the two semantic
+   pages are two halves of one feature with one thing in common, so the drawer
+   now says so. `TaskPaneHeader.test.tsx` pins the adjacency, because order is
+   only a decision while something records it.
+4. **`Home.tsx` copy was updated in P9 rather than P10.** It says "the Semantic
+   tab", which stopped being a tab in P7 and stopped naming one destination in
+   P9. The plan assigned the file to P10, but leaving a destination name that no
+   longer exists in the setup checklist would have shipped a broken pointer in
+   the same commit that removed the thing it pointed at. P10 still owns the
+   capability split and the `ux-state-matrix` table.
 
 ### P10 — Diagnostics, setup status, terminology
 

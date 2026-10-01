@@ -8,7 +8,19 @@ export type TaskPaneDestination =
   | "review"
   | "consistency"
   | "profile"
-  | "semantic"
+  /**
+   * Semantic Review: the review of a selection against a style.
+   *
+   * And `semantic-style` beside it, for the style itself. Two destinations, one
+   * ribbon command (D10): the button opens Review, and Style is reached from
+   * Review's own control or from this drawer. A second ribbon button would have
+   * needed a second command claiming a navigation target, and
+   * `duplicateNavigationTargets()` fails the build on exactly that — which is the
+   * right outcome, because two buttons opening two pages that a user thinks are
+   * one feature is how the split reads as a duplicate rather than as a split.
+   */
+  | "semantic-review"
+  | "semantic-style"
   | "governance-policy"
   | "settings"
   | "troubleshooting";
@@ -31,6 +43,16 @@ interface TaskPaneHeaderProps {
   lastScan?: string | null | undefined;
 }
 
+/**
+ * The drawer, in the order a user works in rather than alphabetically.
+ *
+ * **The two semantic entries are adjacent and read as a pair.** "Semantic Review"
+ * and "Semantic Style" sit together because they are two halves of one feature
+ * with one thing in common — a style — and the user who has just learned one is
+ * about to review with it. Separating them would have put the style editor
+ * among the policy pages, which is where it was before the split and where
+ * nobody found it.
+ */
 const DESTINATIONS: readonly {
   key: TaskPaneDestination;
   label: string;
@@ -39,7 +61,8 @@ const DESTINATIONS: readonly {
   { key: "review", label: "Deterministic Review" },
   { key: "consistency", label: "Consistency Review" },
   { key: "profile", label: "Deterministic Style Profile" },
-  { key: "semantic", label: "Semantic" },
+  { key: "semantic-review", label: "Semantic Review" },
+  { key: "semantic-style", label: "Semantic Style" },
   { key: "governance-policy", label: "Governance Policy" },
   { key: "settings", label: "Settings" },
   { key: "troubleshooting", label: "Troubleshooting" },

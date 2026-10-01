@@ -42,7 +42,7 @@ export default function Home({ onNavigate, setup }: HomeProps): React.ReactNode 
       {setup.complete ? (
         <p className="tf-sub">
           Everything is set up. Deterministic review is on the Deterministic Review tab; semantic
-          style and the rewrite are on the Semantic tab.
+          review is on the Semantic Review page and the style it uses is on Semantic Style.
         </p>
       ) : (
         <>
@@ -92,8 +92,9 @@ export default function Home({ onNavigate, setup }: HomeProps): React.ReactNode 
             Nothing is outstanding
           </h2>
           <p>
-            Deterministic review is on the Deterministic Review tab, and semantic style and the
-            rewrite are on the Semantic tab. Both are one click away in the navigation above.
+            Deterministic review is on the Deterministic Review tab, semantic review is on Semantic
+            Review, and the style it uses is on Semantic Style. All are one click away in the
+            navigation above.
           </p>
         </section>
       ) : null}

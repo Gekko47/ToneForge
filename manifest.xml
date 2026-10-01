@@ -226,10 +226,11 @@
                   </Action>
                 </Control>
                 <!--
-                  Disabled here and enabled only by `syncSemanticRibbon`. The rewrite
-                  is meaningless without a semantic profile: the prompt sends the
-                  profile, so with none there is nothing to send. `Enabled` follows
-                  `Action` because that is the order the Button schema declares.
+                  Disabled here and enabled only by `syncSemanticRibbon`. A semantic
+                  review is meaningless without a semantic profile: the prompt sends
+                  the profile, so with none there is nothing to send. `Enabled`
+                  follows `Action` because that is the order the Button schema
+                  declares.
                 -->
                 <Control xsi:type="Button" id="ToneForgeSemanticControl">
                   <Label resid="ToneForge.SemanticLabel" />
@@ -354,7 +355,7 @@
         <bt:String id="ToneForge.GovernancePolicyLabel" DefaultValue="Governance Policy" />
         <bt:String id="ToneForge.PendingChangesLabel" DefaultValue="Pending Changes" />
         <bt:String id="ToneForge.TroubleshootingLabel" DefaultValue="Troubleshooting" />
-        <bt:String id="ToneForge.SemanticLabel" DefaultValue="Check Semantic Style" />
+        <bt:String id="ToneForge.SemanticLabel" DefaultValue="Semantic Review" />
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="ToneForge.TaskpaneDescription" DefaultValue="Learn a style from samples and check consistency across Word documents." />
@@ -365,7 +366,13 @@
         <bt:String id="ToneForge.GovernancePolicyDesc" DefaultValue="Open the policy that decides which checks are mandatory, which are advisory, and which corrections ToneForge may apply without asking." />
         <bt:String id="ToneForge.PendingChangesDesc" DefaultValue="Open the proposed Word revisions waiting for your approval." />
         <bt:String id="ToneForge.TroubleshootingDesc" DefaultValue="Inspect this Word host's capabilities and the coverage of the last scan. These checks never change the document." />
-        <bt:String id="ToneForge.SemanticDesc" DefaultValue="Ask for a rewrite of the selected text that matches your semantic style. Nothing is changed until you approve it on Deterministic Review." />
+        <!--
+          The approval sentence names the Semantic Review page, not Deterministic
+          Review. It used to say Deterministic Review, which has been false since
+          ADR-0078 gave the semantic apply its own path, so the manifest sent a
+          user looking for their approval somewhere the approval is not.
+        -->
+        <bt:String id="ToneForge.SemanticDesc" DefaultValue="Review the selected text against your semantic style. Nothing is changed until you read the review and approve a revision on the Semantic Review page." />
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

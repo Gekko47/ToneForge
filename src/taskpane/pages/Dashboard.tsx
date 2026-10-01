@@ -328,12 +328,24 @@ function DashboardWithoutProfile({
     );
   }
 
-  if (page === "semantic") {
+  /*
+   * Semantic Style, reached with no deterministic profile.
+   *
+   * The two semantic pages are routable with no active style profile at all —
+   * that is precisely when a user needs to learn one — so this branch is here
+   * as well as in the profiled dashboard below. It used to live only in the
+   * profiled branch, which made the one page that can create a profile the one
+   * page you could not reach without already having one.
+   */
+  if (page === "semantic-style") {
     return (
       <main className="tf-card" tabIndex={0}>
         {header}
         <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
-          <SemanticStyle onBack={back} onOpenSettings={() => navigate("settings")} />
+          <SemanticStyle
+            onBack={() => navigate("semantic-review")}
+            onOpenSettings={() => navigate("settings")}
+          />
         </Suspense>
       </main>
     );
@@ -551,16 +563,6 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * above it.
    */
   const [semanticSession, setSemanticSession] = useState<SemanticReviewSession | null>(null);
-  /**
-   * Which of the two semantic pages the `semantic` destination is showing.
-   *
-   * A destination rather than two yet, deliberately: §1.3 of the plan fixes the
-   * navigation work in P9, and adding a second `TaskPaneDestination` here would
-   * mean touching the header, the registry and both manifests for a split that is
-   * two phases away. Until then the style page is reached from the review page's
-   * own control, which is where a user looking for it will be.
-   */
-  const [semanticStyleOpen, setSemanticStyleOpen] = useState(false);
   /*
    * Back to "not established" when the tab is left.
    *
@@ -571,7 +573,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * holding the paragraph has by definition forgotten it.
    */
   useEffect(() => {
-    if (page === "semantic") return;
+    if (page === "semantic-review" || page === "semantic-style") return;
     setSemanticSelectionCaptured(null);
   }, [page]);
   /*
@@ -845,8 +847,16 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         case "debugging":
           setPage("troubleshooting");
           return;
-        case "semantic":
-          setPage("semantic");
+        /*
+         * One command, and it opens Review — not Style.
+         *
+         * The command reads the selection on arrival, and a selection has no
+         * meaning on the style page: the whole reason to arrive from the context
+         * menu is to review *this text*, so opening the editor that learns a
+         * voice would throw away the gesture that brought the user here.
+         */
+        case "semantic-review":
+          setPage("semantic-review");
           return;
         case "profile":
           setPage("profile");
@@ -1262,7 +1272,8 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     page === "profile" ||
     page === "governance-policy" ||
     page === "consistency" ||
-    page === "semantic" ||
+    page === "semantic-review" ||
+    page === "semantic-style" ||
     page === "troubleshooting"
   ) {
     const back = () => navigate("review");
@@ -1288,29 +1299,27 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
               result={consistencyResult}
               onResult={setConsistencyResult}
             />
-          ) : page === "semantic" ? (
-            semanticStyleOpen ? (
-              <SemanticStyle
-                onBack={() => setSemanticStyleOpen(false)}
-                onOpenSettings={() => navigate("settings")}
-              />
-            ) : (
-              <SemanticReview
-                onBack={back}
-                onOpenSettings={() => navigate("settings")}
-                onOpenSemanticStyle={() => setSemanticStyleOpen(true)}
-                onSelectionCaptured={setSemanticSelectionCaptured}
-                /*
-                 * The session is owned here, above the page, so navigating away and
-                 * back does not discard a review the user has paid for. The page
-                 * owns the actions; this owns what survives a navigation — the same
-                 * split `consistencyResult` already uses.
-                 */
-                session={semanticSession}
-                onSession={setSemanticSession}
-                navigation={arrival}
-              />
-            )
+          ) : page === "semantic-style" ? (
+            <SemanticStyle
+              onBack={() => navigate("semantic-review")}
+              onOpenSettings={() => navigate("settings")}
+            />
+          ) : page === "semantic-review" ? (
+            <SemanticReview
+              onBack={back}
+              onOpenSettings={() => navigate("settings")}
+              onOpenSemanticStyle={() => navigate("semantic-style")}
+              onSelectionCaptured={setSemanticSelectionCaptured}
+              /*
+               * The session is owned here, above the page, so navigating away and
+               * back does not discard a review the user has paid for. The page
+               * owns the actions; this owns what survives a navigation — the same
+               * split `consistencyResult` already uses.
+               */
+              session={semanticSession}
+              onSession={setSemanticSession}
+              navigation={arrival}
+            />
           ) : (
             /*
              * The plan and review counts go in so the registry can report an

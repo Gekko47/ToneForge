@@ -146,7 +146,7 @@
                     {
                       "id": "ToneForgeSemanticControl",
                       "type": "button",
-                      "label": "Check Semantic Style",
+                      "label": "Semantic Review",
                       "actionId": "ToneForgeSemantic",
                       "enabled": false,
                       "icons": [
@@ -155,8 +155,8 @@
                         { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
                       ],
                       "supertip": {
-                        "title": "Check Semantic Style",
-                        "description": "Ask for a rewrite of the selected text that matches your semantic style. Nothing is changed until you approve it on Deterministic Review. Disabled until a semantic profile exists."
+                        "title": "Semantic Review",
+                        "description": "Review the selected text against your semantic style. Nothing is changed until you read the review and approve a revision on the Semantic Review page. Disabled until a semantic style profile exists."
                       }
                     }
                   ]
@@ -219,7 +219,7 @@
                 {
                   "id": "ToneForgeSemanticContextControl",
                   "type": "button",
-                  "label": "Check Semantic Style",
+                  "label": "Semantic Review",
                   "actionId": "ToneForgeSemantic",
                   "icons": [
                     { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
@@ -227,8 +227,8 @@
                     { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
                   ],
                   "supertip": {
-                    "title": "Check Semantic Style",
-                    "description": "Ask for a rewrite of this selection that matches your semantic style. Nothing is changed until you approve it on Deterministic Review."
+                    "title": "Semantic Review",
+                    "description": "Review this selection against your semantic style. Nothing is changed until you read the review and approve a revision on the Semantic Review page."
                   }
                 }
               ]

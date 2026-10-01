@@ -76,16 +76,21 @@ export async function openTroubleshooting(): Promise<void> {
 }
 
 /**
- * Open the Semantic tab and read the live selection into it.
+ * Open Semantic Review and read the live selection into it.
  *
  * This is the context-menu entry point. The user right-clicked *this text*, so
  * making them select it again would be asking them to repeat the gesture that
  * brought them here. Reading a selection is a local Word call — nothing is sent
- * anywhere — and the rewrite still needs its own explicit click, so arriving
- * here has not started a request.
+ * anywhere — and the review still needs its own explicit click, so arriving here
+ * has not started a request.
+ *
+ * Renamed from `openSemanticStyle` in P9. It never opened the style page; it
+ * opened the page the semantic control was on, and the name followed the
+ * command's old label ("Check Semantic Style") rather than what it did. The
+ * handler and the target move together for that reason.
  */
-export async function openSemanticStyle(): Promise<void> {
-  await showTaskpane("semantic", "read-selection");
+export async function openSemanticReview(): Promise<void> {
+  await showTaskpane("semantic-review", "read-selection");
 }
 
 /**
@@ -97,5 +102,5 @@ export async function openSemanticStyle(): Promise<void> {
  * manifests cannot reach the pane by different routes.
  */
 export async function ToneForgeSemantic(): Promise<void> {
-  await openSemanticStyle();
+  await openSemanticReview();
 }

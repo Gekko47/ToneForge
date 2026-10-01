@@ -32,16 +32,27 @@ export type TaskpaneTarget =
   | "profile"
   | "governance-policy"
   | "pending-changes"
-  | "semantic";
+  /**
+   * Semantic Review — the page that reviews a selection against a style.
+   *
+   * Renamed from `semantic` in P9. The bare name covered a page that has since
+   * become two, and it is the same failure this file's own note on `review`
+   * records: a target whose name no longer describes its destination is one
+   * whose arrival mapping eventually stops being handled. There is no stored
+   * value to migrate — the instruction is written and consumed within a pane
+   * session — and `isTarget` drops an unrecognised value rather than guessing,
+   * so the worst a stale `semantic` can do is leave the pane on its default page.
+   */
+  | "semantic-review";
 
 /**
  * What the pane should do on arrival, beyond opening the destination.
  *
  * `scan` re-scans. `read-selection` reads the live Word selection into the
- * semantic page, which is the point of arriving there from the context menu: the
- * user right-clicked *this text* and would otherwise have to select it again.
- * Both are local Word reads — neither sends anything anywhere — so both are
- * safe to run on arrival. Absent for every other target, which is why an
+ * Semantic Review page, which is the point of arriving there from the context
+ * menu: the user right-clicked *this text* and would otherwise have to select it
+ * again. Both are local Word reads — neither sends anything anywhere — so both
+ * are safe to run on arrival. Absent for every other target, which is why an
  * ordinary "open this page" command cannot accidentally start work.
  */
 export type TaskpaneAction = "scan" | "read-selection";
@@ -61,7 +72,7 @@ const TARGETS: readonly TaskpaneTarget[] = [
   "profile",
   "governance-policy",
   "pending-changes",
-  "semantic",
+  "semantic-review",
 ];
 
 function getStorage(): Storage | null {
