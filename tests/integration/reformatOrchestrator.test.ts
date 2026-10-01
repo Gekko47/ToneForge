@@ -997,6 +997,7 @@ describe("reformatDocument integration", () => {
      */
     setStage01Passed(false, FULL_CAPABILITIES);
     installOffice("hello world");
+    const applySpy = vi.spyOn(revisionAdapter, "applyChangePlanWithTracking");
 
     const probed = await prepareReformatHost();
 
@@ -1014,6 +1015,10 @@ describe("reformatDocument integration", () => {
      */
     expect(probed.supportsRevisions).toBeTypeOf("boolean");
     expect(probed.supportsInsertBreak).toBeTypeOf("boolean");
+    // Asserted through the adapter, not through the probe result: a probe that
+    // reached the adapter would make ADR-0058's "the flag stays false until a real
+    // host has been certified" claim false on the first Debug run.
+    expect(applySpy).not.toHaveBeenCalled();
   });
 
   it("reports a preview as attempting nothing, rather than as four failures", async () => {

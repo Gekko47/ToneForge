@@ -338,6 +338,16 @@ export interface AcquisitionLoadPlan {
   paragraphProperties: readonly ParagraphProperty[];
   /** Properties deliberately not requested, for honest coverage reporting. */
   skipped: readonly string[];
+  /**
+   * Scopes the plan did not ask for, and why.
+   *
+   * Separate from `skipped` because the remedy differs: `skipped` names something
+   * the *host* would not serve, and this names something the *policy* or this pass
+   * chose not to read. `coverage.ts` maps the first to `unsupportedByHost` and
+   * sends the reader to a different Word; mapping the second the same way blames a
+   * host for a decision ToneForge made.
+   */
+  notAttempted: readonly string[];
 }
 
 /**
@@ -433,13 +443,18 @@ export function planAcquisitionLoads(
     headerFooterCollection: false,
   };
   const structuralSkipped: string[] = [];
+  const notAttempted: string[] = [];
   STRUCTURAL_SCOPES.forEach((entry) => {
     const capabilityPresent =
       capabilities[entry.capability] === true &&
       (!entry.requiresSections || capabilities.supportsSections === true);
-    const enabled =
-      capabilityPresent && (entry.policyFlag === undefined || wanted(entry.policyFlag));
-    if (enabled) {
+    if (capabilityPresent) {
+      if (entry.policyFlag !== undefined && !wanted(entry.policyFlag)) {
+        // Not attempted by choice, so recorded apart from a host limitation:
+        // `coverage.ts` gives these two different remedies.
+        notAttempted.push(entry.token);
+        return;
+      }
       structural[entry.plan] = true;
       return;
     }
@@ -458,6 +473,9 @@ export function planAcquisitionLoads(
         ...CAPABILITY_PROPERTY_GROUPS.flatMap((group) => [...group.properties]),
         ...STRUCTURAL_SCOPES.map((entry) => entry.token),
       ],
+      // A degraded retry reads nothing at all, so every structural scope went
+      // unattempted for the same reason: the request failed, not the policy.
+      notAttempted: [...NEVER_ACQUIRED_SCOPES],
     };
   }
 
@@ -476,6 +494,9 @@ export function planAcquisitionLoads(
     ...structural,
     paragraphProperties: [...BASE_PARAGRAPH_PROPERTIES, ...optional],
     skipped: capabilities.supportsStyles ? skipped : ["styles", ...skipped],
+    // `NEVER_ACQUIRED_SCOPES` belongs here, not in `skipped`: no host was asked
+    // for them, so `coverage.ts` must not report them as a Word limitation.
+    notAttempted: [...notAttempted, ...NEVER_ACQUIRED_SCOPES],
   };
 }
 
@@ -496,6 +517,16 @@ interface AcquiredScope {
   pageSetupItems: Array<PageSetupView | null> | null;
   /** How many `context.sync()` calls the acquisition actually spent. */
   syncCount: number;
+  /**
+   * Spec §8.5. `true` when the sections were read but the host refused the page
+   * setup, so the geometry checks could not run.
+   *
+   * A signal rather than an inference from `pageSetupItems === null`, because
+   * `null` also means "the plan did not ask for sections" — and reporting a web
+   * host's refusal as a missing section collection would blame the host for a
+   * scope ToneForge chose not to read.
+   */
+  pageSetupRefused: boolean;
 }
 
 /**
@@ -546,6 +577,34 @@ function readStructural<T>(planned: boolean, read: () => T): T | null {
 }
 
 /**
+ * The loaded header/footer font values, as a plain object.
+ *
+ * `Body.font` is a live Office proxy and stays one after the transaction ends:
+ * reading `.name` off it later throws `PropertyNotLoaded` on a real host rather
+ * than returning the value, and a DTO holding one is not the host-neutral object
+ * this module promises. Each property is therefore read here, inside the
+ * transaction that loaded it, and only the three `HEADER_FOOTER_PROPERTIES` names
+ * the transaction asked for are carried out.
+ *
+ * `undefined` means there was no font to read, which is a different answer from a
+ * font whose name is `null` — the analyzer skips the former and reports the
+ * latter.
+ */
+function readHeaderFooterFont(body: Office.Body | undefined): FontView | undefined {
+  // `?? null` because `readStructural` is typed `T | null` over a `T` that is
+  // itself optional: an unread property and a read-but-absent one are both `null`.
+  const name = readStructural(true, () => body?.font?.name) ?? null;
+  const size = readStructural(true, () => body?.font?.size) ?? null;
+  const color = readStructural(true, () => body?.font?.color) ?? null;
+  if (name === null && size === null && color === null) return undefined;
+  const font: FontView = {};
+  if (name !== null) font.name = name;
+  if (size !== null) font.size = size;
+  if (color !== null) font.color = color;
+  return font;
+}
+
+/**
  * The header/footer body properties spec §8.4 compares.
  *
  * Text, the body style name, and three font properties. A header is a `Body`, so
@@ -565,7 +624,11 @@ const HEADER_FOOTER_PROPERTIES = [
 ] as const;
 
 /** Run one Word request transaction for a given load plan. */
-async function acquireScope(plan: AcquisitionLoadPlan, maxChars: number): Promise<AcquiredScope> {
+async function acquireScope(
+  plan: AcquisitionLoadPlan,
+  maxChars: number,
+  capabilities: AnalysisCapabilities,
+): Promise<AcquiredScope> {
   const scope = await runInWord(async (context) => {
     const body = context.document.body;
     const paragraphs = body.paragraphs;
@@ -644,8 +707,7 @@ async function acquireScope(plan: AcquisitionLoadPlan, maxChars: number): Promis
                 readStructural(true, () => view.body?.style) ??
                 readStructural(true, () => view.body?.styleBuiltIn) ??
                 undefined,
-              font:
-                readStructural(true, () => view.body?.font as FontView | undefined) ?? undefined,
+              font: readHeaderFooterFont(view.body),
             })),
         }))
       : null;
@@ -685,12 +747,14 @@ async function acquireScope(plan: AcquisitionLoadPlan, maxChars: number): Promis
    * the observer rescans on every keystroke, and a web host would otherwise pay
    * a failed transaction per edit.
    */
-  if (scope.sectionItems === null) return { ...scope, pageSetupItems: null };
+  if (scope.sectionItems === null)
+    return { ...scope, pageSetupItems: null, pageSetupRefused: false };
 
-  const pageSetupItems = await acquirePageSetup();
+  const pageSetupItems = await acquirePageSetup(capabilities);
   return {
     ...scope,
     pageSetupItems,
+    pageSetupRefused: pageSetupItems === null,
     syncCount: scope.syncCount + (pageSetupItems === null ? 0 : 1),
   };
 }
@@ -702,10 +766,24 @@ async function acquireScope(plan: AcquisitionLoadPlan, maxChars: number): Promis
  * section *text* was read in the main transaction and is unaffected. Only the
  * geometry is missing, and only the geometry checks are skipped.
  */
-let pageSetupRefused = false;
+/**
+ * The capability set a host refused the page setup under.
+ *
+ * Remembered per capabilities object for the same reason `refusedCapabilities` is:
+ * a new probe is new evidence, so a host that gains `pageSetup` gets a fresh
+ * attempt. A module-wide boolean wrote off the whole session on the strength of
+ * one capability set, including a host that was never asked.
+ */
+let pageSetupRefusedCapabilities: AnalysisCapabilities | null = null;
 
-async function acquirePageSetup(): Promise<Array<PageSetupView | null> | null> {
-  if (pageSetupRefused) return null;
+function pageSetupRefusedFor(capabilities: AnalysisCapabilities): boolean {
+  return pageSetupRefusedCapabilities === capabilities;
+}
+
+async function acquirePageSetup(
+  capabilities: AnalysisCapabilities,
+): Promise<Array<PageSetupView | null> | null> {
+  if (pageSetupRefusedFor(capabilities)) return null;
   try {
     return await runInWord(async (context) => {
       const sections = context.document.sections;
@@ -725,7 +803,7 @@ async function acquirePageSetup(): Promise<Array<PageSetupView | null> | null> {
      * acquisition still reports the `sections` scope as unexamined, so a web
      * host cannot be read as page-setup compliant.
      */
-    pageSetupRefused = true;
+    pageSetupRefusedCapabilities = capabilities;
     logger.warn("Section page setup is not available on this host", {
       ...describeError(error),
     });
@@ -735,7 +813,7 @@ async function acquirePageSetup(): Promise<Array<PageSetupView | null> | null> {
 
 /** Reset the remembered page-setup refusal. See `__resetRefusedCapabilities`. */
 export function __resetPageSetupRefusal(): void {
-  pageSetupRefused = false;
+  pageSetupRefusedCapabilities = null;
 }
 
 /**
@@ -800,7 +878,7 @@ export async function acquireAnalysisContext(
   );
   let acquired: AcquiredScope;
   try {
-    acquired = await acquireScope(plan, maxChars);
+    acquired = await acquireScope(plan, maxChars, options.capabilities);
   } catch (error: unknown) {
     // The probe can be wrong: a requirement set can be added by the host after
     // the probe ran, and a property family we believed was safe can still be
@@ -812,7 +890,7 @@ export async function acquireAnalysisContext(
     });
     rememberRefusal(options.capabilities);
     plan = planAcquisitionLoads(options.capabilities, true, policy.scope);
-    acquired = await acquireScope(plan, maxChars);
+    acquired = await acquireScope(plan, maxChars, options.capabilities);
   }
 
   // The plan travels with the acquired scope. The builders read properties
@@ -859,8 +937,18 @@ export async function acquireAnalysisContext(
     unsupported: [
       ...(acquired.paragraphItems.length > 0 ? [] : ["wordParagraphCollection"]),
       ...plan.skipped,
-      ...NEVER_ACQUIRED_SCOPES,
+      /*
+       * A host that served the sections but refused the page setup has not been
+       * examined for page geometry, so `sections` is named here. `coverage.ts`
+       * counts the scope from this list, and without the token it read a web host
+       * as page-setup compliant on a scan that never checked it.
+       */
+      ...(acquired.pageSetupRefused ? ["pageSetup", "sections"] : []),
     ],
+    // Reported, but never as a host limitation: `coverage.ts` maps `unsupported`
+    // to `unsupportedByHost`, and a scope ToneForge chose not to read is not
+    // something a different Word would serve.
+    notAttempted: [...plan.notAttempted],
     incremental: false,
     incrementalReason:
       "No verified Word changed-range event; conservative full rescan is supported.",
@@ -1015,7 +1103,7 @@ function buildSnapshot(
       unsupported: [
         ...(acquired.paragraphItems.length > 0 ? [] : ["wordParagraphCollection"]),
         ...plan.skipped,
-        ...NEVER_ACQUIRED_SCOPES,
+        ...(acquired.pageSetupRefused ? ["pageSetup", "sections"] : []),
       ],
     },
     nodes,

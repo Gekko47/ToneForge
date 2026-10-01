@@ -83,8 +83,10 @@ describe("planAcquisitionLoads", () => {
 
   it("treats a structural scope the policy switched off as not wanted", () => {
     // The policy decides whether a scope is *wanted*; the capability decides
-    // whether the host can serve it. Both are recorded, and conflating them
-    // sends the reader to a setting that will not help.
+    // whether the host can serve it. Both are recorded, and in separate lists:
+    // `coverage.ts` maps `skipped` to `unsupportedByHost`, and blaming a host
+    // for a scope the author switched off sends them to a remedy that cannot
+    // work.
     const plan = planAcquisitionLoads(ALL_ON, false, {
       includeBody: true,
       includeLists: true,
@@ -95,7 +97,8 @@ describe("planAcquisitionLoads", () => {
     expect(plan.tableCollection).toBe(false);
     expect(plan.sectionCollection).toBe(true);
     expect(plan.headerFooterCollection).toBe(false);
-    expect(plan.skipped).toContain("tables");
+    expect(plan.notAttempted).toContain("tables");
+    expect(plan.skipped).not.toContain("tables");
   });
 
   it("never asks for a property the host has declared it cannot serve", () => {

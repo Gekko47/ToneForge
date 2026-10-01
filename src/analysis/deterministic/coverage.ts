@@ -140,11 +140,27 @@ export function hostSupportedScopes(context: AnalysisContext): {
   const unsupportedTokens = new Set(
     context.acquisition.unsupported.map((token) => token.toLowerCase()),
   );
+  /*
+   * Scopes acquisition declined to attempt, kept out of the host verdict.
+   *
+   * A scope the policy excluded, or one this pass has no reader for, is not
+   * something a different Word would serve. Mapping it to `unsupportedByHost`
+   * sent the reader to a remedy that cannot work; it belongs with the excluded
+   * scopes, which the policy path already reports.
+   */
+  const notAttemptedTokens = new Set(
+    (context.acquisition.notAttempted ?? []).map((token) => token.toLowerCase()),
+  );
   const supported: ScopeKind[] = [];
   const unsupported: ScopeKind[] = [];
 
   const capabilities = context.capabilities as unknown as Record<string, boolean | undefined>;
   SCOPE_KINDS.forEach((kind) => {
+    if (
+      unique([...notAttemptedTokens]).some((token) => ACQUISITION_TOKEN_TO_SCOPE[token] === kind)
+    ) {
+      return;
+    }
     const capability = SCOPE_CAPABILITY[kind];
     const capabilityMissing = capability !== undefined && capabilities[capability] === false;
     const acquisitionMissing = unique([...unsupportedTokens]).some(

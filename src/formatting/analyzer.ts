@@ -32,7 +32,11 @@ import type {
   ParagraphStandard,
   ParagraphStyleStandard,
 } from "../core/domain/StyleProfile";
-import type { FormattingSnapshot, FormattingParagraph } from "./formattingSnapshot";
+import type {
+  FormattingSnapshot,
+  FormattingParagraph,
+  HeaderFooterSnapshot,
+} from "./formattingSnapshot";
 import { lookupWordStyle, HEADING_STYLE_NAMES } from "./wordStyles";
 
 /**
@@ -819,6 +823,22 @@ function checkTableFormatting(
   });
 }
 
+/**
+ * The section a header or footer belongs to.
+ *
+ * `HeaderFooterSnapshot.index` is the position in the flattened entry list, not
+ * the section number: acquisition emits one entry per *slot* (Primary, FirstPage,
+ * EvenPages) for each of header and footer, so the sixth entry of a two-section
+ * document is section 1's first footer. Pointing a finding's range at it navigates
+ * to the wrong section, so the section is recovered from the `sourcePath`
+ * acquisition encodes it in, falling back to the index when a caller supplies none.
+ */
+function headerFooterSectionIndex(headerFooter: HeaderFooterSnapshot): number {
+  const match = /^body\/section\/(\d+)\//.exec(headerFooter.sourcePath ?? "");
+  const parsed = match?.[1] === undefined ? Number.NaN : Number.parseInt(match[1], 10);
+  return Number.isNaN(parsed) ? headerFooter.index : parsed;
+}
+
 function checkHeaderFooterFormatting(
   snapshot: FormattingSnapshot,
   profile: DocumentFormattingProfile,
@@ -828,8 +848,9 @@ function checkHeaderFooterFormatting(
   const headersFooters = snapshot.headersFooters ?? [];
   if (!standard || !standard.supported || capabilities.supportsHeadersFooters !== true) return [];
 
-  return headersFooters.flatMap((headerFooter) => {
-    const findings: Finding[] = [];
+  const findings = headersFooters.flatMap((headerFooter) => {
+    const sectionIndex = headerFooterSectionIndex(headerFooter);
+    const sectionFindings: Finding[] = [];
     const headerFooterText = headerFooter.text ?? "";
     const styleName = (headerFooter.styleName ?? "").trim();
     if (
@@ -837,10 +858,10 @@ function checkHeaderFooterFormatting(
       styleName &&
       styleName.toLowerCase() !== standard.styleName.toLowerCase()
     ) {
-      findings.push(
+      sectionFindings.push(
         makeFinding({
           category: "formatting.headerFooter",
-          range: sectionRange(headerFooter.index),
+          range: sectionRange(sectionIndex),
           message: `${headerFooter.kind} carries "${styleName}" but the profile expects "${standard.styleName}"`,
           severity: "warning",
           evidence: headerFooterText.slice(0, 40),
@@ -864,10 +885,10 @@ function checkHeaderFooterFormatting(
         const actual = headerFooter.font?.[property];
         if (expected === undefined || actual === null || actual === undefined) continue;
         if (actual !== expected) {
-          findings.push(
+          sectionFindings.push(
             makeFinding({
               category: "formatting.headerFooter",
-              range: sectionRange(headerFooter.index),
+              range: sectionRange(sectionIndex),
               message: `${headerFooter.kind} ${property} is ${String(actual)} but the profile expects ${String(expected)}`,
               severity: "warning",
               evidence: headerFooterText.slice(0, 40),
@@ -886,29 +907,68 @@ function checkHeaderFooterFormatting(
       }
     }
 
-    if (standard.required !== undefined && headerFooter.required !== standard.required) {
-      findings.push(
-        makeFinding({
-          category: "formatting.headerFooter",
-          range: sectionRange(headerFooter.index),
-          message: `${headerFooter.kind} required flag is ${String(headerFooter.required)} but the profile expects ${String(standard.required)}`,
-          severity: "warning",
-          evidence: headerFooterText.slice(0, 40),
-          profilePath: "formatting.headersFooters.required",
-          expected: String(standard.required),
-          expectedValue: standard.required,
-          actualValue: headerFooter.required,
-          nodeIds: headerFooter.nodeId ? [headerFooter.nodeId] : [],
-          correctable: false,
-          correctionReason:
-            "Header/footer presence is a structural policy decision, not a safe formatting rewrite.",
-          occurrenceGroupKey: `formatting.headersFooters.required|${String(standard.required)}`,
-        }),
-      );
-    }
-
-    return findings;
+    return sectionFindings;
   });
+
+  if (standard.required === undefined) return findings;
+
+  /*
+   * Presence is a property of the header or the footer, not of one slot of it.
+   *
+   * Word serves a blank body for a slot the document does not use, and it does so
+   * for `FirstPage` and `EvenPages` on a document that has a perfectly good primary
+   * header. Testing `required` per entry therefore reported a missing header on a
+   * header that exists, once for every unused slot. What the profile asks is
+   * whether the section has a header or a footer at all, so the slots are grouped
+   * by section and kind and the answer is "any slot of that kind is present".
+   */
+  const presence = new Map<
+    string,
+    { present: boolean; sectionIndex: number; kind: NonNullable<HeaderFooterSnapshot["kind"]> }
+  >();
+  headersFooters.forEach((headerFooter) => {
+    const sectionIndex = headerFooterSectionIndex(headerFooter);
+    // The schema's own default, so a caller that omits `kind` groups with the
+    // headers rather than under an `undefined` key of its own.
+    const kind = headerFooter.kind ?? "header";
+    const key = `${sectionIndex}:${kind}`;
+    const known = presence.get(key);
+    presence.set(key, {
+      present: (known?.present ?? false) || headerFooter.required === true,
+      sectionIndex,
+      kind,
+    });
+  });
+
+  presence.forEach((entry) => {
+    if (entry.present === standard.required) return;
+    findings.push(
+      makeFinding({
+        category: "formatting.headerFooter",
+        range: sectionRange(entry.sectionIndex),
+        message: `${entry.kind} is ${entry.present ? "present" : "absent"} but the profile expects it to be ${standard.required ? "present" : "absent"}`,
+        severity: "warning",
+        evidence: "",
+        profilePath: "formatting.headersFooters.required",
+        expected: String(standard.required),
+        expectedValue: standard.required,
+        actualValue: entry.present,
+        nodeIds: headersFooters
+          .filter(
+            (headerFooter) =>
+              headerFooterSectionIndex(headerFooter) === entry.sectionIndex &&
+              headerFooter.kind === entry.kind,
+          )
+          .flatMap((headerFooter) => (headerFooter.nodeId ? [headerFooter.nodeId] : [])),
+        correctable: false,
+        correctionReason:
+          "Header/footer presence is a structural policy decision, not a safe formatting rewrite.",
+        occurrenceGroupKey: `formatting.headersFooters.required|${String(standard.required)}`,
+      }),
+    );
+  });
+
+  return findings;
 }
 
 function checkPageSetup(

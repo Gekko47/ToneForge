@@ -539,8 +539,8 @@ describe("acquireAnalysisContext structural scopes", () => {
 
     it("still names the scopes this pass never attempts, whatever the host serves", async () => {
       // Spec §8.6: fields, controls and shapes are explicitly *excluded*, not
-      // silently unexamined. `NEVER_ACQUIRED_SCOPES` is the part of the
-      // unsupported list that genuinely is constant.
+      // silently unexamined. They are named as `notAttempted` rather than as
+      // `unsupported`: no host was asked, so no different Word would serve them.
       installHost({ tables: 1, sections: 1 });
 
       const context = await acquireAnalysisContext({
@@ -549,7 +549,8 @@ describe("acquireAnalysisContext structural scopes", () => {
       });
 
       ["fields", "controls", "shapes", "textBoxes"].forEach((scope) => {
-        expect(context.acquisition.unsupported).toContain(scope);
+        expect(context.acquisition.notAttempted).toContain(scope);
+        expect(context.acquisition.unsupported).not.toContain(scope);
       });
     });
   });
@@ -788,7 +789,10 @@ describe("acquireAnalysisContext structural scopes", () => {
       });
 
       expect(context.formatting.tables).toEqual([]);
-      expect(context.acquisition.unsupported).toContain("tables");
+      // Recorded as unattempted rather than unsupported: the host served tables,
+      // so `unsupported` here would send the reader to a different Word.
+      expect(context.acquisition.notAttempted).toContain("tables");
+      expect(context.acquisition.unsupported).not.toContain("tables");
     });
   });
 });

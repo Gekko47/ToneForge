@@ -413,7 +413,31 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
   const remaining = allApplied
     ? await refreshRemainingFindings(profile, resolvedPolicy.governance, capabilities, readLimit)
     : { report: null as DeterministicReviewReport | null };
-  const verifiedCount = readback.changes.filter((entry) => entry.verified).length;
+  /*
+   * Reconcile the readback against what the adapter actually did.
+   *
+   * `verifyPlanReadback` answers "does the document now hold what this change
+   * asked for", and a change the adapter refused can pass that test by accident:
+   * a protected paragraph that already matched the requested style is unchanged
+   * *and* correct, so the readback confirmed a write that never happened. The
+   * per-change entries are therefore matched to `applyResult.results` by id, and a
+   * refused change is reported unverified with the adapter's own reason.
+   */
+  const applyByChangeId = new Map(applyResult.results.map((item) => [item.changeId, item]));
+  const reconciled = readback.changes.map((entry) => {
+    const applied = applyByChangeId.get(entry.changeId);
+    if (applied === undefined || applied.applied) return entry;
+    return {
+      changeId: entry.changeId,
+      verified: false,
+      error:
+        applied.error === undefined || applied.error.length === 0
+          ? "Change was not applied, so the readback does not describe it."
+          : applied.error,
+    };
+  });
+  const verifiedCount = reconciled.filter((entry) => entry.verified).length;
+  const failedCount = applyResult.results.filter((item) => !item.applied).length;
 
   return {
     context,
@@ -428,10 +452,12 @@ export async function reformatDocument(options: ReformatOptions): Promise<Reform
     verified: readback.verified,
     ...(readback.error === undefined ? {} : { verificationError: readback.error }),
     outcome: {
-      changes: readback.changes,
+      changes: reconciled,
       verifiedCount,
-      unverifiedCount: readback.changes.length - verifiedCount,
-      failedCount: applyResult.results.filter((item) => !item.applied).length,
+      // Both counts are subtracted: a refused change is neither verified nor
+      // written, and leaving it in the unverified column counted one change twice.
+      unverifiedCount: Math.max(0, reconciled.length - verifiedCount - failedCount),
+      failedCount,
       remainingFindings: remaining.report,
       ...(remaining.error === undefined ? {} : { remainingFindingsError: remaining.error }),
     },
@@ -566,7 +592,14 @@ function refusedOutcome(results: ApplyWithTrackingResult["results"], reason: str
   return {
     changes,
     verifiedCount: 0,
-    unverifiedCount: changes.length,
+    /*
+     * Nothing was written, so nothing can be unverified.
+     *
+     * `unverifiedCount` means "written but not confirmed by the readback". A refused
+     * change was never written, and counting it in both columns made a plan of four
+     * refusals report eight outcomes for four changes.
+     */
+    unverifiedCount: 0,
     failedCount: changes.length,
     remainingFindings: null,
   };
@@ -969,11 +1002,20 @@ export async function applyReviewedPlan(
           verified: false,
           error:
             item.error === undefined || item.error.length === 0
-              ? "Change was not applied."
+              ? item.applied
+                ? "Change was written but not verified."
+                : "Change was not applied."
               : item.error,
         })),
         verifiedCount: 0,
-        unverifiedCount: result.results.length,
+        /*
+         * The two counts partition the plan rather than overlap.
+         *
+         * `unverifiedCount` is "written but not confirmed"; a change the adapter
+         * refused was never written, so counting it in both columns reported eight
+         * outcomes for a four-change plan of which two landed.
+         */
+        unverifiedCount: result.results.filter((item) => item.applied).length,
         failedCount: result.results.filter((item) => !item.applied).length,
         remainingFindings: null,
       },

@@ -22,7 +22,7 @@ import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
 import FindingsList from "../components/FindingsList";
 import FindingsToolbar from "../components/FindingsToolbar";
-import CoverageBanner from "../components/CoverageBanner";
+import CoverageBanner, { scopeLabel } from "../components/CoverageBanner";
 import ApplyResultBlock from "../components/ApplyResultBlock";
 import StaleBanner from "../components/StaleBanner";
 import PendingChanges from "../components/PendingChanges";
@@ -490,16 +490,22 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
     status?.deterministicCoverage !== null &&
     status?.deterministicCoverage !== undefined &&
     !status.deterministicCoverage.complete;
-  /**
-   * The scopes a blocker names, shown as a banner above the findings.
+  /*
+   * The scopes a blocker names, shown again outside the collapsible banner.
    *
-   * Not a filter on the findings list. A mandatory scope that was not examined
-   * has, by definition, no findings — the scope was not looked at, so there is
-   * nothing in the list to show. What the reader needs is the *reason*, which
-   * the banner already carries; this state exists so the note survives the
-   * banner being collapsed, and it is cleared by the next scan.
+   * Not a filter on the findings list: a mandatory scope that was not examined
+   * has, by definition, no findings, so there is nothing in the list to filter to.
+   * What the reader needs is the reason, which the banner already carries — and
+   * this repeat exists so a collapsed banner never hides it.
+   *
+   * Derived from the current coverage report rather than stored. It used to be
+   * written only by `onRescan`, so a scope the new scan had resolved, or that the
+   * policy no longer required, stayed on screen for the rest of the session: the
+   * note named blockers the run no longer had.
    */
-  const [remainingScopes, setRemainingScopes] = useState<readonly string[]>([]);
+  const remainingScopes = [
+    ...new Set((status?.deterministicCoverage?.blockers ?? []).map((blocker) => blocker.scope)),
+  ];
   /**
    * The post-apply result block (spec §19).
    *
@@ -1249,7 +1255,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           {page === "settings" ? (
             <Settings onBack={back} />
           ) : page === "profile" ? (
-            <Profile onBack={back} />
+            <Profile onBack={back} capabilities={caps} />
           ) : page === "governance-policy" ? (
             <GovernancePolicy onBack={back} />
           ) : page === "consistency" ? (
@@ -1629,8 +1635,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
             deterministicCoverage={status?.deterministicCoverage ?? null}
             open={coverageIncomplete || coverageOpen}
             onToggle={() => setCoverageOpen((open) => !open)}
-            onRescan={(scopes) => {
-              setRemainingScopes(scopes);
+            onRescan={() => {
               setCoverageOpen(true);
               rescanNow();
             }}
@@ -1642,8 +1647,8 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           */}
           {remainingScopes.length > 0 && (
             <p className="tf-coverage-blocked" role="status">
-              Not checked: {remainingScopes.join(", ")}. Apply stays unavailable until the scope is
-              read, or until you stop requiring it in the governance policy.
+              Not checked: {remainingScopes.map(scopeLabel).join(", ")}. Apply stays unavailable
+              until the scope is read, or until you stop requiring it in the governance policy.
             </p>
           )}
           {/*

@@ -77,12 +77,20 @@ const SCOPE_LABEL: Readonly<Record<ScopeKind, string>> = {
   shapes: "shapes",
 };
 
-function label(scope: ScopeKind): string {
+/**
+ * The reader's word for a scope.
+ *
+ * Exported so every surface that names a scope says it the same way. The banner's
+ * own "Re-scan to check ..." and the note beside it are the same fact about the
+ * same run, and one of them spelling `headersFooters` while the other spelled
+ * "headers and footers" is a defect the reader cannot resolve.
+ */
+export function scopeLabel(scope: ScopeKind): string {
   return SCOPE_LABEL[scope];
 }
 
 function listScopes(scopes: readonly ScopeKind[]): string {
-  return scopes.map(label).join(", ");
+  return scopes.map(scopeLabel).join(", ");
 }
 
 /** What a blocker is asking for, in the reader's terms. */

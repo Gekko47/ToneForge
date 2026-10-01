@@ -32,6 +32,7 @@ import { diffProfiles } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
 import DeterministicStyleSections from "./DeterministicStyleSections";
 import { parseTerminology } from "../settings/terminologyText";
+import type { WordCapabilities } from "../../word/capabilityProbe";
 
 /**
  * The deterministic style fields this editor owns.
@@ -258,9 +259,20 @@ function option(key: string, text: string): IDropdownOption {
 export interface ProfileEditorProps {
   /** Called after a save so the page can refresh its own record state. */
   onRecordSaved?: (record: ProfileRecord) => void;
+  /**
+   * The probed capabilities, forwarded to the deterministic sections.
+   *
+   * They mark each section with whether *this* host can read the content it
+   * governs. Passing `null` is the honest "not probed yet" state, and it was the
+   * permanent answer here, so no section could ever carry its marking.
+   */
+  capabilities?: WordCapabilities | null;
 }
 
-export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}): React.ReactNode {
+export default function ProfileEditor({
+  onRecordSaved,
+  capabilities = null,
+}: ProfileEditorProps = {}): React.ReactNode {
   const [context, setContext] = React.useState<ProfileEditorState>(initialContext);
   const { baseProfile, savedProfile, profiles, history, values, savedAt, fieldErrors, error } =
     context;
@@ -298,8 +310,18 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
    */
   function patchDeterministicSections(next: DeterministicStyleProfile): void {
     setContext((prev) => {
+      /*
+       * Built from the *current values*, not from `prev.baseProfile`.
+       *
+       * `patch` writes the flat controls into `values` and leaves `baseProfile`
+       * alone, so merging onto `baseProfile` silently reverted every typography
+       * and house-style edit the user had typed but not saved. Rebuilding through
+       * `buildCandidate` keeps those edits and replaces only the four deterministic
+       * sections the caller actually changed.
+       */
+      const fromValues = buildCandidate(prev.values, prev.baseProfile);
       const merged: StyleProfile = {
-        ...prev.baseProfile,
+        ...fromValues,
         language: next.language,
         typography: next.typography,
         formatting: next.formatting,
@@ -586,12 +608,12 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
       */}
       <DeterministicStyleSections
         profile={{
-          language: baseProfile.language,
-          typography: baseProfile.typography,
-          formatting: baseProfile.formatting,
-          structure: baseProfile.structure,
+          language: draftProfile.language,
+          typography: draftProfile.typography,
+          formatting: draftProfile.formatting,
+          structure: draftProfile.structure,
         }}
-        capabilities={null}
+        capabilities={capabilities}
         onChange={(next) => patchDeterministicSections(next)}
       />
 

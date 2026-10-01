@@ -57,7 +57,17 @@ export interface AcquisitionDiagnostics {
   fullBodyReadCount: number;
   paragraphCollectionRead: boolean;
   structuralCoverage: "complete" | "partial" | "unsupported";
+  /** Scopes the host would not serve. The remedy is a different Word. */
   unsupported: string[];
+  /**
+   * Scopes this pass did not attempt, whatever the host can do.
+   *
+   * Kept apart from `unsupported` because the remedy differs: a scope the policy
+   * excluded, or one this acquisition has no reader for, is a setting or a missing
+   * feature rather than a host limitation. `coverage.ts` reads this to avoid
+   * sending the reader to a different Word for a decision ToneForge made.
+   */
+  notAttempted: string[];
   /**
    * Whether acquisition itself examined only part of the document.
    *

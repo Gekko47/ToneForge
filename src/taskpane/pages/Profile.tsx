@@ -4,12 +4,21 @@ import ProfileRecordSection from "../components/ProfileRecordSection";
 import { readActiveGovernanceContext } from "../activeGovernance";
 import { saveProfileRecord } from "../../core/state/persistence";
 import type { ProfileRecord } from "../../core/domain/ProfileRecord";
+import type { WordCapabilities } from "../../word/capabilityProbe";
 
 export interface ProfileProps {
   onBack: () => void;
+  /**
+   * The probed Word capabilities, forwarded to the profile editor.
+   *
+   * The dashboard has already probed by the time this page can be reached; the
+   * value is passed rather than re-probed so the sections are marked from the
+   * same evidence the review used.
+   */
+  capabilities?: WordCapabilities | null;
 }
 
-export default function Profile({ onBack }: ProfileProps): React.ReactNode {
+export default function Profile({ onBack, capabilities = null }: ProfileProps): React.ReactNode {
   const [record, setRecord] = React.useState<ProfileRecord | null>(
     readActiveGovernanceContext().record,
   );
@@ -54,7 +63,7 @@ export default function Profile({ onBack }: ProfileProps): React.ReactNode {
         tab.
       </p>
       {record !== null && <ProfileRecordSection record={record} onChange={applyRecord} />}
-      <ProfileEditor onRecordSaved={refreshRecord} />
+      <ProfileEditor onRecordSaved={refreshRecord} capabilities={capabilities} />
     </div>
   );
 }

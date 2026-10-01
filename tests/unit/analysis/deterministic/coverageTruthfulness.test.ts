@@ -57,6 +57,8 @@ interface ContextOptions {
   capabilities?: Partial<AnalysisCapabilities>;
   /** Acquisition tokens naming what the host could not read. */
   unsupported?: string[];
+  /** Acquisition tokens naming what this pass did not attempt. */
+  notAttempted?: string[];
   /** Extra nodes, so `sectionsExamined` and friends are not always zero. */
   extraNodes?: Array<{ type: string; nodeId: string }>;
 }
@@ -132,6 +134,7 @@ function contextFor(options: ContextOptions = {}) {
       paragraphCollectionRead: true,
       structuralCoverage: "complete",
       unsupported: options.unsupported ?? [],
+      notAttempted: options.notAttempted ?? [],
       incremental: false,
       incrementalReason: "none",
     },

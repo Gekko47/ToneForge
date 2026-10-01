@@ -110,6 +110,7 @@ function contextFor(text: string, profile = PROFILE, formatting = emptyFormattin
       paragraphCollectionRead: true,
       structuralCoverage: "complete",
       unsupported: [],
+      notAttempted: [],
       incremental: false,
       incrementalReason: "none",
     },
