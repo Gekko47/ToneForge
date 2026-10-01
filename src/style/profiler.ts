@@ -10,7 +10,15 @@
  * document directly.
  */
 
-import { buildProfilePrompt, ProfileResponseSchema } from "../ai/prompts/profilePrompts";
+import {
+  buildProfilePrompt,
+  buildProfilePromptV2,
+  ProfileResponseSchema,
+} from "../ai/prompts/profilePrompts";
+import {
+  parseSemanticStyleExtraction,
+  type ExtractionRefusal,
+} from "../analysis/semantic/semanticStyleExtraction";
 import { createLlmRegistry } from "../ai/providers/registry";
 import { LlmError, type LlmSemanticProvider } from "../ai/providers/LlmProvider";
 import { withRetry } from "../ai/providers/retry";
@@ -30,6 +38,28 @@ export interface ProfileOptions {
   signal?: AbortSignal;
   registry?: LlmSemanticProvider;
   name?: string;
+  /**
+   * Which prompt to send. Defaults to `"v2"`.
+   *
+   * **Not a compatibility shim — a switch with a reason.** The V1 path stays
+   * reachable until P4 because the V1 prompt is what the Semantic tab is still
+   * calling, and switching it silently would make a provider that only answers
+   * the old shape look like a regression rather than a mismatch. It is a
+   * parameter rather than a fallback for the same reason: a fallback that
+   * quietly retried V1 on a V2 failure would report an all-default profile as
+   * learned, which is the one outcome this whole phase exists to prevent.
+   */
+  promptVersion?: "v1" | "v2";
+}
+
+/** Thrown when a provider's answer cannot be used, carrying the reason. */
+export class StyleExtractionError extends Error {
+  readonly refusal: ExtractionRefusal;
+  constructor(refusal: ExtractionRefusal) {
+    super(refusal.message);
+    this.name = "StyleExtractionError";
+    this.refusal = refusal;
+  }
 }
 
 /**
@@ -43,7 +73,9 @@ export async function buildStyleProfile(
   sample: CapturedSample,
   opts: ProfileOptions,
 ): Promise<StyleProfile> {
-  const prompt = buildProfilePrompt(sample.text, opts.constraints ?? [], {
+  const version = opts.promptVersion ?? "v2";
+  const build = version === "v2" ? buildProfilePromptV2 : buildProfilePrompt;
+  const prompt = build(sample.text, opts.constraints ?? [], {
     includeRawText: opts.includeRawText,
   });
 
@@ -74,15 +106,26 @@ export async function buildStyleProfile(
   }
 
   /*
-   * The V1 prompt's eight flat fields, mapped onto the sixteen V2 dimensions.
+   * Two shapes meet here, and which one depends on which prompt was sent.
    *
-   * P2 replaces the prompt itself with a strict extraction schema; until then
-   * this is the one place the two shapes meet, and it is deliberately the same
-   * function the v14 state migration uses. A profile learned from today's prompt
-   * and a profile migrated from a v13 store must reach V2 by identical rules, or
-   * "what did V1 mean" would have two answers that drift apart.
+   * V2 answers are validated against the strict extraction schema: every group
+   * required, no defaults, and a factual-leakage check against the sample that was
+   * sent. A refusal is thrown as `StyleExtractionError` so the pane can show what
+   * went wrong rather than a generic provider failure.
+   *
+   * V1 answers are mapped by `migrateSemanticStyleFromV1` — deliberately the same
+   * function the v14 state migration uses, so a profile learned from the old
+   * prompt and one migrated from a v13 store reach V2 by identical rules. Two
+   * implementations of "what did V1 mean" would be two answers, and they drift.
    */
-  const semantic = migrateSemanticStyleFromV1(ProfileResponseSchema.parse(parsed));
+  const semantic =
+    version === "v2"
+      ? (() => {
+          const outcome = parseSemanticStyleExtraction(parsed, sample.text);
+          if (!outcome.ok) throw new StyleExtractionError(outcome.refusal);
+          return outcome.value;
+        })()
+      : migrateSemanticStyleFromV1(ProfileResponseSchema.parse(parsed));
   const measured = computeMeasuredProfile(sample.text);
   const profile = createEmptyProfile(opts.name ?? "Style profile");
 

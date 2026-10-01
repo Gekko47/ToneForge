@@ -73,6 +73,65 @@ export function buildProfilePrompt(
     .join("\n");
 }
 
+/**
+ * The V2 learning prompt.
+ *
+ * Same raw-text gate as every other builder — the check is the first statement
+ * and it throws before a prompt string exists, so no caller can accidentally
+ * build a prompt containing a document and then not send it.
+ *
+ * Two things the V1 prompt did not say, and both are load-bearing:
+ *
+ * - **Every group is named, and the model is told not to omit one.** The
+ *   response is validated against a schema with no defaults, so a group the model
+ *   forgets is a refusal rather than a silent "tone: neutral". Telling the model
+ *   the rule is cheaper than telling the user their provider failed.
+ * - **The description fields are told not to quote the sample.** They are where
+ *   a project name, a date, or a figure lands when a model paraphrases instead of
+ *   describing, and the leakage check will refuse the whole analysis if one
+ *   arrives. Better to be explicit at the source and still verify afterwards.
+ */
+export function buildProfilePromptV2(
+  sampleText: string,
+  constraints: string[] = [],
+  opts: ProfilePromptOptions = { includeRawText: false },
+): string {
+  if (!opts.includeRawText) {
+    throw new Error(
+      "buildProfilePromptV2 requires includeRawText: true — raw document text must not leave the add-in without explicit user opt-in",
+    );
+  }
+  return [
+    "Analyze the following writing sample and describe how it reads.",
+    "Return a JSON object and nothing else. Every one of these sixteen keys must be",
+    "present, and every key inside them must be present:",
+    "tone (primary, secondary, description), voice (person, construction, authorialPresence, description),",
+    "formality (score, label), register (primary, description),",
+    "assertionStyle (strength, ordering, directness), qualificationStyle (frequency, strength, exceptions, conditionals),",
+    "evidenceFraming (recordFirst, attribution, quotation, explicitReferences, progression),",
+    "uncertaintyStyle (incompleteEvidence, confidenceLanguage, modality, avoidsUnsupportedCertainty),",
+    "sentenceArchitecture (complexity, clauseDensity, targetWords, coordination, shortClosingSentence),",
+    "paragraphArchitecture (function, ordering, targetWords, propositions), transitions,",
+    "agency (actorNaming, passiveTendency, attributionPrecision),",
+    "technicality (density, explainsTerms, abbreviationTendency), rhetoricalStyle,",
+    "conclusionStyle (form, avoidsRepetition),",
+    "lexicalPreferences (toneAvoid, prefersNeutralVerbs, evaluativeLanguage).",
+    "",
+    "Describe the writing, not its subject. A description must not name a project, a",
+    "company, a person, a date, an amount, or any other fact from the sample — a style",
+    "profile that carries the document's content into the editor is a leak, and one that",
+    "cannot be checked is useless. Use an empty string when a description would help but",
+    "you have nothing safe to say.",
+    "Choose the enum values that fit; do not invent new ones. If the sample does not",
+    "settle a dimension, give the most likely value rather than omitting the key.",
+    constraints.length > 0 ? `Constraints: ${constraints.join("; ")}` : "",
+    "Writing sample:",
+    sampleText,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export interface DeviationPromptOptions {
   includeRawText: boolean;
 }

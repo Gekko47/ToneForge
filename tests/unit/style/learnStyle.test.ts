@@ -18,19 +18,77 @@ describe("learnStyleDraft", () => {
   });
 
   it("adds semantic interpretation only after explicit opt-in", async () => {
+    // A V2 answer, because that is what `buildStyleProfile` now sends by
+    // default. The V1 path is covered in `profiler.test.ts` and goes away in P4.
     const registry = createLlmRegistry({
       provider: "mock",
       mock: {
         responses: {
           "Analyze the following writing sample": JSON.stringify({
-            tone: "professional",
-            voice: "third-person",
-            formality: 75,
-            readingGradeTarget: 12,
-            preferredSentenceLength: 18,
-            vocabularyRegister: "standard",
-            rhetoricalStyle: "direct",
-            avoidWords: ["very"],
+            tone: { primary: "analytical", secondary: ["restrained"], description: "" },
+            voice: {
+              person: "third",
+              construction: "active",
+              authorialPresence: "restrained",
+              description: "",
+            },
+            formality: { score: 75, label: "professional" },
+            register: { primary: "expert", description: "" },
+            assertionStyle: {
+              strength: "qualified",
+              ordering: "evidence-first",
+              directness: "measured",
+            },
+            qualificationStyle: {
+              frequency: "frequent",
+              strength: "moderate",
+              exceptions: "inline",
+              conditionals: true,
+            },
+            evidenceFraming: {
+              recordFirst: true,
+              attribution: "systematic",
+              quotation: "frequent",
+              explicitReferences: true,
+              progression: "source-analysis-conclusion",
+            },
+            uncertaintyStyle: {
+              incompleteEvidence: "stated",
+              confidenceLanguage: "explicit",
+              modality: "frequent",
+              avoidsUnsupportedCertainty: true,
+            },
+            sentenceArchitecture: {
+              complexity: "complex",
+              clauseDensity: "high",
+              targetWords: 18,
+              coordination: "subordination",
+              shortClosingSentence: true,
+            },
+            paragraphArchitecture: {
+              function: "analysis",
+              ordering: "topic-evidence-conclusion",
+              targetWords: 120,
+              propositions: "multiple",
+            },
+            transitions: "explicit",
+            agency: {
+              actorNaming: "named",
+              passiveTendency: "low",
+              attributionPrecision: "exact",
+            },
+            technicality: {
+              density: "medium",
+              explainsTerms: true,
+              abbreviationTendency: "first-use",
+            },
+            rhetoricalStyle: "forensic",
+            conclusionStyle: { form: "qualified", avoidsRepetition: true },
+            lexicalPreferences: {
+              toneAvoid: ["very"],
+              prefersNeutralVerbs: true,
+              evaluativeLanguage: "restrained",
+            },
           }),
         },
       },
@@ -43,10 +101,8 @@ describe("learnStyleDraft", () => {
     });
 
     expect(result.evidence.semanticIncluded).toBe(true);
-    // V1's free-string tone lands in `tone.description`: V2 has no enum trait
-    // named "professional", and guessing one would be an invented claim.
-    expect(result.draft.semantic.tone.description).toBe("professional");
-    expect(result.draft.semantic.legacyV1?.tone).toBe("professional");
+    expect(result.draft.semantic.tone.primary).toBe("analytical");
+    expect(result.draft.semantic.evidenceFraming.recordFirst).toBe(true);
     expect(result.draft.sourceSampleIds).toHaveLength(1);
   });
 

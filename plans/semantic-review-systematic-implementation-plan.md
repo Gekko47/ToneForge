@@ -1236,7 +1236,7 @@ migration forward safe rather than merely defensible.
   change pushes past half, the answer is to stop storing whole snapshots per
   revision, not to widen the number again.
 
-### P2 — Learning prompt V2 (runs after P3, which it depends on)
+### P2 — Learning prompt V2 (runs after P3, which it depends on) _(LANDED 2026-10-01)_
 
 1. `buildProfilePromptV2()` in
    [`profilePrompts.ts`](../src/ai/prompts/profilePrompts.ts), with the
@@ -1269,6 +1269,31 @@ migration forward safe rather than merely defensible.
      **refused** by the leakage check;
    - a response that is valid but all-default is **rejected as uninformative** with
      the user-facing "the provider returned an empty analysis — try again".
+
+**Exit, as met**: all thirteen `verify` stages green; 166 test files, 2273 tests.
+
+**Two places the implementation is stricter or clearer than the item above, both
+recorded rather than absorbed:**
+
+- **The strictness is at group level, not leaf level.** The plan says "every
+  group is required"; `.partial()` on each group means a group the model omits
+  is a refusal, while a leaf it omits inside a group it _did_ answer is filled
+  from the persisted default. That line is the right one — "the model told us
+  nothing about evidence framing" and "the model said attribution is occasional
+  but not the rest" are different answers — and what must never happen, a whole
+  group defaulting because the response was empty, is what the requirement
+  prevents. A response answering every group with defaults is still caught, by
+  `isDefaultSemanticStyle`.
+- **`promptVersion` is a parameter, not a fallback.** `buildStyleProfile` sends
+  V2 by default and accepts `promptVersion: "v1"` until P4 removes it. A silent
+  fallback to V1 on a V2 failure would report an all-default profile as learned,
+  which is the one outcome this change exists to prevent; a parameter makes a
+  mismatch look like a mismatch.
+
+`StyleExtractionError` carries the `reason` — `schema`, `emptyAnalysis`, or
+`factualLeakage` — so the pane can say what happened rather than reporting a
+generic provider failure, and `EMPTY_ANALYSIS_MESSAGE` is exported so the test
+asserts on the same string the user sees.
 
 ### P3 — Local preservation _(LANDED 2026-10-01)_
 
