@@ -29,22 +29,39 @@ describe("safe application validation", () => {
     expect(validatePlanBeforeApply(plan)).toContainEqual(expect.stringContaining("missing change"));
   });
 
-  it("rejects changes that remove preserved literals", () => {
-    const finding = FindingSchema.parse({
-      id: uuidv4(),
-      kind: "semantic",
-      category: "editorial.clarity",
-      range: { start: 0, end: 20, unit: "character" },
-      message: "Preserve the date",
-      severity: "warning",
-      evidence: "Meet on 2026-09-24",
-      actual: "Meet on 2026-09-24",
-      expected: "Meet soon",
-      source: "ai",
-      confidence: 0.8,
+  /*
+   * The check reads the Change (D4).
+   *
+   * It used to read `finding.actual`/`finding.expected`, guarded by
+   * `change.findingId`, so it fired on the finding and never on the change — which
+   * meant a change with no finding, or a finding with no `actual`, skipped the
+   * check entirely. The precondition is where the text the document is expected to
+   * hold actually lives, so the case is expressed through it.
+   */
+  it("rejects a change whose replacement drops a preserved literal", () => {
+    const planned = change({
+      approvalState: "approved",
+      precondition: { kind: "text", expectedText: "Meet on 2026-09-24" },
+      payload: { text: "Meet soon" },
     });
-    const planned = change({ findingId: finding.id });
-    const plan = createChangePlan("hash", "doc", [planned], [finding]);
+    const plan = createChangePlan("hash", "doc", [planned], [], { schemaVersion: 2 });
+    expect(validatePlanBeforeApply(plan)).toContainEqual(
+      expect.stringContaining("preserved content"),
+    );
+  });
+
+  it("reads the node precondition's expected text too, so a paragraph write cannot slip past", () => {
+    const planned = change({
+      approvalState: "approved",
+      range: { start: 0, end: 1, unit: "paragraph" },
+      precondition: {
+        kind: "node",
+        nodeId: "word-paragraph-p1",
+        expectedText: "Meet on 2026-09-24",
+      },
+      payload: { text: "Meet soon" },
+    });
+    const plan = createChangePlan("hash", "doc", [planned], [], { schemaVersion: 2 });
     expect(validatePlanBeforeApply(plan)).toContainEqual(
       expect.stringContaining("preserved content"),
     );

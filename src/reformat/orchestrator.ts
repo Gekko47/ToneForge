@@ -968,18 +968,34 @@ export async function applyReviewedPlan(
   );
   const allApplied = result.results.length > 0 && result.results.every((item) => item.applied);
   if (!result.tracking.managed) {
+    /*
+     * The adapter's own per-change reason is kept where it has one.
+     *
+     * This branch conflates two refusals: a host that could not establish
+     * managed tracking, and a plan the adapter refused on its own merits — a
+     * protected paragraph, a dropped preserved literal. Replacing both with the
+     * tracking sentence reported "Managed Track Changes is required" for a
+     * protection refusal, which sends the user to Troubleshooting to fix a host
+     * problem they do not have. ADR-0069 requires the refusal to name the cause
+     * and the control that resolves it, and only the adapter knows which it was.
+     */
+    const trackingRefusal =
+      "Managed Track Changes could not be established; no changes were applied.";
+    const reasonFor = (item: { error?: string }): string =>
+      item.error === undefined || item.error.length === 0 ? trackingRefusal : item.error;
     return {
       ...result,
       results: result.results.map((item) => ({
         changeId: item.changeId,
         applied: false,
-        error: "Managed Track Changes could not be established; no changes were applied.",
+        error: reasonFor(item),
       })),
       stale: false,
       applied: false,
       verified: false,
-      verificationError: "Managed Track Changes is required.",
-      outcome: refusedOutcome(result.results, "Managed Track Changes is required."),
+      verificationError:
+        result.results[0] === undefined ? trackingRefusal : reasonFor(result.results[0]),
+      outcome: refusedOutcome(result.results, trackingRefusal),
     };
   }
   if (!allApplied) {

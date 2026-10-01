@@ -2943,3 +2943,69 @@ formatting` governed the body style, the list standard, the table standard,
 
 - **Evidence**: `src/word/selectionScope.ts`, `tests/unit/word/selectionScope.test.ts`,
   plan §2 D11, `docs/manual-verification.md`.
+
+## ADR-0095: The merge point's two checks read the Change, and a paragraph write is verified against its node
+
+- **Status**: Accepted (2026-10-01)
+- **Context**: `validatePlanBeforeApply` implements two safety checks on the sole
+  mutation path, and both read `Finding` fields through `change.findingId`.
+  Protection resolved `finding.nodeIds`; preservation was guarded by
+  `if (finding?.actual && finding.expected)`.
+
+  Both were **fail-open**. A change with no `findingId` produced an empty target
+  set; a finding with no `nodeIds` or no `actual` skipped its check; and the write
+  proceeded with nothing reported. A check that can be switched off by leaving a
+  field out is not a check — and the semantic apply path, which has no `Finding` by
+  design, would have had both of its guards silently switched off.
+
+  Writing the new apply path then surfaced a second, older problem.
+  `validateChangePreconditions` required a paragraph-unit change to carry a `node`
+  precondition _and_ a `replaceText` to carry a `text` precondition. Read together
+  those two rules make a paragraph-unit `replaceText` impossible to plan: one
+  precondition cannot be both. Nothing in the repository produced that shape, so
+  the contradiction was invisible — until the semantic path needed it, because the
+  paragraph unit is the only text write available on every Word host
+  (`Paragraph.getRange("Whole")`, WordApi 1.1; `Range.set` is WordApiDesktop 1.4
+  and absent on Word on the web).
+
+- **Decision**:
+
+  1. **Protection and preservation read the `Change`.** Protection resolves target
+     nodes from `range.target.nodeId`, then `range.target.structuralPath`, then the
+     `findingId` provenance, then the span against the nodes' source ranges — most
+     specific first, with the span fallback last so a change that names nothing at
+     all is still checked. Preservation compares `precondition.expectedText`
+     against `payload.text`; `expectedText` is read from a `text` precondition or a
+     `node` precondition, because both state what the document should hold.
+     `findingId` survives as provenance, and the deterministic path is unchanged.
+  2. **The text-precondition rule is scoped to character units.** A character range
+     is verified against the text at those offsets; a paragraph is verified against
+     the paragraph itself — its id, text and formatting — which
+     `verifyLivePrecondition` already reads. The demand is narrowed in _where_ it
+     applies, never in _whether_.
+  3. **A refusal keeps its own cause.** `applyReviewedPlan` replaced every
+     per-change error with "Managed Track Changes is required" whenever the adapter
+     returned `tracking.managed === false`, which also covers a plan the adapter
+     refused on its own merits. A protection refusal was therefore reported as a
+     host problem. The adapter's own sentence is now kept when it has one
+     (ADR-0069).
+
+- **Consequences**: The two checks can no longer be disabled by omitting a
+  `Finding`, and the semantic apply path is covered by them. A paragraph-unit
+  write is now plannable for the first time, with a live precondition that names
+  the node.
+
+  The span fallback is the one place where the check's behaviour changes for a
+  change that named nothing: it can now produce a problem where none was produced
+  before. That is the intended direction — it fires on an offset the document does
+  not back — and it is bounded by `nodes` being supplied, which every production
+  apply path does.
+
+- **Evidence**: `src/word/revisionAdapter.ts` (`resolveTargetNodeIds`, the
+  preservation loop), `src/changes/preconditions.ts`,
+  `src/reformat/orchestrator.ts`, `src/reformat/semanticApply.ts`,
+  `tests/unit/word/revisionAdapter.test.ts`,
+  `tests/unit/changes/preconditions.test.ts`,
+  `tests/unit/reformat/semanticRevisionApply.test.ts`,
+  `tests/integration/semanticReviewApply.test.ts`,
+  `tests/integration/safeApply.test.ts`.

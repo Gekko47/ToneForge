@@ -184,6 +184,22 @@ export function computeStructuralHash(nodes: readonly DocumentNode[]): string {
   return hashText(sequence);
 }
 
+/**
+ * The node-id prefix a host-assigned paragraph id carries.
+ *
+ * Exported because two modules hold the host's raw `uniqueLocalId` and have to
+ * recognise the node built from it: the acquisition, and the semantic selection
+ * anchor. Re-deriving the prefix in each would let the two drift, and a mismatch
+ * would read as "this paragraph is not the one you selected" rather than as the
+ * bug it is.
+ */
+export const WORD_PARAGRAPH_NODE_PREFIX = "word-paragraph-";
+
+/** The node id a host paragraph id corresponds to, without needing its index. */
+export function wordParagraphNodeId(uniqueLocalId: string): string {
+  return `${WORD_PARAGRAPH_NODE_PREFIX}${uniqueLocalId.trim()}`;
+}
+
 /** Stable identity for a Word paragraph, preferring the host's local ID. */
 export function buildParagraphNodeId(input: {
   uniqueLocalId?: string;
@@ -191,7 +207,7 @@ export function buildParagraphNodeId(input: {
   text: string;
 }): string {
   if (input.uniqueLocalId && input.uniqueLocalId.trim().length > 0) {
-    return `word-paragraph-${input.uniqueLocalId.trim()}`;
+    return wordParagraphNodeId(input.uniqueLocalId);
   }
   return buildNodeId("paragraph", `fallback:${input.index}:${hashText(input.text)}`);
 }

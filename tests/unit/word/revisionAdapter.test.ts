@@ -443,3 +443,114 @@ describe("revisionAdapter", () => {
     });
   });
 });
+
+/**
+ * D4's behavioural proof: neither check may be switched off by leaving a field
+ * out.
+ *
+ * The two checks used to read `finding.nodeIds` and `finding.actual`/`expected`
+ * through `change.findingId`, so a change with no `findingId` — which is every
+ * semantic change on the new contract — skipped both, and the write proceeded.
+ * These cases carry **no `Finding` anywhere in the plan** on purpose: that is the
+ * only way they can fail if the checks ever go back to reading one.
+ */
+describe("the merge point's two checks, with no Finding in the plan", () => {
+  function node(overrides: Record<string, unknown> = {}) {
+    return {
+      nodeId: "word-paragraph-p1",
+      type: "paragraph",
+      text: "The pour completed on 3 March 2026.",
+      sourcePath: "body/paragraph/0",
+      sourceRange: {
+        nodeId: "word-paragraph-p1",
+        paragraphIndex: 0,
+        structuralPath: "body/paragraph/0",
+        startOffset: 0,
+        endOffset: 33,
+      },
+      editable: true,
+      includedInGovernance: true,
+      includedInAIReview: true,
+      ...overrides,
+    } as never;
+  }
+
+  beforeEach(() => {
+    setStage01Passed(false);
+    setOffice(defaultOfficeMock());
+    vi.spyOn(logger, "warn").mockImplementation(() => {});
+    vi.spyOn(logger, "error").mockImplementation(() => {});
+  });
+
+  it("refuses a protected node reached only by the change's span", () => {
+    const plan = createTestPlan("hash1", "doc1", [
+      makeChange({
+        range: { start: 0, end: 33 },
+        precondition: { kind: "text", expectedText: "The pour completed on 3 March 2026." },
+        payload: { text: "The pour finished on 3 March 2026." },
+      }),
+    ]);
+
+    const problems = validatePlanBeforeApply(plan, false, [node({ editable: false })]);
+
+    expect(problems.some((problem) => problem.includes("targets protected range"))).toBe(true);
+    expect(plan.findings).toHaveLength(0);
+    expect(plan.changes[0]?.findingId).toBeUndefined();
+  });
+
+  it("refuses a protected node named by the change's own target", () => {
+    const plan = createTestPlan("hash1", "doc1", [
+      makeChange({
+        range: {
+          start: 0,
+          end: 1,
+          unit: "paragraph",
+          target: { kind: "paragraph", index: 0, nodeId: "word-paragraph-p1" },
+        },
+        precondition: { kind: "text", expectedText: "The pour completed on 3 March 2026." },
+        payload: { text: "The pour finished on 3 March 2026." },
+      }),
+    ]);
+
+    const problems = validatePlanBeforeApply(plan, false, [node({ editable: false })]);
+
+    expect(problems.some((problem) => problem.includes("targets protected range"))).toBe(true);
+  });
+
+  it("refuses a change whose precondition drops a preserved literal", () => {
+    const plan = createTestPlan("hash1", "doc1", [
+      makeChange({
+        range: { start: 0, end: 33 },
+        precondition: { kind: "text", expectedText: "Completed on 3 March 2026 for £1,240,000." },
+        payload: { text: "Completed for the client." },
+      }),
+    ]);
+
+    const problems = validatePlanBeforeApply(plan);
+
+    expect(problems.some((problem) => problem.includes("would remove preserved content"))).toBe(
+      true,
+    );
+    expect(plan.findings).toHaveLength(0);
+  });
+
+  it("still reads the finding when one is present, so the deterministic path is unchanged", () => {
+    const plan = createTestPlan("hash1", "doc1", [
+      makeChange({
+        range: { start: 900, end: 933 },
+        findingId: "3f1c8f2e-6f2a-4a3f-9a5e-2f0a1b2c3d4e",
+        precondition: { kind: "text", expectedText: "The pour completed on 3 March 2026." },
+        payload: { text: "The pour finished on 3 March 2026." },
+      }),
+    ]);
+    // The span resolves to nothing (offsets 900–933 are outside the node), so this
+    // case only passes if the finding's own node ids are still consulted.
+    (plan as { findings?: unknown[] }).findings = [
+      { id: "3f1c8f2e-6f2a-4a3f-9a5e-2f0a1b2c3d4e", nodeIds: ["word-paragraph-p1"] },
+    ] as never;
+
+    const problems = validatePlanBeforeApply(plan, false, [node({ editable: false })]);
+
+    expect(problems.some((problem) => problem.includes("targets protected range"))).toBe(true);
+  });
+});

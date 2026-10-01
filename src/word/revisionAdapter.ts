@@ -876,11 +876,21 @@ export function validatePlanBeforeApply(
   }
 
   // Second layer: protection and preservation checks.
+  //
+  // **Both read the `Change`, not the `Finding` (ADR-0092 / plan D4).** They used
+  // to read `finding.nodeIds` and `finding.actual`/`finding.expected`, guarded by
+  // `change.findingId`, and both were therefore fail-open: a change with no
+  // `findingId`, or a finding with no node ids or no `actual`, produced an empty
+  // target set and a skipped check — and the write proceeded. A check that can be
+  // switched off by omitting a field is not a check.
+  //
+  // `findingId` survives as provenance: it is how the deterministic path records
+  // which finding produced a change, and where it is present it is still the most
+  // specific statement of intent available.
+  const findingsById = new Map((plan.findings ?? []).map((finding) => [finding.id, finding]));
   if (nodes && nodes.length > 0) {
-    const findingsById = new Map((plan.findings ?? []).map((finding) => [finding.id, finding]));
     plan.changes.forEach((change) => {
-      const finding = change.findingId ? findingsById.get(change.findingId) : undefined;
-      const targetIds = new Set(finding?.nodeIds ?? []);
+      const targetIds = resolveTargetNodeIds(change, nodes, findingsById);
       const protectedNode = nodes.find(
         (node) =>
           targetIds.has(node.nodeId) && (!node.editable || isProtectedNode(node, [], policy)),
@@ -893,18 +903,77 @@ export function validatePlanBeforeApply(
     });
   }
   plan.changes.forEach((change) => {
-    const finding = (plan.findings ?? []).find((item) => item.id === change.findingId);
-    if (finding?.actual && finding.expected) {
-      const missing = preservationLiterals(finding.actual).filter(
-        (literal) => !finding.expected?.includes(literal),
-      );
-      if (missing.length > 0) {
-        problems.push(`Change ${change.id} would remove preserved content: ${missing.join(", ")}`);
-      }
+    /*
+     * Either kind of precondition carries the text the document is expected to
+     * hold: a `text` precondition states it outright, and a `node` precondition —
+     * which is what a paragraph-unit write must use — states it as
+     * `expectedText`. Reading only the first kind would have made the check skip
+     * every paragraph-unit write, which is the shape the semantic path prefers.
+     */
+    const original =
+      change.precondition?.kind === "text"
+        ? change.precondition.expectedText
+        : change.precondition?.kind === "node"
+          ? change.precondition.expectedText
+          : undefined;
+    const proposed = change.payload["text"];
+    if (typeof original !== "string" || typeof proposed !== "string") return;
+    const missing = preservationLiterals(original).filter((literal) => !proposed.includes(literal));
+    if (missing.length > 0) {
+      problems.push(`Change ${change.id} would remove preserved content: ${missing.join(", ")}`);
     }
   });
 
   return problems;
+}
+
+/**
+ * Which document nodes a change is about, most specific source first.
+ *
+ * 1. `range.target.nodeId` — the change says which node it means.
+ * 2. `range.target.structuralPath` — the same claim by path.
+ * 3. `findingId` → the finding's node ids, filtered to nodes that exist. Provenance
+ *    is still the most specific thing a deterministic change carries, and dropping
+ *    it would weaken the deterministic path for no gain.
+ * 4. The span, resolved against the nodes' source ranges — the fallback that makes
+ *    the check fire for a change that names nothing at all.
+ *
+ * An empty result means the change named nothing *and* covered no node. That is
+ * reported rather than passed: a text change whose span overlaps no known node is
+ * an offset the document does not back, which is precisely the condition this check
+ * exists to catch.
+ */
+function resolveTargetNodeIds(
+  change: Change,
+  nodes: readonly DocumentNode[],
+  findingsById: ReadonlyMap<string, { nodeIds?: readonly string[] }>,
+): Set<string> {
+  const target = change.range.target;
+  if (target !== undefined && target.kind === "paragraph") {
+    if (typeof target.nodeId === "string") return new Set([target.nodeId]);
+    if (typeof target.structuralPath === "string") {
+      const byPath = nodes.filter((node) => node.sourcePath === target.structuralPath);
+      if (byPath.length > 0) return new Set(byPath.map((node) => node.nodeId));
+    }
+  }
+  if (change.findingId !== undefined) {
+    const finding = findingsById.get(change.findingId);
+    const declared = new Set(finding?.nodeIds ?? []);
+    if (declared.size > 0) {
+      return new Set(nodes.filter((node) => declared.has(node.nodeId)).map((node) => node.nodeId));
+    }
+  }
+  return new Set(
+    nodes
+      .filter((node) => {
+        const range = node.sourceRange;
+        if (range === undefined) return false;
+        if (range.startOffset === undefined || range.endOffset === undefined) return false;
+        // Half-open overlap, so a zero-width insertion matches the node it lands in.
+        return range.startOffset < change.range.end && range.endOffset > change.range.start;
+      })
+      .map((node) => node.nodeId),
+  );
 }
 
 function validatePayloadForType(change: Change): string | undefined {

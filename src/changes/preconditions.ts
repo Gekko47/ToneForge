@@ -25,8 +25,28 @@ export function validateChangePreconditions(changes: readonly Change[]): string[
     if (change.type === "insertText" && change.precondition.kind !== "text") {
       problems.push(`Change ${change.id} insertText requires a text precondition`);
     }
+    /*
+     * The text-precondition rule is scoped to *character* units, and it has to be.
+     *
+     * Read together with the paragraph rule above, the unscoped version made a
+     * paragraph-unit `replaceText` impossible to plan: the first rule demands a
+     * node precondition and the second demands a text one, and a single
+     * precondition cannot be both. Nothing in the repository produced that shape,
+     * so the contradiction stayed invisible until the semantic apply path needed
+     * it — and D11's *preferred* target is exactly that shape, because
+     * `Paragraph.getRange("Whole")` is the only text write available on every Word
+     * host.
+     *
+     * The split follows what each unit can actually be checked against: for a
+     * character range the live check is the text at those offsets, and for a
+     * paragraph the live check is the paragraph itself — its id, its text, its
+     * formatting — which `verifyLivePrecondition` already reads. The check is not
+     * weakened for the deterministic path: character-unit changes are unaffected,
+     * and a paragraph-unit change now has to name the node it means.
+     */
     if (
       (change.type === "replaceText" || change.type === "deleteRange") &&
+      change.range.unit !== "paragraph" &&
       change.precondition.kind !== "text"
     ) {
       problems.push(`Change ${change.id} text mutation requires a text precondition`);

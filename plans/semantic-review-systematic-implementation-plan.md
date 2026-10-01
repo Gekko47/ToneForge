@@ -589,7 +589,7 @@ STYLE LEARNING                              SEMANTIC REVIEW
 paste / .txt / Word selection               Word selection
   -> textFileImport / captureFromText         -> word/selectionScope.readSelectionScope()
   -> sampleQuality (level + warnings)            (text, absolute start/end, paragraph ids,
-  -> LearnSemanticStyle disclosure                  documentId, contentHash)
+  -> LearnSemanticStyle disclosure                  documentId, selectionHash)
      [semanticOptIn + provider gates]         -> taskpane/semantic/gates.ts
   -> ai/prompts/profilePrompts.buildProfilePromptV2   -> review()  [ONE call]
   -> SemanticStyleProfileSchema.parse          -> ai/prompts -> reviewSchema.parse
@@ -598,8 +598,8 @@ paste / .txt / Word selection               Word selection
   -> Save / Save and set active                -> preservationValidator (local, always)
      [updateDraft -> revision audit]           -> SemanticReviewSession (in-memory)
   -> sampleHash + counts -> state v14          -> Keep original | Regenerate | Apply
-     (no raw text)                             -> semanticApply.toApplyFinding()  [D4]
-                                                  -> buildSemanticRewriteChange
+     (no raw text)                             -> semanticApply.applyApprovedSemanticRevision()
+                                                   -> buildSemanticRevisionChange  [D4: no Finding bridge]
                                                   -> applyReviewedPlan
                                                   -> revisionAdapter (sole writer)
                                                   -> verifyPlanReadback
@@ -660,7 +660,10 @@ observer-triggered call. `wordParagraphEvents` stays local.
 | [`src/ai/prompts/index.ts`](../src/ai/prompts/index.ts)                                                                       | Export V2                                                                                                                                                                                                         | P2          |
 | [`src/ai/providers/LlmProvider.ts`](../src/ai/providers/LlmProvider.ts)                                                       | `LlmSemanticProvider.review()`; `withSemanticHelpers` wires it                                                                                                                                                    | P4          |
 | [`src/analysis/index.ts`](../src/analysis/index.ts)                                                                           | Remove `detectSemanticDeviations` export; export the semantic barrel                                                                                                                                              | P4          |
-| [`src/reformat/semanticApply.ts`](../src/reformat/semanticApply.ts)                                                           | `ApprovedSemanticRevision` input; `toApplyFinding()` bridge; preservation re-verified at apply time                                                                                                               | P6          |
+| [`src/reformat/semanticApply.ts`](../src/reformat/semanticApply.ts)                                                           | `ApprovedSemanticRevision` input; no `Finding` bridge; preservation re-verified at apply time; the `Finding`-based pair deleted in P7 with `Semantic.tsx`                                                         | P6          |
+| [`src/word/rangeResolution.ts`](../src/word/rangeResolution.ts)                                                               | `supportsRangedReplacement()`, `resolveWholeParagraphIndex()`, `PARTIAL_SELECTION_REFUSAL` — D11's three-step target resolution                                                                                   | P6          |
+| [`src/changes/preconditions.ts`](../src/changes/preconditions.ts)                                                             | The text-precondition rule scoped to character units, so a paragraph-unit `replaceText` is plannable (**ADR-0095**)                                                                                               | P6          |
+| [`src/core/domain/DocumentSnapshot.ts`](../src/core/domain/DocumentSnapshot.ts)                                               | `WORD_PARAGRAPH_NODE_PREFIX` + `wordParagraphNodeId()` extracted from `buildParagraphNodeId`, so the anchor's raw `uniqueLocalId` maps to a node id in one place                                                  | P6          |
 | [`src/reformat/index.ts`](../src/reformat/index.ts)                                                                           | Export the new apply entry point                                                                                                                                                                                  | P6          |
 | [`src/shared/office/taskpaneNavigation.ts`](../src/shared/office/taskpaneNavigation.ts)                                       | Targets `semantic-review`, `semantic-style`; action `read-selection` retained                                                                                                                                     | P9          |
 | [`src/commands/commandRegistry.ts`](../src/commands/commandRegistry.ts)                                                       | `navigationTarget` enum extended; handler `openSemanticReview`                                                                                                                                                    | P9          |
@@ -1482,7 +1485,7 @@ procedure.
    (`UNIDENTIFIED_DOCUMENT`) with `documentIdVerified: false`, not a hash of a
    document nobody read.
 
-### P6 — Apply path (no deletions; the page still calls the old engine)
+### P6 — Apply path (no deletions; the page still calls the old engine) _(LANDED 2026-10-01)_
 
 1. `semanticApply.ts` takes `ApprovedSemanticRevision` and builds the change from it
    directly — **no `Finding` bridge** (**D4**).
@@ -1498,6 +1501,54 @@ procedure.
 5. Integration test: a protected node refuses **with no `Finding` anywhere in the
    plan**; a dropped `expectedText` literal refuses likewise; stale document
    refuses; exactly one change written; readback verified.
+
+**Exit, as met.** `applyApprovedSemanticRevision()` and
+`buildSemanticRevisionChange()` take an `ApprovedSemanticRevision` and never touch a
+`Finding`; the plan carries `findings: []` and the change carries no `findingId`,
+which is what makes every semantic apply a live test of D4. Preservation is re-run
+from the approved text before anything is written, and its report is returned with
+the result. D11's three-step target resolution ships: `src/word/rangeResolution.ts`
+prefers the paragraph unit, falls back to `Range.set`, and refuses with a remedy
+naming the third option. **39 new tests** across
+`tests/unit/word/rangeResolution.test.ts`,
+`tests/unit/reformat/semanticRevisionApply.test.ts`,
+`tests/unit/changes/preconditions.test.ts`,
+`tests/integration/semanticReviewApply.test.ts`, plus D4's four-case proof in
+`tests/unit/word/revisionAdapter.test.ts` and a rewritten preservation case in
+`tests/integration/safeApply.test.ts`. All thirteen verify stages green; 2341 tests;
+coverage 95.11 / 86.10 / 80.99 / 95.11. ADR-0095.
+
+**Deviations and findings the item list did not contain.**
+
+1. **`validateChangePreconditions` was self-contradictory, and the integration test
+   found it.** One rule demanded a `node` precondition for a paragraph-unit
+   change; the next demanded a `text` precondition for any `replaceText`. A
+   paragraph-unit `replaceText` therefore could not be planned at all — and that
+   unit is the only text write available on every Word host. The text rule is now
+   scoped to character units; the demand is narrowed in where it applies, never in
+   whether. Nothing produced the impossible shape, which is why it survived.
+2. **The adapter's preservation check now reads `expectedText` from either
+   precondition kind.** With (1), a paragraph write carries a `node` precondition;
+   reading only the `text` kind would have skipped the check on exactly the shape
+   the semantic path prefers.
+3. **`applyReviewedPlan` was reporting a protection refusal as a host problem.**
+   Its `tracking.managed === false` branch overwrote every per-change error with
+   "Managed Track Changes is required", which also covers a plan the adapter
+   refused on its own merits. The adapter's own sentence is kept when it has one
+   (ADR-0069).
+4. **`wordParagraphNodeId()` is exported from `DocumentSnapshot`.** The anchor holds
+   the host's raw `uniqueLocalId`; the adapter compares document node ids. Two
+   modules now hold the first and need the second, so the relationship lives in one
+   function rather than being re-derived in each.
+5. **The apply path reads the structured snapshot once itself**, to resolve the
+   paragraph index the paragraph unit needs. That is a whole-document read on the
+   _apply_ path, where P5 removed one from the _propose_ path — accepted, because
+   Apply is a single explicit user action and `applyReviewedPlan` reads the same
+   snapshot immediately afterwards anyway. Noted rather than hidden.
+6. **The two contracts coexist, as item 4 requires.** The legacy `Finding`-based
+   functions are marked for deletion in P7 and are covered by
+   `tests/unit/reformat/semanticApply.test.ts`, which P7 deletes with them; the new
+   contract's tests are a separate file so neither pins the other.
 
 ### P7 — Semantic Review UI (owns the deletions P6 deferred)
 
@@ -1653,7 +1704,7 @@ per-directory override, per the coverage rule.
 | 20     | `session.test.ts` — profile/document/selection change moves state to `stale`; `Keep original` records the outcome                                                                            |
 | 22     | `SemanticReview.test.tsx` — Regenerate re-sends the identical prompt and selection                                                                                                           |
 | 23     | `SemanticReview.test.tsx` — Keep original writes nothing and records the outcome                                                                                                             |
-| 24     | `semanticReviewApply.test.ts` — one `replaceText`; `toApplyFinding` restores `nodeIds`; protected node refuses; stale refuses                                                                |
+| 24     | `semanticRevisionApply.test.ts` + `semanticReviewApply.test.ts` — one `replaceText`, no `Finding` anywhere; protected node refuses; stale refuses; preservation re-run at write time         |
 | 25     | `semanticReviewApply.test.ts` — readback verified; unverified reported, not hidden                                                                                                           |
 | 26     | `gates.test.ts` + component — each of consent/provider/model/profile/selection disables and names the blocker                                                                                |
 | 27     | engine test — request body contains no sample text, no document text, no neighbouring text                                                                                                   |
