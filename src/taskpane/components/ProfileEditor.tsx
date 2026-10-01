@@ -9,6 +9,7 @@ import {
   TextField,
   Toggle,
 } from "@fluentui/react";
+import type { DeterministicStyleProfile } from "../../core/domain/StyleProfile";
 import {
   createEmptyProfile,
   formatRevision,
@@ -29,6 +30,7 @@ import { effectiveProfile, updateDraft, type ProfileRecord } from "../../core/do
 import { selectAllProfiles } from "../../core/state/profileSelectors";
 import { diffProfiles } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
+import DeterministicStyleSections from "./DeterministicStyleSections";
 import { parseTerminology } from "../settings/terminologyText";
 
 /**
@@ -274,6 +276,42 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
       const nextDirty = !sameEditableSnapshot(nextDraft, prev.savedProfile ?? prev.baseProfile);
       return {
         ...prev,
+        values: nextValues,
+        dirty: nextDirty,
+        savedAt: null,
+        error: null,
+        fieldErrors: nextValidation.errors,
+      };
+    });
+  }
+
+  /**
+   * Apply a change to the four deterministic sections.
+   *
+   * Written to `baseProfile` and then re-projected through `profileToValues`,
+   * rather than patched into the form state directly. That is what makes the
+   * section editor and the named controls below it two *views of one record*:
+   * a term typed in either place is in the same object, and a save carries
+   * whichever the user touched last. Patching the form state directly would
+   * have left the two views able to disagree, and whichever was saved would
+   * silently win.
+   */
+  function patchDeterministicSections(next: DeterministicStyleProfile): void {
+    setContext((prev) => {
+      const merged: StyleProfile = {
+        ...prev.baseProfile,
+        language: next.language,
+        typography: next.typography,
+        formatting: next.formatting,
+        structure: next.structure,
+      };
+      const nextValues = profileToValues(merged);
+      const nextValidation = validateValues(nextValues, merged);
+      const nextDraft = nextValidation.profile ?? nextValidation.candidate;
+      const nextDirty = !sameEditableSnapshot(nextDraft, prev.savedProfile ?? prev.baseProfile);
+      return {
+        ...prev,
+        baseProfile: merged,
         values: nextValues,
         dirty: nextDirty,
         savedAt: null,
@@ -535,10 +573,32 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
         Measured style and semantic style are on the Semantic tab; saving here does not change them.
       </p>
 
+      {/*
+        Spec §21. The four deterministic sections as collapsible blocks, each
+        marked with whether *this* Word host can read the content it governs.
+
+        Mounted above the flat controls rather than replacing them: the flat
+        Typography and House style panels are the named controls the existing
+        tests and the muscle memory of this pane both address, and the sections
+        are the normative view of the same profile. Two views of one record, not
+        two records — `DeterministicStyleSections` patches the same object the
+        panel below edits.
+      */}
+      <DeterministicStyleSections
+        profile={{
+          language: baseProfile.language,
+          typography: baseProfile.typography,
+          formatting: baseProfile.formatting,
+          structure: baseProfile.structure,
+        }}
+        capabilities={null}
+        onChange={(next) => patchDeterministicSections(next)}
+      />
+
       <section aria-labelledby="typography-heading" style={sectionStyle}>
-        <h2 id="typography-heading" style={sectionHeadingStyle}>
+        <h3 id="typography-heading" style={sectionHeadingStyle}>
           Typography
-        </h2>
+        </h3>
         <div style={gridStyle}>
           <Dropdown
             label="Em dash"
@@ -639,9 +699,9 @@ export default function ProfileEditor({ onRecordSaved }: ProfileEditorProps = {}
       </section>
 
       <section aria-labelledby="house-style-heading" style={sectionStyle}>
-        <h2 id="house-style-heading" style={sectionHeadingStyle}>
+        <h3 id="house-style-heading" style={sectionHeadingStyle}>
           House style
-        </h2>
+        </h3>
         <div style={gridStyle}>
           <TextField
             label="Preferred terminology (one “term: replacement” per line)"

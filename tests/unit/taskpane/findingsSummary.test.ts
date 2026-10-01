@@ -15,6 +15,25 @@ function finding(severity: Finding["severity"]): Finding {
   });
 }
 
+/**
+ * A formatting finding, built through the schema.
+ *
+ * The schema rather than a spread, because `{ ...finding(), kind: "formatting" }`
+ * widens `kind` to `string` and the object stops being a `Finding`. The build
+ * cost is nothing and the type stays narrowed at every call site.
+ */
+function formatting(severity: Finding["severity"], category: string): Finding {
+  return FindingSchema.parse({
+    id: uuidv4(),
+    kind: "formatting",
+    category,
+    message: `A ${severity} formatting problem.`,
+    severity,
+    range: { start: 0, end: 4, unit: "paragraph" },
+    nodeIds: [],
+  });
+}
+
 describe("summarizeOpenFindings", () => {
   it("splits findings into the three consequences the rules already distinguish", () => {
     const summary = summarizeOpenFindings([
@@ -29,7 +48,37 @@ describe("summarizeOpenFindings", () => {
       advisory: 1,
       informational: 1,
       total: 4,
+      // Spec §22: the same four, counted by review group. All four are
+      // `deterministic` findings, so all four are language.
+      byGroup: { language: 4, formatting: 0, structure: 0 },
     });
+  });
+
+  it("splits the same findings by review group as well as by severity", () => {
+    /*
+     * Severity and group answer different questions. "How bad" tells a reader
+     * whether to stop reading; "what kind" tells them where to start. A document
+     * with four hundred spacing findings and twenty structural ones cannot be
+     * triaged from the first number alone, which is why both are counted over
+     * the same filtered list rather than by two passes that could disagree.
+     */
+    const summary = summarizeOpenFindings([
+      finding("warning"),
+      formatting("warning", "formatting.bodyStyle"),
+      formatting("warning", "formatting.headingStyle"),
+      formatting("info", "formatting.emptyHeading"),
+    ]);
+
+    expect(summary.byGroup).toEqual({ language: 1, formatting: 1, structure: 2 });
+  });
+
+  it("leaves an ignored finding out of the group counts too", () => {
+    const ignored = formatting("warning", "formatting.bodyStyle");
+    const summary = summarizeOpenFindings(
+      [ignored, finding("error")],
+      (candidate) => candidate.id === ignored.id,
+    );
+    expect(summary.byGroup).toEqual({ language: 1, formatting: 0, structure: 0 });
   });
 
   it("excludes ignored findings from every count, not just the total", () => {
@@ -41,7 +90,13 @@ describe("summarizeOpenFindings", () => {
       (candidate) => candidate.id === ignored.id,
     );
 
-    expect(summary).toEqual({ mandatory: 0, advisory: 1, informational: 0, total: 1 });
+    expect(summary).toEqual({
+      mandatory: 0,
+      advisory: 1,
+      informational: 0,
+      total: 1,
+      byGroup: { language: 1, formatting: 0, structure: 0 },
+    });
   });
 
   it("never reports a total that disagrees with its parts", () => {
@@ -61,6 +116,7 @@ describe("summarizeOpenFindings", () => {
       advisory: 0,
       informational: 0,
       total: 0,
+      byGroup: { language: 0, formatting: 0, structure: 0 },
     });
   });
 

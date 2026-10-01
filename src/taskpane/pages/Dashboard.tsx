@@ -42,7 +42,11 @@ import {
 } from "../../core/state/reviewSession";
 import { reviewIdentity, occurrenceKey } from "../occurrenceIdentity";
 import { setupStatusFromState } from "../setupStatus";
-import { describeOpenFindings, summarizeOpenFindings } from "../findingsSummary";
+import {
+  describeCategoryGroups,
+  describeOpenFindings,
+  summarizeOpenFindings,
+} from "../findingsSummary";
 import { reformatDocument } from "../../reformat";
 import {
   createWorkflowState,
@@ -1474,7 +1478,21 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                 deciding whether to work through twenty findings needs to know
                 how many of them are mandatory before deciding to, not after.
               */}
-              <p className="tf-sub">{describeOpenFindings(openSummary)}</p>
+              {/*
+                Spec §22: severity and category, because they answer different
+                questions. "How bad" tells a reader whether to stop reading;
+                "what kind" tells them where to start, and a document with four
+                hundred spacing findings and twenty structural ones cannot be
+                triaged from the first number alone.
+
+                Counted over the same filtered list the count above uses, so the
+                two lines cannot disagree about what is open.
+              */}
+              <p className="tf-sub">
+                {describeOpenFindings(openSummary)}
+                {describeCategoryGroups(openSummary.byGroup) !== "" &&
+                  ` / ${describeCategoryGroups(openSummary.byGroup)}`}
+              </p>
               <FindingsToolbar
                 label={currentTask.label}
                 nextAction={currentTask.nextAction}

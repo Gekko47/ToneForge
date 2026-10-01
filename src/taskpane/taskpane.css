@@ -465,6 +465,64 @@ button:disabled {
   color: var(--tf-danger);
 }
 
+/*
+ * The deterministic profile sections (spec §21).
+ *
+ * A native `<details>`, so the open state, the keyboard behaviour and the
+ * screen-reader semantics are the browser's rather than a hand-rolled
+ * approximation. The summary is the whole header: the title, and the
+ * unsupported marking when the host cannot read the section.
+ */
+.tf-profile-section {
+  margin-top: 0.5rem;
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+  background-color: var(--tf-surface);
+}
+
+.tf-profile-section-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.tf-profile-section-body {
+  padding: 0 0.75rem 0.75rem;
+}
+
+.tf-profile-section-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.tf-profile-section-title {
+  font-weight: 600;
+}
+
+/*
+ * The unsupported marking.
+ *
+ * Deliberately inside the summary rather than only in the body: a collapsed
+ * section is exactly the case where a user would not see the note, and the
+ * whole point is that a section which cannot be checked must not look like one
+ * that can.
+ */
+.tf-profile-section-unsupported {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--tf-warning-border);
+  border-radius: 3px;
+  color: var(--tf-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 .tf-pending-actions {
   display: flex;
   gap: 0.5rem;
