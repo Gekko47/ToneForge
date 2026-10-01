@@ -1270,7 +1270,7 @@ migration forward safe rather than merely defensible.
    - a response that is valid but all-default is **rejected as uninformative** with
      the user-facing "the provider returned an empty analysis — try again".
 
-### P3 — Local preservation _(pure; no LLM, no Word)_
+### P3 — Local preservation _(LANDED 2026-10-01)_
 
 1. `protectedFacts.ts` — extractors per token class, each returning
    `{ kind, value, surface, start, end, certain }`, with normalisation so
@@ -1294,6 +1294,37 @@ labels are unchanged, only their order, and the sequence is P1 → P3 → P2 →
 
 **Why before P4**: Apply must not be reachable before the validator exists, and
 the validator is independent of everything else.
+
+**Exit, as met**: all thirteen `verify` stages green; 165 test files, 2251 tests;
+63 of those in three new files covering every case in the P0 corpus. All nine
+hard cases refuse, all three soft cases warn without refusing, and the clean
+restyle comes back with no warning at all.
+
+**Four design decisions the specification left open, each taken deliberately:**
+
+- **The ESLint scope names three files, not the directory.** P4 puts a
+  non-deterministic engine in `src/analysis/semantic/`, and a directory-wide
+  scope would make it unpurgable. The boundary probe therefore lints at a real
+  filename, and the test says why.
+- **`requiresAcknowledgement` is on the report.** The specification's §16.2 says a
+  soft warning "may require explicit extra confirmation depending on risk
+  policy" and gives the report no field for it, so either the confirmation is
+  always demanded or it is never available. The flag is the minimum that makes
+  the sentence true, and `pass` stays exactly what §16 says it is.
+- **`certain` is the whole tier rule.** One flag decides hard from soft, and the
+  extractor sets it `false` for everything it cannot identify: a bare number, an
+  unrecognised code, a capitalised run that is not sentence-initial. The
+  specification's §16.1 makes a changed entity a hard failure and §16.2 makes an
+  unverifiable one a warning; this is how a pure extractor tells them apart.
+- **Unmatched facts of one kind pair only when the counts agree.** One date
+  becoming two is reported as one missing and one added, not as a change, because
+  there is no way to know which of the two is the original and a pairing would be
+  a guess presented as a finding.
+
+**One bug the tests caught that is worth naming**: the cancellation loop seeded
+the proposed side empty, so every fact on both sides was reported as unmatched —
+meaning identical text produced a report full of hard failures. The clean-restyle
+control exists to catch exactly that, and it caught it.
 
 ### P4 — Unified Semantic Review contract
 

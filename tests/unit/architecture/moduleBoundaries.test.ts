@@ -42,6 +42,39 @@ async function boundaryViolations(filePath: string, source: string): Promise<str
 }
 
 describe("the ESLint boundary scopes are live", () => {
+  it("refuses a provider import inside the preservation validator", async () => {
+    // The validator's whole claim is that it runs before any provider is
+    // consulted, and must keep working when none is configured. A scope no test
+    // exercises is a scope that can be deleted without anything going red, which
+    // is exactly what happened to the deterministic scope before this file
+    // existed.
+    const messages = await boundaryViolations(
+      "src/analysis/semantic/preservationValidator.ts",
+      'import { registry } from "../../ai/providers";\nexport const x = registry;\n',
+    );
+    expect(messages.join(" ")).toMatch(/must stay local and offline/);
+  });
+
+  it("refuses a Word import inside the preservation validator", async () => {
+    // A validator that could read the document it is judging a change to would
+    // be judging it against something other than the text it was given.
+    const messages = await boundaryViolations(
+      "src/analysis/semantic/protectedFacts.ts",
+      'import { getDocumentSnapshot } from "../../word/documentReader";\nexport const x = getDocumentSnapshot;\n',
+    );
+    expect(messages.join(" ")).toMatch(/must stay local and offline/);
+  });
+
+  it("allows the validator to import its own siblings", async () => {
+    // The scope has to be narrow enough to forbid the network and the host
+    // without becoming so narrow that the module cannot be written.
+    const messages = await boundaryViolations(
+      "src/analysis/semantic/preservationValidator.ts",
+      'import { extractProtectedFacts } from "./protectedFacts";\nexport const x = extractProtectedFacts;\n',
+    );
+    expect(messages).toEqual([]);
+  });
+
   it("refuses a provider import inside the deterministic engine", async () => {
     const messages = await boundaryViolations(
       "src/analysis/deterministic/probe.ts",
@@ -224,6 +257,18 @@ describe("the ESLint boundary scopes are live", () => {
         filePath: "src/analysis/consistency/probe.ts",
         specifier,
         message: /analysis\/consistency\/ must not reach/,
+      }),
+    ),
+    // The preservation validator, which has to be usable with no provider at all.
+    // Probed at a real filename rather than at `probe.ts`: the scope names the
+    // three files individually and deliberately does not cover the directory,
+    // because P4 puts a non-deterministic engine in the same directory and a
+    // directory-wide scope would make that engine unpurgable.
+    ...["../../ai", "../../word", "../../taskpane", "../../commands", "../../reformat"].map(
+      (specifier) => ({
+        filePath: "src/analysis/semantic/preservationValidator.ts",
+        specifier,
+        message: /must stay local and offline/,
       }),
     ),
     // word/ must not reach the consistency engine at all.

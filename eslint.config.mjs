@@ -346,6 +346,55 @@ export default [
     },
   },
   {
+    // The local preservation validator is offline by definition, not by habit.
+    //
+    // It is the gate between a model's prose and a user's document, and it has
+    // to be able to run when no provider is configured, when the provider call
+    // has already failed, and when the user is offline. A validator that could
+    // reach `ai/` would be a validator whose verdict depended on a network
+    // round-trip; one that could reach `word/` would be a validator that could
+    // read the document it is supposed to be judging a change to.
+    //
+    // The general `src/analysis/**` block above permits both `ai/providers` and
+    // `word/`, which is right for `deviationEngine.ts` and `rewriteEngine.ts`
+    // and wrong here. In flat config the last matching block wins, so this
+    // narrower block is declared after it — the same ordering the consistency
+    // engine's exception depends on.
+    files: [
+      "src/analysis/semantic/protectedFacts.ts",
+      "src/analysis/semantic/qualifiers.ts",
+      "src/analysis/semantic/preservationValidator.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              // Each bare form is listed alongside its subpath form, for the
+              // reason the consistency block gives: a directory import resolves
+              // through its index and would pass straight through.
+              group: [
+                "**/ai",
+                "**/ai/*",
+                "**/word",
+                "**/word/*",
+                "**/taskpane",
+                "**/taskpane/*",
+                "**/commands",
+                "**/commands/*",
+                "**/reformat",
+                "**/reformat/*",
+              ],
+              message:
+                "the preservation validator must stay local and offline: it may import only its own modules and shared/utils. It runs before any provider is consulted, and it must keep working when none is configured.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Enforces docs/architecture.md: changes/ is pure and may import only
     // core/domain and shared/utils. It must never read Word, call AI, or touch UI.
     files: ["src/changes/**/*.ts"],
