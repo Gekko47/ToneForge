@@ -234,8 +234,8 @@ Word-host matrix and production credential-custody/security evidence; see
 
 ## Deterministic review pass — 2026-10-01
 
-Recorded under ADR-0086 through ADR-0090. Full suite: **2098 tests pass**, and
-global function coverage is **80.02%** against the 80% floor.
+Recorded under ADR-0086 through ADR-0091. Full suite: **2121 tests pass**, and
+global function coverage is **80.42%** against the 80% floor.
 
 The state this pass found, and what it changed:
 
@@ -273,6 +273,20 @@ The state this pass found, and what it changed:
   tests for them surfaced a real gap: `HeaderFooterSnapshotSchema.font.name`
   accepted `""`, which the header check would have compared against the profile's
   font name. Fixed in the schema, because that is where a DTO's contract belongs.
+- **The structural standards could not be set at all** (ADR-0091). A second audit
+  pass, against T19/T20/T23 rather than against the previous pass's own notes,
+  found that `formatting.lists`, `formatting.tables`, `formatting.headersFooters`
+  and `formatting.page` were declared in the schema, read by the analyzer, and
+  wired to registered rules — and that the §11 audit therefore reported all four
+  as covered — while no control anywhere in the pane could set them. At runtime
+  they sat at `supported: false` with no style name, and the analyzer returns
+  nothing for an unset standard, so the table, header/footer and page-setup
+  checks could never produce a finding no matter what a user did. The four now
+  have editors, each with an explicit compare switch, and the section is marked
+  _partly_ checked rather than wholly unsupported from `supportsTables` alone.
+  A test now drives the engine with exactly the shape the editor writes, joining
+  "the user can set this" to "this produces a finding" — which the registry
+  audit, by construction, cannot do.
 
 ## Task-pane UX and host-compatibility remediation
 

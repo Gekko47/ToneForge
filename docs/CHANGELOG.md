@@ -46,6 +46,15 @@ against Microsoft's published API reference rather than against a Word host, and
   "how bad"; the group answers "where to start". A document with four hundred
   spacing findings and twenty structural ones cannot be triaged from the first
   number.
+- **The table, list, header/footer and page-setup standards can be set at all.**
+  All four were declared in the profile schema, read by the analyzer, and wired
+  to registered rules — so the §11 audit reported every one of them as covered —
+  while no control anywhere in the pane could set them. At runtime they sat at
+  `supported: false`, and the analyzer returns nothing for an unset standard, so
+  those checks could never fire regardless of what a user did. Each now has an
+  editor and an explicit compare switch, and a section that is only partly
+  readable says which standards went unchecked instead of claiming the whole
+  section is dead. See ADR-0091.
 
 ## Unreleased — Found by using it in Word
 

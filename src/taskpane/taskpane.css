@@ -523,6 +523,52 @@ button:disabled {
   white-space: nowrap;
 }
 
+/*
+ * A section where *some* standards are readable and some are not.
+ *
+ * Deliberately weaker than the wholly-unsupported marking: a dashed border
+ * rather than a solid one, because the section is not dead. What it must not do
+ * is look identical to the fully-supported case, which is the failure this
+ * marking exists to prevent.
+ */
+.tf-profile-section-partial {
+  border-style: dashed;
+}
+
+.tf-profile-section-limits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+/*
+ * One structural standard (lists, tables, headers/footers, page setup).
+ *
+ * A `fieldset`/`legend` rather than a heading so the group is programmatically
+ * associated with its controls, and so it reads as a group in a screen reader
+ * instead of as four unlabelled loose fields.
+ */
+.tf-standard-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0;
+  padding: 0.5rem 0.6rem 0.6rem;
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+}
+
+.tf-standard-block legend {
+  padding: 0 0.3rem;
+  color: var(--tf-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .tf-pending-actions {
   display: flex;
   gap: 0.5rem;

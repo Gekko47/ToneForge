@@ -325,6 +325,154 @@ describe("runDeterministicReview", () => {
       true,
     );
   });
+
+  /*
+   * The end-to-end proof that the structural standards are reachable.
+   *
+   * The test above builds its profile by hand, so it proves the *analyzer* reads
+   * a table standard. It says nothing about whether a user can ever produce one:
+   * and for the whole period this pass covered, the answer was no. The four
+   * structural standards were declared in the profile schema, read by the
+   * analyzer, and wired to registered rules — so the §11 audit reported all four
+   * as covered — while no control anywhere in the pane could set them. At
+   * runtime they sat at their schema defaults, `supported: false` with no style
+   * name, and the table, header/footer and page-setup checks could never produce
+   * a finding no matter what a user did.
+   *
+   * The registry audit cannot see this, because all it can check is that a rule
+   * reads a field. Nothing in the automated graph connected "the user can set
+   * this" to "this produces a finding", so both halves could be individually
+   * green while the product did nothing. So this test drives the engine with
+   * exactly the shape `DeterministicStyleSections` writes — same keys, same
+   * `supported: true`, same optional fields — and asserts the findings appear.
+   */
+  describe("the structural standards are reachable from the profile editor", () => {
+    const TEXT = "A table, a header, and a list.";
+
+    /** The shape the editor's compare switches produce, verified field by field in its own test. */
+    const EDITOR_WRITTEN_FORMATTING = {
+      tables: {
+        styleName: "Table Normal",
+        headerRow: true,
+        headerRowCount: 2,
+        supported: true,
+      },
+      headersFooters: { styleName: "Header", required: true, supported: true },
+      page: {
+        orientation: "landscape" as const,
+        margins: { top: 72 },
+        supported: true,
+      },
+      lists: { styleName: "List Number", level: 0, supported: true },
+    };
+
+    type StructuralKey = keyof typeof EDITOR_WRITTEN_FORMATTING;
+
+    function snapshotWithStructures(): FormattingSnapshot {
+      return {
+        id: "reachability",
+        text: TEXT,
+        fullText: TEXT,
+        capturedAt: "2026-01-01T00:00:00.000Z",
+        paragraphs: [{ index: 0, text: "List Number", listLevel: 2 }],
+        tables: [
+          {
+            index: 0,
+            nodeId: "table-1",
+            sourcePath: "body/table/0",
+            styleName: "Table Grid",
+            headerRow: false,
+            headerRowCount: 1,
+            rowCount: 2,
+            columnCount: 2,
+          },
+        ],
+        sections: [
+          { index: 0, nodeId: "section-1", sourcePath: "body/section/0", orientation: "portrait" },
+        ],
+        headersFooters: [
+          {
+            index: 0,
+            nodeId: "header-1",
+            sourcePath: "header/primary/0",
+            kind: "header",
+            styleName: "Heading 1",
+            required: true,
+          },
+        ],
+      } as FormattingSnapshot;
+    }
+
+    async function reportFor(
+      formatting: Record<string, unknown>,
+      capabilities: Partial<AnalysisCapabilities> = {},
+    ) {
+      const profile = StyleProfileSchema.parse({
+        ...REVIEW_PROFILE,
+        formatting: { ...REVIEW_PROFILE.formatting, ...formatting },
+      });
+      const context = {
+        ...contextFor(TEXT, profile, snapshotWithStructures()),
+        capabilities: {
+          ...FULL_CAPABILITIES,
+          supportsTables: true,
+          supportsHeadersFooters: true,
+          supportsSections: true,
+          ...capabilities,
+        },
+      };
+      return runDeterministicReview({ context });
+    }
+
+    it.each([
+      ["tables", "formatting.tableStyle"],
+      ["headersFooters", "formatting.headerFooter"],
+      ["page", "formatting.pageSetup"],
+    ] satisfies readonly [StructuralKey, string][])(
+      "produces a finding from the %s standard the editor writes",
+      async (key, category) => {
+        const report = await reportFor({ [key]: EDITOR_WRITTEN_FORMATTING[key] });
+        expect(report.findings.some((finding) => finding.category === category)).toBe(true);
+      },
+    );
+
+    it("produces a list finding from the list standard the editor writes", async () => {
+      const report = await reportFor({ lists: EDITOR_WRITTEN_FORMATTING.lists });
+      expect(report.findings.some((finding) => finding.category === "formatting.listLevel")).toBe(
+        true,
+      );
+    });
+
+    /*
+     * `supported: false` is the analyzer's deliberate floor: a profile parsed
+     * from a record written before these fields existed must not start firing
+     * findings nobody chose. It is also why the editor carries an explicit
+     * switch rather than setting it implicitly — and it is why a standard that
+     * is merely *stored* produces nothing, which is exactly the behaviour the
+     * switch has to make visible to the user.
+     */
+    it("produces nothing while the standard is stored but not switched on", async () => {
+      const report = await reportFor({
+        tables: { styleName: "Table Normal", headerRow: true, supported: false },
+      });
+      expect(report.findings.some((finding) => finding.category === "formatting.tableStyle")).toBe(
+        false,
+      );
+    });
+
+    it("produces nothing on a host that cannot read the scope, even when switched on", async () => {
+      // DD-3: the capability gate is independent of the author's intent. A
+      // switched-on standard on a host that never served the data is a coverage
+      // limitation, never a clean document.
+      const report = await reportFor(
+        { tables: EDITOR_WRITTEN_FORMATTING.tables },
+        { supportsTables: false },
+      );
+      expect(report.findings.some((finding) => finding.category === "formatting.tableStyle")).toBe(
+        false,
+      );
+    });
+  });
 });
 
 describe("summarize", () => {

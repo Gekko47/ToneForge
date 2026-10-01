@@ -2675,3 +2675,77 @@ validate` green throughout. The procedure was correct and had been run. This
     rather than a quiet wrong number.
 - **Evidence**: `src/formatting/formattingSnapshot.ts`,
   `tests/unit/formatting/formattingSnapshotCoverage.test.ts`.
+
+## ADR-0091: A standard the user cannot set is not wired, and the §11 audit cannot see it
+
+- **Status**: Accepted (2026-10-01)
+- **Context**: The §11 audit asserts that every declared profile field is either
+  read by a registered rule or listed as metadata-only, and it is the check this
+  repository relies on to catch "a setting the user can change that changes
+  nothing". Auditing T19, T20 and T23 against their requirements found that
+  `formatting.lists`, `formatting.tables`, `formatting.headersFooters` and
+  `formatting.page` were all declared in the profile schema, all read by the
+  analyzer, and all wired to registered rules — so the audit reported every one
+  of them as covered, and passed.
+
+  In the running product, however, none of the four could be set. No control
+  anywhere in the task pane wrote them, so at runtime they sat at their schema
+  defaults: `supported: false`, no style name, no margins. The analyzer returns
+  nothing for any of those standards unless `supported` is true, so the table,
+  header/footer and page-setup checks could never produce a finding regardless of
+  what a user did. The rules existed, the acquisition existed, the coverage
+  counting existed, and the feature did nothing.
+
+  The audit is structurally unable to catch this. It checks that a rule _reads_ a
+  field; it cannot check that the field is _reachable_. Both halves were
+  individually green — the analyzer unit test built its profile by hand, and the
+  registry test saw a wired path — while nothing connected "the user can set
+  this" to "this produces a finding".
+
+  The section marking was wrong in both directions at once. `Document
+formatting` governed the body style, the list standard, the table standard,
+  the header standard and page setup, and was marked wholly unsupported from
+  `supportsTables` alone. On a host with no tables the body-style editor was
+  labelled "Not checked in this Word version" — when the body style is the one
+  thing every Word host serves. On a host with tables but no page setup, the
+  section said nothing at all about the page-setup editor that could never be
+  checked.
+
+- **Decision**: The four structural standards get real editors, grouped as
+  `fieldset`/`legend` blocks in the section that governs them. Each carries an
+  explicit "compare this against the document" switch, because `supported` is
+  the analyzer's floor and a standard that is merely stored produces nothing —
+  the switch is what makes the distinction visible rather than a schema detail.
+  The switches name what they compare, so four of them are not one control to a
+  screen reader.
+
+  `ProfileSection` gains `uncheckedStandards`, and a section that is partly
+  readable is marked "Partly checked — N standards not read here" with each
+  named in the body, instead of a whole-section boolean that is wrong about the
+  editors that do work. Blank remains "not specified" rather than `0`, because
+  every one of these fields is `optional()` and the analyzer skips an unset field
+  rather than comparing it against zero.
+
+  The gate that would have caught this is added as a test: the deterministic
+  review engine is driven with exactly the profile shape
+  `DeterministicStyleSections` writes, and the findings are asserted. That joins
+  "the user can set this" to "this produces a finding" in one place, which the
+  registry audit cannot do.
+
+- **Consequences**: The table, list, header/footer and page-setup checks are now
+  reachable, and a user who configures one on a host that cannot read it is told
+  which specific standard went unchecked rather than being given one blanket
+  claim about the whole section. The `supported: false` default is kept, because
+  a profile parsed from a record written before these fields existed must not
+  begin firing findings nobody chose — so the switch is part of the field rather
+  than an implementation detail of it.
+
+  The residual limitation is unchanged and still external: whether the property
+  names acquisition requests are correct is host-unverified (ADR-0086,
+  ADR-0084). An editor that sets a standard this host cannot serve is now
+  explicitly marked, but it still cannot prove the names are right.
+
+- **Evidence**: `src/taskpane/components/DeterministicStyleSections.tsx`,
+  `src/taskpane/components/ProfileSection.tsx`,
+  `tests/unit/taskpane/components/DeterministicStyleSections.test.tsx`,
+  `tests/unit/analysis/deterministic/deterministicReviewEngine.test.ts`.

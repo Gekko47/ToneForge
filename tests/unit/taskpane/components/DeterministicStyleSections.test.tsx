@@ -117,9 +117,8 @@ describe("DeterministicStyleSections", () => {
     expect(screen.getByText(/Whether a skipped heading level/)).toBeInTheDocument();
   });
 
-  it("marks a section the host cannot read, rather than letting it look like a working one", () => {
+  it("marks the standards the host cannot read, rather than letting them look checked", () => {
     renderSections(NO_TABLES);
-    expect(screen.getByText("Not checked in this Word version")).toBeInTheDocument();
     expect(screen.getByText(/cannot read table properties/)).toBeInTheDocument();
   });
 
@@ -129,6 +128,48 @@ describe("DeterministicStyleSections", () => {
     const { container } = renderSections(NO_TABLES);
     const summary = container.querySelector(".tf-profile-section-unsupported");
     expect(summary?.closest("summary")).not.toBeNull();
+  });
+
+  /*
+   * The whole-section marking was a false claim.
+   *
+   * `Document formatting` governs the body style, the list standard, the table
+   * standard, the header standard and page setup. It was marked wholly
+   * unsupported from `supportsTables` alone, so on a host with no tables the
+   * body-style editor was labelled "Not checked in this Word version" when the
+   * body style is the one thing every Word host serves — and conversely, on a
+   * host with tables but no page setup, the section said nothing at all about
+   * the page-setup editor that could never be checked. Both directions produce
+   * a user concluding the wrong thing.
+   */
+  it("never claims the body style is unchecked, because every host reads it", () => {
+    const { onChange } = renderSections(NO_TABLES);
+    expect(screen.queryByText("Not checked in this Word version")).not.toBeInTheDocument();
+    expect(screen.getByText(/Partly checked/)).toBeInTheDocument();
+    // And the editor it claims to be unchecked is still editable and working.
+    fireEvent.change(screen.getByLabelText("Body style"), { target: { value: "Body Text" } });
+    const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(last.formatting.bodyStyle.styleName).toBe("Body Text");
+  });
+
+  it("names each standard the host cannot read, in the section that governs it", () => {
+    const NOTHING: WordCapabilities = {
+      ...CAPABLE,
+      supportsListLevel: false,
+      supportsTables: false,
+      supportsHeadersFooters: false,
+      supportsSections: false,
+    };
+    renderSections(NOTHING);
+    const limits = screen.getByLabelText("Not read in this Word version");
+    ["List level", "Tables", "Headers and footers", "Page setup"].forEach((label) => {
+      expect(within(limits).getByText(`${label}:`)).toBeInTheDocument();
+    });
+  });
+
+  it("counts the unchecked standards in the header rather than saying 'partly'", () => {
+    renderSections(NO_TABLES);
+    expect(screen.getByText(/Partly checked — 1 standard not read here/)).toBeInTheDocument();
   });
 
   it("marks nothing before the capability probe has answered", () => {
@@ -141,6 +182,146 @@ describe("DeterministicStyleSections", () => {
   it("marks nothing on a host that serves every section", () => {
     renderSections(CAPABLE);
     expect(screen.queryByText("Not checked in this Word version")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Partly checked/)).not.toBeInTheDocument();
+  });
+
+  /*
+   * The structural standards had no control at all.
+   *
+   * `formatting.lists`, `formatting.tables`, `formatting.headersFooters` and
+   * `formatting.page` were declared in the profile schema, read by the analyzer,
+   * and wired to registered rules — so the §11 audit reported all four as
+   * covered. But nothing in the pane could set them, so at runtime they were
+   * always at their schema defaults: `supported: false`, no style name. The
+   * table, header/footer and page-setup checks could never produce a finding no
+   * matter what a user did. The registry audit cannot see this, because it only
+   * checks that a rule reads the field — not that the field is reachable.
+   */
+  it("offers an editor for every structural standard the rules read", () => {
+    renderSections(CAPABLE);
+    [
+      "List style",
+      "List level",
+      "Table style",
+      "Cell paragraph style",
+      "Header and footer style",
+      "Orientation",
+      "Top margin (points)",
+      "Bottom margin (points)",
+      "Left margin (points)",
+      "Right margin (points)",
+    ].forEach((label) => {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    });
+  });
+
+  it("groups each structural standard so a screen reader is told where a field ends", () => {
+    renderSections(CAPABLE);
+    ["Lists", "Tables", "Headers and footers", "Page setup"].forEach((legend) => {
+      expect(screen.getByText(legend)).toBeInTheDocument();
+    });
+  });
+
+  /*
+   * Four toggles with one accessible name are one toggle.
+   *
+   * Every structural standard carries a "compare this" switch, and the first
+   * version labelled all four identically — so a screen-reader user announcing
+   * the list switch heard "Compare this against the document" and had no way to
+   * know it was the list switch rather than the page-setup one. Each names what
+   * it compares.
+   */
+  it("names each compare switch after what it compares", () => {
+    renderSections(CAPABLE);
+    [
+      "Compare lists against the document",
+      "Compare tables against the document",
+      "Compare headers and footers against the document",
+      "Compare page setup against the document",
+    ].forEach((label) => {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    });
+  });
+
+  it("writes a list standard that the analyzer will then compare", () => {
+    const { onChange } = renderSections(CAPABLE);
+    fireEvent.change(screen.getByLabelText("List style"), { target: { value: "List Number" } });
+    fireEvent.change(screen.getByLabelText("List level"), { target: { value: "1" } });
+    const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(last.formatting.lists?.styleName).toBe("List Number");
+    expect(last.formatting.lists?.level).toBe(1);
+    /*
+     * The switch is what makes the check reachable. The analyzer returns nothing
+     * unless `supported` is true, so a standard a user set but never switched on
+     * would be a setting that changes nothing — the defect the §11 audit exists
+     * to catch, reintroduced through the editor.
+     */
+    fireEvent.click(screen.getByLabelText("Compare lists against the document"));
+    const enabled = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(enabled.formatting.lists?.supported).toBe(true);
+  });
+
+  it("writes a table standard, so a table check is reachable at all", () => {
+    const { onChange } = renderSections(CAPABLE);
+    fireEvent.change(screen.getByLabelText("Table style"), { target: { value: "Grid Table" } });
+    fireEvent.click(screen.getByLabelText("The first row is a header row"));
+    fireEvent.change(screen.getByLabelText("Header rows"), { target: { value: "2" } });
+    const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(last.formatting.tables?.styleName).toBe("Grid Table");
+    expect(last.formatting.tables?.headerRow).toBe(true);
+    expect(last.formatting.tables?.headerRowCount).toBe(2);
+  });
+
+  it("writes a header/footer standard, so a header check is reachable at all", () => {
+    const { onChange } = renderSections(CAPABLE);
+    fireEvent.change(screen.getByLabelText("Header and footer style"), {
+      target: { value: "Header" },
+    });
+    fireEvent.click(screen.getByLabelText("Every section must have a header and a footer"));
+    const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(last.formatting.headersFooters?.styleName).toBe("Header");
+    expect(last.formatting.headersFooters?.required).toBe(true);
+  });
+
+  it("writes a page-setup standard, so a page check is reachable at all", () => {
+    const { onChange } = renderSections(CAPABLE);
+    fireEvent.change(screen.getByLabelText("Orientation"), { target: { value: "landscape" } });
+    fireEvent.change(screen.getByLabelText("Top margin (points)"), { target: { value: "72" } });
+    const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(last.formatting.page?.orientation).toBe("landscape");
+    expect(last.formatting.page?.margins?.top).toBe(72);
+  });
+
+  /*
+   * Blank is not zero. Every one of these standards is `optional()`, and "no
+   * margin configured" is a different claim from "a zero-point margin" — the
+   * analyzer skips an unset field entirely rather than comparing against 0.
+   */
+  it("removes a field when it is cleared, rather than writing zero", () => {
+    const WITH_VALUES = DeterministicStyleProfileSchema.parse({
+      formatting: {
+        bodyStyle: { styleName: "Normal" },
+        lists: { styleName: "List Number", level: 1 },
+        tables: { headerRowCount: 2 },
+        page: { margins: { top: 72 } },
+      },
+    });
+    const { onChange } = renderSections(CAPABLE, WITH_VALUES);
+    fireEvent.change(screen.getByLabelText("List level"), { target: { value: "" } });
+    const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(last.formatting.lists?.level).toBeUndefined();
+    // And the siblings survive: clearing one field must not drop the standard.
+    expect(last.formatting.lists?.styleName).toBe("List Number");
+  });
+
+  it("leaves a standard untouched when a field the host cannot read is edited", () => {
+    // The standard is durable and the host is not, so an edit made on a
+    // table-less Word must persist exactly as written and be compared the moment
+    // the profile runs against a host that can read it.
+    const { onChange } = renderSections(NO_TABLES);
+    fireEvent.change(screen.getByLabelText("Table style"), { target: { value: "Grid Table" } });
+    const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(last.formatting.tables?.styleName).toBe("Grid Table");
   });
 
   it("still lets a user set a standard the host cannot currently check", () => {
