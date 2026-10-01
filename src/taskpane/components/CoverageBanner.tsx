@@ -1,35 +1,124 @@
 /**
- * CoverageBanner — shows document coverage status.
- * Coverage incomplete blocks apply.
+ * CoverageBanner — what this review did and did not examine.
+ *
+ * Spec §9, §20 and §27 gate 12. The banner is the only place a compliance claim
+ * is stated, so it has to distinguish two things the old version collapsed into
+ * one "Incomplete" label:
+ *
+ * - a **limitation** — a scope the host could not read, or one the policy
+ *   excluded. Real, worth stating, and not a reason to refuse Apply.
+ * - a **blocker** — a scope the author marked mandatory that was not examined.
+ *   Apply is refused, and the reason is named.
+ *
+ * The distinction is not cosmetic. When every host gap produced "Incomplete", the
+ * only thing a user could learn from the word was to ignore it, and a genuine
+ * partial scan then read as a clean document — the false-compliance claim the
+ * whole coverage model exists to prevent.
  *
  * Collapsible, like Findings and Pending changes, because the verdict is
- * reference information most of the time and detail most of the time is what
- * makes a page unreadable. The verdict itself stays visible in the collapsed
- * header, so collapsing hides the reasoning and never the conclusion.
+ * reference information most of the time and the reasoning is what makes a page
+ * unreadable. The verdict itself stays in the collapsed header, so collapsing
+ * hides the reasoning and never the conclusion.
  */
 
 import React from "react";
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
+import type {
+  CoverageBlocker,
+  DeterministicCoverage,
+  ScopeKind,
+} from "../../analysis/deterministic/contracts";
 
 export interface CoverageBannerProps {
+  /** The shared report: per-node counts and acquisition diagnostics. */
   coverage: CoverageReport | null;
+  /**
+   * The deterministic projection.
+   *
+   * Optional, and the banner says so rather than guessing. A caller that has
+   * only the shared report cannot state a compliance claim at all, because
+   * `CoverageReport` has no requested-versus-examined distinction — so the
+   * banner shows the counts and no verdict instead of inferring one.
+   */
+  deterministicCoverage?: DeterministicCoverage | null;
   /** Whether the detail is expanded. */
   open: boolean;
   onToggle: () => void;
+  /**
+   * Re-runs the scan, so a scope the host could not read gets another attempt.
+   *
+   * **A re-scan, not a filter.** The plan calls this action "Review in findings",
+   * and the name describes an intention rather than a mechanism: a mandatory
+   * scope that was not examined has, by definition, no findings behind it — the
+   * scope was not looked at — so there is nothing in the list to filter to. A
+   * button that navigated to an empty list would leave the reader with a control
+   * that did nothing and a blocker still in place.
+   *
+   * What *can* be done about a blocker is try again, and the reason it might
+   * work the second time is a capability set that changed: a fresh probe, a
+   * different requirement set, or a scope the policy has since included. So the
+   * action re-scans and says what it is doing, and the blocker list stays on
+   * screen until the new scan replaces it.
+   */
+  onRescan?: (scopes: readonly ScopeKind[]) => void;
+}
+
+/** The user's word for a scope, rather than the internal key. */
+const SCOPE_LABEL: Readonly<Record<ScopeKind, string>> = {
+  body: "body text",
+  headings: "headings",
+  lists: "lists",
+  tables: "tables",
+  sections: "page setup",
+  headersFooters: "headers and footers",
+  textBoxes: "text boxes",
+  fields: "fields",
+  contentControls: "content controls",
+  shapes: "shapes",
+};
+
+function label(scope: ScopeKind): string {
+  return SCOPE_LABEL[scope];
+}
+
+function listScopes(scopes: readonly ScopeKind[]): string {
+  return scopes.map(label).join(", ");
+}
+
+/** What a blocker is asking for, in the reader's terms. */
+function blockerLine(blocker: CoverageBlocker): string {
+  return blocker.reason;
 }
 
 export default function CoverageBanner({
   coverage,
+  deterministicCoverage = null,
   open,
   onToggle,
+  onRescan,
 }: CoverageBannerProps): React.ReactNode {
-  if (!coverage) {
+  if (!coverage && !deterministicCoverage) {
     return null;
   }
 
-  const incomplete = !coverage.complete;
-  const totalRevised = coverage.revisedCharacterCount;
-  const verdict = incomplete ? "Incomplete" : "Complete";
+  /*
+   * Three verdicts, not two.
+   *
+   * `unknown` is the honest answer when only the shared report arrived: it
+   * carries no requested-versus-examined list, so this component cannot say the
+   * document was fully examined, and saying so from the shared report alone is
+   * the claim the deterministic projection was introduced to make impossible.
+   */
+  const verdict =
+    deterministicCoverage === null
+      ? "Unknown"
+      : deterministicCoverage.complete
+        ? "Complete"
+        : "Incomplete";
+  const incomplete = verdict === "Incomplete";
+  const blockers = deterministicCoverage?.blockers ?? [];
+  const blockedScopes = [...new Set(blockers.map((blocker) => blocker.scope))];
+  const canRescan = onRescan !== undefined && blockedScopes.length > 0;
 
   return (
     <section className="tf-collapsible" aria-label="Coverage section">
@@ -55,17 +144,83 @@ export default function CoverageBanner({
       */}
       {open && (
         <div className={incomplete ? "tf-coverage tf-coverage-incomplete" : "tf-coverage"}>
-          <p style={{ margin: 0, fontSize: "0.85rem" }}>
-            {totalRevised > 0
-              ? `${totalRevised.toLocaleString()} characters changed in the current workflow.`
-              : "The requested in-scope content was examined."}
-          </p>
-          {coverage.unsupported.length > 0 && (
+          {/*
+            The blocker list comes first, and it is the only thing here that
+            stops Apply. A reader who fixes nothing else will read it; a reader
+            who skips to the bottom will not, which is why it is not last.
+          */}
+          {blockers.length > 0 && (
+            <>
+              <p className="tf-coverage-blocked" role="status">
+                {blockers.length === 1
+                  ? "One required scope was not checked, so Apply is unavailable."
+                  : `${blockers.length} required scopes were not checked, so Apply is unavailable.`}
+              </p>
+              <ul className="tf-coverage-reasons">
+                {blockers.map((blocker) => (
+                  <li key={`${blocker.scope}-${blocker.cause}`} className="tf-coverage-reason">
+                    {blockerLine(blocker)}
+                  </li>
+                ))}
+              </ul>
+              {canRescan && (
+                <button
+                  type="button"
+                  className="tf-coverage-action"
+                  onClick={() => onRescan?.(blockedScopes)}
+                >
+                  Re-scan to check {listScopes(blockedScopes)}
+                </button>
+              )}
+            </>
+          )}
+
+          {deterministicCoverage !== null && (
             <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
-              Unsupported scope: {coverage.unsupported.join(", ")}
+              Examined {deterministicCoverage.paragraphsExamined.toLocaleString()} paragraphs,{" "}
+              {deterministicCoverage.headingsExamined.toLocaleString()} headings,{" "}
+              {deterministicCoverage.listsExamined.toLocaleString()} list items,{" "}
+              {deterministicCoverage.tablesExamined.toLocaleString()} tables,{" "}
+              {deterministicCoverage.sectionsExamined.toLocaleString()} sections and{" "}
+              {deterministicCoverage.headersFootersExamined.toLocaleString()} headers or footers.
             </p>
           )}
-          {coverage.unprocessed.length > 0 && (
+
+          {coverage !== null && coverage.revisedCharacterCount > 0 && (
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              {coverage.revisedCharacterCount.toLocaleString()} characters changed in the current
+              workflow.
+            </p>
+          )}
+
+          {/*
+            A limitation, not a blocker, and worded so the reader knows which it
+            is. "Unsupported" alone is a category name; the sentence says what to
+            do about it, which is the difference between information and an
+            obstacle.
+          */}
+          {deterministicCoverage !== null && deterministicCoverage.unsupportedScopes.length > 0 && (
+            <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem" }}>
+              Not checked because this Word host cannot read them:{" "}
+              {listScopes(deterministicCoverage.unsupportedScopes)}. A different Word version, or
+              turning the scope off in the governance policy, will change this.
+            </p>
+          )}
+
+          {deterministicCoverage !== null && deterministicCoverage.excludedScopes.length > 0 && (
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
+              Outside the current analysis scope: {listScopes(deterministicCoverage.excludedScopes)}
+              .
+            </p>
+          )}
+
+          {coverage !== null && coverage.unsupported.length > 0 && (
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
+              Properties this host would not serve: {coverage.unsupported.join(", ")}
+            </p>
+          )}
+
+          {coverage !== null && coverage.unprocessed.length > 0 && (
             <ul style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem" }}>
               {coverage.unprocessed.map((reason, index) => (
                 <li key={index} className="tf-coverage-reason">
@@ -74,9 +229,17 @@ export default function CoverageBanner({
               ))}
             </ul>
           )}
-          {coverage.excluded.length > 0 && (
+
+          {coverage !== null && coverage.excluded.length > 0 && (
             <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem" }}>
               {coverage.excluded.length} protected or excluded area(s) were not checked.
+            </p>
+          )}
+
+          {verdict === "Unknown" && (
+            <p className="tf-sub">
+              This run reported no deterministic coverage, so no compliance claim can be made either
+              way. Scan the document to get one.
             </p>
           )}
           <p className="tf-sub">Technical coverage details are available in Troubleshooting.</p>

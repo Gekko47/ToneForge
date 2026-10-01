@@ -10,7 +10,10 @@ import {
   DeterministicReviewReportSchema,
 } from "../../../../src/analysis/deterministic/contracts";
 import type { DeterministicFinding } from "../../../../src/analysis/deterministic/contracts";
-import { createGovernanceProfile } from "../../../../src/core/domain/GovernanceProfile";
+import {
+  createGovernanceProfile,
+  ScopePolicySchema,
+} from "../../../../src/core/domain/GovernanceProfile";
 import { resolveResolvedPolicy } from "../../../../src/core/domain/ResolvedPolicy";
 import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
 import { SAMPLE_PROFILE } from "../../../fixtures/sampleDocs";
@@ -219,7 +222,13 @@ describe("runDeterministicReview", () => {
       ...context,
       policy: {
         ...base,
-        scope: { ...base.scope, mandatoryScopes: ["body", "headings", "tables"] },
+        scope: {
+          ...base.scope,
+          // Parsed rather than written as a literal: `mandatoryScopes` is a
+          // closed `ScopeKind` union, and a `string[]` here would be a widening
+          // the test typechecks and the engine then mis-handles.
+          ...ScopePolicySchema.parse({ mandatoryScopes: ["body", "headings", "tables"] }),
+        },
       },
       acquisition: { ...context.acquisition, unsupported: ["tables"] },
     };

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyReviewedPlan, reformatDocument } from "../../src/reformat";
+import { toAnalysisCapabilities } from "../../src/word/capabilityProbe";
 import * as formattingReader from "../../src/word/formattingReader";
 import * as capabilityProbe from "../../src/word/capabilityProbe";
 import * as planner from "../../src/changes/planner";
@@ -498,6 +499,249 @@ describe("reformatDocument integration", () => {
     expect(result.applied).toBe(false);
     expect(result.verified).toBe(false);
     expect(result.verificationError).toContain("expected list level 2");
+  });
+
+  /*
+   * Spec §19, at the orchestrator rather than the component.
+   *
+   * The previous readback returned on the *first* mismatch, so this plan would
+   * have reported one error and said nothing about the change that landed. Under
+   * Track Changes that is the case a user most needs itemised: two revisions are
+   * in the document, one is right and one is not, and the decision is per
+   * revision.
+   */
+  it("itemises every change when only one of two failed the readback", async () => {
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const good = uuidv4();
+    const bad = uuidv4();
+    const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: good,
+          type: "applyStyle",
+          range: { start: 0, end: 1 },
+          payload: { styleName: "Heading 2" },
+          rationale: "the style that did land",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "hello world" },
+        },
+        {
+          id: bad,
+          type: "setListLevel",
+          range: { start: 0, end: 1 },
+          payload: { level: 2 },
+          rationale: "the list level that did not",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "h" },
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockResolvedValue({
+      results: [
+        { changeId: good, applied: true },
+        { changeId: bad, applied: true },
+      ],
+      tracking: { managed: true },
+    });
+    // The readback serves the style the plan asked for and a list level it did
+    // not: one change confirms, one does not.
+    const snapshot = makeFormattingSnapshot("hello world");
+    snapshot.paragraphs = [
+      {
+        index: 0,
+        text: "hello world",
+        styleName: "Heading 2",
+        alignment: null,
+        lineSpacing: null,
+        spaceAfter: null,
+        spaceBefore: null,
+        listLevel: 0,
+        fontName: null,
+        fontSize: null,
+        fontColor: null,
+        bold: null,
+        italic: null,
+        underline: null,
+      },
+    ];
+    vi.spyOn(formattingReader, "getFormattingSnapshot").mockResolvedValue(snapshot);
+
+    const result = await applyReviewedPlan({ plan });
+
+    expect(result.verified).toBe(false);
+    expect(result.outcome.changes).toHaveLength(2);
+    expect(result.outcome.verifiedCount).toBe(1);
+    expect(result.outcome.unverifiedCount).toBe(1);
+    expect(result.outcome.changes.find((entry) => entry.changeId === good)?.verified).toBe(true);
+    expect(result.outcome.changes.find((entry) => entry.changeId === bad)?.verified).toBe(false);
+    expect(result.outcome.changes.find((entry) => entry.changeId === bad)?.error).toMatch(
+      /list level/,
+    );
+  });
+
+  it("counts the changes the adapter refused separately from the ones it wrote", async () => {
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const refused = uuidv4();
+    const written = uuidv4();
+    const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: refused,
+          type: "applyStyle",
+          range: { start: 0, end: 1 },
+          payload: { styleName: "Normal" },
+          rationale: "refused",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "hello world" },
+        },
+        {
+          id: written,
+          type: "applyStyle",
+          range: { start: 0, end: 1 },
+          payload: { styleName: "Heading 2" },
+          rationale: "written",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "hello world" },
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockResolvedValue({
+      results: [
+        { changeId: refused, applied: false, error: "Target is in a protected range." },
+        { changeId: written, applied: true },
+      ],
+      tracking: { managed: true },
+    });
+
+    const result = await applyReviewedPlan({ plan });
+
+    expect(result.applied).toBe(false);
+    expect(result.outcome.failedCount).toBe(1);
+    expect(result.outcome.changes).toHaveLength(2);
+    expect(result.outcome.changes.find((entry) => entry.changeId === refused)?.error).toMatch(
+      /protected range/,
+    );
+  });
+
+  it("refreshes the review after a verified apply, so remaining issues are reported", async () => {
+    /*
+     * §19's "remaining deviations". A correction can leave a finding standing, and
+     * a report that only counted the verification would say "all good" about a
+     * document that still does not match the profile. The refresh is a *fresh*
+     * review rather than a subtraction for exactly that reason.
+     */
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: uuidv4(),
+          type: "applyStyle",
+          range: { start: 0, end: 1 },
+          payload: { styleName: "Heading 2" },
+          rationale: "test",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "hello world" },
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockResolvedValue({
+      results: [{ changeId: plan.changes[0]?.id ?? "", applied: true }],
+      tracking: { managed: true },
+    });
+    const snapshot = makeFormattingSnapshot("hello world");
+    snapshot.paragraphs = [
+      {
+        index: 0,
+        text: "hello world",
+        styleName: "Heading 2",
+        alignment: null,
+        lineSpacing: null,
+        spaceAfter: null,
+        spaceBefore: null,
+        listLevel: null,
+        fontName: null,
+        fontSize: null,
+        fontColor: null,
+        bold: null,
+        italic: null,
+        underline: null,
+      },
+    ];
+    vi.spyOn(formattingReader, "getFormattingSnapshot").mockResolvedValue(snapshot);
+
+    const result = await applyReviewedPlan({
+      plan,
+      profile: PROFILE,
+      capabilities: toAnalysisCapabilities(FULL_CAPABILITIES),
+    });
+
+    expect(result.outcome.remainingFindings).not.toBeNull();
+    expect(result.outcome.remainingFindings?.reviewType).toBe("deterministic");
+  });
+
+  it("reports a preview as attempting nothing, rather than as four failures", async () => {
+    installOffice("hello world");
+    const result = await reformatDocument({
+      profile: PROFILE,
+      capabilities: toAnalysisCapabilities(FULL_CAPABILITIES),
+      preview: true,
+    });
+
+    // The distinction that `noAttemptOutcome` exists for: a preview is not a
+    // refused apply, and rendering it as one would blame the adapter for a
+    // decision this function made before reaching it.
+    expect(result.outcome.failedCount).toBe(0);
+    expect(result.outcome.verifiedCount).toBe(0);
+    result.outcome.changes.forEach((entry) => {
+      expect(entry.verified).toBe(false);
+    });
   });
 
   it("uses the complete-document hash for text readback with a bounded analysis window", async () => {

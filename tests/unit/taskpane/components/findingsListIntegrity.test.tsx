@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { FindingSchema, type Finding } from "../../../../src/core/domain/Finding";
 import CoverageBanner from "../../../../src/taskpane/components/CoverageBanner";
 import { CoverageReportSchema } from "../../../../src/core/domain/DocumentSnapshot";
+import { DeterministicCoverageSchema } from "../../../../src/analysis/deterministic/contracts";
 import { v4 as uuidv4 } from "uuid";
 import FindingsList from "../../../../src/taskpane/components/FindingsList";
 
@@ -86,29 +87,88 @@ function coverage(complete: boolean) {
   });
 }
 
+/**
+ * The deterministic projection a real scan supplies.
+ *
+ * The shared `CoverageReport` on its own cannot carry a verdict: it answers
+ * "did acquisition read everything", and a body-only scan with a perfect
+ * acquisition answers yes. Spec §9 asks about the review, so the banner reads
+ * the projection and says "Unknown" without it. These cases therefore pass both,
+ * which is what the Dashboard does.
+ */
+function deterministic(complete: boolean) {
+  return DeterministicCoverageSchema.parse({
+    requestedScopes: ["body", "headings"],
+    examinedScopes: complete ? ["body", "headings"] : ["body"],
+    unsupportedScopes: [],
+    excludedScopes: complete ? [] : ["headings"],
+    protectedScopes: [],
+    textCharactersExamined: 120,
+    paragraphsExamined: 12,
+    headingsExamined: 3,
+    complete,
+    blockers: complete
+      ? []
+      : [
+          {
+            scope: "headings",
+            reason: "headings is required but was not examined",
+            cause: "excludedByPolicy",
+          },
+        ],
+    coverageFingerprint: "body,headings|p12|t0|s0|h0",
+  });
+}
+
 describe("the coverage section", () => {
   it("keeps the verdict readable when the detail is collapsed", () => {
     // The reason it collapses at all: the verdict is reference information and
     // the detail is not. If collapsing also hid the verdict, the section would
     // be hiding a gate — which is the one thing it must never do.
-    render(<CoverageBanner coverage={coverage(true)} open={false} onToggle={vi.fn()} />);
+    render(
+      <CoverageBanner
+        coverage={coverage(true)}
+        deterministicCoverage={deterministic(true)}
+        open={false}
+        onToggle={vi.fn()}
+      />,
+    );
 
     expect(screen.getByRole("button", { name: /Coverage Complete/ })).toBeInTheDocument();
   });
 
   it("shows the detail only when open", () => {
     const { rerender } = render(
-      <CoverageBanner coverage={coverage(false)} open={false} onToggle={vi.fn()} />,
+      <CoverageBanner
+        coverage={coverage(false)}
+        deterministicCoverage={deterministic(false)}
+        open={false}
+        onToggle={vi.fn()}
+      />,
     );
     expect(screen.queryByText("Required node inaccessible")).toBeNull();
 
-    rerender(<CoverageBanner coverage={coverage(false)} open onToggle={vi.fn()} />);
+    rerender(
+      <CoverageBanner
+        coverage={coverage(false)}
+        deterministicCoverage={deterministic(false)}
+        open
+        onToggle={vi.fn()}
+      />,
+    );
     expect(screen.getByText("Required node inaccessible")).toBeInTheDocument();
   });
 
   it("is operable, so it matches Findings and Pending changes", () => {
     const onToggle = vi.fn();
-    render(<CoverageBanner coverage={coverage(true)} open={false} onToggle={onToggle} />);
+    render(
+      <CoverageBanner
+        coverage={coverage(true)}
+        deterministicCoverage={deterministic(true)}
+        open={false}
+        onToggle={onToggle}
+      />,
+    );
 
     const header = screen.getByRole("button", { name: /Coverage/ });
     expect(header).toHaveAttribute("aria-expanded", "false");
@@ -117,7 +177,14 @@ describe("the coverage section", () => {
   });
 
   it("names an incomplete analysis in the header, not only in the detail", () => {
-    render(<CoverageBanner coverage={coverage(false)} open={false} onToggle={vi.fn()} />);
+    render(
+      <CoverageBanner
+        coverage={coverage(false)}
+        deterministicCoverage={deterministic(false)}
+        open={false}
+        onToggle={vi.fn()}
+      />,
+    );
 
     expect(screen.getByRole("button", { name: /Coverage Incomplete/ })).toBeInTheDocument();
   });

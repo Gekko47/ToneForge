@@ -23,6 +23,7 @@ import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPane
 import FindingsList from "../components/FindingsList";
 import FindingsToolbar from "../components/FindingsToolbar";
 import CoverageBanner from "../components/CoverageBanner";
+import ApplyResultBlock from "../components/ApplyResultBlock";
 import StaleBanner from "../components/StaleBanner";
 import PendingChanges from "../components/PendingChanges";
 import IgnoredFindings from "../components/IgnoredFindings";
@@ -62,6 +63,7 @@ import { deriveAnnouncement } from "../state/announcement";
 import { applyReadiness, hostReadinessMessage } from "../settings/applyReadiness";
 import { StyleProfileSchema, type StyleProfile } from "../../core/domain/StyleProfile";
 import type { Finding } from "../../core/domain/Finding";
+import type { ApplyOutcome } from "../../reformat/orchestrator";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
 import type { PersistedState } from "../../core/state/persistence";
 
@@ -471,7 +473,39 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * a partial analysis comes to be read as a complete one.
    */
   const [coverageOpen, setCoverageOpen] = useState(false);
-  const coverageIncomplete = status?.coverage?.complete === false;
+  /*
+   * The verdict comes from the deterministic projection, not the shared report.
+   *
+   * `CoverageReport.complete` says whether *acquisition* read everything, which
+   * is a different question from whether the *review* examined everything: the
+   * shared report has no requested-versus-examined list, and a body-only scan
+   * with a perfect acquisition reads as complete in it. Spec §9 asks about the
+   * review, and §27 gate 12 is a gate on the claim the user reads.
+   */
+  const coverageIncomplete =
+    status?.deterministicCoverage !== null &&
+    status?.deterministicCoverage !== undefined &&
+    !status.deterministicCoverage.complete;
+  /**
+   * The scopes a blocker names, shown as a banner above the findings.
+   *
+   * Not a filter on the findings list. A mandatory scope that was not examined
+   * has, by definition, no findings — the scope was not looked at, so there is
+   * nothing in the list to show. What the reader needs is the *reason*, which
+   * the banner already carries; this state exists so the note survives the
+   * banner being collapsed, and it is cleared by the next scan.
+   */
+  const [remainingScopes, setRemainingScopes] = useState<readonly string[]>([]);
+  /**
+   * The post-apply result block (spec §19).
+   *
+   * State rather than a field on `reformatResult` because the block has to
+   * outlive the plan: the plan is cleared on success so Pending Changes empties,
+   * but the user still has to decide whether to keep each tracked revision. A
+   * result attached to the plan would disappear at the moment it became useful.
+   */
+  const [applyOutcome, setApplyOutcome] = useState<ApplyOutcome | null>(null);
+  const [applyResultOpen, setApplyResultOpen] = useState(false);
   /*
    * The finished consistency report, and nothing else about the review.
    *
@@ -941,8 +975,23 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         governanceProfile: currentGovernance,
         coverage,
         allowConflictingApply: false,
+        // The profile and capabilities travel so the post-apply refresh runs
+        // the *same* review under the *same* policy the plan was built from. A
+        // refresh under different conditions is not evidence about this document.
+        profile: activeProfile,
+        capabilities: caps ? toAnalysisCapabilities(caps) : UNPROBED_CAPABILITIES,
       });
+      /*
+       * The result block is set on every path, including the refusals.
+       *
+       * A refused apply is a result too, and its counts are how the pane says
+       * "0 of 4" rather than showing a message with nothing to attach it to. The
+       * block opens only when something went wrong, so a clean apply does not
+       * interrupt the flow of approving the next finding.
+       */
+      setApplyOutcome(result.outcome);
       if (result.applied && result.verified) {
+        setApplyResultOpen(result.outcome.unverifiedCount > 0 || result.outcome.failedCount > 0);
         setApplyMessage(
           `Applied and verified ${result.results.filter((item) => item.applied).length} change(s).`,
         );
@@ -952,6 +1001,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
         return true;
       }
 
+      setApplyResultOpen(true);
       setApplyMessage(
         result.verificationError ??
           result.results.find((item) => !item.applied)?.error ??
@@ -1558,8 +1608,43 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
           */}
           <CoverageBanner
             coverage={status?.coverage ?? null}
+            deterministicCoverage={status?.deterministicCoverage ?? null}
             open={coverageIncomplete || coverageOpen}
             onToggle={() => setCoverageOpen((open) => !open)}
+            onRescan={(scopes) => {
+              setRemainingScopes(scopes);
+              setCoverageOpen(true);
+              rescanNow();
+            }}
+          />
+          {/*
+            Repeated outside the collapsible so a collapsed banner never hides
+            the reason Apply is unavailable. A blocker that lives only behind a
+            disclosure triangle is a blocker the user will not find.
+          */}
+          {remainingScopes.length > 0 && (
+            <p className="tf-coverage-blocked" role="status">
+              Not checked: {remainingScopes.join(", ")}. Apply stays unavailable until the scope is
+              read, or until you stop requiring it in the governance policy.
+            </p>
+          )}
+          {/*
+            The post-apply result block, immediately under the coverage verdict
+            and above the findings.
+
+            Placed here rather than beside Pending Changes because by the time it
+            exists Pending Changes is empty on success — the plan was consumed —
+            and the reader is already looking at the findings list to decide what
+            to do about the revisions Word just marked up.
+          */}
+          <ApplyResultBlock
+            outcome={applyOutcome}
+            open={applyResultOpen}
+            onToggle={() => setApplyResultOpen((open) => !open)}
+            onReviewRemaining={() => {
+              setPage("review");
+              setFindingsOpen(true);
+            }}
           />
           {/*
             The one thing auto-preview owes the user when it declines: the

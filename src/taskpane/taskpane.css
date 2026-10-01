@@ -387,6 +387,84 @@ button:disabled {
   color: var(--tf-danger);
 }
 
+/*
+ * The blocker headline and its remedy.
+
+ * A blocker is the only coverage state that stops Apply, so it is the only one
+ * that gets a filled treatment rather than a coloured border. It sits above the
+ * reasons because a reader who fixes nothing else will read it, and a reader
+ * who scrolls to the bottom will not — which is why the same text is repeated
+ * outside the collapsible on the Dashboard.
+ */
+.tf-coverage-blocked {
+  margin: 0.25rem 0 0;
+  font-weight: 600;
+  color: var(--tf-danger);
+}
+
+.tf-coverage-reasons {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+/*
+ * The re-scan remedy.
+
+ * Styled as a plain button rather than a link so it does not read as
+ * navigation: it does not move the reader anywhere, it runs the analysis again,
+ * and a link would promise the wrong thing.
+ */
+.tf-coverage-action {
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+  background-color: var(--tf-surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tf-coverage-action:hover {
+  border-color: var(--tf-accent);
+}
+
+/*
+ * The post-apply result block (spec §19).
+ *
+ * Same panel treatment as the coverage banner, and the same asymmetry: the
+ * border carries the verdict, the surface is the theme's own, so neither can
+ * disagree with the page in light or dark mode. A *partial* apply is a failure
+ * of the operation the user asked for — some writes landed and some did not —
+ * so it takes the danger border rather than a warning one.
+ */
+.tf-apply-result {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+  background-color: var(--tf-surface);
+}
+
+.tf-apply-result-partial {
+  border-color: var(--tf-danger);
+}
+
+.tf-apply-result-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+.tf-apply-result-ok {
+  color: var(--tf-success);
+}
+
+.tf-apply-result-bad {
+  color: var(--tf-danger);
+}
+
 .tf-pending-actions {
   display: flex;
   gap: 0.5rem;

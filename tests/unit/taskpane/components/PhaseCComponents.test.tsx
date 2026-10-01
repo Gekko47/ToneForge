@@ -309,6 +309,36 @@ describe("Phase C task-pane components", () => {
           complete: false,
           protectedOnly: false,
         }}
+        /*
+         * The verdict needs the deterministic projection as well as the shared
+         * report. `CoverageReport.complete` answers "did acquisition read
+         * everything", which is a different question from "did the review
+         * examine everything", and the banner says "Unknown" rather than pick
+         * one — see `CoverageBanner.test.tsx`.
+         */
+        deterministicCoverage={{
+          requestedScopes: ["body"],
+          examinedScopes: [],
+          unsupportedScopes: [],
+          excludedScopes: ["body"],
+          protectedScopes: [],
+          textCharactersExamined: 0,
+          paragraphsExamined: 0,
+          headingsExamined: 0,
+          listsExamined: 0,
+          tablesExamined: 0,
+          sectionsExamined: 0,
+          headersFootersExamined: 0,
+          complete: false,
+          blockers: [
+            {
+              scope: "body",
+              reason: "body is required but was not examined",
+              cause: "excludedByPolicy",
+            },
+          ],
+          coverageFingerprint: "body|p0|t0|s0|h0",
+        }}
       />,
     );
     expect(screen.getByText(/Incomplete/)).toBeInTheDocument();

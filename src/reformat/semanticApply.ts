@@ -140,6 +140,18 @@ export async function applySemanticRewrite(
       stale: false,
       applied: false,
       verified: false,
+      // The same result block the deterministic path reports, with zero counts
+      // rather than four failures: the plan was never built, so nothing was
+      // attempted. A semantic rewrite that cannot be applied is a *refusal*, and
+      // rendering it as a failed change would blame the adapter for a decision
+      // this function made before reaching it.
+      outcome: {
+        changes: [],
+        verifiedCount: 0,
+        unverifiedCount: 0,
+        failedCount: 0,
+        remainingFindings: null,
+      },
       refusal:
         finding.advisoryReason ??
         "This rewrite cannot be applied. Regenerate the review to ask for another.",
