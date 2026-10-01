@@ -61,10 +61,10 @@ export default function ApplyResultBlock({
    * that needs attention, so the verdict is computed from the *problem* count
    * and the total rather than from the success count.
    */
-  const clean = problems === 0 && total > 0;
+  const clean = total > 0 && verifiedCount === total;
   const verdict = clean
     ? `${verifiedCount} of ${total} ${plural(total, "change")} verified`
-    : problems === 0
+    : problems === 0 && verifiedCount === 0
       ? "Nothing was applied"
       : `${problems} of ${total} ${plural(total, "change")} did not complete`;
 

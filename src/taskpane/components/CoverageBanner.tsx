@@ -125,6 +125,16 @@ export default function CoverageBanner({
         : "Incomplete";
   const incomplete = verdict === "Incomplete";
   const blockers = deterministicCoverage?.blockers ?? [];
+  /*
+   * A scope the host cannot read is already named above, with the only remedy
+   * that helps. Naming it again here would tell the reader the same scope is
+   * both "outside the analysis scope" and "a different Word version will fix
+   * it", and the two sentences send them to opposite places.
+   */
+  const namedExcludedScopes =
+    deterministicCoverage?.excludedScopes?.filter(
+      (scope) => !(deterministicCoverage.unsupportedScopes ?? []).includes(scope),
+    ) ?? [];
   const blockedScopes = [...new Set(blockers.map((blocker) => blocker.scope))];
   const canRescan = onRescan !== undefined && blockedScopes.length > 0;
 
@@ -207,18 +217,18 @@ export default function CoverageBanner({
             do about it, which is the difference between information and an
             obstacle.
           */}
-          {deterministicCoverage !== null && deterministicCoverage.unsupportedScopes.length > 0 && (
-            <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem" }}>
-              Not checked because this Word host cannot read them:{" "}
-              {listScopes(deterministicCoverage.unsupportedScopes)}. A different Word version, or
-              turning the scope off in the governance policy, will change this.
-            </p>
-          )}
+          {deterministicCoverage !== null &&
+            (deterministicCoverage.unsupportedScopes ?? []).length > 0 && (
+              <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem" }}>
+                Not checked because this Word host cannot read them:{" "}
+                {listScopes(deterministicCoverage.unsupportedScopes)}. A different Word version, or
+                turning the scope off in the governance policy, will change this.
+              </p>
+            )}
 
-          {deterministicCoverage !== null && deterministicCoverage.excludedScopes.length > 0 && (
+          {namedExcludedScopes.length > 0 && (
             <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
-              Outside the current analysis scope: {listScopes(deterministicCoverage.excludedScopes)}
-              .
+              Outside the current analysis scope: {listScopes(namedExcludedScopes)}.
             </p>
           )}
 

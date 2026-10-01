@@ -849,6 +849,17 @@ function checkHeaderFooterFormatting(
   if (!standard || !standard.supported || capabilities.supportsHeadersFooters !== true) return [];
 
   const findings = headersFooters.flatMap((headerFooter) => {
+    /*
+     * A slot the document does not use is not a header it has.
+     *
+     * `required` is presence (see `buildHeaderFooters`), and Word serves a real
+     * style name and real font values for the blank body of an unused FirstPage
+     * or EvenPages slot. Comparing them would report a styling deviation on a
+     * header that does not exist, once per empty slot — the same defect the
+     * presence check below already avoids for `required` itself.
+     */
+    if (headerFooter.required !== true) return [];
+
     const sectionIndex = headerFooterSectionIndex(headerFooter);
     const sectionFindings: Finding[] = [];
     const headerFooterText = headerFooter.text ?? "";

@@ -274,18 +274,38 @@ export default function ProfileEditor({
   capabilities = null,
 }: ProfileEditorProps = {}): React.ReactNode {
   const [context, setContext] = React.useState<ProfileEditorState>(initialContext);
-  const { baseProfile, savedProfile, profiles, history, values, savedAt, fieldErrors, error } =
-    context;
+  const {
+    baseProfile,
+    draftBaseProfile,
+    savedProfile,
+    profiles,
+    history,
+    values,
+    savedAt,
+    fieldErrors,
+    error,
+  } = context;
   const validation = validateValues(values, baseProfile);
   const draftProfile = validation.profile ?? validation.candidate;
-  const derivedDirty = !sameEditableSnapshot(draftProfile, savedProfile ?? baseProfile);
+  /*
+   * `draftBaseProfile`, not `baseProfile`, when nothing is saved.
+   *
+   * `baseProfile` moves with the deterministic-section editor, so comparing a
+   * draft against it makes an unsaved profile look clean the moment one of
+   * those sections changes — and the edit is then unsaveable. `draftBaseProfile`
+   * is the last persisted snapshot and only moves on save, reset or select.
+   */
+  const derivedDirty = !sameEditableSnapshot(draftProfile, savedProfile ?? draftBaseProfile);
 
   function patch(partial: Partial<ProfileFormValues>): void {
     setContext((prev) => {
       const nextValues = { ...prev.values, ...partial };
       const nextValidation = validateValues(nextValues, prev.baseProfile);
       const nextDraft = nextValidation.profile ?? nextValidation.candidate;
-      const nextDirty = !sameEditableSnapshot(nextDraft, prev.savedProfile ?? prev.baseProfile);
+      const nextDirty = !sameEditableSnapshot(
+        nextDraft,
+        prev.savedProfile ?? prev.draftBaseProfile,
+      );
       return {
         ...prev,
         values: nextValues,
@@ -330,7 +350,10 @@ export default function ProfileEditor({
       const nextValues = profileToValues(merged);
       const nextValidation = validateValues(nextValues, merged);
       const nextDraft = nextValidation.profile ?? nextValidation.candidate;
-      const nextDirty = !sameEditableSnapshot(nextDraft, prev.savedProfile ?? prev.baseProfile);
+      const nextDirty = !sameEditableSnapshot(
+        nextDraft,
+        prev.savedProfile ?? prev.draftBaseProfile,
+      );
       return {
         ...prev,
         baseProfile: merged,

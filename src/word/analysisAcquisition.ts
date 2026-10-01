@@ -444,6 +444,15 @@ export function planAcquisitionLoads(
   };
   const structuralSkipped: string[] = [];
   const notAttempted: string[] = [];
+  /*
+   * Order is load-bearing, and `STRUCTURAL_SCOPES` is declared in it.
+   *
+   * A header is reachable only through a section, so the `sections` entry has to
+   * decide `sectionCollection` before the `headers` and `footers` entries read
+   * it. Reordering the array would let a plan claim the header collection while
+   * planning no sections at all, and acquisition would then request header bodies
+   * against an empty section list and report the scope as served.
+   */
   STRUCTURAL_SCOPES.forEach((entry) => {
     const capabilityPresent =
       capabilities[entry.capability] === true &&
@@ -452,6 +461,16 @@ export function planAcquisitionLoads(
       if (entry.policyFlag !== undefined && !wanted(entry.policyFlag)) {
         // Not attempted by choice, so recorded apart from a host limitation:
         // `coverage.ts` gives these two different remedies.
+        notAttempted.push(entry.token);
+        return;
+      }
+      /*
+       * A host that *can* read sections, under a policy that switched them off,
+       * is not a host limitation either — the scope went unattempted because
+       * this plan did not ask for the collection it depends on. Recording it as
+       * served would report a scope as examined that nothing read.
+       */
+      if (entry.requiresSections === true && !structural.sectionCollection) {
         notAttempted.push(entry.token);
         return;
       }

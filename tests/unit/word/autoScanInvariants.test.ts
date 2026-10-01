@@ -321,9 +321,16 @@ describe("auto-scan invariants (spec §23)", () => {
     statuses.forEach((status) => {
       const findings = (status["findings"] ?? []) as Array<Record<string, unknown>>;
       findings.forEach((finding) => {
-        // `new` and `accepted` are the only two states a scan could wrongly
-        // produce, and neither is ever written by this module.
-        expect(["new", "reviewed"]).toContain(finding["status"]);
+        /*
+         * `new` and nothing else.
+         *
+         * Accepting `reviewed` here would let the exact failure this invariant
+         * exists to catch pass: a status of `reviewed` is the module reaching
+         * past `new` and writing a decision state it has no business writing.
+         * The fixture states `status: "new"` precisely so this assertion can
+         * name the one value that is allowed.
+         */
+        expect(finding["status"]).toBe("new");
       });
     });
   });
