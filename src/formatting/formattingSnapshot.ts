@@ -121,7 +121,24 @@ export const HeaderFooterSnapshotSchema = z.object({
   required: z.boolean().default(false),
   font: z
     .object({
-      name: z.string().trim().nullable().default(null),
+      /**
+       * A non-empty name, or `null` for "not read".
+       *
+       * `.trim()` alone left `""` in place, which reads as a *value* — and
+       * `checkHeaderFooterFormatting` tests `actual === null || actual === undefined`
+       * before comparing, so an empty name from a caller that supplied one would
+       * produce "header carries '' but should be Calibri" on a header whose font
+       * was never read. Acquisition never supplies an empty string (`fontValue`
+       * maps anything else to null), so this had no path from production; the
+       * schema is where a DTO's own contract is enforced, so the fix is here.
+       */
+      name: z
+        .string()
+        .trim()
+        .min(1)
+        .nullable()
+        .or(z.literal("").transform(() => null))
+        .default(null),
       size: z.number().nullable().default(null),
       color: z.string().trim().nullable().default(null),
       bold: z.boolean().nullable().default(null),

@@ -214,11 +214,65 @@ What Phase 5 does **not** close:
 7. Run the consistency engine once against a real document in a real Word host
    with a real provider. Every result so far is a `MockAdapter` double.
 
+8. **The structural scopes are host-unverified** (ADR-0086). Tables, sections,
+   headers/footers and page setup are implemented, unit tested against strict host
+   doubles, and fail closed — every capability defaults to `false`. What is
+   unverified is whether the property names are right: they come from
+   Microsoft's published reference, and ADR-0084 is the record of what a name
+   from that reference that the host does not have costs. The named procedure is
+   in [`manual-verification.md`](manual-verification.md).
+9. **The post-apply result block and the deterministic profile sections have not
+   been rendered in Word** (ADR-0088, ADR-0089). The unit tests prove what they
+   render and when; they cannot show the pane at 320px, or the block beside a
+   list of tracked revisions.
+
 The deterministic repository chain and 80% exercised-core coverage gate are
 required to pass. The release check is intentionally blocked by the open human
 Word-host matrix and production credential-custody/security evidence; see
 [`manual-verification.md`](manual-verification.md) and
 [`docs/privacy-security.md`](privacy-security.md).
+
+## Deterministic review pass — 2026-10-01
+
+Recorded under ADR-0086 through ADR-0090. Full suite: **2098 tests pass**, and
+global function coverage is **80.02%** against the 80% floor.
+
+The state this pass found, and what it changed:
+
+- **The structural scopes were read and discarded.** `acquireAnalysisContext`
+  loaded `body.tables` and `document.sections` and produced neither DTO, so the
+  analyzer's three structural checks compared empty arrays and the registry's
+  `formatting/tables`, `formatting/page` and `formatting/headersFooters` rules
+  could never fire. Acquisition now builds them, gives each a document node so
+  coverage can count what it read, and derives `unsupported` from the load plan
+  rather than from a constant that named all four scopes on every scan.
+- **Three acquisition defects sat underneath that** (ADR-0086). The scope policy
+  was never passed to `planAcquisitionLoads`, so `includeTables` and its siblings
+  were read by nobody; the `footers` entry of `STRUCTURAL_SCOPES` carried neither
+  the policy flag nor the section dependency its sibling carried, so it re-enabled
+  the collection under a policy that had switched headers off; and the header and
+  footer slots were iterated slot-outermost, interleaving the report.
+- **Compliance was gated on every requested scope** (ADR-0087). A document with no
+  tables on a host that cannot read them reported "Incomplete" and refused Apply,
+  which is the exact false-compliance claim §9 exists to prevent, produced by the
+  mechanism meant to prevent it. `complete` is now "no mandatory scope is missing
+  and this run saw the whole document", `ScopePolicySchema.mandatoryScopes` is the
+  author's per-scope choice, and the coverage banner reads the deterministic
+  projection rather than the shared report — because the shared report answers
+  "did acquisition read everything", which is a different question.
+- **The post-apply report was one sentence** (ADR-0088). `verifyPlanReadback`
+  returned on the first mismatch, so a four-change plan with one failure reported
+  one error and nothing about the three that landed. It now confirms every change,
+  derives the counts from those entries, and refreshes the review so the
+  remaining deviations are a fresh scan rather than a subtraction.
+- **The profile editor had no information architecture** (ADR-0089). The four
+  deterministic sections are now collapsible, and a section the host cannot read
+  is marked in its summary — a collapsed section is exactly where a note in the
+  body would go unread.
+- **The DTO defaults said nothing about what they meant** (ADR-0090). Writing
+  tests for them surfaced a real gap: `HeaderFooterSnapshotSchema.font.name`
+  accepted `""`, which the header check would have compared against the profile's
+  font name. Fixed in the schema, because that is where a DTO's contract belongs.
 
 ## Task-pane UX and host-compatibility remediation
 

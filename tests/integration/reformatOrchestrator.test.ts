@@ -1,6 +1,20 @@
+/**
+ * The orchestrator's remaining readback arms and its host probe.
+ *
+ * Spec §19 asks the post-apply report to say which change failed, and every
+ * `verifyFormattingChange` arm is one answer to that. Only two of the six change
+ * types had a case here, which meant a plan of four with one `setCharacterFormat`
+ * among them reported nothing about it — the whole-plan `verify` was green while
+ * a change was unconfirmed. Each arm below therefore gets its own case, and the
+ * aggregate case is the one that pins the counts.
+ *
+ * The probe case is here for the same reason: `prepareReformatHost` is the only
+ * production entry point that arms the mutation adapter's capability set, and it
+ * was untested.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyReviewedPlan, reformatDocument } from "../../src/reformat";
+import { applyReviewedPlan, prepareReformatHost, reformatDocument } from "../../src/reformat";
 import { toAnalysisCapabilities } from "../../src/word/capabilityProbe";
 import * as formattingReader from "../../src/word/formattingReader";
 import * as capabilityProbe from "../../src/word/capabilityProbe";
@@ -724,6 +738,282 @@ describe("reformatDocument integration", () => {
 
     expect(result.outcome.remainingFindings).not.toBeNull();
     expect(result.outcome.remainingFindings?.reviewType).toBe("deterministic");
+  });
+
+  /*
+   * The `resetCharacterFormatting` and `setCharacterFormat` arms.
+   *
+   * `resetCharacterFormatting` is the one whose success condition is a list of
+   * absences — every font property null and none of bold, italic or underline
+   * true. Asserting only the failure direction would leave a reset that
+   * half-worked reporting as verified, so the success case here serves a
+   * genuinely cleared paragraph and the failure case one that still carries the
+   * author's bold.
+   */
+  it("confirms a cleared character format and reports one that is still bold", async () => {
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const cleared = uuidv4();
+    const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: cleared,
+          type: "resetCharacterFormatting",
+          range: { start: 0, end: 1 },
+          payload: {},
+          rationale: "test reset readback",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "hello world" },
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockResolvedValue({
+      results: [{ changeId: cleared, applied: true }],
+      tracking: { managed: true },
+    });
+
+    // A cleared paragraph: every font property null, no emphasis.
+    const clearedSnapshot = makeFormattingSnapshot("hello world");
+    clearedSnapshot.paragraphs = [
+      {
+        index: 0,
+        text: "hello world",
+        styleName: "Normal",
+        alignment: null,
+        lineSpacing: null,
+        spaceAfter: null,
+        spaceBefore: null,
+        listLevel: null,
+        fontName: null,
+        fontSize: null,
+        fontColor: null,
+        bold: null,
+        italic: null,
+        underline: null,
+      },
+    ];
+    vi.spyOn(formattingReader, "getFormattingSnapshot").mockResolvedValue(clearedSnapshot);
+
+    const confirmed = await applyReviewedPlan({ plan });
+    expect(confirmed.outcome.verifiedCount).toBe(1);
+
+    // The same plan against a paragraph that still carries bold: the reset did not
+    // take, and saying so is the whole point of the readback.
+    const stillBold = makeFormattingSnapshot("hello world");
+    stillBold.paragraphs = [
+      {
+        ...(clearedSnapshot.paragraphs[0] as (typeof clearedSnapshot.paragraphs)[number]),
+        bold: true,
+      },
+    ];
+    vi.spyOn(formattingReader, "getFormattingSnapshot").mockResolvedValue(stillBold);
+
+    const refused = await applyReviewedPlan({ plan });
+    expect(refused.outcome.verifiedCount).toBe(0);
+    expect(refused.outcome.changes[0]?.error).toMatch(/direct character formatting/);
+  });
+
+  it("confirms a character-format write against the properties it set", async () => {
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: uuidv4(),
+          type: "setCharacterFormat",
+          range: { start: 0, end: 1 },
+          payload: { name: "Georgia", size: 12 },
+          rationale: "test character readback",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "hello world" },
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockResolvedValue({
+      results: [{ changeId: plan.changes[0]?.id ?? "", applied: true }],
+      tracking: { managed: true },
+    });
+    const snapshot = makeFormattingSnapshot("hello world");
+    snapshot.paragraphs = [
+      {
+        index: 0,
+        text: "hello world",
+        styleName: "Normal",
+        alignment: null,
+        lineSpacing: null,
+        spaceAfter: null,
+        spaceBefore: null,
+        listLevel: null,
+        fontName: "Georgia",
+        fontSize: 12,
+        fontColor: null,
+        bold: null,
+        italic: null,
+        underline: null,
+      },
+    ];
+    vi.spyOn(formattingReader, "getFormattingSnapshot").mockResolvedValue(snapshot);
+
+    const result = await applyReviewedPlan({ plan });
+    expect(result.outcome.verifiedCount).toBe(1);
+  });
+
+  it("confirms paragraph formatting against every property the plan set", async () => {
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: uuidv4(),
+          type: "setParagraphFormat",
+          range: { start: 0, end: 1 },
+          payload: { alignment: "justified", spaceAfter: 6 },
+          rationale: "test paragraph readback",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "hello world" },
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockResolvedValue({
+      results: [{ changeId: plan.changes[0]?.id ?? "", applied: true }],
+      tracking: { managed: true },
+    });
+    const snapshot = makeFormattingSnapshot("hello world");
+    snapshot.paragraphs = [
+      {
+        index: 0,
+        text: "hello world",
+        styleName: "Normal",
+        alignment: "justified",
+        lineSpacing: null,
+        spaceAfter: 6,
+        spaceBefore: null,
+        listLevel: null,
+        fontName: null,
+        fontSize: null,
+        fontColor: null,
+        bold: null,
+        italic: null,
+        underline: null,
+      },
+    ];
+    vi.spyOn(formattingReader, "getFormattingSnapshot").mockResolvedValue(snapshot);
+
+    const result = await applyReviewedPlan({ plan });
+    expect(result.outcome.verifiedCount).toBe(1);
+  });
+
+  it("reports a readback that did not contain the target paragraph at all", async () => {
+    /*
+     * A distinct failure from "the value did not match": the paragraph is gone,
+     * which happens when the apply shifted the document and the readback indexes
+     * no longer line up. Reporting "readback did not match" there would send the
+     * user to look at a formatting difference on a paragraph that no longer
+     * exists at that position.
+     */
+    installOffice("hello world");
+    setStage01Passed(true, FULL_CAPABILITIES);
+    const plan = ChangePlanSchema.parse({
+      schemaVersion: 2,
+      id: uuidv4(),
+      docHash: hashDocument("hello world"),
+      baseDocId: "doc-1",
+      createdAt: new Date().toISOString(),
+      changes: [
+        {
+          id: uuidv4(),
+          type: "applyStyle",
+          range: { start: 0, end: 1 },
+          payload: { styleName: "Heading 2" },
+          rationale: "test missing-target readback",
+          reversible: true,
+          source: "deterministic",
+          risk: "none",
+          approvalRequired: false,
+          approvalState: "notRequired",
+          precondition: { kind: "text", expectedText: "hello world" },
+        },
+      ],
+      conflicts: [],
+      stale: false,
+      findings: [],
+    });
+    vi.spyOn(revisionAdapter, "applyChangePlanWithTracking").mockResolvedValue({
+      results: [{ changeId: plan.changes[0]?.id ?? "", applied: true }],
+      tracking: { managed: true },
+    });
+    // No paragraphs at all: the readback found nothing to compare against.
+    vi.spyOn(formattingReader, "getFormattingSnapshot").mockResolvedValue(
+      makeFormattingSnapshot(""),
+    );
+
+    const result = await applyReviewedPlan({ plan });
+    expect(result.outcome.changes[0]?.error).toMatch(/did not contain the target paragraph/);
+  });
+
+  it("probes the host without arming the mutation adapter", async () => {
+    /*
+     * `prepareReformatHost` is the only production entry point that establishes
+     * the capability set the adapter later enforces, and it is deliberately
+     * non-destructive: it returns a probe result and nothing else. Asserting both
+     * halves matters — the result is useful, and the stage flag stays false
+     * because no host has been certified (ADR-0058).
+     */
+    setStage01Passed(false, FULL_CAPABILITIES);
+    installOffice("hello world");
+
+    const probed = await prepareReformatHost();
+
+    expect(probed.hostName).toBe("Word");
+    // Every new family defaults to `false` until a real host proves otherwise.
+    expect(probed.supportsTables).toBe(false);
+    expect(probed.supportsHeadersFooters).toBe(false);
+    expect(probed.supportsSections).toBe(false);
+    /*
+     * The probe read the object model and wrote nothing. A probe that reached the
+     * adapter would make ADR-0058's "the flag stays false until a real host has
+     * been certified" claim false on the first Debug run, so this is asserted
+     * through the adapter rather than through the probe result: the mock host
+     * has no tracking surface, and arming the adapter against it would throw.
+     */
+    expect(probed.supportsRevisions).toBeTypeOf("boolean");
+    expect(probed.supportsInsertBreak).toBeTypeOf("boolean");
   });
 
   it("reports a preview as attempting nothing, rather than as four failures", async () => {

@@ -1763,7 +1763,7 @@ of "y"`. The prose parser remains for unanchored findings.
   - The consumed instruction is still cleared, so a delivered command cannot
     re-fire on the next mount.
 
-## ADR-0080: One navigation guard, owned by the pane, shared by every surface
+## ADR-0085: One navigation guard, owned by the pane, shared by every surface
 
 - Amends: ADR-0064 (semantic findings are anchored to a verified span)
 - Status: Accepted (2026-09-28)
@@ -2176,8 +2176,10 @@ validate` green throughout. The procedure was correct and had been run. This
   - A manifest defect is total. Every ribbon control vanished over one repeated
     id, which is why a symptom reported as "the add-in does not load" is a
     manifest fault until the log says otherwise.
-  - The duplicate ADR-0080 (this entry is 0082; two entries carry 0080) is
-    still outstanding and is tracked for the documentation pass. It did not
+  - The duplicate ADR-0080 (this entry is 0082; two entries carried 0080) was
+    resolved in this pass: the navigation-guard entry was renumbered to
+    **ADR-0085**, because ADR-0082 amends _this_ entry by number and a renumber
+    of the manifest entry would have broken that reference. It did not
     affect this defect, but a decision log with two different decisions under one
     number is the same class of problem as two UI elements under one id: the
     reference no longer identifies one thing.
@@ -2259,8 +2261,9 @@ validate` green throughout. The procedure was correct and had been run. This
     Roo sets are now corrected against a 2026-09-30 reading of the repository;
     a later change to `ProviderConnection`, the apply path, or the state version
     must update them in the same commit or it re-creates this defect.
-  - The duplicate ADR numbers already in this log (two entries carry ADR-0080)
-    remain outstanding, as ADR-0082 recorded.
+  - The duplicate ADR-0080 was resolved by renumbering the navigation-guard entry
+    to ADR-0085, as ADR-0082 recorded. The manifest entry kept the number
+    because ADR-0082 amends it.
 - **Evidence**: `.cline/skills/`, `.cline/rules/`, `.roo/skills/`,
   `.roo/rules/`, `scripts/validate-skills.mjs`, `npm run skills:validate`, and
   `docs/stages/03-cline-governance.md`.
@@ -2352,3 +2355,323 @@ validate` green throughout. The procedure was correct and had been run. This
   `tests/unit/word/analysisAcquisitionLoads.test.ts`, `tests/setup.ts`, commits
   `21ce84d` and `04a888a`, and
   <https://learn.microsoft.com/javascript/api/word/word.paragraph>.
+
+## ADR-0086: A structural scope is read, counted, and reported from the same load plan
+
+- Amends: ADR-0084 (a property name the host does not have is a compile error) —
+  its `LOADABLE_*` tuples covered paragraphs only, and the structural families
+  were being read with no equivalent declaration
+- Status: Accepted (2026-10-01)
+- **Context**: The table, section and header/footer scopes (spec §8.3–§8.5) had
+  been read for some time and used for nothing. Acquisition loaded
+  `body.tables` and `document.sections`, the load plan tracked both, and
+  `buildFormatting` produced neither DTO — so the analyzer's `checkTableFormatting`,
+  `checkHeaderFooterFormatting` and `checkPageSetup` compared empty arrays on every
+  scan and the registry's three `formatting/*` rules were declared with a body that
+  could never fire.
+
+  Three defects sat underneath that, and each would have survived a test written
+  against the same fixture:
+
+  1. `planAcquisitionLoads` was never passed `policy.scope`.
+     `includeTables`, `includeSections` and `includeHeadersFooters` were read by
+     nobody, so every scan requested all three structural scopes whatever the
+     governance author had switched off. A scope policy that cannot stop a read is
+     not a scope policy.
+  2. The `footers` entry of `STRUCTURAL_SCOPES` carried neither a `policyFlag` nor
+     the `requiresSections` dependency its sibling `headers` entry carried. It
+     therefore re-enabled the whole collection on a host whose sections were
+     unreadable and under a policy that had switched headers off.
+  3. `acquisition.unsupported` named `tables`, `headers`, `footers` and `sections`
+     unconditionally, from a constant. A scan that read every table in the
+     document reported that it had read none, and coverage refused to call it
+     complete on the strength of a gap that had been closed.
+
+- **Decision**:
+  1. `LOADABLE_TABLE_PROPERTIES` and `PAGE_SETUP_PROPERTIES` are `as const`
+     tuples in `analysisAcquisition.ts`, for ADR-0084's reason: a load of a name
+     Word does not have is refused with a generic exception that costs the whole
+     request.
+  2. `Section.pageSetup` (WordApiDesktop 1.3) is read in **its own guarded
+     transaction**, never in the shared body/section load. `Section` and
+     `SectionCollection` are WordApi 1.1, so naming a desktop-only nested object in
+     the shared load gets the _entire_ request refused on Word on the web — taking
+     the body text, the paragraphs and the styles with it. The refusal is
+     remembered per capability set, so the observer does not pay a failed
+     transaction per keystroke.
+  3. Every structural object the scan reads becomes a `DocumentNode`
+     (`table`, `section`, `header`, `footer`), because `coverage.ts` counts what
+     was _examined_ by looking for nodes of those types. Without them a scan that
+     read every table reported `tablesExamined: 0`, which reads as "this document
+     has no tables" — the false-compliance claim §9 exists to prevent, produced by
+     a count rather than by any decision. Each is `editable: false` and
+     `includedInGovernance: true`: the object _is_ examined, it is simply not
+     something this pass may change, because `revisionAdapter` refuses table,
+     section and header/footer mutation (spec §8.3).
+  4. `acquisition.unsupported` is derived from `plan.skipped` plus a named
+     `NEVER_ACQUIRED_SCOPES` constant for the families this pass never attempts
+     (fields, content controls, shapes, text boxes, footnotes, comments). The
+     second list is constant because spec §8.6 requires those scopes to be
+     _explicitly excluded_ rather than silently unexamined.
+  5. Table `headerRow` and `cellStyleName` are reported as `null` — "not read" —
+     because `Word.TableLoadOptions` has neither. `columnCount` is derived from
+     `values`, the only evidence of width on that load-options list. A field the
+     API cannot serve is `null`, not a guess, so the analyzer skips the comparison
+     rather than inventing a value.
+- **Consequences**:
+  - Every header/footer slot of every section is read — three slots × two kinds —
+    because `required` in the profile is a claim about whether a header _is_, and
+    the only evidence Word serves for a header that does not exist is a blank
+    body. Reading only `Primary` would leave the first-page and even-page slots
+    permanently unreported, which is the same false-compliance claim as reading
+    none.
+  - `ScopePolicySchema` gains `includeSections`, defaulted. A defaulted field means
+    no migration, which is how the spec's "no back-migration" answer is honoured
+    by construction rather than by a migration step.
+  - `DocumentNodeSchema` gains `section`. `header` and `footer` already existed,
+    and `coverage.ts` sums them: Word's model distinguishes them and the scope
+    policy does not, so a merged `headerFooter` type would have made the count a
+    count of one type while every acquisition emitted two.
+  - `CoverageReport.acquisition.unsupported` grows a permanently non-empty tail.
+    That is the point: it is the difference between "this document has no
+    shapes" and "we do not read shapes".
+  - **This is not verified against a Word host.** Every property name here was
+    read from Microsoft's published API reference rather than from an observed
+    Word response, and the header/footer and page-setup paths in particular have
+    never run against a real document. `npm run host:matrix` reports 0 fully
+    passing hosts and `word-host-evidence` remains open. Until a Desktop Word scan
+    runs, this ADR records a documented limitation, not a verified capability
+    (ADR-0051).
+- **Evidence**: `src/word/analysisAcquisition.ts`,
+  `src/core/domain/DocumentSnapshot.ts`,
+  `src/word/capabilityProbe.ts`,
+  `tests/unit/word/analysisAcquisitionStructuralScopes.test.ts`,
+  `tests/unit/formatting/analyzer.test.ts`,
+  <https://learn.microsoft.com/javascript/api/word/word.interfaces.tableloadoptions>
+  and
+  <https://learn.microsoft.com/javascript/api/word/word.interfaces.pagesetuploadoptions>.
+
+## ADR-0087: Compliance is gated on what the author made mandatory, not on every scope the policy asked for
+
+- Amends: ADR-0056 (analysis acquisition is gated on probed capabilities and
+  degrades to text) — a host gap was treated as a reason to refuse Apply
+- Status: Accepted (2026-10-01)
+- **Context**: `DeterministicCoverage.complete` meant "every requested scope was
+  examined", and every requested-but-unexamined scope became a blocker.
+
+  The consequence was that a document with no tables, scanned on a host that
+  cannot read them, reported "Incomplete" and refused Apply — with a blocker
+  naming a host limitation the user cannot change. The only thing a user could
+  learn from the word was to ignore it, and a genuinely partial scan then read as
+  a clean document. That is precisely the failure spec §9 and §27 gate 12 exist to
+  prevent, produced by the mechanism that was supposed to prevent it.
+
+  The two are genuinely different facts. "We looked and there is nothing wrong"
+  and "we could not look" must not share a verdict, and neither must "you asked
+  for this" and "you insisted on this".
+
+- **Decision**:
+  1. `ScopePolicySchema` gains `mandatoryScopes`, a closed `ScopeKind` list
+     defaulting to `["body", "headings"]`. It is a closed list rather than free
+     strings because an unrecognised entry would silently never match a scope —
+     the §11 "a setting that changes nothing" failure in a new place.
+  2. `complete` is "no mandatory scope is missing, and this run saw the whole
+     document": a mandatory blocker, a narrowed node set, or a caller-declared
+     incremental run each make it false, for a reason the blocker list states in
+     the user's terms. It is **not** "every requested scope was examined".
+  3. Every requested-but-unexamined scope is still recorded — as a blocker when
+     mandatory, and in `excludedScopes` when not. A limitation the report names is
+     a limitation the reader can act on; a limitation that silently failed to
+     affect the verdict is the false-compliance claim.
+  4. `body` is mandatory unconditionally and `coverage.ts` adds it itself. A run
+     that examined part of the body cannot speak for the document, and a policy
+     that chose otherwise would be a setting that disables the one guarantee the
+     coverage report exists to make.
+  5. `CoverageBanner` reads the deterministic projection rather than the shared
+     `CoverageReport`, because the latter answers "did acquisition read
+     everything" and the question the reader asks is "did the review examine
+     everything". A body-only scan with a perfect acquisition read as `Complete`
+     before. It reports **"Unknown"** when only the shared report arrived, rather
+     than picking one of the two answers it cannot support.
+  6. The remedy a blocker offers is a **re-scan**, not a filter to the findings.
+     The plan calls this action "Review in findings"; a mandatory scope that was
+     not examined has, by definition, no findings behind it, so a button that
+     navigated there would do nothing and leave the blocker in place.
+- **Consequences**:
+  - `GovernancePolicySection` gains a "Must be checked before Apply" group, and
+    a checkbox for a scope the policy has excluded is disabled rather than
+    silently accepted — it would be asking for an examination of content the same
+    policy says to ignore.
+  - Apply no longer refuses on a host capability gap unless the author asked for
+    that scope. That is a real reduction in gate strength, and it is the
+    deliberate trade: a gate that fires on something the user cannot fix is a gate
+    users learn to route around.
+  - `includeTables` and `includeSections` still default to `true` while the
+    capabilities default to `false`, so a default profile **does** request scopes a
+    default host cannot serve. That combination is safe under this ADR precisely
+    because those scopes are not mandatory by default — and it would not be safe
+    if they were.
+- **Evidence**: `src/analysis/deterministic/coverage.ts`,
+  `src/core/domain/GovernanceProfile.ts`,
+  `src/taskpane/components/CoverageBanner.tsx`,
+  `tests/unit/analysis/deterministic/coverageTruthfulness.test.ts`,
+  `tests/unit/taskpane/components/CoverageBanner.test.tsx`.
+
+## ADR-0088: A post-apply report is per-change and counts, and its remaining findings are a fresh review
+
+- Status: Accepted (2026-10-01)
+- **Context**: The post-apply report was one sentence on success ("Applied and
+  verified 4 change(s)") and one error string on failure. `verifyPlanReadback`
+  returned on the **first** mismatch, so a four-change plan with one failure
+  reported one error and said nothing about the three that landed.
+
+  That is the wrong shape for the one case Track Changes exists to make
+  recoverable. A partly-applied plan leaves several revisions in the document, and
+  the user has to decide per revision whether to keep it — so they need to know
+  which ones. And the report said nothing about whether the document now matches
+  the profile, which is the question a user asks after an apply.
+
+- **Decision**:
+  1. `verifyPlanReadback` confirms **every** change against the same readback and
+     returns one `ChangeVerification` per change, in plan order. The counts are
+     derived from those entries rather than counted separately, so "3 of 4"
+     cannot disagree with the list beside it.
+  2. A change type the readback has no rule for is reported **verified**. The
+     alternative — unverified — would report "unverified" on every change type
+     this pass has not been taught to check, which is a report nobody can act on.
+  3. `remainingFindings` is a **fresh review** of the document, not a subtraction
+     from the list that was acted on. A correction can produce a finding the
+     original did not have: applying a style to a paragraph can leave it out of
+     compliance with a paragraph standard the style was not configured for.
+     Subtracting would have reported a clean document.
+  4. `remainingFindings: null` means "we could not look" and is reported with the
+     reason; an empty finding list means "we looked and there is nothing left".
+     Only the second renders a reassurance, and the component never renders one
+     for the first.
+  5. Every path produces an `ApplyOutcome`, including the ones that wrote nothing,
+     and the two kinds are distinguished: a refused apply _failed_ its changes
+     (`noAttemptOutcome` vs `refusedOutcome`). Rendering both as four failures
+     would blame the adapter for a decision made before reaching it.
+  6. `applyReviewedPlan` takes `profile` and `capabilities` so the refresh runs
+     the **same** review under the **same** policy the plan was built from. A
+     report produced under different conditions than the fix is not evidence about
+     this document.
+- **Consequences**:
+  - The result is a block rather than a toast, held in Dashboard state rather
+    than attached to the plan. The plan is cleared on success so Pending Changes
+    empties — and the user still has to decide what to do with the revisions, so
+    a result that disappeared at the moment it became useful would be worse than
+    useless.
+  - `semanticApply` returns the same block with zero counts on its refusal path:
+    a semantic rewrite that cannot be applied is a _refusal_, and rendering it as
+    a failed change would blame the adapter for a decision `applySemanticRewrite`
+    made before reaching it.
+  - The refresh costs one extra acquisition and one extra review per apply. That
+    is a second full read of the document, and it is the price of the report being
+    about the document rather than about the plan.
+- **Evidence**: `src/reformat/orchestrator.ts`,
+  `src/reformat/semanticApply.ts`,
+  `src/taskpane/components/ApplyResultBlock.tsx`,
+  `tests/integration/reformatOrchestrator.test.ts`,
+  `tests/unit/taskpane/components/ApplyResultBlock.test.tsx`.
+
+## ADR-0089: A profile section the host cannot read stays editable and is marked as unchecked
+
+- Status: Accepted (2026-10-01)
+- **Context**: Spec §21 asks the profile editor to present the deterministic
+  sections with progressive disclosure and to mark the unsupported ones. Both
+  halves of that need a decision, and the second one is not obvious.
+
+  Marking a section unsupported and disabling it is the safer-looking option and
+  the wrong one. The host may be replaced — most of these families are
+  desktop-only and a user on Word on the web today may not be on it tomorrow — and
+  the profile is the durable record of the house standard. Disabling the edit
+  would leave a user permanently stuck with whatever default shipped, and the
+  standard would be wrong the moment they moved.
+
+- **Decision**:
+  1. A section the host cannot read stays **fully editable**. What is not allowed
+     is the edit looking effective: the section carries a "Not checked in this
+     Word version" marking, in its **summary**, because a collapsed section is
+     exactly the case where a note in the body would go unread.
+  2. `capabilities: WordCapabilities | null` has three states. `null` is "the
+     probe has not answered yet" and is **not** a synonym for unsupported;
+     marking a section before the probe has run would be a claim about the host
+     nobody made.
+  3. The sections are native `<details>` elements, so the open state, the keyboard
+     behaviour and the screen-reader semantics are the browser's rather than a
+     hand-rolled approximation.
+  4. The four sections carry what has **no editor anywhere else**. An earlier
+     version of this carried its own "Preferred terminology" box, duplicating the
+     one in the House style panel: two controls with the same accessible name,
+     editing one record through two parse paths, and the duplicate silently won on
+     save. A second editor for a setting that has one is a defect, not a feature.
+- **Consequences**:
+  - `DeterministicStyleSections` and the flat Typography/House style panels are
+    **two views of one record**, not two records. A term typed in either place is
+    in the same object, because `patchDeterministicSections` writes `baseProfile`
+    and re-projects through `profileToValues`. Patching the form state directly
+    would have left the two views able to disagree, with whichever was saved
+    silently winning.
+  - The two views present overlapping sections, which is a real cost. It is
+    accepted because the flat panels are what the existing tests and the muscle
+    memory of this pane both address, and the sections are the normative view of
+    the same profile.
+  - The review header counts open findings by review group as well as by severity.
+    Severity answers "how bad" and the group answers "where to start", and a
+    document with four hundred spacing findings and twenty structural ones cannot
+    be triaged from the first number. Both are counted over the same filtered
+    list, so the two lines cannot disagree about what is open.
+- **Evidence**: `src/taskpane/components/DeterministicStyleSections.tsx`,
+  `src/taskpane/components/ProfileSection.tsx`,
+  `src/taskpane/findingsSummary.ts`,
+  `tests/unit/taskpane/components/DeterministicStyleSections.test.tsx`,
+  `tests/unit/taskpane/findingsSummary.test.ts`.
+
+## ADR-0090: A DTO default says "not read", and the schema is where that is enforced
+
+- Amends: ADR-0086 — its `null`-for-unreadable rule was documented but not
+  enforced for the string-typed members
+- Status: Accepted (2026-10-01)
+- **Context**: `formattingSnapshot.ts` sat at 16% function coverage with its Zod
+  `.default()` callbacks as essentially the whole uncovered surface, so the
+  defaults — which are the difference between "the host did not read this" and
+  "the property is zero" — had no tests of their own. Writing them surfaced a
+  real gap.
+
+  `HeaderFooterSnapshotSchema.font.name` was `z.string().trim().nullable()`. An
+  empty string survived it as `""`, and `checkHeaderFooterFormatting` tests
+  `actual === null || actual === undefined` before comparing — so a `""` would
+  have been compared against the profile's font name and produced a "header
+  carries '' but should be Calibri" finding on a header whose font was never
+  read. Acquisition never supplied one (`fontValue` maps anything else to `null`),
+  so there was no production path; the schema is where a DTO's own contract
+  belongs, and the fix is here rather than at every consumer.
+
+- **Decision**:
+  1. Every unreadable property in the formatting DTOs defaults to `null`, and the
+     tests assert both directions: a `0` survives as a value, and an absent
+     property reads as "not read". Coercing either would make the analyzer report
+     a deviation on a document it never inspected.
+  2. `font.name` maps `""` to `null` rather than accepting it.
+  3. `provenance` and `styleFormatting` are **absent** by default, not defaulted to
+     an all-`unknown` object. The analyzer reads
+     `paragraph.provenance?.[property]`, so an absent field skips the
+     direct-formatting check entirely, while a defaulted all-`unknown` object would
+     look like a comparison that ran and found nothing — a different claim.
+     Their _members_ still default to `"unknown"`, so a partial provenance is
+     filled rather than left with `undefined`s.
+  4. The counts a document cannot have are bounded — a table with five thousand
+     rows, a section with a zero width, a header with forty header rows. A bound
+     is what makes the count meaningful; an unchecked number lets a malformed read
+     become a finding.
+- **Consequences**:
+  - `formattingSnapshot.test.ts` and this file overlap deliberately: the first
+    pins the shapes a caller may construct, the second pins what each default
+    _means_. A default that is only shape-correct is exactly the failure.
+  - The bounds are a small compatibility surface. A document with more than a
+    thousand rows in a single table would fail acquisition rather than report a
+    count, which is the failure direction this repository prefers: a loud refusal
+    rather than a quiet wrong number.
+- **Evidence**: `src/formatting/formattingSnapshot.ts`,
+  `tests/unit/formatting/formattingSnapshotCoverage.test.ts`.

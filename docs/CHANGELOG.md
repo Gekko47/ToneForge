@@ -1,5 +1,52 @@
 # ToneForge — Changelog
 
+## Unreleased — Deterministic review pass (2026-10-01)
+
+Repository-complete; **host-unverified**. The structural scopes below were written
+against Microsoft's published API reference rather than against a Word host, and
+`npm run host:matrix` still reports 0 fully passing. See
+[`manual-verification.md`](manual-verification.md) for the named procedure.
+
+- **Tables, sections, headers, footers and page setup are actually read now.**
+  Acquisition loaded `body.tables` and `document.sections`, the load plan tracked
+  both, and `buildFormatting` produced neither DTO — so the analyzer's table,
+  header/footer and page-setup checks compared empty arrays, and the coverage
+  report named all four scopes unsupported whether or not they had been read.
+  Every structural object the scan reads is now a document node, so the coverage
+  report can count what it read rather than reporting zero for a document full of
+  tables. See ADR-0086.
+- **The analysis scope can now stop a read.** `includeTables`, `includeSections`
+  and `includeHeadersFooters` were read by nobody: the policy was never passed to
+  the load plan, so every scan requested all three structural scopes whatever the
+  governance author had switched off.
+- **A document with no tables is no longer "Incomplete".** Compliance was gated on
+  every requested scope being examined, so a document with no tables on a host that
+  cannot read them refused Apply, with a blocker naming something the user cannot
+  change. It is now gated on what the author marked mandatory — and every other
+  gap is still stated, as a limitation with its own remedy. See ADR-0087.
+- **The coverage banner says "Unknown" instead of guessing.** It read the shared
+  coverage report, which answers "did acquisition read everything"; the question
+  a reader has is "did the review examine everything". A body-only scan with a
+  perfect acquisition read as "Complete" before.
+- **Apply reports every change, and says what is still wrong.** A partly-applied
+  plan under Track Changes is the case where per-change detail matters most, and
+  the report stopped at the first failure. It now lists each change with its own
+  outcome, counts them consistently, and re-scans the document so "remaining
+  issues" is a fresh look rather than a subtraction from the pre-apply list. See
+  ADR-0088.
+- **The profile editor has an information architecture.** Four collapsible
+  sections, each stating what it decides, and each marked in its header when this
+  Word version cannot check it — a marked section is still editable, because the
+  host may be replaced and the profile is the durable record of the standard. See
+  ADR-0089.
+- **A header with no font name no longer reports a font mismatch.** The DTO
+  accepted `""` where it should have read "not read", and the header check
+  compares anything that is not null. See ADR-0090.
+- **The review header counts by kind as well as by severity.** Severity answers
+  "how bad"; the group answers "where to start". A document with four hundred
+  spacing findings and twenty structural ones cannot be triaged from the first
+  number.
+
 ## Unreleased — Found by using it in Word
 
 Every item here came from a session of driving the add-in in a real Word

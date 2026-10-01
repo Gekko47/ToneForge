@@ -234,6 +234,54 @@ For each host:
 12. Record failures and limitations; do not mark a host complete without
     evidence.
 
+## Open gate — the structural scopes are host-unverified (ADR-0086)
+
+Every capability this pass added — tables, sections, headers and footers, page
+setup — was implemented against Microsoft's **published API reference**, not
+against a Word host. The probe can be wrong the same way the old
+`paragraphFormat` request was wrong (ADR-0084): it checks that a member exists,
+which is not the same as the member serving what was asked of it.
+
+`npm run host:matrix` reports **0 fully passing hosts**. The procedure below is
+what would turn "documented limitation" into "verified", and it has not been run.
+
+Run on **Desktop Word** first, on a document that has all four, and record the
+result of each. A failure is as useful as a pass here — ADR-0084's defect was
+found by a name the API reference did not list, and it cost a scan its whole
+paragraph-format family silently.
+
+1. **Tables (§8.3).** In a document containing a table, run a scan. Record
+   whether the coverage banner reports `tablesExamined` above zero, and whether a
+   table style that differs from the profile produces a `formatting.tableStyle`
+   finding. Then check the acquisition log for a `GeneralException`: `style`,
+   `styleBuiltIn`, `values`, `rowCount` and `headerRowCount` are the only names
+   requested, and Word rejects the whole request if any of them is wrong.
+2. **Sections and page setup (§8.5).** Record whether `sectionsExamined` matches
+   the section count, and whether a portrait document with a landscape profile
+   standard produces a `formatting.pageSetup` finding naming the orientation.
+3. **Headers and footers (§8.4).** Add a header, then scan. Record that **six**
+   entries appear for a one-section document — three slots × two kinds — and that
+   a section with no footer reports it as `required: false` rather than omitting
+   it. Reading only the primary slot would make the first-page and even-page
+   entries permanently unreported.
+4. **Word on the web, same document.** This is the case the second transaction
+   exists for. Record whether the scan _completes_ — body text, paragraphs,
+   styles and all — with `sectionsExamined: 0` and a `PageSetup` warning in the
+   log. A scan that reports text-only here would mean the desktop-only
+   `pageSetup` request is still being folded into the shared load.
+5. **The scope policy (§9).** With headers and footers switched off in the
+   governance policy, confirm the scan does **not** read them and that the
+   coverage report lists the scope as excluded rather than as checked. This is
+   the assertion that `planAcquisitionLoads` now receives `policy.scope` at all.
+6. **`mandatoryScopes` (ADR-0087).** Add a mandatory scope the host cannot read,
+   confirm Apply is refused and the banner names the scope; then remove it from
+   the mandatory list and confirm Apply is available while the banner still
+   reports the gap as a limitation.
+7. **The post-apply report (§19).** Apply a plan of two or more changes. Record
+   that the result block lists **every** change with its own outcome and that the
+   counts add up, and that the remaining-findings line reflects a fresh scan of
+   the document rather than the pre-apply list.
+
 ## Known limitations
 
 - Desktop Word: break/style limitations and unavailable host version.
@@ -246,6 +294,17 @@ For each host:
   logic; only a host run can show that a real document produces the conflicts the
   engine claims it would, and that the model adjudication behaves as reported
   when it is genuinely consulted.
+- **The table, section, header/footer and page-setup scopes are host-unverified**
+  (ADR-0086). They are implemented, unit tested against strict host doubles, and
+  written to fail closed — every capability defaults to `false`, so a host that
+  does not serve them reports them as unsupported rather than as compliant. What
+  is unverified is whether the property names are right: they come from
+  Microsoft's published reference, and ADR-0084 is the record of what a name from
+  that reference that the host does not have costs. See the open gate above.
+- **The post-apply result block and the deterministic profile sections have not
+  been rendered in Word** (ADR-0088, ADR-0089). The unit tests prove what they
+  render and when; they cannot show the pane at 320px with the collapsible
+  sections open, or the result block beside a list of tracked revisions.
 
 ## Open gate — re-test of the live-Word corrections (ADR-0065–0070)
 
