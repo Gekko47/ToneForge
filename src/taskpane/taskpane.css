@@ -176,6 +176,58 @@ body {
   letter-spacing: 0.03em;
 }
 
+/* The selection the user pointed at, quoted. A left rule rather than a box:
+ * it is the subject of the review, not a finding, and it should not read as one.
+ * Tokens only — ADR-0077. */
+.tf-evidence-quote {
+  margin: 8px 0;
+  padding: 4px 0 4px 10px;
+  border-left: 3px solid var(--tf-border);
+  color: var(--tf-text);
+}
+
+/* One entry per semantic dimension the model assessed. The term and its
+ * definition are a list because that is what they are: a reader scanning for
+ * "which dimension" reads `dt`, not a run of paragraphs. */
+.tf-assessment-list {
+  margin: 8px 0;
+}
+
+.tf-assessment-list dt {
+  font-weight: 600;
+  color: var(--tf-muted);
+  font-size: 0.9em;
+}
+
+.tf-assessment-list dd {
+  margin: 0 0 8px;
+}
+
+/* The two preservation tiers, told apart by weight rather than by colour alone.
+ *
+ * A hard failure is something the product will refuse; a soft warning is
+ * something it will ask about. Colour would encode that distinction in a way a
+ * monochrome print loses, so the list marker and the leading weight carry it and
+ * the tokens only reinforce it. */
+.tf-preservation-list {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.tf-preservation-list li {
+  margin: 0 0 4px;
+}
+
+.tf-preservation-hard {
+  font-weight: 600;
+  list-style: square;
+}
+
+.tf-preservation-soft {
+  color: var(--tf-muted);
+  list-style: circle;
+}
+
 .tf-evidence-text {
   margin: 0;
   overflow-wrap: anywhere;

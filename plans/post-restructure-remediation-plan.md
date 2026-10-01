@@ -71,9 +71,9 @@ my position, so implementation does not repeat them:
 | 6.3                   | One collapsed revision toggle                                    | Partial                               | [`ProfileRecordSection`](../src/taskpane/components/ProfileRecordSection.tsx:45) collapses its trail; lifecycle controls stay visible and [`ProfileEditor`](../src/taskpane/components/ProfileEditor.tsx:477) has a second history disclosure. |
 | 6.4–6.6               | Publish-in-place, policy moved, Learn Style moved                | Built                                 | —                                                                                                                                                                                                                                              |
 | 7.1–7.4               | Governance Policy tab and both manifests                         | Built, deviation recorded (S6)        | —                                                                                                                                                                                                                                              |
-| 8.1                   | Learn Style paste box                                            | Partial                               | Only "Learn from current document" ([`Semantic.tsx`](../src/taskpane/pages/Semantic.tsx:353)).                                                                                                                                                 |
+| 8.1                   | Learn Style paste box                                            | Partial                               | Only "Learn from current document" (`Semantic.tsx`).                                                                                                                                                                                           |
 | 8.2                   | Measured + semantic on the semantic tab                          | Built                                 | Measured is displayed read-only; ownership is the deterministic record (see W6).                                                                                                                                                               |
-| 8.3                   | Rewrite engine                                                   | Built                                 | [`rewritePrompts.ts`](../src/ai/prompts/rewritePrompts.ts), [`rewriteEngine.ts`](../src/analysis/rewriteEngine.ts).                                                                                                                            |
+| 8.3                   | Rewrite engine                                                   | Built                                 | `rewritePrompts.ts`, `rewriteEngine.ts`.                                                                                                                                                                                                       |
 | 8.4                   | Semantic pending-changes section                                 | **Superseded by S5**                  | Replaced by the side-by-side apply/regenerate presentation.                                                                                                                                                                                    |
 | 9.1, 9.3–9.5          | Consistency tab, grouping, unlocatable note, consent             | Built                                 | —                                                                                                                                                                                                                                              |
 | 9.2                   | Prev/next stepping and auto-navigate on results                  | Partial                               | Button label correct; no stepping.                                                                                                                                                                                                             |
@@ -230,7 +230,7 @@ renders a read-only **Measured style** `<dl>`;
 [`ProfileEditor.tsx:546`](../src/taskpane/components/ProfileEditor.tsx:546)
 renders a read-only **Semantic style** `<dl>`. Both duplicate the Semantic tab,
 which already owns measured style
-([`Semantic.tsx:400`](../src/taskpane/pages/Semantic.tsx:400)) and the editable
+(`Semantic.tsx:400`) and the editable
 semantic editor ([`SemanticProfileEditor`](../src/taskpane/components/SemanticProfileEditor.tsx:95)).
 Those two headings are exactly the two blocks in the screenshot. The editor also
 titles itself "Style Profile"
@@ -282,7 +282,7 @@ a colour-literal guard. Word rendering remains a verification gate.
 
 ### D9 — The semantic proposal has no way to be applied (S5)
 
-[`Semantic.tsx:499`](../src/taskpane/pages/Semantic.tsx:499) offers
+`Semantic.tsx:499` offers
 `Review in Document Governance`, which hands the proposal to `reviewOne` — the
 deterministic gate from D3.1, which cannot address it. So today a semantic
 rewrite has **no working apply path at all**: the button reports that the planner
@@ -513,7 +513,7 @@ range.start` alone satisfies neither, and `nodeId` can be absent.
 ### W8 — Semantic rewrite flow (S4, S5, D9)
 
 - [ ] Replace `Review in Document Governance` on
-      [`Semantic.tsx`](../src/taskpane/pages/Semantic.tsx:499) with a self-contained
+      `Semantic.tsx` with a self-contained
       proposal card: the **original paragraph** and the **proposed replacement**
       side by side, plus the rationale and the model's confidence.
 - [ ] Provide exactly two actions:

@@ -70,12 +70,14 @@ import type { Finding } from "../../core/domain/Finding";
 import type { ApplyOutcome } from "../../reformat/orchestrator";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
 import type { PersistedState } from "../../core/state/persistence";
+import type { SemanticReviewSession } from "../../core/domain/SemanticReviewSession";
 
 const Settings = lazy(() => import("./Settings"));
 const Profile = lazy(() => import("./Profile"));
 const GovernancePolicy = lazy(() => import("./GovernancePolicy"));
 const ConsistencyReview = lazy(() => import("./ConsistencyReview"));
-const Semantic = lazy(() => import("./Semantic"));
+const SemanticReview = lazy(() => import("./SemanticReview"));
+const SemanticStyle = lazy(() => import("./SemanticStyle"));
 const Home = lazy(() => import("./Home"));
 
 /** Lets the findings toolbar's `aria-controls` point at the rendered list. */
@@ -331,7 +333,7 @@ function DashboardWithoutProfile({
       <main className="tf-card" tabIndex={0}>
         {header}
         <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
-          <Semantic onBack={back} onOpenSettings={() => navigate("settings")} navigation={null} />
+          <SemanticStyle onBack={back} onOpenSettings={() => navigate("settings")} />
         </Suspense>
       </main>
     );
@@ -538,6 +540,27 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    * reporting it as one would put a blocker on a page that has none.
    */
   const [semanticSelectionCaptured, setSemanticSelectionCaptured] = useState<boolean | null>(null);
+  /*
+   * The semantic review session, held above the page.
+   *
+   * A review costs a provider call and takes as long as the model takes, so
+   * discarding it because the user visited Settings — the page whose whole purpose
+   * is consent and provider configuration — would make the one page that most
+   * often needs a fix the one that throws the work away. Held here for the same
+   * reason `consistencyResult` is: the run lives on its page, the report lives
+   * above it.
+   */
+  const [semanticSession, setSemanticSession] = useState<SemanticReviewSession | null>(null);
+  /**
+   * Which of the two semantic pages the `semantic` destination is showing.
+   *
+   * A destination rather than two yet, deliberately: §1.3 of the plan fixes the
+   * navigation work in P9, and adding a second `TaskPaneDestination` here would
+   * mean touching the header, the registry and both manifests for a split that is
+   * two phases away. Until then the style page is reached from the review page's
+   * own control, which is where a user looking for it will be.
+   */
+  const [semanticStyleOpen, setSemanticStyleOpen] = useState(false);
   /*
    * Back to "not established" when the tab is left.
    *
@@ -1266,18 +1289,28 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
               onResult={setConsistencyResult}
             />
           ) : page === "semantic" ? (
-            <Semantic
-              onBack={back}
-              onOpenSettings={() => navigate("settings")}
-              onSelectionCaptured={setSemanticSelectionCaptured}
-              /*
-               * Straight through the existing review gate, not a private route
-               * into the document. A proposed rewrite therefore meets the same
-               * preconditions, the same approval, and the same refusal
-               * messages as every other change in the product.
-               */
-              navigation={arrival}
-            />
+            semanticStyleOpen ? (
+              <SemanticStyle
+                onBack={() => setSemanticStyleOpen(false)}
+                onOpenSettings={() => navigate("settings")}
+              />
+            ) : (
+              <SemanticReview
+                onBack={back}
+                onOpenSettings={() => navigate("settings")}
+                onOpenSemanticStyle={() => setSemanticStyleOpen(true)}
+                onSelectionCaptured={setSemanticSelectionCaptured}
+                /*
+                 * The session is owned here, above the page, so navigating away and
+                 * back does not discard a review the user has paid for. The page
+                 * owns the actions; this owns what survives a navigation — the same
+                 * split `consistencyResult` already uses.
+                 */
+                session={semanticSession}
+                onSession={setSemanticSession}
+                navigation={arrival}
+              />
+            )
           ) : (
             /*
              * The plan and review counts go in so the registry can report an
