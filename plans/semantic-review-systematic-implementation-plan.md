@@ -1607,7 +1607,7 @@ are deleted, and the markdown links to them across three plans became code spans
    quoted selection**, using existing tokens only (ADR-0077). The two tiers are
    distinguished by list marker and weight rather than by colour alone.
 
-### P8 — Semantic Style UI + learning inputs
+#### P8 — Semantic Style UI + learning inputs _(LANDED 2026-10-01)_
 
 1. `SemanticStyle.tsx`, `SemanticStyleEditor.tsx` (grouped sections), `LearnSemanticStyle.tsx`,
    `SemanticStyleSummary.tsx`, and `ProfileRecordSection` wired in (**§31** —
@@ -1619,6 +1619,68 @@ are deleted, and the markdown links to them across three plans became code spans
 5. Measured block relabelled "Sample diagnostics" and collapsed (**D9**).
 6. `Learn Style` renamed "Use current document" and demoted to a disclosure
    (**§6.4**).
+
+**Exit, as met.** 1: `SemanticStyle.tsx` (rewritten), `LearnSemanticStyle.tsx`
+(new), and `ProfileRecordSection` wired. 2: `src/style/textFileImport.ts` is
+pure — three facts in, a verdict out, no `File` and no DOM — and the component
+owns the `File.text()` read, which is the split D8 asks for. 3:
+`SAMPLE_QUALITY_BANDS` is an exported table of four bands; `SampleQuality`
+gained `eligible` (an alias of `pass`, computed from the same reasons so the two
+cannot drift) and `level`, and the badge on the page carries the count, the
+level and the consequence, with an acknowledgement required only for the two
+thin bands. 4: `learn()` passes `{ activate: false }` and a separate
+"Make this active" button performs the activation. 5: the block is titled
+"Sample diagnostics", carries all eight metrics, and is behind a "Show
+diagnostics" disclosure. 6: the document route is a plain button reading "Use
+the current document", placed after the paste box and the file picker, because
+it is the route that sends the most of someone's writing.
+
+**Deviations.**
+
+1. **No `SemanticStyleEditor.tsx` and no `SemanticStyleSummary.tsx`.** The plan
+   named two new components. `SemanticProfileEditor` already exists, already
+   edits the semantic profile's voice, and already renders its own accessible
+   error; a new editor would have been a second component rendering the same
+   fields. A separate `SemanticStyleSummary` was the one genuinely new idea, and
+   it did not survive contact with the code: the "where this style came from"
+   card reads from `loadSemanticSampleEvidence(record.id)`, which is a
+   three-line render, and promoting it to a component would have made the
+   evidence harder to read beside the editor it describes. The evidence card is
+   inline, with the comment explaining what it deliberately omits (the sample).
+2. **The `File` global was added to `eslint.config.mjs`.** The `textFileImport`
+   boundary means `File` may only be named in the component, and the flat config
+   enumerates globals rather than inheriting a browser environment. Without it
+   the one legal place to name `File` was a lint error.
+3. **`ProfileRecordSection` grew an optional `onAnnounce`, and this is the real
+   find.** It rendered its own `role="status"` region, and the Semantic Style
+   page has had one since P7 — so mounting it in P8 gave the page two live
+   regions, which is exactly what ADR-0062 forbids and exactly the failure the
+   ADR was written to stop: two regions updating in the same tick are read in
+   DOM order rather than in the order the events happened. Rather than weaken
+   the test or drop the section, the component now renders its region only when
+   it is the only thing speaking, and hands the sentence to the page's region
+   when it is not. The Profile page passes nothing and is unchanged. The test
+   that caught it ("keeps exactly one live region, even with the record section
+   mounted") is the reason this is a deviation rather than a silent fix.
+4. **The `Finding`-based apply pair was deleted here, not in P7.** P7 removed
+   `Semantic.tsx` — the last caller — and deliberately left
+   `applySemanticRewrite` / `buildSemanticRewriteChange` in place so the deletion
+   could be one reversible step rather than four entangled ones. With the page
+   gone they had no callers, no test (the test was deleted with them), and no
+   route back: they are the contract ADR-0095 says fails open at the merge
+   point. `src/reformat/semanticApply.ts` now has one contract and does not
+   import `Finding` at all.
+5. **The learn path's evidence is recorded at learn time, not at activation.**
+   The plan did not say. Recording it on activation would mean a user who
+   learns, reviews, and then discards has learned from something the product
+   has no record of — and the sample is never stored either way, so the
+   metadata would be the only trace that it ever existed.
+6. **The document route builds its sample from text, not from `captureSample`.**
+   The component reads the snapshot and the selection itself so it can set
+   `documentId` and distinguish "your selection" from "the open document" in the
+   badge. `captureSample` derives both from one call and cannot express the
+   attribution the evidence card shows. The rule it applies — selection wins
+   when non-empty — is the same one, and the component says so in a comment.
 
 ### P9 — Terminology and navigation
 

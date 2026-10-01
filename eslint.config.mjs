@@ -28,6 +28,10 @@ export default [
         fetch: "readable",
         AbortController: "readable",
         Blob: "readable",
+        // Read by `LearnSemanticStyle` for a `.txt` import. The validator is
+        // DOM-free by design (D8), so the only place a `File` may be named is
+        // the component that owns the `<input type="file">`.
+        File: "readable",
         URL: "readable",
         btoa: "readable",
         atob: "readable",

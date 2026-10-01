@@ -24,8 +24,22 @@ export interface LearnStyleEvidence {
   source: CapturedSample["source"];
   wordCount: number;
   sentenceCount: number;
+  /**
+   * How much can be learned from this sample. Never a gate — `pass` below is
+   * the only thing that blocks — because a level describes confidence in the
+   * profile, not permission to make one (D7).
+   */
+  level: SampleQuality["level"];
   pass: boolean;
   reasons: string[];
+  /** Present only for a `.txt` import; the name, never the path. */
+  filename?: string;
+  /** The document this came from, when it came from one. */
+  documentId?: string;
+  paragraphCount: number;
+  capturedAt: string;
+  /** `hashText(sample.text)` — two samples comparable without keeping either. */
+  sampleHash: string;
   measured: StyleProfile["measured"];
   semanticIncluded: boolean;
 }
@@ -47,8 +61,14 @@ function evidenceFrom(
     source: sample.source,
     wordCount: quality.wordCount,
     sentenceCount: quality.sentenceCount,
+    level: quality.level,
     pass: quality.pass,
     reasons: quality.reasons,
+    ...(sample.filename === undefined ? {} : { filename: sample.filename }),
+    ...(sample.documentId === undefined ? {} : { documentId: sample.documentId }),
+    paragraphCount: sample.paragraphs.length,
+    capturedAt: sample.capturedAt ?? new Date().toISOString(),
+    sampleHash: sample.sampleHash,
     measured,
     semanticIncluded,
   };

@@ -14,6 +14,20 @@ import ProfileHistoryCompare from "./ProfileHistoryCompare";
 export interface ProfileRecordSectionProps {
   record: ProfileRecord;
   onChange: (record: ProfileRecord) => void;
+  /**
+   * Where this section's announcements go, when the page already has a region.
+   *
+   * **Optional, and the absence is the meaningful case.** On the deterministic
+   * Profile page this section is the only thing that speaks, so it owns its own
+   * polite region. On a page that already has one — ADR-0062 says a pane has
+   * exactly one, and the Semantic Style page has had its own since the split —
+   * a second `role="status"` would make two regions update in the same tick and
+   * a screen reader would read them in DOM order rather than in the order the
+   * events happened. That is the precise failure ADR-0062 was written to stop,
+   * so a page that owns a region passes its setter here and this component
+   * stops rendering one.
+   */
+  onAnnounce?: (message: string) => void;
 }
 
 function dateLabel(iso: string): string {
@@ -26,11 +40,13 @@ function dateLabel(iso: string): string {
  * Publishing appends an immutable version, activation is always explicit, and
  * the audit trail lists every recorded revision. Exactly one polite status
  * region is rendered, and only after an action, so assistive technology is not
- * interrupted on every render.
+ * interrupted on every render — or none, when `onAnnounce` hands the sentence to
+ * a page that already owns one.
  */
 export default function ProfileRecordSection({
   record,
   onChange,
+  onAnnounce,
 }: ProfileRecordSectionProps): React.ReactNode {
   const [announcement, setAnnouncement] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -55,7 +71,9 @@ export default function ProfileRecordSection({
   function commit(next: ProfileRecord, detail: string): void {
     onChange(next);
     setError(null);
-    setAnnouncement(`${detail} Now at revision ${next.nextRevision - 1}.`);
+    const message = `${detail} Now at revision ${next.nextRevision - 1}.`;
+    if (onAnnounce === undefined) setAnnouncement(message);
+    else onAnnounce(message);
   }
 
   function handlePublish(): void {
@@ -242,9 +260,16 @@ export default function ProfileRecordSection({
         />
       ) : null}
 
-      <div role="status" aria-live="polite" className="tf-sub">
-        {announcement}
-      </div>
+      {/*
+        Rendered only when this component owns the page's region. A caller with
+        its own live region passes `onAnnounce` and this div must not appear, or
+        the pane has two regions that update independently.
+      */}
+      {onAnnounce === undefined && (
+        <div role="status" aria-live="polite" className="tf-sub">
+          {announcement}
+        </div>
+      )}
       {error && (
         <MessageBar messageBarType={MessageBarType.error} role="alert">
           {error}

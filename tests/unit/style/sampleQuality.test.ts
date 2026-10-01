@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluateSampleQuality } from "../../../src/style/sampleQuality";
+import { SAMPLE_QUALITY_BANDS, evaluateSampleQuality } from "../../../src/style/sampleQuality";
 import { captureFromText } from "../../../src/style/sampleCapture";
 
 function makeSample(text: string) {
@@ -52,5 +52,74 @@ describe("evaluateSampleQuality", () => {
     const result = evaluateSampleQuality(sample);
     expect(result.wordCount).toBe(4);
     expect(result.sentenceCount).toBe(2);
+  });
+
+  /*
+   * The bands, and the one rule that keeps them separate from eligibility.
+   *
+   * D7: "eligible" and "how much can be learned from this" are two axes. A
+   * sample that is eligible but thin is still learnable, and the level is a
+   * statement of confidence rather than a permission — so a test that only
+   * checked `pass` would pass with the bands removed entirely.
+   */
+
+  /** A sample of `count` words in two sentences, so eligibility is not the variable. */
+  function words(count: number): string {
+    const half = Math.floor(count / 2);
+    return `${Array.from({ length: half }, (_u, i) => `w${i}`).join(" ")}. ${Array.from(
+      { length: count - half },
+      (_u, i) => `o${i}`,
+    ).join(" ")}.`;
+  }
+
+  it("keeps `pass` and `eligible` as the same verdict under two names", () => {
+    // `learnStyleDraft` throws on `pass`; the UI reads `eligible`. They are
+    // computed from the same reasons, so they cannot drift.
+    [0, 20, 60, 320, 2000].forEach((count) => {
+      const result = evaluateSampleQuality(makeSample(words(count)));
+      expect(result.eligible).toBe(result.pass);
+    });
+  });
+
+  it("puts each band at the word count the constant declares", () => {
+    // Read from the exported table rather than restating the numbers, so
+    // changing a threshold is one edit in one file instead of a hunt.
+    SAMPLE_QUALITY_BANDS.forEach((band) => {
+      if (band.level === "insufficient") return;
+      const at = evaluateSampleQuality(makeSample(words(band.minWords)));
+      const below = evaluateSampleQuality(makeSample(words(band.minWords - 1)));
+      expect(at.level).toBe(band.level);
+      expect(below.level).not.toBe(band.level);
+    });
+  });
+
+  it("calls a thin but eligible sample learnable, at a level that is not confidence", () => {
+    const result = evaluateSampleQuality(makeSample(words(60)));
+
+    expect(result.eligible).toBe(true);
+    // 60 words is eligible (the gate is 40) and still the lowest band. This is
+    // the exact case a gate-only implementation would refuse.
+    expect(result.level).toBe("insufficient");
+    expect(result.reasons).toEqual([]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatch(/60 words/);
+  });
+
+  it("says nothing about confidence on a large sample", () => {
+    const result = evaluateSampleQuality(makeSample(words(1200)));
+
+    expect(result.level).toBe("strong");
+    // A warning that is always present is a warning nobody reads.
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("gives an ineligible sample no confidence claim at all", () => {
+    const result = evaluateSampleQuality(makeSample("Too short."));
+
+    expect(result.eligible).toBe(false);
+    expect(result.reasons.length).toBeGreaterThan(0);
+    // Not "insufficient — you can barely learn from this". It cannot be learned
+    // from, and the reason says why.
+    expect(result.warnings).toEqual([]);
   });
 });
