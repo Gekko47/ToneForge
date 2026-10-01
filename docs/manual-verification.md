@@ -369,6 +369,41 @@ Until this is recorded, describe the behaviour as "incremental where the host
 reports complete local ids, conservative full rescan otherwise" and do not
 claim a measured speedup.
 
+## Open gate — selection-change events in Word (ADR-0094)
+
+The semantic pane reads the selection on an explicit click, at the size of the
+selection. Whether a Word host will _tell_ it when the selection moves is a
+different question, and it is open.
+
+What is established from the published requirement sets: `WordApi` and
+`WordApiDesktop` expose no document-level selection event — the only Word
+`onSelectionChanged` is `ContentControl`'s (WordApi 1.5), which reports
+content-control focus. The Office surface does expose one:
+`Office.context.document.addHandlerAsync("documentSelectionChanged", …)`, with
+Microsoft's own note that in Word "selection events are text or content focused"
+and that handlers must be tested per host.
+
+Nothing below may be marked passed from a unit test run. A mock cannot raise an
+event the host never raises.
+
+Record for each host build — Word for Windows, desktop Word on the web, Word on
+the web:
+
+1. Whether
+   `Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, handler)`
+   resolves. Record the error if it rejects.
+2. Whether moving the selection across a paragraph boundary fires the handler,
+   and how long after the move it arrives.
+3. Whether collapsing and re-expanding the selection fires it.
+4. Whether an undo or a remote collaborator's edit fires it.
+5. Whether the handler keeps firing after the task pane is closed.
+
+A host that fires gets a subscription in P7 that re-reads and invalidates; a
+host that does not keeps the explicit "Use current selection" read, which is the
+control that works everywhere. **Record the host and version that declined —
+do not record "Word has no selection events", which is a claim about a product
+rather than about a build.**
+
 ## Open gate — live accessibility evidence
 
 The accessibility claims in `docs/accessibility.md` are covered by jsx-a11y lint

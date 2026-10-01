@@ -463,7 +463,7 @@ property name missing from our declarations costs us nothing and proves nothing.
    its insistence that the probe reports only what it can actually establish.
 3. Verify in a real Word host per [`manual-verification.md`](../docs/manual-verification.md).
 
-Until that is done, ADR-0092 records the question as **open** and the shipped
+Until that is done, ADR-0094 records the question as **open** and the shipped
 behaviour as the explicit-read design below. It does not record a host limitation,
 because we have not established one. No poller either way: a `setInterval` would be
 a second thing to keep running and to stop, which is the reasoning ADR-0079 already
@@ -629,7 +629,7 @@ observer-triggered call. `wordParagraphEvents` stays local.
 | `src/analysis/semantic/qualifiers.ts`                            | Curated qualifier + negation/quantifier token lists, tiered                                                                                                            | P3    |
 | `src/analysis/semantic/session.ts`                               | Pure session transitions and invalidation rules                                                                                                                        | P4    |
 | `src/analysis/semantic/index.ts`                                 | Barrel, mirroring `analysis/consistency/index.ts`                                                                                                                      | P4    |
-| `src/word/selectionScope.ts`                                     | `readSelectionScope()`: text, absolute offsets, paragraph uniqueLocalIds, documentId, contentHash — via `runInWord` only                                               | P5    |
+| `src/word/selectionScope.ts`                                     | `readSelectionScope()`: text, absolute offsets, paragraph uniqueLocalIds, documentId, selectionHash — via `runInWord` only; three-armed result                         | P5    |
 | `src/style/textFileImport.ts`                                    | `validateTextFile()`, `MAX_TEXT_FILE_BYTES`, `captureFromFileText()`                                                                                                   | P8    |
 | `src/taskpane/semantic/gates.ts`                                 | Pure gate computation: consent, provider, model, profile, selection → `{ allowed, blocker, remedy }`                                                                   | P7    |
 | `src/taskpane/pages/SemanticReview.tsx`                          | Review surface                                                                                                                                                         | P7    |
@@ -674,7 +674,7 @@ observer-triggered call. `wordParagraphEvents` stays local.
 | [`src/taskpane/pages/Home.tsx`](../src/taskpane/pages/Home.tsx)                                                               | Terminology and destination copy                                                                                                                                                                                  | P10         |
 | [`src/taskpane/components/ProviderPrivacySettingsSection.tsx`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx) | Consent copy names Semantic Review and Semantic Style learning separately                                                                                                                                         | P10         |
 | [`src/taskpane/taskpane.css`](../src/taskpane/taskpane.css)                                                                   | Tokens for the assessment list and preservation chips — **no colour literals** (ADR-0077)                                                                                                                         | P7          |
-| [`src/types/office.d.ts`](../src/types/office.d.ts)                                                                           | `Selection.paragraphs`, `Paragraph.uniqueLocalId` if absent                                                                                                                                                       | P5          |
+| [`src/types/office.d.ts`](../src/types/office.d.ts)                                                                           | `Range.start`/`Range.end`, `Paragraph.uniqueLocalId`, `Paragraph.getRange` — each optional, each read guarded (ADR-0084)                                                                                          | P5          |
 | [`eslint.config.mjs`](../eslint.config.mjs)                                                                                   | Narrower `src/analysis/semantic/**` block; add `File` global                                                                                                                                                      | P1, P4      |
 
 ### 5.3 Deleted
@@ -1429,6 +1429,58 @@ Semantic page keeps working until P7.
    verification procedure**, not a host limitation (**D11**).
 6. Apply-time target resolution implements D11's three-step fallback: whole-paragraph
    `paragraph`-unit first, `Range.set` character-unit second, stated refusal third.
+
+#### P5 — Selection scope capture _(LANDED 2026-10-01)_
+
+**Exit, as met.** `src/word/selectionScope.ts` returns text, absolute
+`start`/`end`, the containing paragraphs' `uniqueLocalId`s where the host has
+them, `documentId`, and a `selectionHash` over the captured text — from one host
+transaction whose only loads are `text`, `start`, `end` on the selection and
+`text`/`uniqueLocalId` on its paragraphs. `src/types/office.d.ts` gained
+`Range.start`/`Range.end`, `Paragraph.uniqueLocalId` and `Paragraph.getRange`,
+each optional and each read through a guarded view. **23 tests** in
+`tests/unit/word/selectionScope.test.ts`, including the two that matter most: one
+asserts `document.body.load` is never called, and one asserts the anchor has no
+whole-document hash field. ADR-0094 records the D11 answer and its verification
+procedure.
+
+**Deviations and decisions beyond the item list.**
+
+1. **D11 step 1 was answerable, so it was answered rather than left open.** The
+   WordApi requirement sets carry no document-level selection event — the only
+   Word `onSelectionChanged` is `ContentControl`'s (WordApi 1.5), which reports
+   content-control focus, not the document's selection. The _Office_ surface
+   does expose one: `Office.context.document.addHandlerAsync("documentSelectionChanged", …)`,
+   with Microsoft's own host note "In Word, selection events are text or content
+   focused. Test event handlers in the hosts your add-in supports." Recorded in
+   ADR-0094 with a five-step host procedure.
+2. **No `supportsSelectionEvents` capability was added**, which D11 proposed.
+   A probe of `addHandlerAsync`'s presence would establish that the API exists
+   and nothing about whether Word raises it, so the field's name would claim
+   more than the measurement behind it — the defect `supportsContextMenuApi`
+   already carries a doc comment about. It would also have forced fifteen test
+   fixtures to assert a value nothing consumes. The question stays a host-
+   verification item (P12) instead of becoming a field nobody reads.
+3. **Item 6 moved to P6.** A `paragraph`-unit change is resolved by
+   `Paragraph.getRange("Whole")` at `body.paragraphs.items[target.index]`, and
+   that index is a **body** index. A selection-scoped read cannot supply it —
+   `selection.paragraphs.items` is relative to the selection — so obtaining one
+   would mean the very whole-document read this phase removes. P5 ships the two
+   facts P6 needs (`coversWholeParagraph` and the paragraph ids); P6 resolves the
+   index from the snapshot the apply path already holds, then falls back to
+   `Range.set`, then to a stated refusal.
+4. **The capture returns three arms, not `SelectionScope | null`.** "Nothing is
+   selected" and "this host cannot support a safe review" are different facts with
+   different remedies, and ADR-0069 requires a refusal to name its remedy. A
+   single `null` would have made the pane say "select some text" to a user whose
+   Word had already told it otherwise.
+5. **A host without paragraph ids is `unverified`, never fabricated.** `nodeIds`
+   stays `[]` and `verification` reads `offsets-and-text`; Troubleshooting (P10)
+   reports it as unverified. A fabricated node id would satisfy the type and fail
+   at write time.
+6. **An absent document id is a recognisable placeholder**
+   (`UNIDENTIFIED_DOCUMENT`) with `documentIdVerified: false`, not a hash of a
+   document nobody read.
 
 ### P6 — Apply path (no deletions; the page still calls the old engine)
 

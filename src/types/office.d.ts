@@ -162,6 +162,20 @@ declare global {
       insertBreak(breakType: BreakType, insertLocation: InsertLocation): void;
       insertParagraph(text: string): Paragraph;
       paragraphs: ParagraphCollection;
+      /**
+       * Word JavaScript API (WordApi 1.1): the character offset at which the
+       * range starts, and one past the last character it covers. Both are
+       * read-only, so they are declared as loadable-and-readable rather than
+       * assigned.
+       *
+       * Optional here for the ADR-0084 reason: the capture in
+       * `word/selectionScope.ts` reads them through a guarded view and refuses
+       * an anchor it cannot offset, so a host that omits them degrades to a
+       * stated refusal instead of a load that takes the whole transaction with
+       * it.
+       */
+      start?: number;
+      end?: number;
       font: Font;
       load: (...props: Array<string>) => Range;
       getRange?: (rangeLocation: RangeLocation) => Range;
@@ -175,6 +189,20 @@ declare global {
     interface Paragraph {
       format: ParagraphFormat;
       text?: string;
+      /**
+       * Word JavaScript API (WordApi 1.1): the host-assigned identity of this
+       * paragraph. Optional because a `SelectionRangeView`-style guarded read
+       * treats it as absent rather than inventing one — a fabricated node id
+       * would satisfy the type and fail at write time.
+       */
+      uniqueLocalId?: string;
+      /**
+       * WordApi 1.1: `Paragraph.getRange("Whole")` resolves this paragraph to a
+       * Range. Optional because the revision adapter checks for it at runtime
+       * and refuses a paragraph-unit change with a stated reason when a host
+       * does not expose it.
+       */
+      getRange?: (rangeLocation: "Whole") => Range;
       load: (prop: string) => Paragraph;
       insertText?: (text: string, insertMode?: string) => Paragraph;
     }

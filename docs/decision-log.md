@@ -2868,3 +2868,78 @@ formatting` governed the body style, the list standard, the table standard,
   `tests/unit/core/state/semanticRecords.test.ts`,
   `tests/unit/core/state/migration-v11.test.ts`,
   `tests/unit/core/state/migration-v14.test.ts`.
+
+## ADR-0094: Selection awareness is measured, not declared, and the explicit read ships
+
+- **Status**: Accepted (2026-10-01)
+- **Context**: Specification §19 asks for "local selection-state tracking **where
+  Word APIs support it**", and conditions the requirement on host support rather
+  than demanding an event. An earlier draft of the plan read the absence of a
+  selection-changed event from [`src/types/office.d.ts`](../src/types/office.d.ts)
+  and concluded that live selection awareness was unavailable in Word.
+
+  That conclusion rested on our own type declarations, which are a loose subset
+  and not an authority — ADR-0084 records exactly this, and its own lesson is
+  that a property name missing from our declarations costs nothing and proves
+  nothing. Declaring a host limitation from a file we wrote is the same class of
+  error as the ones ADR-0034 and ADR-0044 exist to stop.
+
+- **Decision**: Answer the question from the published requirement sets, record
+  the answer, and ship the fallback either way.
+
+  What the requirement sets actually say, checked 2026-10-01:
+
+  1. `WordApi` and `WordApiDesktop` expose **no** document-level
+     selection-changed event. The Word `Document` events are `onParagraphAdded`,
+     `onParagraphChanged`, `onParagraphDeleted`, the annotation events, and the
+     comment events; the only `onSelectionChanged` in the Word surface is on
+     `ContentControl` (WordApi 1.5), which reports focus entering a content
+     control — not the document's selection.
+  2. The **Office** surface does expose it:
+     `Office.context.document.addHandlerAsync("documentSelectionChanged", …)`,
+     equivalently `Office.EventType.DocumentSelectionChanged`, documented under
+     "Read and write data to the active selection in a document or spreadsheet".
+     Microsoft's own host note is "In Word, selection events are text or content
+     focused. Test event handlers in the hosts your add-in supports."
+
+  So the API is documented, its availability is a host fact, and neither our
+  declarations nor any runtime probe of `addHandlerAsync`'s presence can settle
+  the second half. A `supportsSelectionEvents` capability built on that probe
+  would report a weaker fact than its name claims — precisely the defect
+  `supportsContextMenuApi` already has to explain in its own doc comment — so
+  none is added. The question stays open and is verified by a person.
+
+  Shipped now: `src/word/selectionScope.ts` reads the selection explicitly, at
+  the size of the selection. The read is the fallback; a subscription would be
+  additive to it, not a replacement. No poller, in either direction — a
+  `setInterval` is a second thing to keep running and to stop, which is the
+  reasoning ADR-0079 already applied to navigation.
+
+- **Verification procedure** (a person, in a real host, per
+  [`manual-verification.md`](manual-verification.md)):
+
+  1. Sideload the add-in in Word for Windows, desktop Word on the web, and Word
+     on the web.
+  2. From the console, call
+     `Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, handler)`
+     and confirm it resolves.
+  3. Move the selection across a paragraph boundary, and confirm the handler
+     fires with a `DocumentSelectionChangedEventArgs`.
+  4. Record per host whether it fired. A host that does not fire is a host whose
+     pane keeps the explicit "Use current selection" read and says so.
+  5. Do not record "Word has no selection events" from a host that declined —
+     record the host and its version, which is a narrower and actionable fact.
+
+- **Consequences**: The semantic pane reads the selection on an explicit click,
+  which is what ships. A user's selection can change between the read and the
+  Apply, and that is covered where it already was: the revision adapter compares
+  the captured text against the live document as a precondition, and a changed
+  selection fails that comparison rather than writing over the wrong text. The
+  anchor also carries a `selectionHash`, so the pane can say "the selection has
+  changed since the last review" before overwriting a paid-for review.
+
+  If step 3 fires on some host, P7 adds a subscription that re-reads and
+  invalidates; the read stays as the control that works everywhere.
+
+- **Evidence**: `src/word/selectionScope.ts`, `tests/unit/word/selectionScope.test.ts`,
+  plan §2 D11, `docs/manual-verification.md`.
