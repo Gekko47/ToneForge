@@ -26,7 +26,7 @@
 - Stage 16 unified findings PASS: [`unifyFindings()`](src/analysis/unifiedFindings.ts).
 - Stage 17 change planning PASS: [`planChanges()`](src/changes/planner.ts), [`detectConflicts()`](src/changes/conflictDetector.ts), [`markStale()`](src/changes/staleGuard.ts).
 - Stage 18 revision adapter PASS WITH DOCUMENTED LIMITATION: [`applyChangePlan()`](src/word/revisionAdapter.ts), [`applyChangePlanWithTracking()`](src/word/revisionAdapter.ts), [`setStage01Passed()`](src/word/revisionAdapter.ts), [`validatePlanBeforeApply()`](src/word/revisionAdapter.ts).
-- Stage 19 semantic deviation PASS: [`detectSemanticDeviations()`](src/analysis/deviationEngine.ts).
+- Stage 19 semantic deviation PASS: `detectSemanticDeviations()`.
 - Stage 20 consistency checker PASS: `checkConsistency()`, `ConsistencyReportSchema`.
 - Stage 01 hard gate partially closed: Desktop Word live smoke recorded in [manual-verification.md](docs/manual-verification.md); web plus Mac pending, deferred to Stage 27.
 

@@ -55,7 +55,7 @@ defense-in-depth).
 Path: `consistencyChecker.ts`
 `detectSemanticDeviations()` rejects (`network down` after `withRetry`, or
 `Semantic deviation response is not valid JSON` from
-[`deviationEngine.ts`](src/analysis/deviationEngine.ts:94)) → caught at
+`deviationEngine.ts`) → caught at
 `consistencyChecker.ts` → warn + log
 → `semantic = []`. The returned report is indistinguishable from a clean run
 with zero semantic findings: the provider error is masked and missing semantic

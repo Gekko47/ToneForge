@@ -29,24 +29,16 @@ export const ProfileResponseSchema = z.object({
 
 export type ProfileResponse = z.infer<typeof ProfileResponseSchema>;
 
-/**
- * Expected JSON shape returned by the LLM for `buildDeviationPrompt`.
+/*
+ * The deviation prompt and its response schema are gone.
  *
- * `anchor` is required, not optional. A deviation described without a verbatim
- * quote has no addressable target, and a finding with no addressable target
- * cannot be planned — so an entry that omits it describes nothing the product
- * could act on. Requiring it moves the burden onto the model at the point where
- * it can still read the text it is quoting.
+ * They described a list of independent complaints with quoted anchors, which is
+ * the shape the deterministic findings list already uses — and putting a model's
+ * stylistic opinion in that shape is what made "the model thought this sentence
+ * was odd" indistinguishable from "this paragraph uses the wrong quote marks".
+ * `SemanticReviewResponseSchema` in `src/analysis/semantic/reviewSchema.ts`
+ * replaces them with an assessment and at most one proposal.
  */
-export const DeviationResponseSchema = z.object({
-  deviation: z.string().trim().min(1),
-  severity: z.enum(["low", "medium", "high"]),
-  suggestion: z.string().trim().min(1),
-  /** A verbatim substring of the target text that this deviation is about. */
-  anchor: z.string().trim().min(1),
-});
-
-export type DeviationResponse = z.infer<typeof DeviationResponseSchema>;
 
 export function buildProfilePrompt(
   sampleText: string,
@@ -130,35 +122,4 @@ export function buildProfilePromptV2(
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-export interface DeviationPromptOptions {
-  includeRawText: boolean;
-}
-
-export function buildDeviationPrompt(
-  profile: unknown,
-  targetText: string,
-  opts: DeviationPromptOptions = { includeRawText: false },
-): string {
-  if (!opts.includeRawText) {
-    throw new Error(
-      "buildDeviationPrompt requires includeRawText: true — raw document text must not leave the add-in without explicit user opt-in",
-    );
-  }
-  return [
-    "Given this style profile (JSON):",
-    JSON.stringify(profile),
-    "Identify semantic deviations in the target text.",
-    "Return a JSON array of objects with keys: deviation (string), severity (low|medium|high),",
-    "suggestion (string), anchor (string). No explanation outside the JSON.",
-    // Stated as a rule rather than left to inference, because a model that
-    // paraphrases its anchor produces a finding that has to be thrown away, and
-    // the user sees a deviation listed with no way to act on it.
-    "The anchor must be copied character for character from the target text, and must",
-    "identify a short span that appears exactly once. Quote a single sentence or clause,",
-    "not a whole paragraph. A deviation you cannot quote is one you should not report.",
-    "Target text:",
-    targetText,
-  ].join("\n");
 }

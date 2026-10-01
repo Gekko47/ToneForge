@@ -117,24 +117,17 @@ describe("buildStyleProfile on the V1 prompt", () => {
 
   it("passes constraints and sample text into the profile prompt", async () => {
     let capturedPrompt = "";
+    const capture = async (request: { prompt: string }) => {
+      capturedPrompt = request.prompt;
+      return { text: JSON.stringify(semanticResponse), model: "test" };
+    };
     const registry: LlmSemanticProvider = {
       name: "test",
-      complete: async (request) => {
-        capturedPrompt = request.prompt;
-        return { text: JSON.stringify(semanticResponse), model: "test" };
-      },
-      profile: async (request) => {
-        capturedPrompt = request.prompt;
-        return { text: JSON.stringify(semanticResponse), model: "test" };
-      },
-      deviations: async (request) => {
-        capturedPrompt = request.prompt;
-        return { text: JSON.stringify(semanticResponse), model: "test" };
-      },
-      rewrite: async (request) => {
-        capturedPrompt = request.prompt;
-        return { text: JSON.stringify(semanticResponse), model: "test" };
-      },
+      complete: capture,
+      profile: capture,
+      deviations: capture,
+      rewrite: capture,
+      review: capture,
     };
     const sample = captureFromText(sampleText);
 
@@ -149,12 +142,14 @@ describe("buildStyleProfile on the V1 prompt", () => {
   });
 
   it("rejects a non-JSON model response", async () => {
+    const notJson = async () => ({ text: "not json", model: "test" });
     const registry: LlmSemanticProvider = {
       name: "test",
-      complete: async () => ({ text: "not json", model: "test" }),
-      profile: async () => ({ text: "not json", model: "test" }),
-      deviations: async () => ({ text: "not json", model: "test" }),
-      rewrite: async () => ({ text: "not json", model: "test" }),
+      complete: notJson,
+      profile: notJson,
+      deviations: notJson,
+      rewrite: notJson,
+      review: notJson,
     };
     const sample = captureFromText(sampleText);
 
@@ -164,12 +159,14 @@ describe("buildStyleProfile on the V1 prompt", () => {
   });
 
   it("rejects a model response that fails the profile schema", async () => {
+    const partial = async () => ({ text: JSON.stringify({ tone: "professional" }), model: "test" });
     const registry: LlmSemanticProvider = {
       name: "test",
-      complete: async () => ({ text: JSON.stringify({ tone: "professional" }), model: "test" }),
-      profile: async () => ({ text: JSON.stringify({ tone: "professional" }), model: "test" }),
-      deviations: async () => ({ text: JSON.stringify({ tone: "professional" }), model: "test" }),
-      rewrite: async () => ({ text: JSON.stringify({ tone: "professional" }), model: "test" }),
+      complete: partial,
+      profile: partial,
+      deviations: partial,
+      rewrite: partial,
+      review: partial,
     };
     const sample = captureFromText(sampleText);
 
@@ -198,6 +195,7 @@ describe("buildStyleProfile on the V1 prompt", () => {
       profile: complete,
       deviations: complete,
       rewrite: complete,
+      review: complete,
     };
     const sample = captureFromText(sampleText);
 
@@ -217,6 +215,7 @@ describe("buildStyleProfile on the V1 prompt", () => {
       profile: complete,
       deviations: complete,
       rewrite: complete,
+      review: complete,
     };
     const sample = captureFromText(sampleText);
 
@@ -225,12 +224,14 @@ describe("buildStyleProfile on the V1 prompt", () => {
   });
 
   it("uses the deterministic metrics as the measured half of the profile", async () => {
+    const respond = async () => ({ text: JSON.stringify(semanticResponse), model: "test" });
     const registry: LlmSemanticProvider = {
       name: "test",
-      complete: async () => ({ text: JSON.stringify(semanticResponse), model: "test" }),
-      profile: async () => ({ text: JSON.stringify(semanticResponse), model: "test" }),
-      deviations: async () => ({ text: JSON.stringify(semanticResponse), model: "test" }),
-      rewrite: async () => ({ text: JSON.stringify(semanticResponse), model: "test" }),
+      complete: respond,
+      profile: respond,
+      deviations: respond,
+      rewrite: respond,
+      review: respond,
     };
     const sample = captureFromText(sampleText);
 
@@ -252,6 +253,7 @@ describe("buildStyleProfile on the V2 prompt", () => {
       profile: respond,
       deviations: respond,
       rewrite: respond,
+      review: respond,
     };
   }
 

@@ -1,9 +1,17 @@
 /**
  * Unified findings engine.
  *
- * Merges `Finding` arrays from deterministic, formatting, and semantic
- * engines into a single sorted, deduplicated list. Pure: no Office, no LLM,
- * no UI imports — fully unit-testable.
+ * Merges `Finding` arrays from the deterministic and formatting engines into a
+ * single sorted, deduplicated list. Pure: no Office, no LLM, no UI imports — fully
+ * unit-testable.
+ *
+ * **The `semantic` input is gone, and its absence is the point.** Semantic review
+ * is a separate product with its own assessment, its own proposal, and its own
+ * safety checks, and merging its output into this list would have put a model's
+ * opinion about a paragraph beside a machine-verified rule breach — the exact
+ * comparison the semantic surface exists to keep apart. A `Finding` shape for a
+ * semantic review would also have implied it is planable by the deterministic
+ * planner, which it is not.
  *
  * Boundary rule: this module may only import from `core/domain`, `rules`,
  * `formatting`, `ai/providers`, and `shared/utils` (see docs/architecture.md).
@@ -15,7 +23,6 @@ import { FindingSchema } from "../core/domain/Finding";
 export interface UnifyOptions {
   deterministic?: Finding[];
   formatting?: Finding[];
-  semantic?: Finding[];
 }
 
 const SEVERITY_RANK: Record<Severity, number> = {
@@ -102,10 +109,10 @@ function resolveCategory(findings: IndexedFinding[]): IndexedFinding[] {
  *   are silently skipped.
  */
 export function unifyFindings(options: UnifyOptions): Finding[] {
-  const { deterministic = [], formatting = [], semantic = [] } = options;
+  const { deterministic = [], formatting = [] } = options;
 
   const all: Finding[] = [];
-  [...deterministic, ...formatting, ...semantic].forEach((raw) => {
+  [...deterministic, ...formatting].forEach((raw) => {
     const result = FindingSchema.safeParse(raw);
     if (result.success) {
       all.push(result.data);

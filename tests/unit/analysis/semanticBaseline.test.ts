@@ -68,6 +68,7 @@ function scriptedRegistry(text: string) {
     profile: vi.fn(response),
     deviations: vi.fn(response),
     rewrite: vi.fn(response),
+    review: vi.fn(response),
   };
 }
 

@@ -9,7 +9,7 @@ export {
   type AcquisitionDiagnostics,
 } from "./analysisContext";
 export { unifyFindings, type UnifyOptions } from "./unifiedFindings";
-export { detectSemanticDeviations, type DeviationOptions } from "./deviationEngine";
+export * from "./semantic";
 export {
   runDeterministicReview,
   groupFindings,

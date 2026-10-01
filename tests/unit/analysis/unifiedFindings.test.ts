@@ -39,7 +39,7 @@ function finding(params: {
 
 describe("unifyFindings", () => {
   it("returns an empty array for empty inputs", () => {
-    expect(unifyFindings({ deterministic: [], formatting: [], semantic: [] })).toEqual([]);
+    expect(unifyFindings({ deterministic: [], formatting: [] })).toEqual([]);
   });
 
   it("passes through a single source unchanged", () => {
@@ -47,7 +47,7 @@ describe("unifyFindings", () => {
       finding({ category: "typography.emDash", start: 0, end: 2, message: "a" }),
       finding({ category: "typography.emDash", start: 10, end: 12, message: "b" }),
     ];
-    expect(unifyFindings({ deterministic: input, formatting: [], semantic: [] })).toEqual(input);
+    expect(unifyFindings({ deterministic: input, formatting: [] })).toEqual(input);
   });
 
   it("deduplicates exact duplicates across sources", () => {
@@ -70,7 +70,6 @@ describe("unifyFindings", () => {
           id: "22222222-2222-2222-2222-222222222222",
         }),
       ],
-      semantic: [],
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.id).toBe("11111111-1111-1111-1111-111111111111");
@@ -95,7 +94,6 @@ describe("unifyFindings", () => {
           kind: "formatting",
         }),
       ],
-      semantic: [],
     });
     expect(result).toHaveLength(2);
   });
@@ -107,7 +105,6 @@ describe("unifyFindings", () => {
         finding({ category: "dup", start: 0, end: 5, message: "second" }),
       ],
       formatting: [],
-      semantic: [],
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.message).toBe("first");
@@ -120,7 +117,6 @@ describe("unifyFindings", () => {
         finding({ category: "dup", start: 2, end: 10, message: "long" }),
       ],
       formatting: [],
-      semantic: [],
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.message).toBe("long");
@@ -134,7 +130,6 @@ describe("unifyFindings", () => {
         finding({ category: "dup", start: 7, end: 12, message: "last" }),
       ],
       formatting: [],
-      semantic: [],
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.message).toBe("middle");
@@ -147,7 +142,6 @@ describe("unifyFindings", () => {
         finding({ category: "dup", start: 0, end: 5, message: "second" }),
       ],
       formatting: [],
-      semantic: [],
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.message).toBe("first");
@@ -166,7 +160,6 @@ describe("unifyFindings", () => {
         finding({ category: "dup", start: 0, end: 5, message: "error", severity: "error" }),
       ],
       formatting: [],
-      semantic: [],
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.severity).toBe("error");
@@ -183,28 +176,29 @@ describe("unifyFindings", () => {
         }),
       ],
       formatting: [],
-      semantic: [],
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.suggestedChangeId).toBe("change-123");
   });
 
-  it("preserves synthetic semantic findings with confidence less than 1", () => {
+  it("preserves a finding's own confidence rather than treating anything below 1 as weaker", () => {
+    // Kept as a property of the merge, not of any one source. A finding that
+    // arrives with a confidence below 1 is preserved with it — the old semantic
+    // source fed this, and the merging rule must not quietly become stricter now
+    // that it does not.
     const result = unifyFindings({
       deterministic: [],
-      formatting: [],
-      semantic: [
+      formatting: [
         finding({
-          category: "semantic.tone",
+          category: "fmt.uncertain",
           start: 0,
           end: 10,
-          kind: "semantic",
+          kind: "formatting",
           confidence: 0.8,
         }),
       ],
     });
     expect(result).toHaveLength(1);
-    expect(result[0]!.kind).toBe("semantic");
     expect(result[0]!.confidence).toBe(0.8);
   });
 
@@ -215,7 +209,6 @@ describe("unifyFindings", () => {
         finding({ category: "mixed", start: 0, end: 1, unit: "paragraph" }),
       ],
       formatting: [],
-      semantic: [],
     });
     expect(result).toHaveLength(2);
   });
@@ -226,8 +219,8 @@ describe("unifyFindings", () => {
       finding({ category: "b", start: 0, end: 2, message: "y", severity: "error" }),
       finding({ category: "c", start: 0, end: 2, message: "z", severity: "warning" }),
     ];
-    const one = unifyFindings({ deterministic: input, formatting: [], semantic: [] });
-    const two = unifyFindings({ deterministic: input, formatting: [], semantic: [] });
+    const one = unifyFindings({ deterministic: input, formatting: [] });
+    const two = unifyFindings({ deterministic: input, formatting: [] });
     expect(one).toEqual(two);
     expect(one[0]!.range.start).toBe(0);
     expect(one[0]!.severity).toBe("error");
@@ -246,20 +239,10 @@ describe("unifyFindings", () => {
         kind: "formatting",
       }),
     );
-    const semantic = Array.from({ length: 500 }, (_, i) =>
-      finding({
-        category: "sem",
-        start: i,
-        end: i + 1,
-        message: `s${i}`,
-        kind: "semantic",
-        confidence: 0.5,
-      }),
-    );
-    const one = unifyFindings({ deterministic, formatting, semantic });
-    const two = unifyFindings({ deterministic, formatting, semantic });
+    const one = unifyFindings({ deterministic, formatting });
+    const two = unifyFindings({ deterministic, formatting });
     expect(one).toEqual(two);
-    expect(one).toHaveLength(1500);
+    expect(one).toHaveLength(1000);
   });
 
   it("rejects findings with invalid ranges", () => {
@@ -283,9 +266,18 @@ describe("unifyFindings", () => {
         finding({ category: "valid", start: 0, end: 2 }),
       ],
       formatting: [],
-      semantic: [],
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.category).toBe("valid");
+  });
+
+  it("ignores an unknown input key rather than merging it", () => {
+    // The merge point is where a model's opinion used to sit beside a
+    // machine-verified rule breach. A caller can still construct a
+    // `kind: "semantic"` finding; what must be impossible is handing it here and
+    // having it merged into the deterministic list. The option is gone from the
+    // type, so this asserts the runtime too.
+    const withSemantic = { deterministic: [], formatting: [], semantic: [] } as never;
+    expect(unifyFindings(withSemantic)).toEqual([]);
   });
 });

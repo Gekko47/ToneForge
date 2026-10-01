@@ -30,7 +30,7 @@ type ConsistencyReport = {
 
 - No import of [`src/changes/planner.ts`](src/changes/planner.ts:1); Stage 21 orchestrator composes checker output with planner.
 - No import of [`src/word/documentReader.ts`](src/word/documentReader.ts:39) inside [`src/analysis/`](src/analysis/index.ts:1); caller supplies `text` and `docHash` computed upstream via [`hashDocument()`](src/word/documentReader.ts:21). This preserves the [`docs/architecture.md`](docs/architecture.md:45) boundary while reusing the hashing logic conceptually.
-- Reuses [`findTypographyIssues()`](src/rules/typography.ts:35), house-style check from [`src/rules/houseStyle.ts`](src/rules/houseStyle.ts:1), [`findFormattingIssues()`](src/formatting/analyzer.ts:24), [`detectSemanticDeviations()`](src/analysis/deviationEngine.ts:58), [`unifyFindings()`](src/analysis/unifiedFindings.ts:104).
+- Reuses [`findTypographyIssues()`](src/rules/typography.ts:35), house-style check from [`src/rules/houseStyle.ts`](src/rules/houseStyle.ts:1), [`findFormattingIssues()`](src/formatting/analyzer.ts:24), `detectSemanticDeviations()`, [`unifyFindings()`](src/analysis/unifiedFindings.ts:104).
 
 ## 3. Prerequisites from Stages 13–19
 
@@ -40,7 +40,7 @@ type ConsistencyReport = {
 - Stage 16 [`src/analysis/unifiedFindings.ts`](src/analysis/unifiedFindings.ts:104) merge policy: validate via [`FindingSchema`](src/core/domain/Finding.ts:27), collapse exact duplicates, preserve cross-category overlaps, longest-match-wins per category, deterministic sort.
 - Stage 17 [`src/changes/planner.ts`](src/changes/planner.ts:1) is downstream-only; checker output must remain valid planner input.
 - Stage 18 [`src/word/revisionAdapter.ts`](src/word/revisionAdapter.ts:1) is sole mutation path; checker must not import it per [`eslint.config.mjs`](eslint.config.mjs:132).
-- Stage 19 [`src/analysis/deviationEngine.ts`](src/analysis/deviationEngine.ts:58) semantic findings with [`category: semantic-deviation`](src/analysis/deviationEngine.ts:113), full-text range, [`confidence: 0.7`](src/analysis/deviationEngine.ts:30), [`includeRawText: true`](src/analysis/deviationEngine.ts:38) gate, [`withRetry()`](src/ai/providers/retry.ts:1), [`MockAdapter`](src/ai/providers/mockAdapter.ts:1) in tests.
+- Stage 19 `src/analysis/deviationEngine.ts` semantic findings with `category: semantic-deviation`, full-text range, `confidence: 0.7`, `includeRawText: true` gate, [`withRetry()`](src/ai/providers/retry.ts:1), [`MockAdapter`](src/ai/providers/mockAdapter.ts:1) in tests.
 
 ## 4. Inputs and behavior
 
@@ -50,7 +50,7 @@ Inputs to `checkConsistency()`:
 - `profile: StyleProfile` validated via [`StyleProfileSchema`](src/core/domain/StyleProfile.ts:80).
 - `snapshot` optional [`FormattingSnapshot`](src/formatting/formattingSnapshot.ts:1); absent snapshot means deterministic plus semantic only.
 - `docHash` optional caller-supplied hash; when absent compute lightweight hash inline without importing [`src/word/`](src/word/documentReader.ts:1) to keep purity.
-- `includeRawText` defaults to false; when false semantic path is skipped, when true delegates to [`detectSemanticDeviations()`](src/analysis/deviationEngine.ts:58) which enforces its own gate.
+- `includeRawText` defaults to false; when false semantic path is skipped, when true delegates to `detectSemanticDeviations()` which enforces its own gate.
 - `signal: AbortSignal` passthrough; caller abort is non-retryable per ADR-0011.
 - `registry: LlmSemanticProvider` injectable; tests use [`MockAdapter`](src/ai/providers/mockAdapter.ts:1) only, never live network.
 
@@ -85,7 +85,7 @@ flowchart TD
 
 1. Create `src/analysis/consistencyChecker.ts` with `CheckConsistencyOptions`, `ConsistencyReportSchema`, `ConsistencyReport`, `ConsistencySummary`, and async `checkConsistency()`. Honor [`tsconfig.json`](tsconfig.json:1) strict, [`exactOptionalPropertyTypes`](tsconfig.json:1), [`noUncheckedIndexedAccess`](tsconfig.json:1); no [`any`](eslint.config.mjs:40); use [`import type`](eslint.config.mjs:45).
 2. Update [`src/analysis/index.ts`](src/analysis/index.ts:1) barrel to re-export checker and report types.
-3. Add `tests/unit/analysis/consistencyChecker.test.ts` near [`tests/unit/analysis/deviationEngine.test.ts`](tests/unit/analysis/deviationEngine.test.ts:1) and [`tests/unit/analysis/unifiedFindings.test.ts`](tests/unit/analysis/unifiedFindings.test.ts:1). Cover empty text, deterministic-only, formatting absent versus present, semantic skipped versus [`MockAdapter`](src/ai/providers/mockAdapter.ts:1) success, invalid entries skipped, opt-in refusal, abort passthrough, ordering determinism, summary counts, `profileId` and `docHash` propagation. Reuse [`tests/fixtures/sampleDocs.ts`](tests/fixtures/sampleDocs.ts:1).
+3. Add `tests/unit/analysis/consistencyChecker.test.ts` near `tests/unit/analysis/deviationEngine.test.ts` and [`tests/unit/analysis/unifiedFindings.test.ts`](tests/unit/analysis/unifiedFindings.test.ts:1). Cover empty text, deterministic-only, formatting absent versus present, semantic skipped versus [`MockAdapter`](src/ai/providers/mockAdapter.ts:1) success, invalid entries skipped, opt-in refusal, abort passthrough, ordering determinism, summary counts, `profileId` and `docHash` propagation. Reuse [`tests/fixtures/sampleDocs.ts`](tests/fixtures/sampleDocs.ts:1).
 4. Run [`npm run test`](package.json:22) focused on `tests/unit/analysis`, then full suite; run [`npm run lint`](package.json:25) with zero warnings; meet 80% lines, statements, functions, branches per [`vitest.config.ts`](vitest.config.ts:13).
 5. Run the ordered verification chain documented in [`ROADMAP.md`](../../ROADMAP.md).
 6. Update the canonical status and evidence index when a gate result changes.

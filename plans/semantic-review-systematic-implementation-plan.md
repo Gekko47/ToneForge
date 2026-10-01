@@ -90,7 +90,7 @@ governance invariant or remove a safety check that currently works.
 | Sample quality gate (40 words / 2 sentences)                           | [`sampleQuality.ts`](../src/style/sampleQuality.ts:30)                                                                            | Exists, weak                                                  |
 | Learn-style orchestration                                              | [`learnStyle.ts`](../src/style/learnStyle.ts)                                                                                     | Exists; **auto-activates the new profile**                    |
 | Semantic profile prompt (8-key JSON)                                   | [`profilePrompts.ts`](../src/ai/prompts/profilePrompts.ts:19)                                                                     | Exists                                                        |
-| Deviation engine                                                       | [`deviationEngine.ts`](../src/analysis/deviationEngine.ts)                                                                        | Exists; **zero production callers**                           |
+| Deviation engine                                                       | `deviationEngine.ts`                                                                                                              | Exists; **zero production callers**                           |
 | Rewrite engine                                                         | [`rewriteEngine.ts`](../src/analysis/rewriteEngine.ts)                                                                            | Exists, one caller                                            |
 | Model-quoted-anchor resolution                                         | [`anchorResolution.ts`](../src/analysis/anchorResolution.ts) `resolveAnchor()`                                                    | Exists, used by both engines                                  |
 | Semantic apply path, shared writer                                     | [`semanticApply.ts`](../src/reformat/semanticApply.ts)                                                                            | Exists, on the **current** path                               |
@@ -166,7 +166,7 @@ semantic product domain.
 **Repository**: ADR-0052 declares `src/analysis/consistency/` "the **single
 sanctioned exception** to deterministic-first" and the governance rule states that
 "a second one contradicts it and needs its own ADR saying so." But
-[`deviationEngine.ts`](../src/analysis/deviationEngine.ts:91) and
+`deviationEngine.ts` and
 [`rewriteEngine.ts`](../src/analysis/rewriteEngine.ts:91) are already
 LLM-calling, non-deterministic modules living in `src/analysis/`, outside
 `consistency/`, outside the exception. ADR-0052's wording describes the code less
@@ -1351,7 +1351,7 @@ the proposed side empty, so every fact on both sides was reported as unmatched �
 meaning identical text produced a report full of hard failures. The clean-restyle
 control exists to catch exactly that, and it caught it.
 
-### P4 — Unified Semantic Review contract
+### P4 — Unified Semantic Review contract _(LANDED 2026-10-01)_
 
 1. `analysis/semantic/contracts.ts`, `reviewPrompt.ts`, `reviewSchema.ts`,
    `semanticReviewEngine.ts`, `session.ts`, `index.ts`.
@@ -1371,9 +1371,37 @@ control exists to catch exactly that, and it caught it.
    mutation path.
 7. ADR-0092.
 
-**Exit**: one model call returns assessment + revision; a malformed response
-changes nothing; `deviations()`/`rewrite()` still exist so the old page still
-works.
+**Exit, as met**: all thirteen `verify` stages green; 167 test files, 2278 tests.
+One model call returns the assessment and the revision; a malformed response
+throws and changes nothing; `deviations()` and `rewrite()` still exist so the old
+Semantic page keeps working until P7.
+
+**What landed beyond the item list, and why:**
+
+- **The `semantic` input is removed from `unifyFindings()`** (item 5). The
+  deviation engine is deleted with its tests, but merging its output was the
+  point: a model's opinion about a paragraph sat in the same list as a
+  machine-verified rule breach, and a `Finding` shape implied the deterministic
+  planner could act on it. Two of the merge tests were _about_ semantic findings
+  and are deleted rather than rewritten — they asserted a capability this design
+  removes.
+- **`deviationEngine.ts`, `buildDeviationPrompt` and `DeviationResponseSchema`
+  are gone**, with the 62 markdown links to them across eight documents converted
+  to code spans. A link to a deleted file is a claim that it exists; a code span
+  is a record that it did.
+- **`review()` joins `deviations()` and `rewrite()` on the provider interface**
+  rather than replacing them, because the Semantic page still calls the other
+  two until P7. Removing a method from an interface the old page depends on turns
+  a migration into an outage.
+- **`SemanticReviewResult` is an interface, not a schema.** Its `preservation`
+  field is the engine's own comparison of two texts the model never sees
+  together, so it is the one field a Zod schema cannot express and the one place
+  a model must not be able to supply.
+- **The adapter's preservation check is retained**, as item 6 says: P3's validator
+  is the pre-write layer that tells the user _before_ Apply is offered, and the
+  adapter's is an independent at-write backstop on the sole mutation path. There
+  are two checks today for that reason, and this phase does not reduce them to
+  one.
 
 ### P5 — Selection scope capture
 

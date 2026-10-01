@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   buildProfilePrompt,
-  buildDeviationPrompt,
+  buildProfilePromptV2,
   ProfileResponseSchema,
-  DeviationResponseSchema,
 } from "../../../../src/ai/prompts/index";
 
 describe("buildProfilePrompt", () => {
@@ -34,17 +33,30 @@ describe("buildProfilePrompt", () => {
   });
 });
 
-describe("buildDeviationPrompt", () => {
+describe("buildProfilePromptV2", () => {
   it("throws when includeRawText is false (default)", () => {
-    expect(() => buildDeviationPrompt({}, "target text")).toThrow(/includeRawText/);
+    expect(() => buildProfilePromptV2("some text")).toThrow(/includeRawText/);
   });
 
-  it("includes target text when includeRawText is true", () => {
-    const prompt = buildDeviationPrompt({ tone: "formal" }, "target text", {
-      includeRawText: true,
+  it("includes the sample when includeRawText is true", () => {
+    const prompt = buildProfilePromptV2("hello world", [], { includeRawText: true });
+    expect(prompt).toContain("hello world");
+    expect(prompt).toContain("Writing sample:");
+  });
+
+  it("names every group and tells the model not to omit one", () => {
+    const prompt = buildProfilePromptV2("text", [], { includeRawText: true });
+    ["tone", "voice", "evidenceFraming", "lexicalPreferences"].forEach((group) => {
+      expect(prompt).toContain(group);
     });
-    expect(prompt).toContain("target text");
-    expect(prompt).toContain("Target text:");
+    expect(prompt).toContain("sixteen keys");
+  });
+
+  it("tells the model not to quote the sample in a description", () => {
+    // Verified afterwards regardless, but telling the model is cheaper than
+    // telling a user their provider returned a leak.
+    const prompt = buildProfilePromptV2("text", [], { includeRawText: true });
+    expect(prompt).toMatch(/must not name a project/);
   });
 });
 
@@ -126,34 +138,12 @@ describe("ProfileResponseSchema", () => {
   });
 });
 
-describe("DeviationResponseSchema", () => {
-  it("accepts a valid deviation response", () => {
-    const result = DeviationResponseSchema.safeParse({
-      deviation: "wordy phrasing",
-      severity: "medium",
-      suggestion: "trim it",
-      anchor: "the wordy sentence",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects invalid severity", () => {
-    const result = DeviationResponseSchema.safeParse({
-      deviation: "x",
-      severity: "critical",
-      suggestion: "y",
-      anchor: "quoted",
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects empty deviation", () => {
-    const result = DeviationResponseSchema.safeParse({
-      deviation: "",
-      severity: "low",
-      suggestion: "y",
-      anchor: "quoted",
-    });
-    expect(result.success).toBe(false);
-  });
-});
+/*
+ * `DeviationResponseSchema` and `buildDeviationPrompt` are gone, with their tests.
+ *
+ * They described a list of independent complaints with quoted anchors — the shape
+ * the deterministic findings list uses. That shape is why a model's stylistic
+ * opinion and a machine-verified rule breach could end up on the same list.
+ * `SemanticReviewResponseSchema` replaces them, and is tested in
+ * `tests/unit/analysis/semantic/semanticReviewEngine.test.ts`.
+ */

@@ -1,8 +1,7 @@
 export {
-  buildDeviationPrompt,
   buildProfilePrompt,
-  DeviationResponseSchema,
+  buildProfilePromptV2,
   ProfileResponseSchema,
-  type DeviationResponse,
+  type ProfilePromptOptions,
   type ProfileResponse,
 } from "./profilePrompts";

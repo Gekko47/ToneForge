@@ -871,7 +871,7 @@ are retained; coverage reports the examined scope.
 
 **Goal.** Stop shipping a toggle that can only produce unfixable output.
 
-**Current state.** [`deviationEngine.ts:111`](../src/analysis/deviationEngine.ts)
+**Current state.** `deviationEngine.ts:111`
 marks every semantic finding `nodeIds: []`, `actionable: false`,
 `status: "deferred"`, `advisoryReason: "Full-document semantic deviation has no
 locally verified target span"`. The planner therefore cannot produce a change.
@@ -880,7 +880,7 @@ The observer hard-codes `includeRawText: false`
 ReformatPanel sets it from `semanticOptIn` with no registry
 (`ReformatPanel.tsx:53`,
 line 74 passes a registry only when injected), so the semantic engine falls back
-to [`MockAdapter`](../src/analysis/deviationEngine.ts). Enabling
+to `MockAdapter`. Enabling
 `semanticOptIn` today can only produce mock output.
 
 **Two acceptable outcomes. Pick one explicitly; do not leave it as is.**

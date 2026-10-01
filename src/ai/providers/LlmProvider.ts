@@ -31,12 +31,24 @@ export interface LlmProvider {
 /**
  * High-level helpers that delegate to `complete()` with AbortSignal passthrough.
  * Concrete adapters implement `complete()`; these helpers provide the
- * `profile()`, `deviations()`, and `rewrite()` contract required by plan.md.
+ * `profile()`, `deviations()`, `rewrite()`, and `review()` contract.
+ *
+ * `review` exists alongside the other three rather than replacing `deviations`
+ * and `rewrite` because both of those are still called: the Semantic tab has not
+ * been migrated until P7, and a provider that lost a method would turn a
+ * migration into an outage. `deviations` and `rewrite` are removed with the page
+ * that calls them.
+ *
+ * All four are the same shape for a reason. A helper that transformed its
+ * request, or swallowed the signal, would be a second implementation of the
+ * provider contract in a file that looks like a convenience.
  */
 export interface LlmSemanticProvider extends LlmProvider {
   profile(request: LlmRequest): Promise<LlmResponse>;
   deviations(request: LlmRequest): Promise<LlmResponse>;
   rewrite(request: LlmRequest): Promise<LlmResponse>;
+  /** Semantic Review: assessment and proposed revision in one response. */
+  review(request: LlmRequest): Promise<LlmResponse>;
 }
 
 export class LlmError extends Error {
@@ -51,19 +63,18 @@ export class LlmError extends Error {
 }
 
 /**
- * Mixin that adds profile/deviations/rewrite helpers to any LlmProvider.
- * All three delegate to `complete()` and pass through `request.signal`.
+ * Mixin that adds the four semantic helpers to any LlmProvider.
+ * All four delegate to `complete()` and pass through `request.signal`.
+ *
+ * Assigned rather than spread so the provider's own `complete` keeps its `this`.
  */
 export function withSemanticHelpers<T extends LlmProvider>(provider: T): T & LlmSemanticProvider {
   const p = provider as T & LlmSemanticProvider;
-  (p as unknown as { profile: (r: LlmRequest) => Promise<LlmResponse> }).profile = (
-    request: LlmRequest,
-  ) => p.complete(request);
-  (p as unknown as { deviations: (r: LlmRequest) => Promise<LlmResponse> }).deviations = (
-    request: LlmRequest,
-  ) => p.complete(request);
-  (p as unknown as { rewrite: (r: LlmRequest) => Promise<LlmResponse> }).rewrite = (
-    request: LlmRequest,
-  ) => p.complete(request);
+  const helpers = ["profile", "deviations", "rewrite", "review"] as const;
+  helpers.forEach((helper) => {
+    (p as unknown as Record<string, (r: LlmRequest) => Promise<LlmResponse>>)[helper] = (
+      request: LlmRequest,
+    ) => p.complete(request);
+  });
   return p as T & LlmSemanticProvider;
 }
