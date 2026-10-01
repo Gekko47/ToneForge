@@ -2,6 +2,7 @@ import { ZodError } from "zod";
 import { describe, expect, it, vi } from "vitest";
 
 import { ProfileResponseSchema } from "../../../src/ai/prompts/profilePrompts";
+import { migrateSemanticStyleFromV1 } from "../../../src/core/domain/SemanticStyleProfile";
 import { LlmError, type LlmSemanticProvider } from "../../../src/ai/providers/LlmProvider";
 import { createLlmRegistry } from "../../../src/ai/providers/registry";
 import { buildStyleProfile } from "../../../src/style/profiler";
@@ -42,7 +43,12 @@ describe("buildStyleProfile", () => {
 
     expect(profile.name).toBe("Team profile");
     expect(profile.measured.sampleWordCount).toBe(sample.wordCount);
-    expect(profile.semantic).toEqual(ProfileResponseSchema.parse(semanticResponse));
+    // The learning path still emits V1, and `profiler` maps it forward with the
+    // same function the v14 state migration uses. Asserting the V1 shape here
+    // would pin the persisted profile to a schema it no longer has.
+    expect(profile.semantic).toEqual(
+      migrateSemanticStyleFromV1(ProfileResponseSchema.parse(semanticResponse)),
+    );
     expect(profile.sourceSampleIds).toEqual([]);
   });
 
@@ -137,7 +143,9 @@ describe("buildStyleProfile", () => {
     const profile = await buildStyleProfile(sample, { includeRawText: true, registry });
 
     expect(complete).toHaveBeenCalledTimes(2);
-    expect(profile.semantic).toEqual(ProfileResponseSchema.parse(semanticResponse));
+    expect(profile.semantic).toEqual(
+      migrateSemanticStyleFromV1(ProfileResponseSchema.parse(semanticResponse)),
+    );
   });
 
   it("does not retry non-retryable provider failures", async () => {

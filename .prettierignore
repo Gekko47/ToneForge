@@ -11,3 +11,15 @@ node_modules/
 
 # Generated release and coverage artifacts.
 *.tsbuildinfo
+
+# External specification documents, not repository source.
+#
+# `systematic review/` holds the incoming product specifications the
+# implementation plans are written against. They are inputs, not code: they
+# are authored outside the repository's Prettier settings, they are not linted,
+# and reformatting them would produce a large diff against a document whose
+# exact wording is the thing under review. Formatting them is a no-op for the
+# build and a real edit to someone else's prose, so they are excluded rather
+# than silently rewritten. Remove this entry once the folder is either
+# formatted deliberately or moved outside the repository.
+systematic review/

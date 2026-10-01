@@ -19,7 +19,7 @@ import {
   saveReviewDecision,
 } from "../../../../src/core/state/reviewSession";
 import { loadState, saveState } from "../../../../src/core/state/persistence";
-import { migrate } from "../../../../src/core/state/migration";
+import { CURRENT_STATE_VERSION, migrate } from "../../../../src/core/state/migration";
 
 const IDENTITY: ReviewSessionIdentity = {
   documentId: "doc-1",
@@ -178,7 +178,7 @@ describe("the v12 to v13 migration", () => {
       settings: {},
     });
 
-    expect(migrated.version).toBe(13);
+    expect(migrated.version).toBe(CURRENT_STATE_VERSION);
     // Carried: the durable "the user has seen this" record.
     expect(migrated.reviewedFindings).toHaveLength(1);
     // Not promoted: a v12 approval has no document, profile, governance or

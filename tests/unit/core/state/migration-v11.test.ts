@@ -51,8 +51,10 @@ function legacyRecord(name = "House"): Record<string, unknown> {
       name,
       revision: 1,
       measured: {},
-      // Deliberately populated: this is the block a naive migration would copy
-      // into a semantic record, and the test asserts that it does not.
+      // Deliberately populated in the V1 shape: this is the block a naive
+      // migration would copy into a semantic record, and the test asserts that
+      // it does not. It also exercises the V1 -> V2 read upgrade, because a v10
+      // store's block predates the V2 schema exactly as a v13 store's does.
       semantic: { tone: "formal", formality: 80, avoidWords: ["utilise"] },
       typography: { emDash: "em" },
       houseStyle: { bannedTerms: ["utilise"] },
@@ -103,8 +105,13 @@ describe("migration v10 to v11", () => {
     const result = migrate(v10({}, { [record.id as string]: record }));
 
     expect(Object.keys(result.semanticProfileRecords)).toHaveLength(0);
-    // The block itself is untouched, so a future change can still recover it.
-    expect(result.profileRecords[record.id as string]?.draft?.semantic.tone).toBe("formal");
+    // The block itself is not discarded, so a future change can still recover
+    // it. It is mapped forward rather than copied verbatim: the stored schema
+    // upgrades a V1 block on read, so `tone` is the V2 group and the original
+    // free string is retained in both its description and the legacy carrier.
+    const semantic = result.profileRecords[record.id as string]?.draft?.semantic;
+    expect(semantic?.tone.description).toBe("formal");
+    expect(semantic?.legacyV1?.tone).toBe("formal");
   });
 
   it("keeps the deterministic review reading the same profile as before", () => {

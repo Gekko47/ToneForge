@@ -8,8 +8,10 @@ import {
   TerminologyPolicySchema,
   GovernanceRuleSchema,
   ruleForSource,
+  EDITORIAL_OVERRIDE_FIELDS,
 } from "../../../../src/core/domain/GovernanceProfile";
 import { StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
+import { SEMANTIC_DIMENSIONS } from "../../../../src/core/domain/SemanticStyleProfile";
 import { v4 as uuidv4 } from "uuid";
 
 describe("ScopePolicySchema", () => {
@@ -48,16 +50,32 @@ describe("ProtectionPolicySchema", () => {
 });
 
 describe("EditorialPolicySchema", () => {
-  it("defaults editorial fields correctly", () => {
+  it("leaves every dimension unpinned, so learned evidence is not overridden", () => {
+    /*
+     * V1 defaulted each editorial field to a value and then relied on
+     * `explicitFields` to decide whether it was an opinion. V2 makes every
+     * dimension partial *and* pins by name, so an untouched policy parses to
+     * sixteen empty objects and an empty pin list — and `resolveSemantic` then
+     * passes learned evidence through untouched. A default that reads as a value
+     * is what made the old rule need an override list in the first place.
+     */
     const result = EditorialPolicySchema.parse({});
-    expect(result.tone).toBe("neutral");
-    expect(result.voice).toBe("third-person");
-    expect(result.formality).toBe(50);
-    expect(result.readingGradeTarget).toBeNull();
-    expect(result.preferredSentenceLength).toBe(22);
-    expect(result.vocabularyRegister).toBe("standard");
-    expect(result.rhetoricalStyle).toBe("direct");
-    expect(result.avoidWords).toEqual([]);
+    expect(result.explicitFields).toEqual([]);
+    expect(result.tone).toEqual({});
+    expect(result.formality).toEqual({});
+    expect(result.lexicalPreferences).toEqual({});
+    expect(result.transitions).toBeUndefined();
+    expect(result.rhetoricalStyle).toBeUndefined();
+  });
+
+  it("names every pinnable dimension, and no others", () => {
+    /*
+     * The pin list is the whole of an override. A dimension the author cannot
+     * name cannot govern, and a name that is not a dimension would be a pin that
+     * silently matches nothing.
+     */
+    expect([...EDITORIAL_OVERRIDE_FIELDS].sort()).toEqual([...SEMANTIC_DIMENSIONS].sort());
+    expect(EDITORIAL_OVERRIDE_FIELDS).toHaveLength(16);
   });
 });
 
@@ -238,6 +256,8 @@ describe("GovernanceProfileSchema", () => {
       },
       scope: { includeBody: true, includeHeadersFooters: true },
       protection: { protectQuotedText: true, protectCaptions: true },
+      // V1 shape: `tone` was a free string. It is mapped into `tone.description`
+      // and marked pinned, because V2 has no trait named "formal".
       editorial: { tone: "formal" },
       provenance: { createdAt: new Date().toISOString(), createdBy: "admin", lineage: [] },
     });
@@ -245,7 +265,8 @@ describe("GovernanceProfileSchema", () => {
     expect(profile.terminology.preferredTerms).toEqual({ "e.g.": "for example" });
     expect(profile.scope.includeHeadersFooters).toBe(true);
     expect(profile.protection.protectQuotedText).toBe(true);
-    expect(profile.editorial.tone).toBe("formal");
+    expect(profile.editorial.tone).toEqual({ description: "formal" });
+    expect(profile.editorial.explicitFields).toEqual(["tone"]);
   });
 });
 

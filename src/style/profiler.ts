@@ -15,6 +15,7 @@ import { createLlmRegistry } from "../ai/providers/registry";
 import { LlmError, type LlmSemanticProvider } from "../ai/providers/LlmProvider";
 import { withRetry } from "../ai/providers/retry";
 import { createEmptyProfile, type StyleProfile } from "../core/domain/StyleProfile";
+import { migrateSemanticStyleFromV1 } from "../core/domain/SemanticStyleProfile";
 import { computeMeasuredProfile } from "./metrics";
 import type { CapturedSample } from "./sampleCapture";
 
@@ -72,7 +73,16 @@ export async function buildStyleProfile(
     throw new Error("Style profile response is not valid JSON");
   }
 
-  const semantic = ProfileResponseSchema.parse(parsed);
+  /*
+   * The V1 prompt's eight flat fields, mapped onto the sixteen V2 dimensions.
+   *
+   * P2 replaces the prompt itself with a strict extraction schema; until then
+   * this is the one place the two shapes meet, and it is deliberately the same
+   * function the v14 state migration uses. A profile learned from today's prompt
+   * and a profile migrated from a v13 store must reach V2 by identical rules, or
+   * "what did V1 mean" would have two answers that drift apart.
+   */
+  const semantic = migrateSemanticStyleFromV1(ProfileResponseSchema.parse(parsed));
   const measured = computeMeasuredProfile(sample.text);
   const profile = createEmptyProfile(opts.name ?? "Style profile");
 

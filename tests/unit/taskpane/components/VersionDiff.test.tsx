@@ -1,25 +1,20 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, within } from "@testing-library/react";
 import { createEmptyProfile, type StyleProfile } from "../../../../src/core/domain/StyleProfile";
+import { createEmptySemanticStyleProfile } from "../../../../src/core/domain/SemanticStyleProfile";
 import { createGovernanceProfile } from "../../../../src/core/domain/GovernanceProfile";
 import VersionDiff from "../../../../src/taskpane/components/VersionDiff";
 import { sampleTypography } from "../../../fixtures/sampleDocs";
+
+const SEMANTIC = createEmptySemanticStyleProfile();
 
 function makeProfile(overrides: Partial<StyleProfile> = {}): StyleProfile {
   return {
     ...createEmptyProfile("Saved profile"),
     ...overrides,
-    semantic: {
-      tone: "neutral",
-      voice: "third-person",
-      formality: 50,
-      readingGradeTarget: null,
-      preferredSentenceLength: 22,
-      vocabularyRegister: "standard",
-      rhetoricalStyle: "direct",
-      avoidWords: [],
-      ...overrides.semantic,
-    },
+    // Defaults from the schema, so a dimension added later is present here
+    // without this test having to be amended to stay type-correct.
+    semantic: { ...SEMANTIC, ...overrides.semantic },
     // Defaults from the schema, so a typography field added later is present
     // here without this test having to be amended to stay type-correct.
     typography: sampleTypography(overrides.typography ?? {}),
@@ -46,7 +41,7 @@ describe("VersionDiff", () => {
     const saved = makeProfile();
     const current = makeProfile({
       name: "Edited profile",
-      semantic: { ...saved.semantic, tone: "conversational" },
+      semantic: { ...saved.semantic, tone: { ...saved.semantic.tone, primary: "persuasive" } },
       houseStyle: { ...saved.houseStyle, bannedTerms: ["utilize"] },
     });
 
@@ -57,7 +52,10 @@ describe("VersionDiff", () => {
     expect(within(container).getByText("Tone")).toBeInTheDocument();
     expect(within(container).getByText("Banned terms")).toBeInTheDocument();
     expect(within(container).getByText("Edited profile")).toBeInTheDocument();
-    expect(within(container).getByText("conversational")).toBeInTheDocument();
+    // Tone is one grouped row under V2, so the changed trait appears inside the
+    // rendered group rather than as a cell of its own, and the same text appears
+    // once in the diff table and once in the plain-text changelog below it.
+    expect(within(container).getAllByText(/primary: persuasive/).length).toBeGreaterThan(0);
     expect(within(container).getByText("utilize")).toBeInTheDocument();
   });
 
@@ -65,7 +63,10 @@ describe("VersionDiff", () => {
     const profile = makeProfile();
     const savedGovernance = createGovernanceProfile(profile);
     const currentGovernance = createGovernanceProfile(profile);
-    currentGovernance.editorial.tone = "formal";
+    // Pinned, so it governs. A non-pinned editorial value is not an opinion and
+    // `resolveSemantic` would pass the learned dimension straight through.
+    currentGovernance.editorial.tone = { primary: "forensic" };
+    currentGovernance.editorial.explicitFields = ["tone"];
 
     const { container } = render(
       <VersionDiff
@@ -79,7 +80,7 @@ describe("VersionDiff", () => {
     expect(within(container).queryByText("No unsaved profile changes.")).not.toBeInTheDocument();
     expect(within(container).getByText("Governance policy changes")).toBeInTheDocument();
     expect(within(container).getByText("Editorial policy")).toBeInTheDocument();
-    expect(within(container).getAllByText(/tone: formal/)).toHaveLength(2);
+    expect(within(container).getAllByText(/tone: primary: forensic/)).toHaveLength(2);
   });
 
   it("reports when the draft matches the saved baseline", () => {

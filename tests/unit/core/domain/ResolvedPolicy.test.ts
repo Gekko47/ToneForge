@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
+import { createEmptySemanticStyleProfile } from "../../../../src/core/domain/SemanticStyleProfile";
 import {
   createGovernanceProfile,
   GovernanceProfileSchema,
@@ -7,6 +8,15 @@ import {
 } from "../../../../src/core/domain/GovernanceProfile";
 import { resolveResolvedPolicy } from "../../../../src/core/domain/ResolvedPolicy";
 
+const SEMANTIC = createEmptySemanticStyleProfile();
+
+/**
+ * Learned evidence in V2 form.
+ *
+ * Built from the V2 default rather than a hand-written literal, so a field added
+ * to the schema does not make this fixture a type error and a "fix the fixture"
+ * chore. The values that matter to each case are set explicitly below.
+ */
 function learnedProfile() {
   return StyleProfileSchema.parse({
     ...createEmptyProfile("Learned"),
@@ -15,7 +25,11 @@ function learnedProfile() {
       preferredTerminology: { color: "colour" },
       bannedTerms: ["obsolete"],
     },
-    semantic: { tone: "friendly", avoidWords: ["jargon"] },
+    semantic: {
+      ...SEMANTIC,
+      tone: { ...SEMANTIC.tone, primary: "persuasive" },
+      lexicalPreferences: { ...SEMANTIC.lexicalPreferences, toneAvoid: ["jargon"] },
+    },
   });
 }
 
@@ -28,10 +42,13 @@ describe("resolveResolvedPolicy", () => {
         preferredTerms: { color: "brand-color" },
         bannedTerms: ["forbidden"],
       },
-      editorial: {
-        tone: "formal",
-        avoidWords: ["slang"],
-      },
+      editorial: withExplicitEditorialFields(
+        {
+          tone: { primary: "restrained" },
+          lexicalPreferences: { toneAvoid: ["slang"] },
+        },
+        ["tone", "lexicalPreferences"],
+      ),
     });
 
     const resolved = resolveResolvedPolicy(profile, governance);
@@ -39,8 +56,16 @@ describe("resolveResolvedPolicy", () => {
     expect(resolved.typography).toEqual(profile.typography);
     expect(resolved.houseStyle.preferredTerminology).toEqual({ color: "brand-color" });
     expect(resolved.houseStyle.bannedTerms).toEqual(["obsolete", "forbidden"]);
-    expect(resolved.semantic.tone).toBe("formal");
-    expect(resolved.semantic.avoidWords).toEqual(["jargon", "slang"]);
+    // A pinned dimension is normative in full. The whole tone group is replaced
+    // by the author's, which is why the learned `secondary` list does not survive
+    // — a per-leaf merge would have kept it, and would then have meant the author
+    // had expressed an opinion about a dimension they never touched.
+    expect(resolved.semantic.tone).toEqual({
+      primary: "restrained",
+      secondary: [],
+      description: "",
+    });
+    expect(resolved.semantic.lexicalPreferences.toneAvoid).toEqual(["slang"]);
     expect(resolved.provenance).toMatchObject({
       profileId: profile.id,
       profileRevision: profile.revision,
@@ -53,8 +78,8 @@ describe("resolveResolvedPolicy", () => {
     const profile = learnedProfile();
     const resolved = resolveResolvedPolicy(profile, createGovernanceProfile(profile));
 
-    expect(resolved.semantic.tone).toBe("friendly");
-    expect(resolved.semantic.avoidWords).toEqual(["jargon"]);
+    expect(resolved.semantic.tone.primary).toBe("persuasive");
+    expect(resolved.semantic.lexicalPreferences.toneAvoid).toEqual(["jargon"]);
     expect(resolved.houseStyle.preferredTerminology).toEqual({ color: "colour" });
     expect(resolved.houseStyle.bannedTerms).toEqual(["obsolete"]);
   });
@@ -63,13 +88,15 @@ describe("resolveResolvedPolicy", () => {
     const profile = learnedProfile();
     const governance = GovernanceProfileSchema.parse({
       ...createGovernanceProfile(profile),
-      editorial: withExplicitEditorialFields({ tone: "neutral" }, ["tone"]),
+      editorial: withExplicitEditorialFields({ formality: { score: 50 } }, ["formality"]),
     });
 
     const resolved = resolveResolvedPolicy(profile, governance);
 
-    expect(resolved.editorial.tone).toBe("neutral");
-    expect(resolved.semantic.tone).toBe("neutral");
+    // 50 is the schema default, so without the pin this case would be
+    // indistinguishable from an author who never mentioned formality.
+    expect(resolved.editorial.formality).toEqual({ score: 50 });
+    expect(resolved.semantic.formality).toEqual({ score: 50, label: "" });
   });
 
   /*

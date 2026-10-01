@@ -2749,3 +2749,122 @@ formatting` governed the body style, the list standard, the table standard,
   `src/taskpane/components/ProfileSection.tsx`,
   `tests/unit/taskpane/components/DeterministicStyleSections.test.tsx`,
   `tests/unit/analysis/deterministic/deterministicReviewEngine.test.ts`.
+
+## ADR-0092: A stored shape is upgraded where it is read, not in the migration keyed to its state version
+
+- **Status**: Accepted (2026-10-01)
+- **Context**: Semantic Style V2 replaces V1's eight flat fields on
+  `StyleProfile.semantic` with sixteen grouped dimensions, and V1's eight flat
+  editorial-policy fields on `GovernanceProfile.editorial` with the same sixteen
+  as partials. The implementation plan put the conversion in
+  `migrateV13ToV14`, keyed to state version 13 — the version whose store carries
+  the old shape.
+
+  Writing it there would have been correct for a v13 store and wrong for every
+  other one. Every migration step in `migration.ts`, from `case 0` to
+  `case CURRENT_STATE_VERSION`, ends by calling `readCurrentState`, which parses
+  profiles through `ProfileRecordSchema` and governance through
+  `GovernanceProfileSchema`. A v7 store's profile carries a V1 semantic block
+  exactly as a v13 store's does; only its `version` field differs. So a conversion
+  keyed on the state version would have to be duplicated across fourteen cases to
+  cover a change in the _profile_ shape, and any one of them forgotten fails
+  silently: `ProfileRecordSchema.safeParse` rejects an unrecognised block,
+  `readProfileRecords` skips it without complaint, and the user's profiles are
+  gone with no error, no log line, and — because ADR-0010's "never crash on
+  corrupt state" is working exactly as designed — no visible symptom at all.
+
+  The plan's own exit criterion for this phase was "no UI change and zero rendered
+  pixels differ", which was already false: the V2 schema is a breaking change to
+  every reader of `profile.semantic`, so the consumer migration had to be pulled
+  into this phase regardless. The user confirmed there are no users to migrate.
+
+- **Decision**: The conversion lives in the persisted schema, as a
+  `z.preprocess` that maps a V1 block forward wherever one is found:
+  `StoredSemanticStyleSchema` on `StyleProfile.semantic` and
+  `StoredEditorialPolicySchema` on `GovernanceProfile.editorial`. The pure V2
+  schemas stay exported for callers that genuinely hold V2.
+
+  Detection is structural rather than version-stamped, for two reasons. A v13
+  block predates `schemaVersion` and arrives with no stamp at all, so "absent" has
+  to mean V1 for exactly that case; and a block that was stamped and then
+  hand-edited is still recognised. For the editorial block the primary witness is
+  the _absence_ of `explicitFields`, which is exact — the field was introduced in
+  v12, so its presence means the block was authored against V2 — with value-type
+  witnesses as a fallback for the one genuinely ambiguous case, a V1 block whose
+  only pinned field is `rhetoricalStyle`, where `"forensic"` is a valid value in
+  both schemas and no shape test can tell them apart.
+
+  `migrateV13ToV14` now adds only what is genuinely new — `semanticSampleEvidence`
+  and `semanticReviewOutcomes`, both starting empty — and states in its own
+  documentation that the semantic blocks are already upgraded by the time it runs.
+
+- **Consequences**: One implementation, reached by every read path: the state
+  migration, `loadState`, governance snapshots, and the revision trail. One place
+  to delete in state v15. The cost is that the domain schema is no longer a pure
+  description of V2, which is stated at the declaration rather than hidden.
+
+  A V1 free string is only carried into a V2 `description` when the block actually
+  contained one. `LegacySemanticProfileV1Schema` defaults `tone` to `"neutral"`,
+  so parsing an absent block yields `"neutral"` — and copying that through would
+  render a description the author never wrote, on a profile that says nothing at
+  all. A schema default is not an author's voice.
+
+  `migrateSemanticStyleFromV1` is shared with `profiler.ts`, which still receives
+  V1 from the learning prompt until P2. One implementation means a profile
+  migrated from a store and one learned today reach V2 by identical rules; two
+  implementations would be two answers to "what did V1 mean", and they would
+  drift.
+
+- **Evidence**: `src/core/domain/SemanticStyleProfile.ts`
+  (`StoredSemanticStyleSchema`, `migrateSemanticStyleFromV1`),
+  `src/core/domain/GovernanceProfile.ts` (`StoredEditorialPolicySchema`),
+  `src/core/domain/StyleProfile.ts`,
+  `tests/unit/core/domain/SemanticStyleProfile.test.ts`,
+  `tests/unit/core/state/migration-v14.test.ts`.
+
+## ADR-0093: The semantic profile namespace is read by every version, and emptied only by the v11 split
+
+- **Status**: Accepted (2026-10-01)
+- **Context**: `readCurrentState` returned `semanticProfileRecords: {}` and
+  `activeSemanticProfileId: null` unconditionally, with a comment explaining why:
+  a record predating the v11 split is by definition deterministic, so "the
+  semantic namespace starts empty" and "there is nothing to recover from a legacy
+  blob".
+
+  The reasoning is correct for a v10 store and has no bearing on any later one,
+  because the function was the shared reader for every version. A user who ran
+  Learn Style, closed the add-in, and reopened it found an empty Semantic tab
+  again: the profile had been written, `saveSemanticProfileRecord` had persisted
+  it, and `readCurrentState` had discarded it. No error, no warning, and no UI
+  explaining why a profile the user had just created was no longer there. The
+  `migrateV10ToV11` test asserting the opposite — "does not extract the semantic
+  block into a profile the user never made" — passed, because it fed a v10 blob;
+  no test fed a v13 blob carrying a semantic record, because none existed.
+
+- **Decision**: `readCurrentState` reads the namespace, normalised the same way as
+  the deterministic map — entry by entry, a record dropped individually, and the
+  active id resolved against the records that actually survived, so a dropped
+  record cannot leave the tab pointing at nothing. `migrateV10ToV11` is now the
+  single place that empties it, which is where the split is the whole point of the
+  step.
+
+  This was found by writing the v14 migration test, not by reading the code: the
+  test asserted that a V1 semantic block on a v13 record is upgraded, and there
+  was no record to upgrade.
+
+- **Consequences**: A learned semantic profile survives a reload, which is the
+  ordinary expectation and was not the behaviour. The v11 step's documented
+  behaviour is unchanged and is now enforced deliberately rather than by an
+  accident of the shared reader.
+
+  A store written by a build between v11 and this fix contains semantic records
+  that were discarded on every read; they are recovered on the next read, because
+  the discard happened at read time rather than at write time. The storage key
+  bump to `ToneForge.State.v14` makes the transition itself a separate question,
+  and one with no data at stake — ToneForge has no users.
+
+- **Evidence**: `src/core/state/migration.ts` (`readCurrentState`,
+  `migrateV10ToV11`, `normalizeSemanticRecords`, `normalizeActiveSemanticProfileId`),
+  `tests/unit/core/state/semanticRecords.test.ts`,
+  `tests/unit/core/state/migration-v11.test.ts`,
+  `tests/unit/core/state/migration-v14.test.ts`.

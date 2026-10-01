@@ -96,14 +96,34 @@ function sameValue(left: unknown, right: unknown): boolean {
 /** Fields compared when diffing two profiles. */
 const diffFields: readonly { label: string; path: readonly string[] }[] = [
   { label: "Profile name", path: ["name"] },
+  /*
+   * The sixteen semantic dimensions, each diffed as a whole group.
+   *
+   * V1 listed its eight flat fields here individually. V2 nests them, so
+   * `["semantic", "tone"]` is now an object rather than a string — `formatValue`
+   * renders it as a readable line either way, and a per-leaf diff of sixteen
+   * groups would emit a changelog nobody reads. `readingGradeTarget`,
+   * `vocabularyRegister` and `avoidWords` are gone from this list because V2 has
+   * no such fields: the first two are carried in `legacyV1` for display only, and
+   * the third became `lexicalPreferences.toneAvoid`. A diff entry for a field
+   * that can no longer be edited is a line that can never change.
+   */
   { label: "Tone", path: ["semantic", "tone"] },
   { label: "Voice", path: ["semantic", "voice"] },
   { label: "Formality", path: ["semantic", "formality"] },
-  { label: "Reading grade target", path: ["semantic", "readingGradeTarget"] },
-  { label: "Preferred sentence length", path: ["semantic", "preferredSentenceLength"] },
-  { label: "Vocabulary register", path: ["semantic", "vocabularyRegister"] },
+  { label: "Register", path: ["semantic", "register"] },
+  { label: "Assertion style", path: ["semantic", "assertionStyle"] },
+  { label: "Qualification style", path: ["semantic", "qualificationStyle"] },
+  { label: "Evidence framing", path: ["semantic", "evidenceFraming"] },
+  { label: "Uncertainty style", path: ["semantic", "uncertaintyStyle"] },
+  { label: "Sentence architecture", path: ["semantic", "sentenceArchitecture"] },
+  { label: "Paragraph architecture", path: ["semantic", "paragraphArchitecture"] },
+  { label: "Transitions", path: ["semantic", "transitions"] },
+  { label: "Agency", path: ["semantic", "agency"] },
+  { label: "Technicality", path: ["semantic", "technicality"] },
   { label: "Rhetorical style", path: ["semantic", "rhetoricalStyle"] },
-  { label: "Avoid words", path: ["semantic", "avoidWords"] },
+  { label: "Conclusion style", path: ["semantic", "conclusionStyle"] },
+  { label: "Lexical preferences", path: ["semantic", "lexicalPreferences"] },
   { label: "Em dash", path: ["typography", "emDash"] },
   { label: "Em dash spacing", path: ["typography", "emDashSpacing"] },
   { label: "En dash spacing", path: ["typography", "enDashSpacing"] },

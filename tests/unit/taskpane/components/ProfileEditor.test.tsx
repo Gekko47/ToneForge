@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createEmptyProfile, type StyleProfile } from "../../../../src/core/domain/StyleProfile";
+import { createEmptySemanticStyleProfile } from "../../../../src/core/domain/SemanticStyleProfile";
 import {
   createRecord,
   effectiveProfile,
@@ -12,6 +13,7 @@ import ProfileEditor from "../../../../src/taskpane/components/ProfileEditor";
 import { sampleTypography } from "../../../fixtures/sampleDocs";
 
 const STAMP = "2024-01-01T00:00:00.000Z";
+const SEMANTIC = createEmptySemanticStyleProfile();
 
 const mocks = vi.hoisted(() => ({
   loadState: vi.fn(),
@@ -43,14 +45,10 @@ function makeProfile(): StyleProfile {
   return {
     ...createEmptyProfile("Saved profile", 1),
     semantic: {
-      tone: "neutral",
-      voice: "third-person",
-      formality: 50,
-      readingGradeTarget: null,
-      preferredSentenceLength: 22,
-      vocabularyRegister: "standard",
-      rhetoricalStyle: "direct",
-      avoidWords: ["very"],
+      ...SEMANTIC,
+      tone: { ...SEMANTIC.tone, primary: "neutral" },
+      formality: { score: 50, label: "" },
+      lexicalPreferences: { ...SEMANTIC.lexicalPreferences, toneAvoid: ["very"] },
     },
     typography: sampleTypography(),
     houseStyle: {
@@ -312,14 +310,11 @@ describe("ProfileEditor", () => {
     const other: StyleProfile = {
       ...createEmptyProfile("Other profile", 1),
       semantic: {
-        tone: "formal",
-        voice: "second-person",
-        formality: 70,
-        readingGradeTarget: null,
-        preferredSentenceLength: 24,
-        vocabularyRegister: "technical",
-        rhetoricalStyle: "analytical",
-        avoidWords: [],
+        ...SEMANTIC,
+        tone: { ...SEMANTIC.tone, primary: "assertive" },
+        formality: { score: 70, label: "" },
+        register: { primary: "technical", description: "" },
+        rhetoricalStyle: "forensic",
       },
       typography: sampleTypography({
         emDash: "hyphen",

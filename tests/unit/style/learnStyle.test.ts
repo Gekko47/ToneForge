@@ -43,7 +43,10 @@ describe("learnStyleDraft", () => {
     });
 
     expect(result.evidence.semanticIncluded).toBe(true);
-    expect(result.draft.semantic.tone).toBe("professional");
+    // V1's free-string tone lands in `tone.description`: V2 has no enum trait
+    // named "professional", and guessing one would be an invented claim.
+    expect(result.draft.semantic.tone.description).toBe("professional");
+    expect(result.draft.semantic.legacyV1?.tone).toBe("professional");
     expect(result.draft.sourceSampleIds).toHaveLength(1);
   });
 

@@ -1,6 +1,7 @@
 import { FindingSchema, type Finding } from "../../src/core/domain/Finding";
 import { DocumentNodeSchema } from "../../src/core/domain/DocumentSnapshot";
 import { TypographyRulesSchema } from "../../src/core/domain/StyleProfile";
+import { createEmptySemanticStyleProfile } from "../../src/core/domain/SemanticStyleProfile";
 
 /**
  * Build a valid `Finding` for a component or integration test.
@@ -85,14 +86,16 @@ export const SAMPLE_PROFILE = {
     sampleWordCount: 24,
   },
   semantic: {
-    tone: "neutral",
-    voice: "third-person",
-    formality: 50,
-    readingGradeTarget: null,
-    preferredSentenceLength: 12,
-    vocabularyRegister: "standard",
-    rhetoricalStyle: "direct",
-    avoidWords: [],
+    ...createEmptySemanticStyleProfile(),
+    tone: { primary: "neutral", secondary: [], description: "" },
+    formality: { score: 50, label: "" },
+    sentenceArchitecture: {
+      complexity: "moderate",
+      clauseDensity: "medium",
+      targetWords: 12,
+      coordination: "mixed",
+      shortClosingSentence: false,
+    },
   },
   typography: {
     emDash: "em",

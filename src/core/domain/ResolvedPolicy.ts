@@ -14,14 +14,34 @@ import {
   HouseStyleSchema,
   LanguageConventionProfileSchema,
   TerminologyRuleSchema,
-  SemanticProfileSchema,
   StyleProfileSchema,
   TypographyRulesSchema,
   type HouseStyle,
   type LanguageConventionProfile,
-  type SemanticProfile,
   type StyleProfile,
 } from "./StyleProfile";
+import {
+  SEMANTIC_DIMENSIONS,
+  SemanticStyleProfileSchema,
+  ToneProfileSchema,
+  VoiceProfileSchema,
+  FormalityProfileSchema,
+  RegisterProfileSchema,
+  AssertionStyleProfileSchema,
+  QualificationProfileSchema,
+  EvidenceFramingProfileSchema,
+  UncertaintyProfileSchema,
+  SentenceArchitectureProfileSchema,
+  ParagraphArchitectureProfileSchema,
+  TransitionProfileSchema,
+  AgencyProfileSchema,
+  TechnicalityProfileSchema,
+  RhetoricalStyleProfileSchema,
+  ConclusionStyleProfileSchema,
+  LexicalSemanticProfileSchema,
+  type SemanticStyleProfile,
+} from "./SemanticStyleProfile";
+import { type EditorialOverrideField } from "./GovernanceProfile";
 
 /**
  * The immutable policy consumed by analysis and planning.
@@ -48,7 +68,7 @@ export const ResolvedPolicySchema = z.object({
   language: LanguageConventionProfileSchema,
   formatting: DocumentFormattingProfileSchema,
   structure: DocumentStructureProfileSchema,
-  semantic: SemanticProfileSchema,
+  semantic: SemanticStyleProfileSchema,
   scope: ScopePolicySchema,
   protection: ProtectionPolicySchema,
   editorial: EditorialPolicySchema,
@@ -141,46 +161,75 @@ function resolveLanguage(
   });
 }
 
-function resolveSemantic(learned: SemanticProfile, editorial: EditorialPolicy): SemanticProfile {
-  const defaults = EditorialPolicySchema.parse({});
-  const explicit = new Set<string>(editorial.explicitFields);
+/**
+ * The full schema for one dimension, keyed by name.
+ *
+ * A map rather than sixteen hand-written branches so that adding a dimension to
+ * `SEMANTIC_DIMENSIONS` cannot leave this function silently unaware of it: the
+ * type is derived from the list, so a new dimension is a compile error here until
+ * it is given a schema.
+ */
+const DIMENSION_SCHEMAS = {
+  tone: ToneProfileSchema,
+  voice: VoiceProfileSchema,
+  formality: FormalityProfileSchema,
+  register: RegisterProfileSchema,
+  assertionStyle: AssertionStyleProfileSchema,
+  qualificationStyle: QualificationProfileSchema,
+  evidenceFraming: EvidenceFramingProfileSchema,
+  uncertaintyStyle: UncertaintyProfileSchema,
+  sentenceArchitecture: SentenceArchitectureProfileSchema,
+  paragraphArchitecture: ParagraphArchitectureProfileSchema,
+  transitions: TransitionProfileSchema,
+  agency: AgencyProfileSchema,
+  technicality: TechnicalityProfileSchema,
+  rhetoricalStyle: RhetoricalStyleProfileSchema,
+  conclusionStyle: ConclusionStyleProfileSchema,
+  lexicalPreferences: LexicalSemanticProfileSchema,
+} as const satisfies Record<EditorialOverrideField, z.ZodTypeAny>;
 
-  // A normative value wins when the governance author set it, or when it differs
-  // from the schema default. Records written before explicit-set metadata
-  // existed carry an empty list, so only their non-default values override
-  // learned evidence.
-  const value = <T>(field: string, normative: T, learnedValue: T, defaultValue: T): T =>
-    explicit.has(field) || !Object.is(normative, defaultValue) ? normative : learnedValue;
+/**
+ * Merge learned evidence with the governance author's editorial pins.
+ *
+ * **Pinning is per dimension and takes the whole dimension.** A dimension named
+ * in `explicitFields` is parsed through its full schema — which fills any leaf the
+ * author left out with that leaf's default — and replaces the learned dimension
+ * outright. A dimension not named is learned, in full.
+ *
+ * The alternative, a per-leaf merge, is unsound: `EditorialPolicySchema` stores
+ * partial objects, and parsing a partial through a schema whose leaves have
+ * defaults returns a complete object. An author who set only `tone.primary`
+ * would therefore overwrite a learned `tone.secondary` with `[]` without ever
+ * having expressed an opinion about it. Whole-dimension pinning makes the rule one
+ * sentence and makes it predictable, which is the only property an override needs.
+ *
+ * The V1 rule this replaces was "a normative value wins when the author set it, or
+ * when it differs from the default". `migrateV13ToV14` reproduces it by putting
+ * every non-default V1 field into `explicitFields`, so a migrated policy governs
+ * exactly what it used to govern.
+ */
+function resolveSemantic(
+  learned: SemanticStyleProfile,
+  editorial: EditorialPolicy,
+): SemanticStyleProfile {
+  const pinned = new Set<string>(editorial.explicitFields);
+  const merged: Record<string, unknown> = { ...learned };
 
-  return SemanticProfileSchema.parse({
-    tone: value("tone", editorial.tone, learned.tone, defaults.tone),
-    voice: value("voice", editorial.voice, learned.voice, defaults.voice),
-    formality: value("formality", editorial.formality, learned.formality, defaults.formality),
-    readingGradeTarget: value(
-      "readingGradeTarget",
-      editorial.readingGradeTarget,
-      learned.readingGradeTarget,
-      defaults.readingGradeTarget,
-    ),
-    preferredSentenceLength: value(
-      "preferredSentenceLength",
-      editorial.preferredSentenceLength,
-      learned.preferredSentenceLength,
-      defaults.preferredSentenceLength,
-    ),
-    vocabularyRegister: value(
-      "vocabularyRegister",
-      editorial.vocabularyRegister,
-      learned.vocabularyRegister,
-      defaults.vocabularyRegister,
-    ),
-    rhetoricalStyle: value(
-      "rhetoricalStyle",
-      editorial.rhetoricalStyle,
-      learned.rhetoricalStyle,
-      defaults.rhetoricalStyle,
-    ),
-    avoidWords: unique([...learned.avoidWords, ...editorial.avoidWords]),
+  SEMANTIC_DIMENSIONS.forEach((dimension) => {
+    if (!pinned.has(dimension)) return;
+    const authoritative = editorial[dimension];
+    if (authoritative === undefined) return;
+    const schema = DIMENSION_SCHEMAS[dimension] as z.ZodTypeAny;
+    merged[dimension] = schema.parse(authoritative);
+  });
+
+  // `legacyV1` is the migration's record of what could not be mapped, not a
+  // style value. A pin never invents one and never carries a learned one forward,
+  // so it is copied through untouched rather than merged.
+  return SemanticStyleProfileSchema.parse({
+    ...merged,
+    schemaVersion: learned.schemaVersion,
+    ...(learned.legacyV1 === undefined ? {} : { legacyV1: learned.legacyV1 }),
   });
 }
 

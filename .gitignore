@@ -39,6 +39,14 @@ manifest*.xml
 *.tsbuildinfo
 tsconfig.tsbuildinfo
 
+## External working documents
+# Specification and review material kept alongside the repository rather than
+# inside it. These are inputs, not source: they are not type-checked, not built,
+# and not covered by tests, and committing them would imply the repository
+# verifies something it does not. `plans/` holds the distilled, repository-
+# grounded result and *is* tracked.
+/systematic review/
+
 ## Coverage
 coverage/
 .nyc_output/

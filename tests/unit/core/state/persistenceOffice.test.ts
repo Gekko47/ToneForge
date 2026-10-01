@@ -92,6 +92,8 @@ describe("persistence with Office roamingSettings", () => {
       ignoredFindings: [],
       reviewedFindings: [],
       deterministicReviewSession: null,
+      semanticSampleEvidence: {},
+      semanticReviewOutcomes: [],
       activeProfileId: null,
       governanceProfiles: {},
       governanceHistory: {},

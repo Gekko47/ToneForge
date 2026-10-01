@@ -19,7 +19,7 @@ describe("captureSample", () => {
     const snapshot = makeSnapshot("Document body text that is long enough.");
     const result = captureSample("Selection text here.", snapshot);
     expect(result.text).toBe("Selection text here.");
-    expect(result.source).toBe("selection");
+    expect(result.source).toBe("word_selection");
     expect(result.documentId).toBe("doc-1");
   });
 
@@ -27,7 +27,7 @@ describe("captureSample", () => {
     const snapshot = makeSnapshot("Document body text that is long enough.");
     const result = captureSample("   ", snapshot);
     expect(result.text).toBe("Document body text that is long enough.");
-    expect(result.source).toBe("document");
+    expect(result.source).toBe("word_document");
   });
 
   it("respects preferSelection=false", () => {
@@ -36,7 +36,7 @@ describe("captureSample", () => {
       preferSelection: false,
     });
     expect(result.text).toBe("Document body text that is long enough.");
-    expect(result.source).toBe("document");
+    expect(result.source).toBe("word_document");
   });
 
   it("truncates to maxChars", () => {
@@ -67,14 +67,36 @@ describe("captureFromText", () => {
     // Not "document". A string handed to this function is pasted text, and the
     // learned profile is attributed to this value in the evidence it shows — so
     // a wrong default is a wrong record of where the profile came from.
-    expect(result.source).toBe("pasted");
+    expect(result.source).toBe("pasted_text");
     expect(result.paragraphs).toHaveLength(2);
     expect(result.wordCount).toBeGreaterThan(0);
   });
 
   it("attributes the sample to the source the caller declares", () => {
-    expect(captureFromText(SAMPLE_TEXT, { source: "selection" }).source).toBe("selection");
-    expect(captureFromText(SAMPLE_TEXT, { source: "document" }).source).toBe("document");
+    expect(captureFromText(SAMPLE_TEXT, { source: "word_selection" }).source).toBe(
+      "word_selection",
+    );
+    expect(captureFromText(SAMPLE_TEXT, { source: "word_document" }).source).toBe("word_document");
+  });
+
+  it("keeps a file's name on a .txt import and nowhere else", () => {
+    // The name is the difference between "learned from expert-report.txt" and
+    // "learned from text you pasted", as evidence the user can check. Recording
+    // it against a pasted sample would attribute a name to something that has
+    // none.
+    expect(
+      captureFromText(SAMPLE_TEXT, { source: "text_file", filename: "expert.txt" }).filename,
+    ).toBe("expert.txt");
+    expect(
+      captureFromText(SAMPLE_TEXT, { source: "pasted_text", filename: "expert.txt" }).filename,
+    ).toBeUndefined();
+  });
+
+  it("hashes the sample so two captures can be compared without keeping either", () => {
+    const a = captureFromText(SAMPLE_TEXT);
+    const b = captureFromText(`  ${SAMPLE_TEXT}  `);
+    expect(a.sampleHash).toBe(b.sampleHash);
+    expect(a.sampleHash).not.toBe(captureFromText(`${SAMPLE_TEXT} Extra.`).sampleHash);
   });
 
   it("trims surrounding whitespace", () => {

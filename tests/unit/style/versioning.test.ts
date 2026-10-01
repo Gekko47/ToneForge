@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { diffProfiles, formatChangelog } from "../../../src/style/versioning";
-import { createEmptyProfile } from "../../../src/core/domain/StyleProfile";
+import { createEmptyProfile, StyleProfileSchema } from "../../../src/core/domain/StyleProfile";
 
 describe("diffProfiles", () => {
   it("reports no changes when profiles are identical", () => {
@@ -12,11 +12,11 @@ describe("diffProfiles", () => {
 
   it("reports changed scalar fields", () => {
     const from = createEmptyProfile("Saved profile");
-    const to = {
+    const to = StyleProfileSchema.parse({
       ...from,
       name: "Edited profile",
-      semantic: { ...from.semantic, tone: "conversational" },
-    };
+      semantic: { ...from.semantic, tone: { ...from.semantic.tone, primary: "persuasive" } },
+    });
     const diff = diffProfiles(from, to);
     expect(diff.changedCount).toBe(2);
     const fields = diff.changes.map((c) => c.field);

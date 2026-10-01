@@ -34,10 +34,17 @@ import {
   type ReviewedFinding,
 } from "../domain/Finding";
 import { DeterministicReviewSessionSchema } from "../domain/ReviewSession";
+import {
+  appendSemanticOutcome,
+  SemanticReviewOutcomeSchema,
+  SemanticSampleEvidenceSchema,
+  type SemanticReviewOutcome,
+  type SemanticSampleEvidence,
+} from "../domain/SemanticReviewSession";
 import { CURRENT_STATE_VERSION, migrate } from "./migration";
 
 const StateSchema = z.object({
-  version: z.number().int().nonnegative().default(13),
+  version: z.number().int().nonnegative().default(14),
   profileRecords: z.record(z.string().uuid(), ProfileRecordSchema).default({}),
   activeProfileId: z.string().uuid().nullable().default(null),
   governanceProfiles: z.record(z.string().uuid(), GovernanceProfileSchema).default({}),
@@ -103,6 +110,37 @@ const StateSchema = z.object({
    * had just been invalidated.
    */
   deterministicReviewSession: DeterministicReviewSessionSchema.nullable().default(null),
+  /**
+   * v14. The evidence behind each learned semantic profile: where the sample
+   * came from, how large it was, and a hash of it.
+   *
+   * **Metadata only, and the schema has no field that could hold the sample.**
+   * The spec §7 asks for "persisted sample metadata — never raw sample text",
+   * and the interesting half of that requirement is the part that is easy to
+   * leave undone: a record that carries `text` would satisfy every stated
+   * requirement while storing a second copy of the user's writing. The absence is
+   * enforced by a reflection test over the schema's shape rather than by
+   * convention, mirroring the `ProviderConnection` credential test.
+   *
+   * Keyed by uuid so a profile revision can cite the exact evidence it was
+   * learned from, the way a `ChangePlan` cites a profile revision.
+   */
+  semanticSampleEvidence: z.record(z.string().uuid(), SemanticSampleEvidenceSchema).default({}),
+  /**
+   * v14. What became of each completed semantic review, newest last.
+   *
+   * Persisted because "did my last semantic review actually get written" is a
+   * question a user will ask and the pane cannot answer it from memory — a
+   * reload loses the session, and a session that is lost and a review that was
+   * never applied look identical without this.
+   *
+   * Deliberately minimal. There is no user-facing history surface and none is
+   * specified, so the entries carry counts and outcomes rather than text,
+   * excerpts, or document identity; `SemanticReviewOutcomeSchema` is
+   * reflection-tested for the same reason the evidence record is. See
+   * `SemanticReviewSession.ts` for what an earlier draft got wrong here.
+   */
+  semanticReviewOutcomes: z.array(SemanticReviewOutcomeSchema).default([]),
   settings: z
     .object({
       openAiBaseUrl: z.string().url().optional(),
@@ -148,8 +186,9 @@ const StateSchema = z.object({
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v13";
+const STORAGE_KEY = "ToneForge.State.v14";
 const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v13",
   "ToneForge.State.v12",
   "ToneForge.State.v11",
   "ToneForge.State.v10",
@@ -617,16 +656,72 @@ export function loadSemanticProfileRecord(id: string): ProfileRecord | null {
   return loadState().semanticProfileRecords[id] ?? null;
 }
 
-/** Create and persist a new semantic profile record, and make it active. */
+/**
+ * Create and persist a new semantic profile record.
+ *
+ * **`activate` defaults to true, and that default is the behaviour being
+ * changed.** It used to activate unconditionally, which made "Save" and "Save
+ * and set active" the same control — and the specification's §11 learned-profile
+ * review requires them to be different: a user who has learned a second profile
+ * from a pasted sample must be able to look at it without the review pipeline
+ * switching to it underneath them.
+ *
+ * Defaulting to `true` rather than `false` keeps every existing caller correct
+ * without being edited. A new flag on a public writer is the kind of change that
+ * silently alters behaviour at the call sites nobody looked at, and the cost of
+ * guarding that is one boolean at four call sites.
+ */
 export function createSemanticProfileRecord(
   name: string,
   now: string,
   seed?: StyleProfile,
+  options: { activate?: boolean } = {},
 ): ProfileRecord {
   const record = createRecord(newProfileId(), name, now, seed, "semantic");
   saveSemanticProfileRecord(record);
-  setActiveSemanticProfile(record.id);
+  if (options.activate ?? true) setActiveSemanticProfile(record.id);
   return record;
+}
+
+/**
+ * Record the evidence behind a learned profile.
+ *
+ * Idempotent on `id`, so re-learning from the same captured sample overwrites the
+ * evidence rather than accumulating near-duplicates. The sample's hash is stored,
+ * never the sample.
+ */
+export function saveSemanticSampleEvidence(evidence: SemanticSampleEvidence): void {
+  const parsed = SemanticSampleEvidenceSchema.parse(evidence);
+  const state = loadState();
+  state.semanticSampleEvidence = {
+    ...state.semanticSampleEvidence,
+    [parsed.id]: parsed,
+  };
+  saveState(state);
+}
+
+/** The evidence for a sample, or null when none was recorded. */
+export function loadSemanticSampleEvidence(id: string): SemanticSampleEvidence | null {
+  return loadState().semanticSampleEvidence[id] ?? null;
+}
+
+/**
+ * Record what became of a semantic review.
+ *
+ * One row per session, newest last, capped — see `appendSemanticOutcome`, which
+ * replaces a session's earlier outcome rather than appending a second one. A
+ * review that was applied, regenerated, and applied again is one review with two
+ * outcomes, and three rows would imply three reviews happened.
+ */
+export function saveSemanticReviewOutcome(outcome: SemanticReviewOutcome): void {
+  const state = loadState();
+  state.semanticReviewOutcomes = appendSemanticOutcome(state.semanticReviewOutcomes, outcome);
+  saveState(state);
+}
+
+/** Every recorded semantic review outcome, oldest first. */
+export function loadSemanticReviewOutcomes(): SemanticReviewOutcome[] {
+  return loadState().semanticReviewOutcomes;
 }
 
 /**

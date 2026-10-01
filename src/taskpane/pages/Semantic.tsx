@@ -375,7 +375,7 @@ export default function Semantic({
     try {
       const includeSemantic =
         settings.semanticOptIn && isRemoteProviderConfigured(settings, state.providerConnections);
-      const result = await learnStyleDraft(captureFromText(text, { source: "pasted" }), {
+      const result = await learnStyleDraft(captureFromText(text, { source: "pasted_text" }), {
         name: "Learned semantic style",
         includeSemantic,
         ...(includeSemantic

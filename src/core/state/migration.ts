@@ -21,9 +21,16 @@ import {
   type ReviewedFinding,
 } from "../domain/Finding";
 import { DeterministicReviewSessionSchema } from "../domain/ReviewSession";
+import {
+  appendSemanticOutcome,
+  SemanticReviewOutcomeSchema,
+  SemanticSampleEvidenceSchema,
+  type SemanticReviewOutcome,
+  type SemanticSampleEvidence,
+} from "../domain/SemanticReviewSession";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 13;
+export const CURRENT_STATE_VERSION = 14;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
@@ -94,6 +101,8 @@ export function migrate(raw: unknown): PersistedState {
       return migrateV11ToV12(obj);
     case 12:
       return migrateV12ToV13(obj);
+    case 13:
+      return migrateV13ToV14(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -111,11 +120,47 @@ function defaultState(): PersistedState {
     ignoredFindings: [],
     reviewedFindings: [],
     deterministicReviewSession: null,
+    semanticSampleEvidence: {},
+    semanticReviewOutcomes: [],
     governanceProfiles: DEFAULT_GOVERNANCE_PROFILES,
     governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
     settings: { ...DEFAULT_SETTINGS },
     providerConnections: {},
+  };
+}
+
+/**
+ * v13 -> v14: Semantic Style V2, plus the two records the semantic tab needs to
+ * be honest about where a profile came from.
+ *
+ * **The semantic blocks are already upgraded by the time this runs, and that is
+ * the point.** Every migration step ends at `readCurrentState`, which parses
+ * through `StyleProfileSchema`, whose `semantic` field is
+ * `StoredSemanticStyleSchema` — a preprocessor that maps a V1 block forward
+ * wherever it finds one. Duplicating the mapping here would give two
+ * implementations of "what did V1 mean", and they would drift: the one in the
+ * schema is exercised by every read path, including a v7 store arriving directly
+ * at `migrateLegacyToCurrent`, while the one here would only ever run for exactly
+ * version 13. A v10 store's profile carries a V1 semantic block exactly as a v13
+ * store's does, and a migration keyed on the state version cannot see that.
+ *
+ * So this step adds only what is genuinely new, and says so.
+ *
+ * **`semanticSampleEvidence` starts empty and nothing is inferred for it.** A v13
+ * store records that a profile was learned but not from what, so there is
+ * nothing to carry. Fabricating an entry — a zero-word sample, or a
+ * `word_document` attribution for a profile learned by pasting — would put a
+ * claim on screen that no evidence supports, and the tab is required to be able
+ * to say "learned before sample evidence was recorded" rather than to always have
+ * something to show.
+ */
+function migrateV13ToV14(obj: Record<string, unknown>): PersistedState {
+  return {
+    ...readCurrentState(obj),
+    version: CURRENT_STATE_VERSION,
+    semanticSampleEvidence: {},
+    semanticReviewOutcomes: [],
   };
 }
 
@@ -221,7 +266,18 @@ function rekeyIgnoredFindings(entries: readonly IgnoredFinding[]): IgnoredFindin
  * Style creates the first semantic profile for real.
  */
 function migrateV10ToV11(obj: Record<string, unknown>): PersistedState {
-  return readCurrentState(obj);
+  /*
+   * The one place the semantic namespace is deliberately emptied.
+   *
+   * `readCurrentState` reads `semanticProfileRecords` — it did not before P1,
+   * which meant a learned semantic profile was written to the store and then
+   * silently dropped at the next load, at every version. Emptying it here, where
+   * the split is the whole point of the step, keeps this step's documented
+   * behaviour ("nothing is extracted into a semantic record") and stops it from
+   * being enforced by an accident of the shared reader.
+   */
+  const current = readCurrentState(obj);
+  return { ...current, semanticProfileRecords: {}, activeSemanticProfileId: null };
 }
 
 /**
@@ -353,15 +409,30 @@ function readCurrentState(obj: Record<string, unknown>): PersistedState {
     version: CURRENT_STATE_VERSION,
     profileRecords,
     activeProfileId: normalizeActiveProfileId(obj.activeProfileId, profileRecords),
-    // A legacy record predates the split, so it is a deterministic one. The
-    // semantic namespace starts empty: there is no learned style to recover
-    // from a legacy blob, and inventing a profile the user never made would be
-    // worse than an empty tab they can fill.
-    semanticProfileRecords: {},
-    activeSemanticProfileId: null,
+    /*
+     * The semantic namespace is read, not discarded.
+     *
+     * It was hard-coded empty here until P1, which is correct for a v10 store —
+     * nothing predating v11 ever wrote one — and wrong for every later one: a
+     * profile the user learned with Learn Style was persisted and then dropped on
+     * the next load, with no error and no UI explaining why the tab was empty
+     * again. A store the user cannot get their learned style back from is not a
+     * store. `migrateV10ToV11` is now the step that empties it, deliberately.
+     *
+     * Normalised before the active id is resolved, for the same reason the
+     * deterministic map is: a record dropped as invalid must not stay reachable
+     * through `activeSemanticProfileId`.
+     */
+    semanticProfileRecords: normalizeSemanticRecords(obj.semanticProfileRecords),
+    activeSemanticProfileId: normalizeActiveSemanticProfileId(
+      obj.activeSemanticProfileId,
+      normalizeSemanticRecords(obj.semanticProfileRecords),
+    ),
     ignoredFindings: normalizeIgnoredFindings(obj.ignoredFindings),
     reviewedFindings: normalizeReviewedFindings(obj.reviewedFindings),
     deterministicReviewSession: normalizeReviewSession(obj.deterministicReviewSession),
+    semanticSampleEvidence: normalizeSemanticSampleEvidence(obj.semanticSampleEvidence),
+    semanticReviewOutcomes: normalizeSemanticReviewOutcomes(obj.semanticReviewOutcomes),
     governanceProfiles: normalizeGovernanceProfiles(obj.governanceProfiles),
     governanceHistory: normalizeGovernanceHistory(obj.governanceHistory, obj.governanceProfiles),
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
@@ -384,6 +455,8 @@ function readLegacyState(obj: Record<string, unknown>): PersistedState {
     activeSemanticProfileId: null,
     ignoredFindings: [],
     reviewedFindings: [],
+    semanticSampleEvidence: {},
+    semanticReviewOutcomes: [],
     deterministicReviewSession: null,
     activeProfileId,
     governanceProfiles,
@@ -497,6 +570,45 @@ function normalizeRecords(raw: unknown): Record<string, ProfileRecord> {
     }
   });
   return result;
+}
+
+/**
+ * The semantic namespace, read the same way as the deterministic one.
+ *
+ * Same rule, same reason: a record that fails to parse is dropped individually so
+ * one malformed profile cannot cost the rest, and it stops being reachable
+ * through the active id. The namespace is separate because semantic review is a
+ * separate product — but a namespace the user can write to and never read back
+ * is not a namespace.
+ */
+function normalizeSemanticRecords(raw: unknown): Record<string, ProfileRecord> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const result: Record<string, ProfileRecord> = {};
+  Object.entries(raw as Record<string, unknown>).forEach(([id, record]) => {
+    if (!z.string().uuid().safeParse(id).success) return;
+    const parsed = ProfileRecordSchema.safeParse(record);
+    if (parsed.success && parsed.data.id === id && parsed.data.kind === "semantic") {
+      result[id] = parsed.data;
+    }
+  });
+  return result;
+}
+
+/**
+ * The active semantic profile, or null.
+ *
+ * Null is a real state the Semantic tab has to render: with no profile there is
+ * no learned style to review against, and falling back to the deterministic one
+ * would rewrite a paragraph against typography rules. Resolved against the
+ * records that survived, so a dropped record cannot leave the tab pointing at
+ * nothing.
+ */
+function normalizeActiveSemanticProfileId(
+  raw: unknown,
+  records: Record<string, ProfileRecord>,
+): string | null {
+  if (typeof raw !== "string") return null;
+  return records[raw] === undefined ? null : raw;
 }
 
 function normalizeLifecycles(raw: unknown): Record<string, ProfileLifecycleShape> {
@@ -620,6 +732,41 @@ function normalizeReviewedFindings(raw: unknown): ReviewedFinding[] {
     if (parsed.success) byIdentity.set(parsed.data.identity, parsed.data);
   });
   return Array.from(byIdentity.values()).sort((a, b) => a.reviewedAt.localeCompare(b.reviewedAt));
+}
+
+/**
+ * Stored sample evidence, entry by entry.
+ *
+ * Dropped individually rather than wholesale, exactly as `normalizeRecords`
+ * does: one evidence record written by a future build, or corrupted by a partial
+ * write, must not cost the evidence for every other profile.
+ */
+function normalizeSemanticSampleEvidence(raw: unknown): Record<string, SemanticSampleEvidence> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const result: Record<string, SemanticSampleEvidence> = {};
+  for (const [id, evidence] of Object.entries(raw as Record<string, unknown>)) {
+    const parsed = SemanticSampleEvidenceSchema.safeParse(evidence);
+    if (parsed.success && parsed.data.id === id) {
+      result[id] = parsed.data;
+    }
+  }
+  return result;
+}
+
+/**
+ * Recorded semantic review outcomes: one row per session, capped, oldest first.
+ *
+ * `appendSemanticOutcome` does the deduplication and the cap, and it is the same
+ * function the writer uses — so a store read back and written again cannot grow a
+ * different way than one written once.
+ */
+function normalizeSemanticReviewOutcomes(raw: unknown): SemanticReviewOutcome[] {
+  if (!Array.isArray(raw)) return [];
+  const collapsed = raw.reduce<SemanticReviewOutcome[]>((entries, entry) => {
+    const parsed = SemanticReviewOutcomeSchema.safeParse(entry);
+    return parsed.success ? appendSemanticOutcome(entries, parsed.data) : entries;
+  }, []);
+  return collapsed.sort((a, b) => a.at.localeCompare(b.at));
 }
 
 function normalizeGovernanceProfiles(raw: unknown): Record<string, GovernanceProfile> {

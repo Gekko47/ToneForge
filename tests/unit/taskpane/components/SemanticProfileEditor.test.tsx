@@ -1,112 +1,193 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import SemanticProfileEditor from "../../../../src/taskpane/components/SemanticProfileEditor";
-import { createEmptyProfile } from "../../../../src/core/domain/StyleProfile";
+import { createEmptySemanticStyleProfile } from "../../../../src/core/domain/SemanticStyleProfile";
+import type { SemanticStyleProfile } from "../../../../src/core/domain/SemanticStyleProfile";
 
-const SEMANTIC = {
-  ...createEmptyProfile("x", 1).semantic,
-  tone: "neutral",
-  voice: "third-person",
-  formality: 50,
-  readingGradeTarget: null,
-  preferredSentenceLength: 20,
-  vocabularyRegister: "standard" as const,
-  rhetoricalStyle: "direct",
-  avoidWords: ["very"],
+const SEMANTIC: SemanticStyleProfile = {
+  ...createEmptySemanticStyleProfile(),
+  tone: { primary: "neutral", secondary: [], description: "" },
+  formality: { score: 50, label: "" },
+  sentenceArchitecture: {
+    complexity: "moderate",
+    clauseDensity: "medium",
+    targetWords: 20,
+    coordination: "mixed",
+    shortClosingSentence: false,
+  },
+  lexicalPreferences: {
+    toneAvoid: ["very"],
+    prefersNeutralVerbs: true,
+    evaluativeLanguage: "restrained",
+  },
 };
 
+/** Fluent renders options in a portal, so choosing one is two clicks. */
+async function choose(label: string, option: string): Promise<void> {
+  await userEvent.click(screen.getByLabelText(label));
+  await userEvent.click(await screen.findByText(option));
+}
+
 describe("SemanticProfileEditor", () => {
-  it("saves an edited tone rather than only displaying it", async () => {
+  it("saves an edited dimension rather than only displaying it", async () => {
     /*
      * The whole point of moving these fields off the style tab. There they were
      * rendered read-only while `buildCandidate` wrote them back on every save,
      * so a learned tone was silently reset by an unrelated edit.
+     *
+     * Every dimension is now a closed enum rather than a free string, so the
+     * control is a dropdown. That is not cosmetic: V1 accepted any text as a
+     * tone, which meant a typo was indistinguishable from a style decision and
+     * both were saved.
      */
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
 
-    const tone = screen.getByLabelText("Tone") as HTMLInputElement;
-    await userEvent.clear(tone);
-    await userEvent.type(tone, "formal");
-    expect(onSave).not.toHaveBeenCalled();
+    await choose("Primary tone", "Assertive");
 
-    await userEvent.tab();
-    expect(onSave).toHaveBeenCalledTimes(1);
-    expect(onSave.mock.calls[0]?.[0]).toMatchObject({ tone: "formal" });
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({ tone: { primary: "assertive" } });
   });
 
   it("saves once per edit rather than once per keystroke", async () => {
     /*
-     * updateDraft assigns a new revision on every save, so a per-keystroke save
-     * would fill the revision trail with "n", "fo", "for" — a trail that can no
+     * `updateDraft` assigns a new revision on every save, so a per-keystroke save
+     * would fill the revision trail with "2", "20", "24" — a trail that can no
      * longer tell anyone what a user actually changed.
      */
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
 
-    await userEvent.clear(screen.getByLabelText("Tone"));
-    await userEvent.type(screen.getByLabelText("Tone"), "formal");
-    await userEvent.tab();
+    const field = screen.getByLabelText(/Sentence length/);
+    await userEvent.clear(field);
+    await userEvent.type(field, "24");
+    expect(onSave).not.toHaveBeenCalled();
 
-    expect(onSave).toHaveBeenCalledTimes(1);
+    await userEvent.tab();
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
   });
 
-  it("keeps the saved tone when the field is cleared rather than storing nothing", async () => {
+  it("clamps a number to its documented range instead of storing it raw", async () => {
+    /*
+     * The bound is the schema's, and the control states it in its own label
+     * ("Sentence length (5-60)"). Storing 900 would produce a profile no engine
+     * can reason about, and the Zod check would refuse the save — leaving a field
+     * that silently discards what was typed into it.
+     */
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
 
-    await userEvent.clear(screen.getByLabelText("Tone"));
+    const field = screen.getByLabelText(/Sentence length/);
+    await userEvent.clear(field);
+    await userEvent.type(field, "900");
     await userEvent.tab();
 
-    // Tone is a required string. Blanking it and saving an empty tone would
-    // write a profile that no engine can reason about.
-    expect(onSave.mock.calls[0]?.[0]).toMatchObject({ tone: "neutral" });
+    await waitFor(() =>
+      expect(onSave.mock.calls.at(-1)?.[0]).toMatchObject({
+        sentenceArchitecture: { targetWords: 60 },
+      }),
+    );
   });
 
-  it("reads a blank reading-grade target as no target, not as zero", async () => {
+  it("keeps the stored value when the number is cleared, rather than storing nothing", async () => {
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
 
-    const grade = screen.getByLabelText(/Reading grade target/i) as HTMLInputElement;
-    await userEvent.clear(grade);
+    const field = screen.getByLabelText(/Sentence length/);
+    await userEvent.clear(field);
     await userEvent.tab();
 
-    // Zero is a real grade. A cleared field means "no target", and a profile
-    // that asks for a grade of zero is a different thing from one that has none.
-    expect(onSave.mock.calls.at(-1)?.[0]).toMatchObject({ readingGradeTarget: null });
+    // A blank field is not a sentence length of zero; it is an absent edit, and
+    // the value the profile already had is the truth.
+    expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("splits the avoid list into one entry per line and drops blanks", async () => {
+  it("splits the tone-avoid list into one entry per line and drops blanks", async () => {
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
 
-    const avoid = screen.getByLabelText(/Words to avoid/i) as HTMLTextAreaElement;
-    await userEvent.clear(avoid);
-    await userEvent.type(avoid, "very{enter}{enter}really");
-    await userEvent.tab();
+    const avoid = screen.getByLabelText(/Words to avoid for tone/i) as HTMLTextAreaElement;
+    // One change event carrying the whole textarea value, rather than a
+    // keystroke sequence. Each edit clones the `semantic` prop, so a stream of
+    // events against a frozen prop would have every one of them start from the
+    // original and the last would win with a single character. That is a real
+    // property of the component, and this case is about the line-splitting, not
+    // about how a paste is delivered.
+    fireEvent.change(avoid, { target: { value: "very\n\nreally" } });
 
-    expect(onSave.mock.calls.at(-1)?.[0]).toMatchObject({ avoidWords: ["very", "really"] });
+    await waitFor(() =>
+      expect(onSave.mock.calls.at(-1)?.[0]).toMatchObject({
+        lexicalPreferences: { toneAvoid: ["very", "really"] },
+      }),
+    );
   });
 
   it("re-seeds when a different profile is edited, rather than keeping stale values", async () => {
     /*
      * Without this the form keeps the previously edited profile's values, and
      * saving writes them onto whichever profile is now open.
+     *
+     * The numeric field holds local draft state for the keystroke, so it is the
+     * one place a stale value can survive a profile switch; the dropdowns read
+     * straight from props and cannot.
      */
     const onSave = vi.fn();
     const { rerender } = render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
 
     rerender(
       <SemanticProfileEditor
-        semantic={{ ...SEMANTIC, tone: "conversational", formality: 20 }}
+        semantic={{
+          ...SEMANTIC,
+          sentenceArchitecture: {
+            ...SEMANTIC.sentenceArchitecture,
+            targetWords: 30,
+          },
+        }}
         onSave={onSave}
       />,
     );
 
     await waitFor(() =>
-      expect((screen.getByLabelText("Tone") as HTMLInputElement).value).toBe("conversational"),
+      expect((screen.getByLabelText(/Sentence length/) as HTMLInputElement).value).toBe("30"),
     );
-    expect((screen.getByLabelText(/Formality/) as HTMLInputElement).value).toBe("20");
+  });
+
+  it("states a migrated profile's unmappable values instead of hiding them", () => {
+    /*
+     * V2 has no home for a V1 reading-grade target or vocabulary register, so the
+     * migration carries them in `legacyV1`. A value the editor cannot show is a
+     * value that would otherwise look as though it had never existed — so the
+     * carrier is surfaced, with the statement that nothing reads it.
+     */
+    render(
+      <SemanticProfileEditor
+        semantic={{
+          ...SEMANTIC,
+          legacyV1: {
+            readingGradeTarget: 14,
+            vocabularyRegister: "academic",
+            tone: "restrained",
+            voice: "third-person",
+            rhetoricalStyle: "direct",
+          },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/reading grade target 14/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing reads them/i)).toBeInTheDocument();
+  });
+
+  it("does not claim a migrated carrier on a profile that never had one", () => {
+    /*
+     * `legacyV1` is optional precisely so its absence is a signal. A default of
+     * `{}` would make "nothing was carried" indistinguishable from "nothing
+     * needed carrying", and the notice above would appear on every new profile.
+     */
+    render(<SemanticProfileEditor semantic={SEMANTIC} onSave={vi.fn()} />);
+
+    expect(screen.queryByText(/carried from an earlier style profile/i)).toBeNull();
   });
 });

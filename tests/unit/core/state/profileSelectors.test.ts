@@ -44,6 +44,8 @@ function state(records: ProfileRecord[], activeProfileId: string | null = null):
     ignoredFindings: [],
     reviewedFindings: [],
     deterministicReviewSession: null,
+    semanticSampleEvidence: {},
+    semanticReviewOutcomes: [],
     governanceProfiles: {},
     governanceHistory: {},
     activeGovernanceProfileId: null,

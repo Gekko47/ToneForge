@@ -11,6 +11,16 @@
 
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
+import { StoredSemanticStyleSchema } from "./SemanticStyleProfile";
+
+export type {
+  SemanticStyleProfile,
+  SemanticDimension,
+  SemanticStyleProfileSchema,
+  StoredSemanticStyleSchema,
+  SEMANTIC_DIMENSIONS,
+  SEMANTIC_STYLE_SCHEMA_VERSION,
+} from "./SemanticStyleProfile";
 
 /**
  * A profile revision is a plain monotonically increasing integer.
@@ -532,18 +542,14 @@ export const HouseStyleSchema = z.object({
 
 export type HouseStyle = z.infer<typeof HouseStyleSchema>;
 
-export const SemanticProfileSchema = z.object({
-  tone: z.string().trim().min(1).default("neutral"),
-  voice: z.string().trim().min(1).default("third-person"),
-  formality: z.number().min(0).max(100).default(50),
-  readingGradeTarget: z.number().min(0).max(20).nullable().default(null),
-  preferredSentenceLength: z.number().min(5).max(60).default(22),
-  vocabularyRegister: z.enum(["simple", "standard", "technical", "academic"]).default("standard"),
-  rhetoricalStyle: z.string().trim().min(1).default("direct"),
-  avoidWords: z.array(z.string()).default([]),
-});
-
-export type SemanticProfile = z.infer<typeof SemanticProfileSchema>;
+// The V1 semantic shape is declared in `SemanticStyleProfile.ts`, not here.
+// Re-exported so the migration has one import site to change when V1 is retired;
+// see that module's header for why declaring it here would make the two files
+// import each other.
+export {
+  LegacySemanticProfileV1Schema,
+  type LegacySemanticProfileV1,
+} from "./SemanticStyleProfile";
 
 export const MeasuredProfileSchema = z.object({
   avgSentenceLength: z.number().nullable().default(null),
@@ -610,7 +616,14 @@ export const StyleProfileSchema = z.object({
   revision: RevisionSchema,
   kind: ProfileKindSchema.default("deterministic"),
   measured: MeasuredProfileSchema,
-  semantic: SemanticProfileSchema,
+  /**
+   * V2, sixteen grouped dimensions.
+   *
+   * The deterministic engine never reads this field — it refuses a `kind:
+   * "semantic"` profile outright — so its size costs nothing on the scanning path
+   * and is paid only by the semantic tab and the review prompt.
+   */
+  semantic: StoredSemanticStyleSchema,
   typography: TypographyRulesSchema,
   houseStyle: HouseStyleSchema,
   /**

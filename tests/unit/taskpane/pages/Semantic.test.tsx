@@ -183,7 +183,7 @@ describe("learning a style from pasted text", () => {
     // The same gate and the same profiler: a paste is not a way around either.
     expect(mocks.getDocumentSnapshot).not.toHaveBeenCalled();
     const [sample] = mocks.learnStyleDraft.mock.calls.at(-1) ?? [];
-    expect(sample).toMatchObject({ source: "pasted" });
+    expect(sample).toMatchObject({ source: "pasted_text" });
   });
 
   it("cannot fire with an empty box, rather than reporting a bad sample", () => {
@@ -251,9 +251,9 @@ describe("the semantic profile surface", () => {
     const user = userEvent.setup();
     renderPage();
 
-    const tone = await screen.findByLabelText("Tone");
-    await user.clear(tone);
-    await user.type(tone, "Measured");
+    // Fluent renders dropdown options in a portal, so choosing one is two clicks.
+    await user.click(await screen.findByLabelText("Primary tone"));
+    await user.click(await screen.findByText("Assertive"));
     await user.tab();
 
     await waitFor(() => expect(mocks.saveSemanticProfileRecord).toHaveBeenCalled());
@@ -262,7 +262,7 @@ describe("the semantic profile surface", () => {
     // the same id would leave the two namespaces silently divergent: the
     // rewrite would reason about a voice the editor no longer shows.
     expect(saved?.kind).toBe("semantic");
-    expect(saved?.draft?.semantic.tone).toBe("Measured");
+    expect(saved?.draft?.semantic.tone.primary).toBe("assertive");
   });
 
   it("hands the rewrite the profile it just edited", async () => {
@@ -271,9 +271,8 @@ describe("the semantic profile surface", () => {
     mocks.proposeSemanticRewrite.mockResolvedValue(sampleFinding({ actionable: true }));
     renderPage();
 
-    const tone = await screen.findByLabelText("Tone");
-    await user.clear(tone);
-    await user.type(tone, "Clipped");
+    await user.click(await screen.findByLabelText("Primary tone"));
+    await user.click(await screen.findByText("Explanatory"));
     await user.tab();
 
     await user.click(await screen.findByRole("button", { name: "Read current selection" }));
@@ -284,7 +283,7 @@ describe("the semantic profile surface", () => {
     // is the second argument.
     const [, profile] = mocks.proposeSemanticRewrite.mock.calls.at(-1) ?? [];
     // The engine reasons about this profile, so the edit has to be in it.
-    expect(profile?.semantic.tone).toBe("Clipped");
+    expect(profile?.semantic.tone.primary).toBe("explanatory");
   });
 });
 
@@ -350,7 +349,7 @@ describe("the Semantic tab", () => {
     );
     renderPage();
 
-    expect(screen.getByLabelText("Tone")).not.toBeDisabled();
+    expect(screen.getByLabelText("Primary tone")).not.toBeDisabled();
   });
 
   it("states a missing measurement as absent rather than as zero", () => {

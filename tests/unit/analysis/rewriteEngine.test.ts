@@ -4,9 +4,11 @@ import {
   proposeSemanticRewrite,
 } from "../../../src/analysis/rewriteEngine";
 import { createEmptyProfile, type StyleProfile } from "../../../src/core/domain/StyleProfile";
+import { createEmptySemanticStyleProfile } from "../../../src/core/domain/SemanticStyleProfile";
 import type { DocumentNode } from "../../../src/core/domain/DocumentSnapshot";
 
 const SELECTION = "Onboarding takes about two weeks to complete.";
+const SEMANTIC = createEmptySemanticStyleProfile();
 
 const NODE: DocumentNode = {
   nodeId: "n1",
@@ -19,14 +21,10 @@ function profile(): StyleProfile {
   return {
     ...createEmptyProfile("House", 1),
     semantic: {
-      tone: "neutral",
-      voice: "third-person",
-      formality: 50,
-      readingGradeTarget: null,
-      preferredSentenceLength: 20,
-      vocabularyRegister: "standard",
-      rhetoricalStyle: "direct",
-      avoidWords: [],
+      ...SEMANTIC,
+      tone: { ...SEMANTIC.tone, primary: "neutral" },
+      formality: { score: 50, label: "" },
+      sentenceArchitecture: { ...SEMANTIC.sentenceArchitecture, targetWords: 20 },
     },
   };
 }

@@ -8,6 +8,27 @@
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { StyleProfileSchema, type StyleProfile } from "./StyleProfile";
+import {
+  RHETORICAL_STYLE_VALUES,
+  SEMANTIC_DIMENSIONS,
+  v1EditorialPins,
+  ToneProfileSchema,
+  VoiceProfileSchema,
+  FormalityProfileSchema,
+  RegisterProfileSchema,
+  AssertionStyleProfileSchema,
+  QualificationProfileSchema,
+  EvidenceFramingProfileSchema,
+  UncertaintyProfileSchema,
+  SentenceArchitectureProfileSchema,
+  ParagraphArchitectureProfileSchema,
+  TransitionProfileSchema,
+  AgencyProfileSchema,
+  TechnicalityProfileSchema,
+  RhetoricalStyleProfileSchema,
+  ConclusionStyleProfileSchema,
+  LexicalSemanticProfileSchema,
+} from "./SemanticStyleProfile";
 
 export const ScopePolicySchema = z.object({
   includeBody: z.boolean().default(true),
@@ -108,39 +129,179 @@ export const TerminologyPolicySchema = z.object({
 
 export type TerminologyPolicy = z.infer<typeof TerminologyPolicySchema>;
 
-/** Editorial fields a governance author can pin explicitly. */
-export const EDITORIAL_OVERRIDE_FIELDS = [
-  "tone",
-  "voice",
-  "formality",
-  "readingGradeTarget",
-  "preferredSentenceLength",
-  "vocabularyRegister",
-  "rhetoricalStyle",
-] as const;
+/**
+ * The dimensions a governance author can pin, which are the sixteen semantic
+ * dimensions and nothing else.
+ *
+ * **Expanded from V1 during P1, and this is the point of D2/R1.** The
+ * specification's §36 file list does not mention `GovernanceProfile.ts`, so
+ * reading that list literally would replace the learned schema's eight flat
+ * fields with sixteen groups while leaving `EditorialPolicySchema` on the old
+ * eight. `resolveSemantic` would then find no counterpart for any of the new
+ * dimensions, and a governance author who had set `editorial.tone` would
+ * silently stop governing tone — with no error, no failed assertion, and no
+ * change in coverage, because the rule that reads the resolved policy has not
+ * moved. The field list and the merge rule are one contract, and a spec that
+ * revises one without the other is a silent regression rather than a smaller
+ * scope.
+ */
+export const EDITORIAL_OVERRIDE_FIELDS = SEMANTIC_DIMENSIONS;
 
 export type EditorialOverrideField = (typeof EDITORIAL_OVERRIDE_FIELDS)[number];
 
+/**
+ * Authoring shape: every dimension partial, so an author can state one leaf.
+ *
+ * `partial()` is what makes "no opinion" expressible. A fully-defaulted object
+ * could not distinguish "the author set formality to 50" from "the author never
+ * mentioned formality", and `explicitFields` would then be carrying the entire
+ * meaning of the policy on its own.
+ */
 export const EditorialPolicySchema = z.object({
-  tone: z.string().trim().min(1).default("neutral"),
-  voice: z.string().trim().min(1).default("third-person"),
-  formality: z.number().min(0).max(100).default(50),
-  readingGradeTarget: z.number().min(0).max(20).nullable().default(null),
-  preferredSentenceLength: z.number().min(5).max(60).default(22),
-  vocabularyRegister: z.enum(["simple", "standard", "technical", "academic"]).default("standard"),
-  rhetoricalStyle: z.string().trim().min(1).default("direct"),
-  avoidWords: z.array(z.string()).default([]),
+  tone: ToneProfileSchema.partial().default({}),
+  voice: VoiceProfileSchema.partial().default({}),
+  formality: FormalityProfileSchema.partial().default({}),
+  register: RegisterProfileSchema.partial().default({}),
+  assertionStyle: AssertionStyleProfileSchema.partial().default({}),
+  qualificationStyle: QualificationProfileSchema.partial().default({}),
+  evidenceFraming: EvidenceFramingProfileSchema.partial().default({}),
+  uncertaintyStyle: UncertaintyProfileSchema.partial().default({}),
+  sentenceArchitecture: SentenceArchitectureProfileSchema.partial().default({}),
+  paragraphArchitecture: ParagraphArchitectureProfileSchema.partial().default({}),
+  transitions: TransitionProfileSchema.optional(),
+  agency: AgencyProfileSchema.partial().default({}),
+  technicality: TechnicalityProfileSchema.partial().default({}),
+  rhetoricalStyle: RhetoricalStyleProfileSchema.optional(),
+  conclusionStyle: ConclusionStyleProfileSchema.partial().default({}),
+  lexicalPreferences: LexicalSemanticProfileSchema.partial().default({}),
   /**
-   * Fields the governance author set on purpose. A pinned field stays
-   * authoritative even when its value equals the schema default, which is
-   * otherwise indistinguishable from an unset field. Records written before
-   * this metadata existed parse with an empty list and keep the legacy rule
-   * where only non-default values override learned evidence.
+   * The dimensions the author pinned on purpose.
+   *
+   * **Pinning is per dimension and takes the whole dimension**, not per leaf.
+   * A pinned dimension is normative in full; an unpinned one is learned in full.
+   * Leaf-by-leaf merging was the first design and it is unsound here: parsing a
+   * partial object through a schema whose leaves have defaults returns a
+   * *complete* object, so an author who set only `tone.primary` would silently
+   * overwrite a learned `tone.secondary` with `[]`. Whole-dimension pinning makes
+   * the rule one sentence, and it is the one an author can actually predict.
+   *
+   * A record written before this metadata existed parses with an empty list,
+   * which is correct: nothing was pinned. `migrateV13ToV14` populates it for the
+   * V1 fields that were non-default, which is the legacy rule restated.
    */
   explicitFields: z.array(z.enum(EDITORIAL_OVERRIDE_FIELDS)).default([]),
 });
 
 export type EditorialPolicy = z.infer<typeof EditorialPolicySchema>;
+
+/**
+ * Map a V1 editorial block onto V2, marking each dimension the author pinned.
+ *
+ * **Two mappings, not one, because V1's rule was "non-default".** Before v12
+ * there was no `explicitFields`, so a stored V1 policy had no record of intent —
+ * only values. `v1EditorialPins` therefore recomputes the legacy rule ("a value
+ * counts as pinned when it differs from the schema default") and this maps the
+ * values themselves onto the dimensions that now hold them.
+ *
+ * The one field that cannot be carried is the pair V2 has no dimension for
+ * (`vocabularyRegister`, `readingGradeTarget`). A governance author who pinned
+ * either of those governed nothing under V2, and the migration test asserts that
+ * rather than leaving it to be discovered later as a policy that used to apply
+ * and does not.
+ */
+function migrateEditorialFromV1(value: unknown): Record<string, unknown> {
+  const source = (typeof value === "object" && value !== null ? value : {}) as Record<
+    string,
+    unknown
+  >;
+  const has = (key: string): boolean => Object.prototype.hasOwnProperty.call(source, key);
+
+  const mapped: Record<string, unknown> = {};
+  if (has("tone") && typeof source.tone === "string") {
+    mapped.tone = { description: String(source.tone) };
+  }
+  if (has("voice") && typeof source.voice === "string") {
+    mapped.voice = { description: String(source.voice) };
+  }
+  if (has("formality") && typeof source.formality === "number") {
+    mapped.formality = { score: Math.round(source.formality) };
+  }
+  if (has("preferredSentenceLength") && typeof source.preferredSentenceLength === "number") {
+    mapped.sentenceArchitecture = { targetWords: source.preferredSentenceLength };
+  }
+  if (
+    has("rhetoricalStyle") &&
+    typeof source.rhetoricalStyle === "string" &&
+    isV2RhetoricalStyle(source.rhetoricalStyle)
+  ) {
+    mapped.rhetoricalStyle = source.rhetoricalStyle;
+  }
+  if (has("avoidWords") && Array.isArray(source.avoidWords)) {
+    mapped.lexicalPreferences = { toneAvoid: source.avoidWords };
+  }
+
+  mapped.explicitFields = v1EditorialPins(source);
+  return mapped;
+}
+
+/**
+ * A V2 rhetorical style value, as a runtime guard.
+ *
+ * V1 accepted any string here. A stored `"flowery"` must not become a pin on a
+ * dimension it cannot express, so the mapping drops the value rather than
+ * guessing which V2 trait was meant.
+ */
+function isV2RhetoricalStyle(value: string): boolean {
+  return RHETORICAL_STYLE_VALUES.has(value);
+}
+
+/**
+ * The field as read from a store: a V1 editorial block is mapped forward, and
+ * `explicitFields` is populated from the legacy "non-default" rule when the stored
+ * block predates v12 and therefore carries none.
+ *
+ * Same reasoning as `StoredSemanticStyleSchema`, and the same hazard avoided: a
+ * v13 governance profile with `editorial: { tone: "formal" }` read through the
+ * V2 schema alone would parse to an all-default policy with no pins, and
+ * `resolveSemantic` would then report the profile as governing nothing — a policy
+ * that silently stopped applying, with no error anywhere.
+ */
+export const StoredEditorialPolicySchema = z.preprocess((value) => {
+  const source = (typeof value === "object" && value !== null ? value : {}) as Record<
+    string,
+    unknown
+  >;
+  /*
+   * The absence of `explicitFields` is the primary witness, and it is exact.
+   *
+   * The field was introduced in v12, so a block that carries it was authored
+   * against V2 and needs no mapping. The value-type witnesses below are
+   * fallbacks for the genuinely ambiguous case: a V1 block whose only pinned
+   * field is `rhetoricalStyle`, where "forensic" is a valid value in *both*
+   * schemas and no shape test can tell them apart. Without the `explicitFields`
+   * test that block would parse unmapped with an empty pin list — a policy that
+   * used to govern rhetorical style and silently stops, which is the D2/R1
+   * regression in its most literal form.
+   */
+  const isV1 =
+    !Array.isArray(source.explicitFields) ||
+    typeof source.tone === "string" ||
+    typeof source.voice === "string" ||
+    typeof source.formality === "number" ||
+    typeof source.preferredSentenceLength === "number" ||
+    typeof source.readingGradeTarget === "number" ||
+    typeof source.vocabularyRegister === "string" ||
+    Array.isArray(source.avoidWords);
+  if (!isV1) return value;
+  return {
+    ...migrateEditorialFromV1(source),
+    explicitFields:
+      Array.isArray(source.explicitFields) && source.explicitFields.length > 0
+        ? source.explicitFields
+        : v1EditorialPins(source),
+  };
+}, EditorialPolicySchema);
+export type StoredEditorialPolicy = z.output<typeof StoredEditorialPolicySchema>;
 
 /** Mark editorial fields as explicitly set so a default value stays authoritative. */
 export function withExplicitEditorialFields(
@@ -219,7 +380,7 @@ export const GovernanceProfileSchema = z.object({
   terminology: TerminologyPolicySchema.default({}),
   scope: ScopePolicySchema.default({}),
   protection: ProtectionPolicySchema.default({}),
-  editorial: EditorialPolicySchema.default({}),
+  editorial: StoredEditorialPolicySchema.default({}),
   provenance: z.object({
     createdAt: z.string().datetime(),
     createdBy: z.string().trim().min(1),
