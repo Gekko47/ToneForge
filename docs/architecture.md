@@ -28,7 +28,7 @@ Measured analysis           Optional semantic analysis
     +-------------+----------------+
     |                              |
     v                              v
-Deterministic rules/formatting   Optional AI review
+Deterministic rules/formatting   Consistency review
     |                              |
     +-------------+----------------+
                   v
@@ -42,8 +42,42 @@ Deterministic rules/formatting   Optional AI review
                   |
            Word revisionAdapter
                   |
-             Word revisions
+              Word revisions
+
+
+Semantic Review is a SECOND path, and it is drawn separately because the two
+share only the writer:
+
+    Word selection
+        |
+        v
+  selectionScope            a local read: selection text, offsets, anchor
+        |                   no whole-document read, no document hash
+        v
+  semantic review engine    the only LLM call; bounded by MAX_REVIEW_SELECTION_CHARS
+        |                   returns a value, never a ChangePlan
+        v
+  preservationValidator     local, deterministic: protected facts, qualifiers
+        |
+        v
+  SemanticReviewResult      assessment + proposed revision + preservation report
+        |
+        v
+  reformat/semanticApply    approved as a value -> ONE Change -> ChangePlan
+        |
+        +------------------> the same stale/conflict/protection/preservation
+        |                     checks, then the same adapter. No Finding, so
+        |                     nothing can be skipped by omission (ADR-0097).
+        v
+  Word revisionAdapter
 ```
+
+**Why the second path is drawn rather than merged.** ADR-0055 removed the semantic
+output from the findings list, so the two no longer share a data structure \u2014 only
+a writer. Keeping them in one diagram would suggest the semantic review produces
+findings, which is exactly the claim the split removed. `analysis/semantic/` is
+forbidden from importing `reformat` and `changes`, so the engine cannot build a
+plan even if a caller asked it to.
 
 ## Module boundaries
 
@@ -53,6 +87,7 @@ Deterministic rules/formatting   Optional AI review
 | `rules`, `formatting`, `style/metrics` | `core/domain`, `shared/utils`                                                           | `ai`, `Office`, UI                                              |
 | `analysis`                             | `core/domain`, `rules`, `formatting`, `ai/providers`, `shared/utils`                    | UI, `word/revisionAdapter`                                      |
 | `analysis/consistency`                 | `core/domain`, `ai/providers`, `shared/utils`                                           | `word`, `taskpane`, `commands`, `reformat`, `changes`, `Office` |
+| `analysis/semantic`                    | `core/domain`, `ai/providers`, `shared/utils`                                           | `word`, `taskpane`, `commands`, `reformat`, `changes`, `Office` |
 | `changes`                              | `core/domain`, `shared/utils`                                                           | analysis, rules, formatting, style, ai, word, UI, `Office`      |
 | `reformat`                             | core, analysis, changes, formatting DTOs, word boundary, AI providers, shared utilities | taskpane, commands, direct `Office.run`                         |
 | `word`                                 | shared Office helpers, core domain, and permitted deterministic readers                 | AI, UI                                                          |

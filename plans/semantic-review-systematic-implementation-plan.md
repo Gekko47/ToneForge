@@ -1803,7 +1803,7 @@ review page's states written from the gates that produce them.
    \u2014 it costs nothing, breaks nothing, and reports a situation that cannot
    occur \u2014 so the claim is now an assertion.
 
-### P11 — Documentation and governance
+#### P11 — Documentation and governance _(LANDED 2026-10-02)_
 
 `docs/decision-log.md` (ADR-0092 and any amendment to ADR-0052, ADR-0064, ADR-0076,
 ADR-0078), `ROADMAP.md` (stage 19 status and a new semantic-review ledger entry),
@@ -1812,13 +1812,64 @@ ADR-0078), `ROADMAP.md` (stage 19 status and a new semantic-review ledger entry)
 `docs/manual-verification.md` (new host procedures). `npm run docs:validate` and
 `npm run skills:validate` are graph stages and must pass.
 
-### P12 — Host verification _(human, remains open)_
+**Exit, as met.** ADR-0092, ADR-0093, ADR-0094 and ADR-0095 landed in P1, P5 and
+P6; P11 adds four **amendments** rather than new numbers, because each changes a
+decision already on the log: ADR-0096 (the sanctioned non-deterministic set is
+`consistency/` **and** `semantic/`, amending ADR-0052's "single exception", which
+had drifted from the code in both directions), ADR-0097 (a revision is approved as
+a value, amending ADR-0064 and ADR-0078), ADR-0098 (learning produces a draft,
+amending ADR-0081 and ADR-0076), ADR-0099 (eligibility and confidence are two axes,
+amending ADR-0081). Amendments are appended rather than edited in, so a reader
+consulting a superseded decision can see what it was and what changed it.
+
+Stage 19 moves to **PASS WITH DOCUMENTED LIMITATION** with a new semantic-review
+ledger in `ROADMAP.md`, one row per phase, every row marked repository-verified
+only. `docs/architecture.md` gains the `analysis/semantic` boundary row and a
+**second flow diagram** for the semantic path, drawn separately because the two
+share only a writer and a single diagram would suggest the review produces
+findings \u2014 the claim the split removed. `project-state.md`,
+`privacy-security.md`, `accessibility.md` and `CHANGELOG.md` each gain a section
+written from what the code enforces rather than from what the specification asked
+for.
+
+**Deviations.**
+
+1. **ADR-0098 and ADR-0099 are new numbers, not amendments, where the plan
+   expected an amendment to ADR-0076 and ADR-0081 to suffice.** Both are recorded as
+   amendments _to_ those two, and both also state a standing rule the originals do
+   not contain: that a draft is not active until a second press, and that a level
+   never blocks. An amendment that only records a code change leaves the next
+   reader with the original text and no rule.
+2. **Stage 19 is now a documented limitation rather than a plain PASS.** The plan
+   left the status alone. The row previously described two engines that P7 deleted,
+   so keeping PASS would have left a ledger row describing code that is not there.
+   The new row names what replaced them and what is unmeasured.
+3. **The architecture document gained a second diagram rather than a second table
+   row only.** The plan asked for boundary rows. A row for `analysis/semantic` is
+   there, and the flow is drawn separately too, because the single existing diagram
+   ends at `Findings[] \u2192 ChangePlan` and the semantic path does not go through
+   `Findings[]` at all.
+
+#### P12 — Host verification _(procedures written; human execution OPEN)_
 
 New entries in [`manual-verification.md`](../docs/manual-verification.md): selection
 readback, tracked-revision apply and reject, preservation false-positive sampling
 over real expert prose, and the two-page navigation. Recorded as **procedures**,
 not results. Per ADR-0051, a green automated run is never reported as a release,
 and `npm run release:check` stays blocked.
+
+**Exit, as met.** Four procedure groups written, per host, and one more recording
+what is **deliberately absent** \u2014 no poller, no user-visible history, no
+"changed since last review" counter, no telemetry \u2014 because each is a decision
+and a reader who does not know that will read each as an omission. The P9
+navigation procedure was written in P9 because the manifests it verifies were
+edited there.
+
+**The phase remains open.** Nothing in it has been executed. `npm run host:matrix`
+still reports 0 hosts fully passing, the selection-change question (ADR-0094) is
+unanswered, and the preservation false-positive rate is unmeasured \u2014 the
+procedure says a rate above roughly one in ten calls for narrowing the heuristics
+rather than tuning, which is the sentence that keeps the measurement honest.
 
 ---
 

@@ -85,3 +85,44 @@ Run `npm run lint` — the `jsx-a11y` plugin flags violations automatically. The
 component suite covers disabled reasons, status announcements, Escape/focus
 restoration, and keyboard focus containment. Live screen-reader, browser, ribbon,
 and Word-host evidence remains a release gate and is not claimed by unit tests.
+
+## The two semantic pages
+
+**One live region per page, and the two pages are not both on screen.** The old
+single tab had one; each page has its own, because only one is ever mounted. The
+subtle case was the record section: `ProfileRecordSection` renders a polite region
+of its own, and mounting it on the Semantic Style page would have produced a second.
+It now renders that region only when it is the only thing speaking and hands the
+sentence to the page's region when it is not — so publishing a draft and learning
+a style cannot speak from two places in the same tick, which is the failure ADR-0062
+was written to prevent. The header's scan time is plain text for the same reason.
+
+**Every disabled control states its reason beside it.** The two pages share one pure
+gate module, so a button and the sentence next to it cannot disagree, and the
+sentence always names the control that resolves it (ADR-0069). A greyed-out control
+with no visible reason is indistinguishable from a broken one.
+
+**Consent never disables the editor.** Typing a tone into a local field sends
+nothing, so a user who declined semantic consent can still write their own style.
+Gating the editor on consent locked out exactly the person the permission is meant
+to protect.
+
+**Reading a selection is not gated on consent at all.** It is a local Word call. A
+user who declined AI consent must still be able to see what they have selected, or
+the page reads as broken rather than as private.
+
+**The sample-quality badge is a persistent, non-transient notice.** It carries the
+word count, the level and the consequence in text, and only the two thin bands ask
+for an acknowledgement through a labelled checkbox. A transient warning trains
+users to dismiss the one signal that would matter at 40 words.
+
+**Structural controls, not colour.** The diagnostics disclosure is a `button` with
+`aria-expanded`; the before/after comparison is a table; the assessment is a
+description list with visible terms; the preservation summary separates hard from
+soft findings as text as well as by weight. The focus order on each page follows
+the reading order: breadcrumb, learn, the reason for anything disabled, picker,
+editor, activation, diagnostics, record history.
+
+**Still unverified.** Nothing in this section is screen-reader evidence. These are
+markup and wiring claims, checked by tests; the listening is in
+`manual-verification.md`, and it is open.

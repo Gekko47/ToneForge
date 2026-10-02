@@ -445,6 +445,89 @@ Per host (Windows desktop, Mac desktop, Word on the web):
 Record the host and version for each. A label that is correct in one manifest and
 stale in the other is a passing build and a wrong product, so check both.
 
+## Open gate — the semantic review path (P12)
+
+Everything below is a **procedure, not a result**. The P12 phase of
+[`plans/semantic-review-systematic-implementation-plan.md`](../plans/semantic-review-systematic-implementation-plan.md)
+is open, and per ADR-0051 nothing in it may be marked passed from an automated
+run. Each procedure is per host: Windows desktop, Mac desktop, Word on the web.
+
+### 1. Selection readback
+
+1. Open a document with at least three paragraphs of distinct text. Select
+   exactly the second one.
+2. Press **Semantic Review**, then **Use current selection**. Confirm the scope card
+   shows the _second_ paragraph and not the first, not the third, and not the whole
+   document.
+3. Confirm the word count matches. Select a single word and confirm the count
+   follows it.
+4. Move the caret into another paragraph **without** pressing anything. Confirm
+   nothing on screen changes: there is no poller, and a page that re-reads on its
+   own is the defect ADR-0094 describes.
+5. Press **Use current selection** again in the new paragraph. Confirm the card
+   updates and any previous review is cleared rather than left describing text that
+   is no longer selected.
+6. Select nothing at all and press **Use current selection**. Confirm the page says
+   nothing is selected rather than reviewing an empty string.
+7. Right-click a paragraph and press the context-menu entry. Confirm the selection is
+   already read when the pane opens, with no second press.
+
+### 2. Tracked-revision apply and reject
+
+1. Select one whole paragraph, review it, and press **Apply revision**.
+2. Confirm Word records a tracked revision, that the revision appears in Word's own
+   reviewing pane, and that the author is attributed.
+3. **Reject the revision in Word.** Confirm the original text returns exactly. This is
+   the test that matters: the claim is that the write is reversible from Word, not
+   that ToneForge believes it is.
+4. Repeat with **Keep original**. Confirm nothing is written and the decision is
+   recorded in the session outcome.
+5. Edit the selected paragraph in Word _after_ the review and _before_ applying.
+   Confirm the apply is refused on the live precondition, with the reason stated,
+   and that nothing is written.
+6. On a host reporting \`supportsRangedReplacement: false\` (probe it in
+   Troubleshooting), select part of a paragraph and confirm the refusal names the
+   cause and tells you to select the whole paragraph. Then select the whole
+   paragraph and confirm the apply works on the same host.
+
+### 3. Preservation false positives on real expert prose
+
+This is the measurement with the least evidence behind it, and the procedure
+exists because the false-positive rate is **unknown**. Take six passages of
+published expert prose \u2014 technical, legal, medical, or a standards document \u2014 and:
+
+1. For each, record every protected fact by hand: dates, numbers, proper nouns,
+   negations, quoted terms.
+2. Run a review, and record every hard warning the local check raises.
+3. Classify each as a **true positive** (the revision really did change a protected
+   fact) or a **false positive** (the check objected to something the model preserved).
+4. Report the counts. A rate above roughly one in ten is a signal the qualifier
+   heuristics need narrowing, not a tuning preference \u2014 say so in the report rather
+   than adjusting the thresholds until the number looks acceptable.
+
+### 4. The two-page navigation
+
+Covered in full under "Open gate \u2014 the two semantic destinations (P9)" above. The
+one item not repeated there: confirm that the pane's **Back** from Semantic Style
+returns to Semantic Review and not to Deterministic Review, on every host.
+
+### 5. What is deliberately not built
+
+Confirm these do **not** exist, because their absence is a decision rather than an
+omission:
+
+1. No poller watching the document or the selection. A timer is a second thing to
+   keep running and to stop, which is the reasoning ADR-0079 already applied to
+   navigation.
+2. No user-visible history of past reviews. The session outcome log is internal
+   state, and the plan explicitly withdrew the earlier claim that the user could see
+   it.
+3. No "3 paragraphs changed since last review" counter. The seam exists; the value
+   does not justify it, and it would be the first step toward the continuous review
+   the specification forbids.
+4. No telemetry. ADR-0060 removed the toggle; \`TELEMETRY_DISABLED=1\` is the default
+   and no analytics endpoint is configured.
+
 ## Open gate — live accessibility evidence
 
 The accessibility claims in `docs/accessibility.md` are covered by jsx-a11y lint

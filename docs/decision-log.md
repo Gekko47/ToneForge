@@ -3009,3 +3009,147 @@ formatting` governed the body style, the list standard, the table standard,
   `tests/unit/reformat/semanticRevisionApply.test.ts`,
   `tests/integration/semanticReviewApply.test.ts`,
   `tests/integration/safeApply.test.ts`.
+
+## ADR-0096: The sanctioned non-deterministic set is `consistency/` plus `semantic/`
+
+- Amends: ADR-0052 (content consistency is a separate, opt-in, non-deterministic
+  engine), which described a set of one
+- Status: Accepted (2026-10-02)
+- **Context**: ADR-0052 named `src/analysis/consistency/` "the **single sanctioned
+  exception** to deterministic-first", and the governance rule says a second
+  exception "needs its own ADR saying so". The description had drifted from the
+  code in two directions. `deviationEngine.ts` and `rewriteEngine.ts` were already
+  LLM-calling modules living directly in `src/analysis/` — outside `consistency/`,
+  outside any exception. Then the semantic review added
+  `src/analysis/semantic/`, a second genuinely non-deterministic engine in a
+  second directory. So the rule said "one" while the code held two, and neither was
+  inside the one it named.
+- **Decision**: the sanctioned set is `src/analysis/consistency/` **and**
+  `src/analysis/semantic/`, and the rule is restated as a shape rather than a
+  count. `src/analysis/`'s general ESLint scope — which already permits
+  `ai/providers` and forbids `taskpane`, `commands`, `word/revisionAdapter` — is
+  what authorises both; a **narrower** block now mirrors the consistency block for
+  `analysis/semantic/**`, additionally forbidding `reformat` and `changes`, so
+  neither engine can reach the mutation path. `deviationEngine.ts` and
+  `rewriteEngine.ts` were deleted in P7, so the two stray engines the description
+  was wrong about no longer exist.
+- **Consequences**:
+  - A third non-deterministic engine is a change to this ADR, not an addition to a
+    list. That is the property worth keeping: the question a future change has to
+    answer is "is this the sanctioned shape?", and there is a named document to
+    amend.
+  - `semantic/` is forbidden from importing `reformat` and `changes`, so the
+    semantic review's engine cannot build a `ChangePlan`. It does not need to: P6
+    put the apply path in `reformat/semanticApply.ts`, below the UI, and the engine
+    returns a value rather than a write. The boundary is the reason that split is
+    the right way round.
+  - `moduleBoundaries.test.ts` carries a case per engine, including the bare
+    directory forms, because the flat config lists both a directory and its
+    subpaths and a rule that only matches the subpath form is not a rule.
+- **Evidence**: `eslint.config.mjs`; `src/analysis/semantic/`;
+  `tests/unit/architecture/moduleBoundaries.test.ts`; `src/reformat/semanticApply.ts`.
+
+## ADR-0097: A semantic revision is approved as a value, and the merge point reads the change
+
+- Amends: ADR-0064 (semantic findings are anchored to a verified span, or refused)
+  and ADR-0078 (the semantic rewrite is applied on its own path, sharing only the
+  writer)
+- Status: Accepted (2026-10-02)
+- **Context**: ADR-0064 anchored a semantic finding to a verified span so a rewrite
+  could not land on a stale offset. ADR-0078 then put the rewrite on its own apply
+  path — but the path still took a `Finding`, because that was the only thing the
+  page had. Writing the new path exposed two things nobody could hit before, because
+  the old writer never produced the shape that triggers them:
+  1. `validatePlanBeforeApply` read the protection and preservation checks from
+     `Finding` fields reached through `change.findingId`. A change with no
+     finding — which is what a semantic revision is, by design — skipped **both**.
+     The two guards on the sole mutation path failed open by omission.
+  2. `validateChangePreconditions` demanded a `node` precondition for a
+     paragraph-unit change **and** a `text` precondition for any `replaceText`. No
+     change satisfied both, and the paragraph unit is the only text write available
+     on every Word host, so the shape was unplannable rather than merely unused.
+- **Decision** (ADR-0095 records the code; this records the standing rule):
+  `ApprovedSemanticRevision` is what the page produces and what the apply path
+  takes. The protection and preservation checks read the `Change` — its target's
+  node ids and its precondition's `expectedText`, from either precondition kind —
+  with the `Finding` read only as the deterministic path's additional input. The
+  precondition rule is scoped to character units, so a paragraph-unit write is
+  verified against its own node text.
+- **Consequences**:
+  - A semantic revision cannot bypass a guard by arriving without a finding, which
+    is the whole of the defect. The finding is now an enrichment of the
+    deterministic path rather than the merge point's evidence.
+  - `src/reformat/semanticApply.ts` no longer imports `Finding`. There is one
+    contract, and it is the one that cannot omit its way past a check.
+  - The anchoring requirement is unchanged and still strict: the anchor is captured
+    with the selection, re-checked against the live document before the write, and
+    the write is a whole paragraph wherever the host allows it — because a partial
+    range needs `Range.set`, which Word on the web does not have. That host fact is
+    now probed (`supportsRangedReplacement`) rather than discovered at apply time,
+    so the refusal is stated before the user spends a model call.
+- **Evidence**: `src/reformat/semanticApply.ts`; `src/changes/preconditions.ts`;
+  `src/word/rangeResolution.ts`; `src/word/revisionAdapter.ts`;
+  `tests/integration/safeApply.test.ts`; `tests/unit/reformat/semanticRevisionApply.test.ts`.
+
+## ADR-0098: A style is learned into a draft, and activation is a second press
+
+- Amends: ADR-0081 (a style can be learned from pasted text, attributed as pasted)
+  and ADR-0076 (the semantic tab owns the semantic profile and its measured context)
+- Status: Accepted (2026-10-02)
+- **Context**: `createSemanticProfileRecord` activated whatever it learned, in the
+  same call that produced it. The review pipeline therefore switched to a voice the
+  user had not looked at yet, and the evidence — where the sample came from, how
+  many words it held, when — was written only if the profile was later activated. A
+  user who learned, reviewed, and then discarded had learned from something the
+  product had no record of, and the sample itself is never stored, so the metadata
+  was the only trace.
+- **Decision**: learning produces a **draft**. `activate: false` is passed to
+  `createSemanticProfileRecord`, the evidence is recorded as the style is learned
+  rather than when it is activated, and "Make this active" is a separate, explicit
+  control. The page states that an unactivated draft is not steering any review.
+- **Consequences**:
+  - A user can learn a style, read it, edit it, and publish it as a version without
+    ever switching the live voice. `ProfileRecordSection` is wired on this page for
+    the first time, which is what makes that possible: a learned profile previously
+    had no publish, activate or recall controls reachable anywhere.
+  - The evidence is metadata only, by construction of its schema, and a test asserts
+    that no sample text is present in it. `sampleHash` lets two samples be compared
+    without keeping either.
+  - The ribbon's semantic control is enabled by an **active** profile, which is
+    what it always meant; the split made the distinction visible, so the comment in
+    `ribbonState.ts` that said so was true but had no UI behind it.
+- **Evidence**: `src/taskpane/pages/SemanticStyle.tsx`;
+  `src/core/state/persistence.ts`; `src/commands/ribbonState.ts`;
+  `tests/unit/taskpane/pages/SemanticStyle.test.tsx`.
+
+## ADR-0099: Sample eligibility and sample confidence are two axes
+
+- Amends: ADR-0081 (a style can be learned from pasted text, attributed as pasted)
+- Status: Accepted (2026-10-02)
+- **Context**: `evaluateSampleQuality` returned one verdict. Below 40 words it
+  refused; above it, it said nothing — so a 45-word sample and a 5 000-word sample
+  were equally endorsed, and the profile learned from the first is a confident-
+  sounding artefact built on almost nothing. Rendering the difference as a warning
+  beside a button trains users to dismiss it, and the one signal that would matter
+  is the one they have learned to clear.
+- **Decision**: two axes. `eligible` (is it mechanically usable) is the only thing
+  that ever blocks, and keeps the name `pass` `learnStyleDraft` throws on.
+  `level` is a four-band statement of confidence, from
+  `SAMPLE_QUALITY_BANDS`, and never blocks. The band is a **persistent badge**
+  carrying the word count, the level and the consequence, and only the two thin
+  bands ask for an explicit acknowledgement. The bands are exported so the badge,
+  the gate and the tests cannot quote different numbers.
+- **Consequences**:
+  - `insufficient` is reachable twice, and the two are different facts: a sample
+    under 40 words is not eligible, and a sample of 60 is eligible at the lowest
+    band. The badge says which, and the acknowledgement is asked only for the
+    second.
+  - A band never reads as a refusal. The only sentence that says "cannot be learned"
+    is for an ineligible sample, and a test asserts the badge is absent for one.
+  - The 1 MB `.txt` cap and the extension check are in a DOM-free module
+    (`textFileImport.ts`) and the component owns the `File.text()` read, so the
+    rule is testable without a browser and the only place a `File` may be named is
+    where the DOM is.
+- **Evidence**: `src/style/sampleQuality.ts`; `src/style/textFileImport.ts`;
+  `src/taskpane/components/semantic/LearnSemanticStyle.tsx`;
+  `tests/unit/style/sampleQuality.test.ts`; `tests/unit/style/textFileImport.test.ts`.

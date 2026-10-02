@@ -1,5 +1,75 @@
 # ToneForge — Changelog
 
+## Unreleased — Semantic review (2026-10-02)
+
+Repository-complete; **host-unverified**. `npm run verify` is green across all
+thirteen stages and 2 350 tests. Per ADR-0051 that is not a release claim, and
+`npm run release:check` stays blocked. The named host procedures are in
+[`manual-verification.md`](manual-verification.md).
+
+- **The one "Semantic" tab is two pages.** `semantic-review` and
+  `semantic-style`, from one ribbon command relabelled "Semantic Review". Learning a
+  style sends a sample once and is then local; a review sends the user's own
+  paragraph on every press. Behind one heading the second looked like the first. A
+  second ribbon button would have needed a second command claiming a navigation
+  target, and `duplicateNavigationTargets()` fails the build on exactly that. See
+  D10, ADR-0096.
+- **The manifest supertip no longer points at the wrong page.** It said "Nothing is
+  changed until you approve it on Deterministic Review", which has been false since
+  ADR-0078 gave the semantic apply its own path. Both manifests are edited together,
+  because a control in one and not the other passes every check and ships a Word that
+  has never heard of it.
+- **The selection is read at the size of the selection.** The capture reads the
+  selection, its offsets and its anchor, and nothing else — no whole-document read
+  and no document hash, so a review of one paragraph does not cost a scan of the
+  document. Whether a Word host fires a selection-change event is recorded as an
+  **open question with a named procedure** (ADR-0094), not as a limitation: absence
+  from our own type declarations is not absence from the API.
+- **Two guards on the sole mutation path were failing open.** The protection and
+  preservation checks read `Finding` fields reached through `change.findingId`, so a
+  change with no finding skipped both — and a semantic revision has no finding by
+  design. The checks now read the `Change` itself. Separately,
+  `validateChangePreconditions` demanded a node precondition _and_ a text
+  precondition for the same paragraph-unit write, which made that shape unplannable;
+  the paragraph unit is the only text write available on every Word host. See
+  ADR-0095, ADR-0097.
+- **Learning produces a draft.** "Make this active" is a second, explicit press, and
+  the page says an unactivated draft is not steering any review. The evidence is
+  recorded as the style is learned rather than when it is activated, and it is
+  metadata only: source, size, date and a hash. The sample is never stored. See
+  ADR-0098.
+- **A sample of 60 words is learnable but not confident, and says so.** Eligibility
+  (40 words) and confidence (100/300/1000) are two axes; only eligibility blocks. The
+  level is a persistent badge, not a transient warning, and the bands are exported so
+  the badge, the gate and the tests cannot quote different numbers. See ADR-0099.
+- **`.txt` import, refused for the right reason.** A `.docx` is a zip archive, and
+  reading one as text would send the file's internal structure to a provider as
+  though it were the user's writing. The validation is a DOM-free module; the
+  component owns the `File` read.
+- **A learned profile has publish, activate and recall controls for the first time.**
+  `ProfileRecordSection` was wired only on the deterministic Profile page, so a
+  learned profile had an audit trail nothing could reach.
+- **The measured metrics are still all eight, and are now behind "Sample
+  diagnostics".** The specification proposed deleting them; ADR-0076 had decided
+  otherwise and a live test pinned it. They are relabelled, marked as derived, and
+  collapsed — not removed. See D9.
+- **Three new refusals can now be explained.** A selection over the cap, a revision
+  the local check protected, and a host that cannot write part of a paragraph each
+  get a Troubleshooting note with a named remedy. The last needed a new capability
+  probe, `supportsRangedReplacement`, because the refusal could not be explained
+  from a probe that never ran — which is the same defect ADR-0069 records for the
+  context menu.
+- **The rewrite engine, the rewrite prompts and the merged page are gone.** Nothing
+  reached them since ADR-0055 retired the surface, and leaving them was a second
+  contract through the merge point that skipped its checks.
+- **`semanticRewrite` is two capabilities.** Learning needs a provider but not the
+  profile it produces; review needs both. The old single capability required only a
+  profile, which is how a button could be enabled with no provider to ask.
+- **The scope card reads "Reviewing…", not a second control's state.** Every
+  enabled/disabled decision on both pages comes from one pure gate module, so a
+  button and the sentence beside it cannot disagree, and each refusal names the
+  control that resolves it (→ to Troubleshooting's registry, ADR-0069).
+
 ## Unreleased — Deterministic review pass (2026-10-01)
 
 Repository-complete; **host-unverified**. The structural scopes below were written

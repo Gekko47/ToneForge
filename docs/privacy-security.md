@@ -127,6 +127,52 @@ provider the engine still runs every deterministic comparison, reports the
 candidates it could not adjudicate, and sets `usedModel: false` — it does not
 silently substitute a stub that would let a report read as model-reviewed.
 
+## What Semantic Review sends, and what it keeps
+
+The semantic review is the only surface that sends the user's own prose to a
+provider, so it is worth stating exactly what crosses the boundary and exactly
+what does not.
+
+**Sent, in one request:** the text the user selected, and the semantic profile it
+is measured against. Nothing else. **Not sent:** the rest of the document, the
+document's name or id, the findings from any earlier scan, the governance policy,
+or the review's own outcome history.
+
+Three boundaries are enforced in code rather than in prose:
+
+1. **Explicit selection.** The selection is read only when the user presses
+   _Use current selection_, or arrives from the context menu — a local Word call
+   that sends nothing. No poller watches the document or the selection.
+2. **Explicit opt-in, and only for this feature.** `semanticOptIn` governs the
+   semantic review and nothing else; it is re-derived from a strict boolean on every
+   load, so a stored `"yes"` cannot read as permission. The consistency review has
+   its own separate consent, and neither implies the other.
+3. **A size cap, stated above the limit.** A review is refused above
+   `MAX_REVIEW_SELECTION_CHARS` rather than truncated, because a review of the
+   first 20 000 characters of a passage is not a review of the passage.
+
+**What is kept locally, and what is not.** The sample used to learn a style is
+**never stored**. What is stored is metadata: its source, its word and sentence
+count, when it was captured, and a hash that lets two samples be compared without
+keeping either. The review's outcome log carries a session id, the profile id and
+revision, the outcome, the time, whether the local check passed, and the selection's
+word count — and, since the P1 review, **no document identity at all**, so it is not
+a durable record of which document a user ran a model against. A test reflects over
+both schemas, mirroring the `ProviderConnection` credential test, so a future field
+cannot quietly reintroduce either.
+
+**Where the check runs.** The preservation check that decides whether a revision may
+be written is local and deterministic: it compares protected facts and qualifiers in
+the original against the proposed revision, on this machine, before any write. Its
+report is shown to the user, and its `surface` values must never be logged — the
+reason `redactSensitiveText` strips document-content fields from log context.
+
+**What a refusal looks like.** Every refusal names the control that resolves it
+(ADR-0069). A permission you have not granted, a provider that is not configured, a
+profile that does not exist, a selection that is too long, and a revision the local
+check protects are five different sentences with five different remedies, and
+Troubleshooting carries all five. None of them is a discovered host exception.
+
 ## Dependency advisory audit — 2026-09-26
 
 `npm audit` reports 25 advisories. The classification below is by **whether the
