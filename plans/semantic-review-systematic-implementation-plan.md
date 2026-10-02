@@ -2,9 +2,9 @@
 
 > ## Final outcome — 2026-10-02
 >
-> **Implemented: P0—P11. Written, not executed: P12.**
+> **Implemented: P0—P11 and P13—P16. Written, not executed: P12.**
 >
-> `npm run verify` is green across all thirteen stages: 2 350 tests, coverage
+> `npm run verify` is green across all thirteen stages: 2 404 tests, coverage
 > above the 80% floor on all four metrics, typecheck, lint at zero warnings,
 > Prettier, secret scans, docs, skills, build, manifest, package and
 > package-check. The working tree carries no temporary artefacts.
@@ -14,7 +14,7 @@
 > 0 hosts fully passing and `npm run release:check` stays blocked. Three things
 > are specifically unknown and are named rather than papered over:
 >
-> 1. **Whether a Word host fires a selection-change event** (ADR-0094). Recorded
+> 1. **Whether a Word host fires a selection-change event** (ADR-0094). P16 now
 >    as an open question with a per-host procedure, not as a limitation —
 >    absence from our own type declarations is not absence from the API.
 > 2. **The preservation check's false-positive rate on real expert prose.** The
@@ -41,6 +41,44 @@
 > | P10   | Three new refusals explainable, and a capability split that stops a button being enabled with no provider.                |
 > | P11   | ADR-0096—0099, a stage-19 status correction, a per-phase ledger, and the privacy, accessibility and architecture records. |
 > | P12   | Procedures written. **Open.**                                                                                             |
+> | P13   | The variadic `Range.load` that made the whole selection path unusable in a real Word. ADR-0100.                           |
+> | P14   | One add-in, one task pane: eight controls, one identity, checked in both directions. ADR-0101.                            |
+> | P15   | Every destination renders its own page, with no deterministic profile or not. ADR-0102.                                   |
+> | P16   | A caret reviews its paragraph, and the pane follows the cursor. ADR-0103.                                                 |
+>
+> ### Four more, found in a real Word
+>
+> P13 to P16 are not defects this plan reasoned its way into. Each is a thing
+> that only appears when a person runs the build in Word and reports what
+> happens, and none of them could have been found by reading the old code or
+> the specification. They are recorded as phases because the plan's outcome has
+> to stay true: a plan that listed them as predictable would be claiming to
+> know something nobody did.
+>
+> 1. **A variadic `Range.load` (P13).** The declaration took any number of
+>    arguments so a three-name call would compile; Word takes one, loaded
+>    `"text"`, and the read of `.start` on the next line threw. 2 350 tests saw
+>    nothing because both test doubles were **more permissive than the host**
+>    ${DASH} one honoured three names, the other accepted anything. ADR-0100.
+> 2. **Two task panes (P14).** The ribbon opened `ButtonId1` and the context menu
+>    reached the pane by function, landing on the runtime's own `openPage`
+>    identity. The live pane was correct throughout, so a blank second window
+>    beside it read as a rendering fault. The repository check asked every
+>    _command_ for a `TaskpaneId`, which cannot tell "opens the pane" from
+>    "mentions one". ADR-0101.
+> 3. **Two destinations that rendered Home (P15).** With no deterministic style
+>    profile ${DASH} the app you are in while setting ToneForge up ${DASH} `review` and
+>    `semantic-review` had no branch and fell through to the setup checklist.
+>    Reported as an unconfigured AI provider; the deterministic engine calls no
+>    model, so that cannot be it. ADR-0102.
+> 4. **A caret that was not reviewable (P16).** Collapsed selections returned
+>    `no-selection` ${DASH} deliberately, documented, and tested for two years. The
+>    message was true of the code and false of the world. ADR-0103.
+>
+> **Three of the four were accompanied by a green test that described the
+> difference rather than checking it.** That is the pattern worth keeping: a
+> test written from a design decision reads as verification of that decision
+> forever, and nothing asks whether the decision still holds.
 >
 > ### The three defects this work found by writing it rather than reading it
 >

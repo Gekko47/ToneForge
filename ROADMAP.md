@@ -189,6 +189,11 @@ run is never a release claim, and `npm run release:check` stays blocked.
 | P11   | ADR amendments 0096–0099, this ledger, architecture/privacy/accessibility/CHANGELOG                                           | PASS             | None                                                                                                   |
 | P12   | Host verification                                                                                                             | **OPEN — human** | Nothing in this table is host-verified. Procedures are in `docs/manual-verification.md`.               |
 
+| P13 | variadic `Range.load` | ADR-0100 | selection offsets read as the host takes them | PASS |
+| P14 | one add-in, one task pane | ADR-0101 | eight controls, one pane identity, checked both ways | PASS |
+| P15 | every destination renders its own page | ADR-0102 | no fall-through to Home with no profile | PASS |
+| P16 | caret reviews its paragraph; pane follows the cursor | ADR-0103 | `source: "caret-paragraph"`, debounced event | PASS |
+
 ## Refactor status and sequencing
 
 The incoming `ToneForge_Refactor_Implementation` proposal used incompatible
