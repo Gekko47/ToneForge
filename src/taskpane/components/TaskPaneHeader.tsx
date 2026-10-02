@@ -53,7 +53,15 @@ interface TaskPaneHeaderProps {
  * among the policy pages, which is where it was before the split and where
  * nobody found it.
  */
-const DESTINATIONS: readonly {
+/**
+ * Exported so a routing test can enumerate destinations rather than repeat them.
+ *
+ * The bug this exists to prevent: a destination was added to the drawer with no
+ * branch in `DashboardWithoutProfile`, and every click on it fell through to Home.
+ * A test listing destinations by name would have gone stale silently in the same
+ * way the routing did; one that reads the list cannot.
+ */
+export const TASKPANE_DESTINATIONS: readonly {
   key: TaskPaneDestination;
   label: string;
 }[] = [
@@ -180,7 +188,7 @@ export default function TaskPaneHeader({
               />
             </header>
             <nav aria-label="Task pane navigation" className="tf-nav-drawer">
-              {DESTINATIONS.map((destination) => (
+              {TASKPANE_DESTINATIONS.map((destination) => (
                 <button
                   key={destination.key}
                   type="button"

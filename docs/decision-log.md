@@ -3269,3 +3269,55 @@ formatting` governed the body style, the list standard, the table standard,
   `src/commands/commandDefinitions.json`; `scripts/validate-manifest.mjs`;
   `tests/unit/architecture/oneTaskpane.test.ts`;
   `tests/unit/commands/commandContracts.test.ts`; `docs/manual-verification.md`.
+
+## ADR-0102: A destination with no branch falls through to Home, so every destination is asserted
+
+- Extends: ADR-0071 (the first run reports; it does not lock), whose own
+  component comment states the rule this makes testable
+- Status: Accepted (2026-10-02)
+- **Context**: `DashboardWithoutProfile` renders one branch per destination and
+  falls through to `Home` for anything it has no branch for. Two destinations had
+  none: `review` and `semantic-review`.
+- The consequence was reported from a real Word as the Deterministic Review page
+  and the Semantic Review page being "stuck showing what the home page shows and
+  not their pages". That is exactly what a fall-through looks like: the checklist
+  renders perfectly, so the press appears to do nothing. The report guessed the
+  cause was an unconfigured AI provider. It is not — the deterministic engine
+  calls no model — it is an absent **deterministic style profile**, which is
+  the one thing that page genuinely needs and the one thing that switches the app
+  to the other dashboard.
+- A second lie sat in the same area. The Semantic Review breadcrumb reads **"Back
+  to Deterministic Review"** and was handed `back`, which in this dashboard is
+  `navigate("landing")`. The profiled dashboard uses `navigate("review")` there and
+  this one did not, so the label and the destination disagreed for exactly the
+  users least able to notice — those still setting the app up.
+- Neither defect is visible to a test that asserts a _named_ destination. The
+  routing guard for the no-profile dashboard asserted "a destination that does
+  need a profile is reachable" — which passed, truthfully, about the one
+  destination it named.
+- **Decision**:
+  1. **Every** destination renders its own page in both dashboards. Semantic
+     Review needs no deterministic profile and renders the real page;
+     Deterministic Review has nothing to render without one, so
+     `ReviewWithoutProfile` states that once and names the control that resolves it
+     (ADR-0069) rather than presenting an empty findings list as a clean document.
+  2. A labelled control's destination is its label. "Back to Deterministic
+     Review" navigates to Deterministic Review in both dashboards.
+  3. `TASKPANE_DESTINATIONS` is exported, and the no-profile routing test
+     enumerates it. A hand-written list in a test would have gone stale exactly
+     as the routing did; one that reads the drawer's own list fails on the day a
+     destination is added without a branch.
+- **Consequences**:
+  - The guard is now exhaustive by construction rather than by recall, which is
+    the only way a fall-through default stays safe as the destination list grows.
+  - It does **not** catch a branch that renders the wrong page. That would need a
+    per-destination assertion of the rendered heading, and the exhaustive test is
+    the cheaper half that covers the class of defect actually observed.
+  - The empty findings state is now stated rather than shown. "No findings,
+    because no scan has run against a profile" and "no findings, because the
+    document is clean" are different facts, and only the first of them is true
+    here.
+- **Evidence**: `src/taskpane/pages/Dashboard.tsx`;
+  `src/taskpane/pages/ReviewWithoutProfile.tsx`;
+  `src/taskpane/components/TaskPaneHeader.tsx`;
+  `tests/unit/taskpane/pages/DashboardNoProfile.test.tsx`.

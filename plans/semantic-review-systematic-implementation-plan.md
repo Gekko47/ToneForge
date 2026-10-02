@@ -2050,6 +2050,42 @@ caught it asked every **command** for a `TaskpaneId`, a question that cannot tel
 4. **`manual-verification.md` gains an open gate** with a per-host procedure:
    press every ribbon control with the pane already open, and confirm one pane.
 
+#### P15 — two destinations fell through to Home _(LANDED 2026-10-02)_
+
+**Also found by hand, and also not something the plan could see.** Reported as the
+Deterministic Review page and the Semantic Review page showing "what the home page
+shows and not their pages", with a guess that an unconfigured AI provider was
+responsible.
+
+**What was found.** `DashboardWithoutProfile` renders one branch per destination
+and falls through to `Home` for any it has no branch for. `review` and
+`semantic-review` had none. The report's guess about the provider is wrong and
+worth recording as wrong: the deterministic engine calls no model, so a missing
+provider cannot block that page. The cause is an absent **deterministic style
+profile** — the one thing the page genuinely needs, and the one thing that
+selects the other dashboard.
+
+**A second defect in the same place.** The Semantic Review breadcrumb reads "Back
+to Deterministic Review" and was wired to `navigate("landing")` in this dashboard.
+The profiled dashboard uses `navigate("review")`. So the label was false for
+exactly the users still setting the app up.
+
+**Deviations.**
+
+1. **Deterministic Review without a profile gets its own page**, not the real
+   one. With no profile there are no rules, no findings, and nothing that could
+   be planned, so `ReviewWithoutProfile` states that and names the control that
+   resolves it (ADR-0069). Rendering an empty findings list would claim a clean
+   document, which is a claim this page cannot support.
+2. **The routing test enumerates `TASKPANE_DESTINATIONS`** rather than naming
+   destinations. The old guard named the one destination it checked and passed
+   truthfully; a named list would have gone stale the same way the routing did.
+   The export exists for that test and nothing else.
+3. **ADR-0102 records it**, extending ADR-0071, whose component comment already
+   stated the rule ("every destination is reachable, and each renders its own
+   state rather than being redirected") — the code did not, and the test made
+   the gap invisible rather than closing it.
+
 ## 9. Test strategy
 
 ### Structure (mirrors source, per the coverage rule)

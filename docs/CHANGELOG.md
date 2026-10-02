@@ -28,6 +28,17 @@
   passed on the manifest that had the defect. See ADR-0101. _Found by hand in a
   real Word, again._
 
+- **Fixed: Deterministic Review and Semantic Review showed the Home checklist.**
+  Both destinations are in the navigation drawer, and both fell through to Home in the
+  app that has no deterministic style profile — the app you are in while setting
+  ToneForge up. The checklist renders correctly, so pressing the button looked like
+  nothing happened. Semantic Review needs no deterministic profile and now renders its
+  real page; Deterministic Review states that it has nothing to compare against and
+  names the control that fixes it, rather than showing an empty findings list that
+  reads as "this document is fine". The Semantic Review breadcrumb also said "Back to
+  Deterministic Review" while navigating Home. See ADR-0102. _Found by hand in a real
+  Word._
+
 Repository-complete; **host-unverified**. `npm run verify` is green across all
 thirteen stages and 2 350 tests. Per ADR-0051 that is not a release claim, and
 `npm run release:check` stays blocked. The named host procedures are in

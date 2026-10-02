@@ -20,6 +20,7 @@ import {
 } from "../../shared/office/taskpaneNavigation";
 import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
+import ReviewWithoutProfile from "./ReviewWithoutProfile";
 import FindingsList from "../components/FindingsList";
 import FindingsToolbar from "../components/FindingsToolbar";
 import CoverageBanner, { scopeLabel } from "../components/CoverageBanner";
@@ -352,6 +353,56 @@ function DashboardWithoutProfile({
     );
   }
 
+  if (page === "semantic-review") {
+    return (
+      <main className="tf-card" tabIndex={0}>
+        {header}
+        <Suspense fallback={<div role="status">Loading</div>}>
+          <SemanticReview
+            /*
+             * To Deterministic Review, not to the shared `back`.
+             *
+             * The breadcrumb on this page reads "Back to Deterministic Review",
+             * and `back` in this dashboard is `navigate("landing")`. Passing it
+             * would make that label a lie: the user presses Back to Deterministic
+             * Review and arrives at the setup checklist, which is exactly the
+             * report this phase fixes. The profiled dashboard already uses
+             * `navigate("review")` here; this branch now says the same thing.
+             */
+            onBack={() => navigate("review")}
+            onOpenSettings={() => navigate("settings")}
+            onOpenSemanticStyle={() => navigate("semantic-style")}
+            session={null}
+            onSession={() => undefined}
+          />
+        </Suspense>
+      </main>
+    );
+  }
+
+  /*
+   * Deterministic Review, reached with no deterministic profile.
+   *
+   * These two branches and the page behind them exist because `review` and
+   * `semantic-review` had none, and everything without one fell through to Home.
+   * Choosing either destination, or arriving on Semantic Review and pressing Back,
+   * landed on the setup checklist, which is indistinguishable from the press doing
+   * nothing. Reported from a real Word as the two pages being stuck on Home.
+   *
+   * Semantic Review is not gated on a deterministic profile at all, so it renders
+   * the real page. Deterministic Review has nothing to render without one, so it
+   * states that and names the control that resolves it.
+   */
+  if (page === "review") {
+    return (
+      <main className="tf-card" tabIndex={0}>
+        {header}
+        <Suspense fallback={<div role="status">Loading</div>}>
+          <ReviewWithoutProfile onBack={back} onOpenProfile={() => navigate("profile")} />
+        </Suspense>
+      </main>
+    );
+  }
   if (page === "consistency") {
     return (
       <main className="tf-card" tabIndex={0}>
