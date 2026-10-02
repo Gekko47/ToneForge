@@ -1,5 +1,97 @@
 # Semantic Review — Repository-Grounded Implementation Plan
 
+> ## Final outcome — 2026-10-02
+>
+> **Implemented: P0—P11. Written, not executed: P12.**
+>
+> `npm run verify` is green across all thirteen stages: 2 350 tests, coverage
+> above the 80% floor on all four metrics, typecheck, lint at zero warnings,
+> Prettier, secret scans, docs, skills, build, manifest, package and
+> package-check. The working tree carries no temporary artefacts.
+>
+> **This is not a release, and none of it is host-verified.** Per ADR-0051, a
+> green automated run is never a release claim. `npm run host:matrix` still reports
+> 0 hosts fully passing and `npm run release:check` stays blocked. Three things
+> are specifically unknown and are named rather than papered over:
+>
+> 1. **Whether a Word host fires a selection-change event** (ADR-0094). Recorded
+>    as an open question with a per-host procedure, not as a limitation —
+>    absence from our own type declarations is not absence from the API.
+> 2. **The preservation check's false-positive rate on real expert prose.** The
+>    procedure says a rate above roughly one in ten calls for narrowing the
+>    heuristics rather than tuning.
+> 3. **Whether `Range.set` exists per host**, which decides whole-paragraph against
+>    partial write. Now probed (`supportsRangedReplacement`) rather than
+>    discovered at apply time; not yet confirmed in Word.
+>
+> ### What the phases produced
+>
+> | Phase | Outcome in one line                                                                                                       |
+> | ----- | ------------------------------------------------------------------------------------------------------------------------- |
+> | P0    | An expert-prose corpus and a characterisation test, so every later phase had something to refuse.                         |
+> | P1    | Semantic Style V2, state v14, and two metadata-only stores: sample evidence and review outcomes.                          |
+> | P2    | Learning prompt V2, run **after** P3 so the local check could run against what was learned.                               |
+> | P3    | Local preservation: protected facts, qualifiers, and the two-tier severity D6 approved.                                   |
+> | P4    | One `SemanticReviewResult`. No merge into the findings list, no `Finding` variant.                                        |
+> | P5    | The selection read at the size of the selection — no whole-document read, no document hash.                               |
+> | P6    | A revision approved as a value. The merge point's two checks now read the `Change`.                                       |
+> | P7    | Two pages instead of one tab; the rewrite engine, its prompts and the merged page deleted.                                |
+> | P8    | Learning produces a draft; sample quality on two axes; `.txt` import; the record section wired.                           |
+> | P9    | Two named destinations, one ribbon command, both manifests relabelled together.                                           |
+> | P10   | Three new refusals explainable, and a capability split that stops a button being enabled with no provider.                |
+> | P11   | ADR-0096—0099, a stage-19 status correction, a per-phase ledger, and the privacy, accessibility and architecture records. |
+> | P12   | Procedures written. **Open.**                                                                                             |
+>
+> ### The three defects this work found by writing it rather than reading it
+>
+> None of these was visible from the specification, and none could have been
+> found by reading the old code — they need a _new_ shape to be reachable.
+>
+> 1. **Two guards on the sole mutation path failed open.** The protection and
+>    preservation checks read `Finding` fields reached through `change.findingId`,
+>    so a change with no finding skipped both. A semantic revision has no finding
+>    by design, so the new path would have had both guards silently switched off.
+>    ADR-0095, ADR-0097.
+> 2. **A paragraph-unit write was unplannable.**
+>    `validateChangePreconditions` demanded a `node` precondition for a
+>    paragraph-unit change _and_ a `text` precondition for any `replaceText`. No
+>    change satisfied both, and the paragraph unit is the only text write
+>    available on every Word host. Nothing produced the shape, which is why it
+>    survived.
+> 3. **A refusal was reported as a host problem.**
+>    `applyReviewedPlan` overwrote every per-change error with "Managed Track
+>    Changes is required", including a plan the adapter had refused on its own
+>    merits. ADR-0069.
+>
+> ### Two things this work chose not to build
+>
+> Recorded as decisions, because a reader who does not know they were decisions
+> will read each as an omission.
+>
+> - **No `supportsSelectionEvents` capability**, and so no subscription. Probing
+>   whether `addHandlerAsync` exists would establish only that the API is there;
+>   the field's name would claim more than the measurement, which is the defect
+>   `supportsContextMenuApi` already documents, and it would have forced fifteen
+>   fixtures to assert a value nothing consumes. The explicit read ships instead,
+>   and a later subscription is additive.
+> - **No `.docx` import, and no parser.** A `.docx` is a zip archive; reading one
+>   as text sends the file's internal structure to a provider as though it were
+>   the user's writing. The refusal says so and names the `.txt` export instead.
+>
+> ### Where to read next
+>
+> - [`ROADMAP.md`](../ROADMAP.md) — the per-phase ledger, and stage 19's corrected status.
+> - [`docs/decision-log.md`](../docs/decision-log.md) — ADR-0092 through ADR-0099.
+> - [`docs/manual-verification.md`](../docs/manual-verification.md) — the open gates, and the
+>   procedures P12 leaves for a person.
+> - [`docs/architecture.md`](../docs/architecture.md) — the second flow diagram, which is
+>   drawn separately because the two paths share a writer and nothing else.
+>
+> **The next documents in sequence** are the LLM-settings rewrite (which owns
+> `createRegistryFromSettings`, this plan's dependency), then indexed
+> consistency, then Home/UX navigation. This plan deliberately changed navigation
+> only enough to add a destination and a name — see §1.3.
+
 > **Decisions recorded 2026-10-01.**
 >
 > - **D6 approved as written.** Model meaning-preservation flags and
