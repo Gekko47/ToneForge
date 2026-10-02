@@ -8,9 +8,20 @@
  * whole claim is that it reads *only* what the selection needs — a test that
  * cannot see the request names could not tell a selection-sized read from a
  * whole-document one, which is the defect the module replaces.
+ *
+ * **The `load` double was one thing stricter than it looked, and one thing looser
+ * than the host.** It recorded the property names it was given in a way that
+ * faithfully reproduced a *variadic* call — so `load("text", "start", "end")`
+ * looked correct here while Word, taking one argument, loaded only `"text"` and
+ * dropped the rest. The real Word failure arrived as "The property 'start' is
+ * not available", in the P12 window, with 2 350 tests green (ADR-0100). The
+ * double is now the shared `createOfficeLoad`/`attachOfficeLoad` pair, which
+ * takes one argument as the host does and **throws** on a variadic call, so the
+ * next one fails here.
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
+import { attachOfficeLoad } from "../../fixtures/officeLoad";
 import {
   anchorMatches,
   coversWholeParagraph,
@@ -92,36 +103,31 @@ function installHost(options: HostOptions = {}): void {
     },
   }));
 
-  const selection = {
-    get text() {
-      return text;
-    },
-    get start() {
-      return start;
-    },
-    get end() {
-      return end;
-    },
-    load(...properties: string[]) {
-      properties.forEach((property) => {
-        log.selectionRequests.push(property);
-        if (refusedSelection.has(property)) {
-          throw hostError(
-            `The property '${property}' does not exist on this host.`,
-            "GeneralException",
-          );
-        }
-      });
-      return this;
-    },
-    paragraphs: {
-      load(property: string) {
-        log.selectionRequests.push(`paragraphs/${property}`);
-        return this;
+  const selection = attachOfficeLoad(
+    {
+      get text() {
+        return text;
       },
-      items: paragraphItems,
+      get start() {
+        return start;
+      },
+      get end() {
+        return end;
+      },
+      paragraphs: attachOfficeLoad({ items: paragraphItems }, (property) => {
+        log.selectionRequests.push(`paragraphs/${property}`);
+      }),
     },
-  };
+    (property) => {
+      log.selectionRequests.push(property);
+      if (refusedSelection.has(property)) {
+        throw hostError(
+          `The property '${property}' does not exist on this host.`,
+          "GeneralException",
+        );
+      }
+    },
+  );
 
   const document: Record<string, unknown> = {
     body: {

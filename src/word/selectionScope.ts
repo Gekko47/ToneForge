@@ -96,19 +96,24 @@ interface SelectionRangeView {
   text?: string;
   start?: number;
   end?: number;
-  load?: (...props: string[]) => unknown;
+  /*
+   * One argument, as the host takes. This was variadic, which let the call below
+   * compile; the host loads the first positional argument and ignores the rest,
+   * so the read of `.start` that follows threw in a real Word (ADR-0100).
+   */
+  load?: (propertyNames: string | string[]) => unknown;
   paragraphs?: ParagraphCollectionView;
 }
 
 interface ParagraphCollectionView {
-  load?: (prop: string) => unknown;
+  load?: (propertyNames: string | string[]) => unknown;
   items?: ParagraphView[];
 }
 
 interface ParagraphView {
   text?: string;
   uniqueLocalId?: string;
-  load?: (props: string | string[]) => unknown;
+  load?: (propertyNames: string | string[]) => unknown;
 }
 
 interface CapturedSelection {
@@ -193,7 +198,10 @@ async function captureSelection(): Promise<CaptureOutcome> {
       // cost a second round trip to learn nothing extra, and a host that refuses
       // the pair is a host this module cannot build a safe anchor from anyway.
       try {
-        range.load("text", "start", "end");
+        // An **array**, not three arguments. `load` takes one; the host loads the
+        // first positional argument and ignores the rest, so the variadic form
+        // compiles here and throws on the next line in a real Word (ADR-0100).
+        range.load(["text", "start", "end"]);
         await context.sync();
       } catch {
         logger.warn("Selection offsets are unreadable in this host", {

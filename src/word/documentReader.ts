@@ -113,7 +113,10 @@ export async function getLiveSelection(): Promise<LiveSelection | null> {
       start?: number;
       end?: number;
     };
-    range.load("text", "start", "end");
+    // An **array**, not three arguments. `load` takes one; the host loads the
+    // first positional argument and ignores the rest, so the variadic form
+    // compiles and throws on the next line in a real Word (ADR-0100).
+    range.load(["text", "start", "end"]);
     await context.sync();
     if (
       typeof range.start !== "number" ||

@@ -1,4 +1,5 @@
 import { afterEach, vi } from "vitest";
+import { createOfficeLoad } from "./fixtures/officeLoad";
 import "@testing-library/jest-dom/vitest";
 import { initializeIcons } from "@fluentui/react/lib/Icons";
 
@@ -22,6 +23,27 @@ if (!(globalThis as { __toneforgeIconsInitialized?: boolean }).__toneforgeIconsI
 const roamingStore = new Map<string, unknown>();
 
 // Provide a minimal Office global so shared/word modules can be imported in tests.
+/*
+ * The range's `load` is a faithful double rather than `vi.fn()`.
+ *
+ * A bare spy accepts any arguments and records nothing, so a call the host would
+ * **silently truncate** \u2014 `load("text", "start", "end")` against a one-argument
+ * signature \u2014 is indistinguishable from a correct one here, and fails only in a
+ * real Word. That is not hypothetical: it shipped, and ADR-0100 records it. The
+ * double below throws on a variadic call, so the next one fails here first.
+ *
+ * Scoped to the range deliberately. The other `load: vi.fn()`s in this file model
+ * objects whose reads are not asserted anywhere, and widening them all would
+ * change what 2 350 tests are exercising for no gain.
+ */
+const rangeDouble = (extra: Record<string, unknown>): Record<string, unknown> => ({
+  ...extra,
+  load: createOfficeLoad(
+    () => undefined,
+    () => rangeDouble(extra),
+  ),
+});
+
 const officeMock = {
   run: <T>(func: (context: unknown) => Promise<T>): Promise<T> =>
     func({
@@ -30,38 +52,40 @@ const officeMock = {
           text: "",
           load: vi.fn(),
           paragraphs: { load: vi.fn(), items: [] },
-          getRange: vi.fn(() => ({
-            text: "",
-            insertText: vi.fn(function (this: unknown) {
-              return this;
+          getRange: vi.fn(() =>
+            rangeDouble({
+              text: "",
+              insertText: vi.fn(function (this: unknown) {
+                return this;
+              }),
+              insertBreak: vi.fn(),
+              insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+              paragraphs: { load: vi.fn(), items: [] },
+              font: { name: "", size: 0, color: "", load: vi.fn(), set: vi.fn() },
+              /*
+               * Range.paragraphFormat, which is real — Word exposes it on a range,
+               * and `revisionAdapter` sets paragraph formatting through one. The
+               * comment is here because the *same name on a paragraph* is not real,
+               * and this mock is a plausible thing to copy when building a paragraph
+               * double.
+               *
+               * That mistake was made for real: 21ce84d added "paragraphFormat" to
+               * the paragraph load plan on the assumption it was the way to reach
+               * `Word.ParagraphFormat` from a paragraph, and so asked Word for a
+               * property that does not exist there. The request is rejected whole,
+               * which cost every other property in that group too. Do not read this
+               * as evidence that a paragraph has one — see ADR-0084, and
+               * `LOADABLE_PARAGRAPH_PROPERTIES` for the names a paragraph does have.
+               */
+              paragraphFormat: { set: vi.fn() },
+              listFormat: { set: vi.fn() },
+              style: "",
+              set: vi.fn(function (this: unknown) {
+                return this;
+              }),
+              load: vi.fn(),
             }),
-            insertBreak: vi.fn(),
-            insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
-            paragraphs: { load: vi.fn(), items: [] },
-            font: { name: "", size: 0, color: "", load: vi.fn(), set: vi.fn() },
-            /*
-             * Range.paragraphFormat, which is real — Word exposes it on a range,
-             * and `revisionAdapter` sets paragraph formatting through one. The
-             * comment is here because the *same name on a paragraph* is not real,
-             * and this mock is a plausible thing to copy when building a paragraph
-             * double.
-             *
-             * That mistake was made for real: 21ce84d added "paragraphFormat" to
-             * the paragraph load plan on the assumption it was the way to reach
-             * `Word.ParagraphFormat` from a paragraph, and so asked Word for a
-             * property that does not exist there. The request is rejected whole,
-             * which cost every other property in that group too. Do not read this
-             * as evidence that a paragraph has one — see ADR-0084, and
-             * `LOADABLE_PARAGRAPH_PROPERTIES` for the names a paragraph does have.
-             */
-            paragraphFormat: { set: vi.fn() },
-            listFormat: { set: vi.fn() },
-            style: "",
-            set: vi.fn(function (this: unknown) {
-              return this;
-            }),
-            load: vi.fn(),
-          })),
+          ),
         },
         selection: {
           text: "",

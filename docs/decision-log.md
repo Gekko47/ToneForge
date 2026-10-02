@@ -3153,3 +3153,51 @@ formatting` governed the body style, the list standard, the table standard,
 - **Evidence**: `src/style/sampleQuality.ts`; `src/style/textFileImport.ts`;
   `src/taskpane/components/semantic/LearnSemanticStyle.tsx`;
   `tests/unit/style/sampleQuality.test.ts`; `tests/unit/style/textFileImport.test.ts`.
+
+## ADR-0100: A declaration widened to accommodate a call is the same lie as a property that does not exist
+
+- Amends: ADR-0084 (a property name the host does not have is a compile error, and
+  the flow controls are left unread)
+- Status: Accepted (2026-10-02)
+- **Context**: `Range.load` was declared `(...props: Array<string>) => Range` in
+  `src/types/office.d.ts`, so that `range.load("text", "start", "end")` would
+  typecheck. Office.js takes **one** argument — `load(propertyNames: string | string[])`
+  — so the host loaded `"text"` and **silently ignored the rest**, and the
+  following read of `.start` threw _"The property 'start' is not available"_. Two
+  call sites did this: `word/documentReader.ts` (pre-existing) and
+  `word/selectionScope.ts` (written in P5).
+- The whole suite was green. It was green because both mocks involved were **more
+  permissive than the host**: one declared `load(...properties: string[])` and
+  honoured all three names, so the log showed the load the code _asked for_; the
+  other was `load: vi.fn()`, which accepts anything and records nothing. A mock
+  more permissive than the host cannot catch a call the host will not honour,
+  which makes it worse than no mock: it is the thing that was supposed to catch
+  the bug, and it was the reason the bug was invisible.
+- **Decision**:
+  1. `load` is declared as the host declares it, on `Range`, `Font`, and every
+     local view of a proxy. A declaration is not widened to make a call compile;
+     if the call does not fit the API, the **call** is wrong.
+  2. `tests/fixtures/officeLoad.ts` is the one `load` double, and it **throws** on
+     extra positional arguments. A double that fails loudly on a call the host
+     would tolerate — by dropping it — is the property that matters, because the
+     host's own failure mode is silence.
+  3. `tests/unit/architecture/variadicLoadGuard.test.ts` rules over the source, so
+     the call is refused on any path, including those whose mock is still a bare
+     `vi.fn()`.
+- **Consequences**:
+  - A rule over the source beats a rule over the mocks here. The two permissive
+    mocks were fixed, but the tree holds more than eighty `load: vi.fn()`
+    doubles; rewriting them all would have changed a green suite extensively to
+    defend against a defect that no longer exists anywhere in it. The source rule
+    closes the hole for every path at once, and the audit that established
+    "no other variadic call exists" is now an assertion rather than a note.
+  - ADR-0084's rule generalises from a **missing** property to a **widened**
+    signature. Both make the type system agree with something the host does not
+    do, and both are invisible until a host says otherwise.
+  - The cost of the false negative was one unusable route in a shipped build,
+    found by hand, after thirteen green stages. That is the boundary ADR-0051
+    draws, observed from the other side.
+- **Evidence**: `src/types/office.d.ts`; `src/word/selectionScope.ts`;
+  `src/word/documentReader.ts`; `tests/fixtures/officeLoad.ts`;
+  `tests/unit/word/officeLoadContract.test.ts`;
+  `tests/unit/architecture/variadicLoadGuard.test.ts`; `docs/manual-verification.md`.

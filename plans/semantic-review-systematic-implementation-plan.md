@@ -231,9 +231,13 @@ The three sibling documents are not independent:
 - [`ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md`](<../systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md>)
   rewrites the provider/settings contract this plan calls
   [`createRegistryFromSettings()`](../src/taskpane/settings/providerComposition.ts:118).
-- [`ToneForge_INDEXED_CONSISTENCY_SYSTEMATIC_IMPLEMENTATION.md`](<../systematic review/ToneForge_INDEXED_CONSISTENCY_SYSTEMATIC_IMPLEMENTATION.md>)
+- [`ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md`](<../systematic review/ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md>)
   §19 retires the consistency-to-`Finding` bridge, and its §28 hands work to
-  "Semantic Review".
+  "Semantic Review". **Renamed and revised in flight**, from
+  `ToneForge_INDEXED_CONSISTENCY_SYSTEMATIC_IMPLEMENTATION.md`, which is now
+  prefixed `.SS.` on disk. §0.1 is about _decisions_ changing under a fixed
+  specification; this is the other half of the same hazard, a _source_ moving
+  under a plan that cites it \u2014 and the doc-link check is what caught it.
 - [`ToneForge_HOME_AND_UNIFIED_FLUENT_UX_IMPLEMENTATION.md`](<../systematic review/ToneForge_HOME_AND_UNIFIED_FLUENT_UX_IMPLEMENTATION.md>)
   renames navigation and the Home page.
 
@@ -1964,6 +1968,41 @@ procedure says a rate above roughly one in ten calls for narrowing the heuristic
 rather than tuning, which is the sentence that keeps the measurement honest.
 
 ---
+
+#### P13 — the variadic `Range.load`, found in a host _(LANDED 2026-10-02)_
+
+**Not in the original plan, because the original plan could not see it.** This is
+the defect P12 was left open to find, and it is recorded here rather than as a
+separate document so the plan's own outcome stays true.
+
+**What was found.** `Range.load` was declared variadic in
+`src/types/office.d.ts` so that `load("text", "start", "end")` would typecheck.
+Word takes one argument, loaded `"text"`, and silently ignored the rest, so the
+read of `.start` on the next line threw. Both call sites were affected —
+`word/documentReader.ts` (pre-existing) and `word/selectionScope.ts` (P5). The
+2 350 tests and thirteen green stages saw nothing because both mocks were **more
+permissive than the host**.
+
+**Why it belongs in this plan's deviations list.** P5 wrote the second call site
+_and_ the declaration that made it legal, in the same phase, and the phase's own
+test asserted the mock's behaviour rather than the host's. The deviation is
+attributed to P5 for the declaration and to the pre-existing reader for the
+second call site, and ADR-0100 records the general rule.
+
+**Deviations.**
+
+1. **The fix is a rule over the source, not a rewrite of every mock.** The two
+   permissive doubles were replaced with one shared faithful `load`
+   (`tests/fixtures/officeLoad.ts`) that throws on a variadic call, and
+   `variadicLoadGuard.test.ts` rules over `src/` so the mistake is refused on any
+   path. The tree still holds more than eighty `load: vi.fn()` doubles; changing
+   them all would have rewritten a green suite to defend against a defect no
+   longer present in it. The audit that established "no other variadic call
+   exists" is now an assertion rather than a note.
+2. **P12's status changes from "procedures written" to "first gate closed".**
+   `manual-verification.md` gains a **Resolved gate** section with a per-host
+   re-test procedure, alongside the open ones. Closing one gate is evidence the
+   boundary is real, not evidence the rest is closed — eight remain.
 
 ## 9. Test strategy
 

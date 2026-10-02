@@ -2,6 +2,18 @@
 
 ## Unreleased — Semantic review (2026-10-02)
 
+- **Fixed: reading the Word selection failed in a real document.** _Use current
+  document_ on Semantic Style, and the semantic command from the right-click
+  menu, reported "The property 'start' is not available". `Range.load` had been
+  declared to take any number of arguments, so `load("text", "start", "end")`
+  compiled; Word takes one, loaded only `"text"`, and the read of the offset on
+  the next line threw. The declaration is now the host's, and both call sites pass
+  an array. The suite never saw it because both test doubles were **more
+  permissive than the host** — one honoured three positional names, the other
+  accepted anything — so the shared double now throws on a call the host would
+  silently drop, and a test rules over the source. See ADR-0100. _Found by hand in
+  a real Word, which is what the open host-verification gate is for._
+
 Repository-complete; **host-unverified**. `npm run verify` is green across all
 thirteen stages and 2 350 tests. Per ADR-0051 that is not a release claim, and
 `npm run release:check` stays blocked. The named host procedures are in

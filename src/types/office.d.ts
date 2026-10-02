@@ -177,7 +177,20 @@ declare global {
       start?: number;
       end?: number;
       font: Font;
-      load: (...props: Array<string>) => Range;
+      /**
+       * One argument, or the call is not the API's. ADR-0100.
+       *
+       * This was declared variadic so that `load("text", "start", "end")` would
+       * typecheck. The host takes `propertyNames: string | string[]`, loads the
+       * first, and **silently ignores the rest** \u2014 so the following read of
+       * `.start` threw "The property 'start' is not available", in a real Word,
+       * with 2 350 tests green. A declaration widened to accommodate a call is
+       * the same lie ADR-0084 records for a property that does not exist: both
+       * make the type system agree with something the host does not do.
+       *
+       * Pass an array: `load(["text", "start", "end"])`.
+       */
+      load: (propertyNames: string | string[]) => Range;
       getRange?: (rangeLocation: RangeLocation) => Range;
     }
 
@@ -226,7 +239,8 @@ declare global {
       bold?: boolean;
       italic?: boolean;
       underline?: boolean;
-      load: (...props: Array<string>) => Font;
+      /** One argument, or the call is not the API's. ADR-0100; see `Range.load`. */
+      load: (propertyNames: string | string[]) => Font;
       set: (properties: Record<string, unknown>) => Font;
       reset: () => void;
     }

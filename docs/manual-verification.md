@@ -234,6 +234,47 @@ For each host:
 12. Record failures and limitations; do not mark a host complete without
     evidence.
 
+## Resolved gate — the variadic `Range.load` call (ADR-0100)
+
+**The first gate this project has closed by hand, and the one that justifies
+leaving the rest open.**
+
+### What was found
+
+Pressing **Use current document** on Semantic Style, and invoking the semantic
+command from the context menu, produced:
+
+> The document could not be read: The property 'start' is not available. Before
+> reading the property's value, call the load method on the containing object and
+> call `context.sync()` on the associated request context.
+
+`Range.load` had been declared variadic, so `load("text", "start", "end")`
+typechecked. Word takes one argument, loaded `"text"`, ignored the rest, and the
+next line's read of `.start` threw. Both mocks were more permissive than the
+host, so 2 350 tests and thirteen green stages saw nothing.
+
+### Re-test procedure, per host
+
+1. Select one whole paragraph. Press **Use current selection** on Semantic
+   Review. Confirm the scope card shows that paragraph **and its word count** —
+   a card with no count is the signature of a `start`/`end` that was not read.
+2. Press **Use current selection** again on a different paragraph. Confirm the
+   offsets are re-read rather than reused.
+3. Semantic Style → **Use the current document**. Confirm it either offers a
+   sample with a word count, or states a reason. The Office error above must not
+   appear.
+4. Invoke the semantic command from the right-click menu with a selection active.
+   Confirm the pane opens on Semantic Review with the selection already read.
+5. Open Troubleshooting and confirm the panel itself reports no read failure. The
+   panel reads a selection too, and it is the surface most likely to swallow the
+   error into a generic "host unavailable".
+
+### What a pass here does and does not mean
+
+It closes one gate. It says nothing about selection-change **events**
+(ADR-0094, still open), the preservation check's false-positive rate, or any
+other row in this document.
+
 ## Open gate — the structural scopes are host-unverified (ADR-0086)
 
 Every capability this pass added — tables, sections, headers and footers, page
