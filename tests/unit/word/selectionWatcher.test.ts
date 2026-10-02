@@ -21,6 +21,7 @@ import {
   stopWatchingDocumentSelection,
   watchDocumentSelection,
 } from "../../../src/word/selectionWatcher";
+import { logger } from "../../../src/shared/utils/logger";
 
 interface FakeContext {
   addHandlerAsync?: (eventType: string, callback: () => void) => Promise<unknown>;
@@ -90,6 +91,29 @@ describe("the document-selection watcher", () => {
     installOffice({});
 
     await expect(watchDocumentSelection(() => undefined)).resolves.toBe(false);
+  });
+
+  /*
+   * A designed fallback is not a fault, and the log level is the claim.
+   *
+   * This logged at `warn` on the rule that every refusal should name itself. The
+   * rule is right for a loss and wrong here: nothing is lost, the caller is
+   * handed `false` and reads on demand, and the page tells the user so in as many
+   * words. A warning is read as "something is wrong", so it dressed a documented
+   * consequence of ADR-0103 as an error every time Semantic Review mounted \u2014 and
+   * buried the refusals that are refusals.
+   *
+   * Asserted rather than noted, because a log level nobody tests drifts back to
+   * the louder setting the first time someone adds a `refusalCategory` to it out
+   * of habit.
+   */
+  it("does not warn about a host that simply has no selection event", async () => {
+    const warn = vi.spyOn(logger, "warn");
+    installOffice({});
+
+    await expect(watchDocumentSelection(() => undefined)).resolves.toBe(false);
+
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("declines when the host refuses the subscription", async () => {

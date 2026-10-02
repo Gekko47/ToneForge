@@ -123,6 +123,20 @@ const UNPROBED_CAPABILITIES: AnalysisCapabilities = {
  */
 type DashboardPage = TaskPaneDestination;
 
+/**
+ * Which page this pane opens on.
+ *
+ * **One pane, more than one page.** Microsoft documents that commands sharing a
+ * `<TaskpaneId>` keep "the pane container open but the contents... replaced with
+ * the corresponding Action `SourceLocation`" — so `taskpane.html` and
+ * `semantic.html` are two **pages of one pane**, not two panes.
+ *
+ * This prop is the whole of the context menu's navigation. A task pane command
+ * runs no JavaScript of ours, so there is nothing that could tell an open pane
+ * where to go; the page it loads is the instruction. (ADR-0109, on ADR-0107.)
+ */
+export type DashboardInitialPage = DashboardPage;
+
 function resolveActiveProfile(): StyleProfile | null {
   const profile = selectActiveProfile(loadState());
   return profile ? StyleProfileSchema.parse(profile) : null;
@@ -226,7 +240,12 @@ function skippedIdentities(state: PersistedState): ReadonlySet<string> {
  * deterministic profile â€” but it is now stated on the Home page as a warning
  * with a link, rather than enforced by making half the app unreachable.
  */
-export default function Dashboard(): React.ReactNode {
+export interface DashboardProps {
+  /** The page this pane opens on. Defaults to the landing page. */
+  initialPage?: DashboardInitialPage;
+}
+
+export default function Dashboard({ initialPage = "landing" }: DashboardProps): React.ReactNode {
   // Held in state rather than resolved on every render so a profile created in
   // the profile editor can be picked up without reloading the task pane. A
   // reload would discard the Office runtime, the capability probe, and the
@@ -238,11 +257,18 @@ export default function Dashboard(): React.ReactNode {
       <DashboardWithoutProfile
         onProfileCreated={() => setActiveProfile(resolveActiveProfile())}
         activeProfile={activeProfile}
+        initialPage={initialPage}
       />
     );
   }
 
-  return <DashboardWithProfile key={activeProfile.id} activeProfile={activeProfile} />;
+  return (
+    <DashboardWithProfile
+      key={activeProfile.id}
+      activeProfile={activeProfile}
+      initialPage={initialPage}
+    />
+  );
 }
 
 /**
@@ -259,11 +285,13 @@ export default function Dashboard(): React.ReactNode {
 function DashboardWithoutProfile({
   onProfileCreated,
   activeProfile,
+  initialPage,
 }: {
   onProfileCreated: () => void;
   activeProfile: StyleProfile | null;
+  initialPage: DashboardInitialPage;
 }): React.ReactNode {
-  const [page, setPage] = useState<DashboardPage>("landing");
+  const [page, setPage] = useState<DashboardPage>(initialPage);
   const persisted = usePersistedState();
   const status = setupStatusFromState(persisted);
 
@@ -440,7 +468,13 @@ function DashboardWithoutProfile({
   );
 }
 
-function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }): React.ReactNode {
+function DashboardWithProfile({
+  activeProfile,
+  initialPage,
+}: {
+  activeProfile: StyleProfile;
+  initialPage: DashboardInitialPage;
+}): React.ReactNode {
   const [caps, setCaps] = useState<WordCapabilities | null>(null);
   // Persisted state is read through the store, not `loadState()`, so a consent
   // toggle or provider connection saved in Settings is visible here in the same
@@ -457,7 +491,9 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   const autoScan = persisted.settings.autoScan;
   const activeGovernanceProfile = resolveGovernanceProfile(persisted, activeProfile);
-  const [page, setPage] = useState<DashboardPage>("review");
+  const [page, setPage] = useState<DashboardPage>(
+    initialPage === "landing" ? "review" : initialPage,
+  );
   /*
    * Open by default, and opened *for* the user when findings arrive.
    *

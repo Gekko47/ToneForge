@@ -1,33 +1,50 @@
+import { logger } from "../shared/utils/logger";
 import {
   setTaskpaneTarget,
   type TaskpaneAction,
   type TaskpaneTarget,
 } from "../shared/office/taskpaneNavigation";
 
-async function showTaskpane(target: TaskpaneTarget, action?: TaskpaneAction): Promise<void> {
-  setTaskpaneTarget(target, action);
-  const office = (
-    globalThis as {
-      Office?: { addin?: { showAsTaskpane?: () => Promise<void> } };
-    }
-  ).Office;
-  try {
-    await office?.addin?.showAsTaskpane?.();
-  } catch {
-    // The task pane can also be opened by the manifest openPage action.
+/**
+ * Hand the command to the task pane, and show nothing.
+ *
+ * **A function command must not open a task pane**, and the reason is now the
+ * manifest's rather than this file's: the context menu is a **task pane command**
+ * (`<Action xsi:type="ShowTaskpane">`), and Microsoft documents that its code is
+ * *provided by Office* \u2014 the host resolves the pane itself. A function command has
+ * no such guarantee, and `Office.addin.showAsTaskpane()` cannot supply one: it
+ * takes no pane id and only promises to show "the task pane associated with the
+ * add-in". In a real Word it could not resolve one and opened the shared
+ * runtime's function file instead \u2014 a blank window running `/commands.html`,
+ * which identified itself by logging `syncSemanticRibbon` with
+ * `ControlIdNotFound`, a message only `commands.ts` emits.
+ *
+ * So these commands deliver and return. If no pane is open the instruction waits
+ * in the bridge and is consumed on the next mount, so the user opens the pane
+ * from the ribbon and lands where they asked. See ADR-0107.
+ */
+async function routeToTaskpane(target: TaskpaneTarget, action?: TaskpaneAction): Promise<void> {
+  const directed = setTaskpaneTarget(target, action);
+  if (!directed) {
+    logger.warn("No channel carried the command", {
+      refusalCategory: "taskpane_navigation_undeliverable",
+      verificationResult: "refused",
+      target,
+      action: action ?? null,
+    });
   }
 }
 
 export async function openTaskpane(): Promise<void> {
-  await showTaskpane("review");
+  await routeToTaskpane("review");
 }
 
 export async function openGovernance(): Promise<void> {
-  await showTaskpane("review");
+  await routeToTaskpane("review");
 }
 
 export async function openFindings(): Promise<void> {
-  await showTaskpane("findings");
+  await routeToTaskpane("findings");
 }
 
 /**
@@ -38,11 +55,11 @@ export async function openFindings(): Promise<void> {
  * user chooses to run it.
  */
 export async function reviewForConsistency(): Promise<void> {
-  await showTaskpane("ai-review");
+  await routeToTaskpane("ai-review");
 }
 
 export async function openProfile(): Promise<void> {
-  await showTaskpane("profile");
+  await routeToTaskpane("profile");
 }
 
 /**
@@ -53,11 +70,11 @@ export async function openProfile(): Promise<void> {
  * can change what Apply is permitted to do.
  */
 export async function openGovernancePolicy(): Promise<void> {
-  await showTaskpane("governance-policy");
+  await routeToTaskpane("governance-policy");
 }
 
 export async function openPendingChanges(): Promise<void> {
-  await showTaskpane("pending-changes");
+  await routeToTaskpane("pending-changes");
 }
 
 /**
@@ -68,11 +85,11 @@ export async function openPendingChanges(): Promise<void> {
  * request travels with the navigation, and the pane runs it on arrival.
  */
 export async function scanNow(): Promise<void> {
-  await showTaskpane("review", "scan");
+  await routeToTaskpane("review", "scan");
 }
 
 export async function openTroubleshooting(): Promise<void> {
-  await showTaskpane("debugging");
+  await routeToTaskpane("debugging");
 }
 
 /**
@@ -90,7 +107,7 @@ export async function openTroubleshooting(): Promise<void> {
  * handler and the target move together for that reason.
  */
 export async function openSemanticReview(): Promise<void> {
-  await showTaskpane("semantic-review", "read-selection");
+  await routeToTaskpane("semantic-review", "read-selection");
 }
 
 /*

@@ -38,7 +38,7 @@
 
 import { runInWord } from "../shared/office/officeHelpers";
 import { countWords, hashText } from "../shared/utils/text";
-import { logger } from "../shared/utils/logger";
+import { describeError, logger } from "../shared/utils/logger";
 import {
   SemanticSelectionAnchorSchema,
   type SemanticSelectionAnchor,
@@ -238,16 +238,46 @@ async function captureSelection(): Promise<CaptureOutcome> {
       }
 
       const text = typeof range.text === "string" ? range.text : "";
-      const start = typeof range.start === "number" ? range.start : -1;
-      const end = typeof range.end === "number" ? range.end : -1;
-      if (start < 0 || end < start) {
+      const reportedStart = typeof range.start === "number" ? range.start : -1;
+      const reportedEnd = typeof range.end === "number" ? range.end : -1;
+      /*
+       * **The host may report the pair in either order, and this host does.**
+       *
+       * A real Word reported a bare caret as `start: 1193, end: 1192` — the guard
+       * below used to read `end < start` as "there is no range here" and return
+       * `no-selection`, which sent the user the sentence "There is nothing to
+       * review here" while the caret path that ADR-0103 added sat nine lines
+       * further down, unreachable. The guard was written for the drag case,
+       * predates the caret feature, and silently ate it: the caret review had
+       * never run on any host, and no test could see it because every fixture
+       * supplied an ordered pair.
+       *
+       * Order the offsets rather than refuse them. A pair is unusable only when
+       * one of the two is missing, and the `min`/`max` is also what makes a
+       * backwards drag \u2014 the user dragging right to left \u2014 produce an anchor the
+       * revision adapter can hold, since its precondition compares `text` against
+       * an ordered span.
+       */
+      if (reportedStart < 0 || reportedEnd < 0) {
+        logger.warn("Selection offsets are not a usable pair", {
+          refusalCategory: "selection_offsets_incomplete",
+          verificationResult: "refused",
+          startOffset: reportedStart,
+          endOffset: reportedEnd,
+        });
         return { status: "no-selection" };
       }
+      const start = Math.min(reportedStart, reportedEnd);
+      const end = Math.max(reportedStart, reportedEnd);
       /*
        * A caret, or a drag that caught nothing but whitespace. Neither is text the
        * user chose, and neither carries offsets worth reviewing \u2014 so the unit is
        * the paragraph the cursor is in. Recorded as `caret-paragraph` rather than
        * `selection` so the pane can say what it decided on the user's behalf.
+       *
+       * **Empty text is the test, not an ordered pair.** This branch used to
+       * require `end === start`, which is a second way of asking the same question
+       * and a way the host can answer "no" to while the text is plainly empty.
        */
       if (text.trim().length === 0 || end === start) {
         const caret = await readCaretParagraph(context, range);
@@ -280,7 +310,12 @@ async function captureSelection(): Promise<CaptureOutcome> {
         },
       };
     });
-  } catch {
+  } catch (error) {
+    logger.warn("Selection capture threw in the host transaction", {
+      refusalCategory: "selection_capture_threw",
+      verificationResult: "refused",
+      error: describeError(error),
+    });
     return { status: "unavailable", reason: NO_RUNTIME_REASON };
   }
 }
@@ -306,16 +341,25 @@ async function readCaretParagraph(
   range: SelectionRangeView,
 ): Promise<{ text: string; start: number; end: number; nodeIds: string[] } | null> {
   const collection = range.paragraphs;
-  if (!collection || typeof collection.load !== "function") return null;
+  if (!collection || typeof collection.load !== "function") {
+    return refuseCaret("selection-paragraphs-unavailable", { hasCollection: !!collection });
+  }
   try {
     collection.load("items");
     await context.sync();
-  } catch {
-    return null;
+  } catch (error) {
+    return refuseCaret("paragraph-items-load-refused", { error: describeError(error) });
   }
   const items = Array.isArray(collection.items) ? collection.items : [];
   const paragraph = items[0];
-  if (!paragraph || typeof paragraph.getRange !== "function") return null;
+  if (!paragraph) {
+    return refuseCaret("selection-has-no-paragraph", { paragraphItemCount: items.length });
+  }
+  if (typeof paragraph.getRange !== "function") {
+    return refuseCaret("paragraph-get-range-absent", {
+      paragraphHasLoad: typeof paragraph.load === "function",
+    });
+  }
 
   try {
     /*
@@ -328,21 +372,53 @@ async function readCaretParagraph(
     whole?.load?.(["text", "start", "end"]);
     paragraph.load?.(["uniqueLocalId"]);
     await context.sync();
-    if (!whole) return null;
+    if (!whole) {
+      return refuseCaret("paragraph-range-unavailable", {
+        hasParagraphLoad: typeof paragraph.load === "function",
+      });
+    }
 
     const text = typeof whole.text === "string" ? whole.text : "";
     const start = typeof whole.start === "number" ? whole.start : -1;
     const end = typeof whole.end === "number" ? whole.end : -1;
     // An empty paragraph is a real paragraph with nothing in it, and its text is
     // the paragraph mark alone.
-    if (start < 0 || end < start || text.trim().length === 0) return null;
+    if (start < 0 || end < start || text.trim().length === 0) {
+      return refuseCaret("paragraph-range-not-usable", {
+        startOffset: start,
+        endOffset: end,
+        textLength: text.length,
+      });
+    }
 
     const nodeId =
       typeof paragraph.uniqueLocalId === "string" ? paragraph.uniqueLocalId.trim() : "";
     return { text, start, end, nodeIds: nodeId.length > 0 ? [nodeId] : [] };
-  } catch {
-    return null;
+  } catch (error) {
+    return refuseCaret("paragraph-range-load-refused", { error: describeError(error) });
   }
+}
+
+/**
+ * A caret that could not be expanded, said out loud.
+ *
+ * Every refusal on this path was a bare `return null`, and `null` is
+ * indistinguishable at the page from "the user has nothing selected" \u2014 the same
+ * conflation `SelectionScopeResult` was split to remove, re-entered one layer
+ * down. A host that hands us a paragraph with no `getRange` and a user who put a
+ * caret in an empty paragraph produced the same sentence and the same silence.
+ *
+ * The category names the refusal. Nothing about the document is logged: this
+ * module exists to keep document text local, and a diagnostic that quotes the
+ * text it failed to expand would defeat it.
+ */
+function refuseCaret(refusalCategory: string, context: Record<string, unknown> = {}): null {
+  logger.warn("Caret could not be expanded to its paragraph", {
+    refusalCategory,
+    verificationResult: "refused",
+    ...context,
+  });
+  return null;
 }
 
 /**

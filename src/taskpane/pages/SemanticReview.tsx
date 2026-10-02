@@ -7,6 +7,7 @@ import { semanticGate, type SemanticGateInput } from "../semantic/gates";
 import { deriveSemanticAnnouncement } from "../state/semanticAnnouncement";
 import { readSelectionScope, type SelectionScope } from "../../word/selectionScope";
 import { stopWatchingDocumentSelection, watchDocumentSelection } from "../../word/selectionWatcher";
+import { watchTaskpaneVisibility } from "../../shared/office/taskpaneVisibility";
 import { reviewSemanticSelection } from "../../analysis/semantic/semanticReviewEngine";
 import {
   advanceSession,
@@ -56,6 +57,20 @@ export interface SemanticReviewProps {
   onOpenSettings: () => void;
   /** Opens the Semantic Style destination, for the "no profile" remedy. */
   onOpenSemanticStyle: () => void;
+  /**
+   * Accepted and deliberately **not consulted**.
+   *
+   * It used to carry `read-selection`, and an effect fired on it. That worked
+   * while the context menu was a *function* command that could write an
+   * instruction; it is a **task pane command** now (ADR-0107), so no JavaScript
+   * of ours runs when the user picks it and nothing is written for this page to
+   * receive. The pane reads the selection when it is summoned instead \u2014 on mount,
+   * and on `onVisibilityModeChanged` for a pane already open.
+   *
+   * The prop stays so the Dashboard's arrival mapping still has one shape, and so
+   * a ribbon route that does write an instruction keeps working. Removing it
+   * would mean the two dashboards \u2014 profiled and not \u2014 diverge again for no gain.
+   */
   navigation?: TaskpaneNavigation | null;
   /** The session the Dashboard holds, so a navigation does not discard it. */
   session: SemanticReviewSession | null;
@@ -81,7 +96,7 @@ export default function SemanticReview({
   onBack,
   onOpenSettings,
   onOpenSemanticStyle,
-  navigation,
+  navigation: _navigation,
   session,
   onSession,
   onReviewStatus,
@@ -137,16 +152,60 @@ export default function SemanticReview({
   const profile = record === null ? null : effectiveProfile(record);
 
   /**
-   * Reading the selection: the only Word call this page makes without a click on
-   * a control, and only when the pane was opened from the context menu, where
-   * reading the selection is completing the gesture the user started.
+   * Reading the selection when the pane is summoned, with no button press.
+   *
+   * The context menu is a **task pane command** (ADR-0107), so no JavaScript runs
+   * when the user picks it and nothing can be told which page to show. What the
+   * user did do, with the right-click, is point at some text \u2014 and reading that
+   * text is completing the gesture they started, not starting work they did not
+   * ask for.
+   *
+   * Two arrivals, because there are two states the pane can be in:
+   *
+   * 1. **A fresh pane**, which happens when none was open. Its mount *is* the
+   *    arrival, so it reads once here.
+   * 2. **A pane already open**, which Office re-raises rather than recreating
+   *    (Microsoft: commands sharing a `TaskpaneId` keep "the pane container
+   *    remain open"). Its `onVisibilityModeChanged` is the arrival, and it is the
+   *    only signal that fires here \u2014 a task pane command writes no instruction
+   *    and no channel is involved, which matters because `localStorage` is blocked
+   *    on the host that reported the problem (ADR-0106).
+   *
+   * Both call the same `readSelection` as **Use current selection**, which
+   * already handles a dragged selection and a caret expanded to its paragraph
+   * (ADR-0105, verified in a real Word). This is that working code invoked at the
+   * right moment \u2014 not new capability.
+   *
+   * **A paid-for review is never discarded to satisfy an arrival.** If a proposal
+   * is on screen the re-read is skipped, for the same reason the caret watcher
+   * skips it.
    */
   React.useEffect(() => {
-    // The arrival, and nothing else, is the dependency: this effect is about
-    // what opened the pane, not about the handler it calls.
-    if (navigation?.action !== "read-selection") return;
     void readSelection();
-  }, [navigation]);
+    // Mount only. Re-running on every render would read the document on a
+    // render the user did not ask for.
+  }, []);
+
+  React.useEffect(() => {
+    let active = true;
+    let removeVisibilityHandler: (() => Promise<void>) | null = null;
+
+    void watchTaskpaneVisibility(() => {
+      // A paid-for review is never discarded to satisfy an arrival, for the same
+      // reason the caret watcher skips it below.
+      if (!active || heldResult.current !== null) return;
+      void readSelection();
+    }).then((remove) => {
+      // `null` means the host has no such event, so there is nothing to remove.
+      if (!active) void remove?.();
+      else removeVisibilityHandler = remove;
+    });
+
+    return () => {
+      active = false;
+      void removeVisibilityHandler?.();
+    };
+  }, []);
 
   /**
    * Whether a review is currently on screen, readable from a stale closure.

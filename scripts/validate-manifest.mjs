@@ -302,19 +302,20 @@ function validateCommandParity(manifest, xml, definitions, errors) {
      */
     const opensNamedPane = actionType === "ShowTaskpane";
     if (opensNamedPane) {
-      if (sourceResId !== "Taskpane.Url") {
-        errors.push(
-          `manifest.xml destination mismatch for ${definition.id}: expected Taskpane.Url, got ${sourceResId}`,
-        );
-      }
+      /*
+       * A pane command addresses the ONE pane, and may address any PAGE of it.
+       *
+       * Microsoft: commands sharing a `TaskpaneId` keep "the pane container open
+       * but the contents of the pane will be replaced with the corresponding
+       * Action SourceLocation". So the source is how a command names the page it
+       * opens, and demanding one fixed `Taskpane.Url` here would forbid the
+       * documented deep link (ADR-0109). What is asserted is what actually makes
+       * it the same pane -- the id -- plus the fact that the resource resolves.
+       */
       const destination = sourceResId ? urls.get(sourceResId) : undefined;
       if (!destination) {
         errors.push(
           `manifest.xml is missing destination resource ${sourceResId ?? "Taskpane.Url"} for ${definition.id}`,
-        );
-      } else if (!destination.endsWith("/taskpane.html")) {
-        errors.push(
-          `manifest.xml command ${definition.id} must open taskpane.html, got ${destination}`,
         );
       }
       if (taskpaneId !== "ButtonId1") {
@@ -334,8 +335,29 @@ function validateCommandParity(manifest, xml, definitions, errors) {
       errors.push(`manifest.json contains command without a registry definition: ${id}`);
     }
   }
-  for (const id of actions.keys()) {
-    if (id.startsWith("ToneForge") && id !== "ToneForgeTaskpane" && !registeredIds.has(id)) {
+  /*
+   * The registry holds FUNCTION commands, so a task pane command is exempt BY
+   * KIND, not by name.
+   *
+   * Microsoft splits add-in commands in two: a *task pane command* is "code
+   * provided by Office" and runs no JavaScript of ours, while a *function
+   * command* runs the code `commandHandlers.ts` registers. A `openPage` action
+   * is therefore the former, and it cannot appear in `commandDefinitions.json` --
+   * adding it there asserts that a function exists for it, which is false, and
+   * the parity loop then demands a ribbon control on the ToneForge tab that the
+   * context menu control is not.
+   *
+   * The exemption used to be one hard-coded id, `ToneForgeTaskpane`, which is the
+   * same mistake as the guard three lines up in the XML file: naming the
+   * arrangement rather than the rule. A second pane command -- the semantic
+   * deep link, ADR-0109 -- was rejected by the repository for using a
+   * documented Office mechanism. Exempting the kind admits every task pane
+   * command the host supports and still rejects an unregistered function
+   * command, which is what this check is for.
+   */
+  for (const [id, action] of actions) {
+    if (action.type === "openPage") continue;
+    if (id.startsWith("ToneForge") && !registeredIds.has(id)) {
       errors.push(`manifest.json contains runtime command without a registry definition: ${id}`);
     }
   }
@@ -377,6 +399,22 @@ function validateResourceIdLength(xml, errors) {
       `manifest.xml resource id "${id}" is ${id.length} characters; the host limit is ${MAX_RESOURCE_ID_LENGTH} and an over-length id prevents the add-in from registering`,
     );
   }
+}
+
+/**
+ * Whether this manifest declares a shared runtime, which decides the pane rules.
+ *
+ * A long-lifetime `<Runtime>` on a `<Host>` means the task pane and the function
+ * commands run in the same runtime, and such a runtime supports exactly one task
+ * pane. The pane rules are therefore not a constant: a manifest with no shared
+ * runtime may name a `TaskpaneId`, and one with a shared runtime may not, because
+ * a named id is a second identity for the same add-in (ADR-0104).
+ *
+ * Read from the manifest rather than assumed from this repository, so the check
+ * follows the file it is checking.
+ */
+function declaresSharedRuntime(surface) {
+  return /<Runtime\b[^>]*\blifetime="long"/.test(surface);
 }
 
 /** The one control permitted to open the pane, and the identity it must use. */
@@ -429,48 +467,117 @@ function validateSingleTaskPane(xml, errors) {
   const openers = controls.filter((control) =>
     /<Action\s+xsi:type="ShowTaskpane"/.test(control.body),
   );
-  if (openers.length !== 1) {
+  /*
+   * More than one *opener* is fine; more than one *pane* is not.
+   *
+   * The context menu is a task pane command now (ADR-0107), so two controls open
+   * the pane and both must name the same source. The old rule counted openers,
+   * which would have failed the very change that fixed the bug \u2014 and it counted
+   * for a reason worth keeping: two controls naming two *different* sources is
+   * exactly the fork ADR-0101 describes. So the question is no longer "how many
+   * open it" but "do they all open the same one".
+   */
+  if (openers.length === 0) {
     errors.push(
-      `manifest.xml must declare exactly one ToneForge task pane; found ${openers.length} controls that open one. A second pane identity is what put a blank add-in pane beside the live one (ADR-0101)`,
+      `manifest.xml must declare a ToneForge control that opens the task pane; found none (ADR-0101)`,
     );
   }
-
+  /*
+   * Differing sources are ALLOWED, and are the deep-link mechanism.
+   *
+   * Microsoft: commands sharing a `TaskpaneId` keep "the pane container open but
+   * the contents of the pane will be replaced with the corresponding Action
+   * SourceLocation". So one identity with two pages is how a task pane command
+   * reaches a page \u2014 it runs no JavaScript of ours, and the page it loads is the
+   * only instruction it can carry (ADR-0109).
+   *
+   * An earlier version of this check demanded one *destination* as well as one
+   * identity, which would have rejected that arrangement outright. It is the
+   * third rule here that has had to be inverted, and the reason is the same each
+   * time: the question is how many panes exist, and the answer is one.
+   */
+  const paneCommands = openers.filter((control) =>
+    /<TaskpaneId>ButtonId1<\/TaskpaneId>/.test(control.body),
+  );
+  if (paneCommands.length !== openers.length) {
+    errors.push(
+      `manifest.xml has ${openers.length} pane-opening controls but ${paneCommands.length} name taskpane ${TASKPANE_ID}; every route must address ONE pane (ADR-0108)`,
+    );
+  }
   for (const control of controls) {
     const opensPane = /<Action\s+xsi:type="ShowTaskpane"/.test(control.body);
     const taskpaneId = /<TaskpaneId>([^<]+)<\/TaskpaneId>/.exec(control.body)?.[1];
     const sourceResId = /<SourceLocation\s+resid="([^"]+)"\s*\/>/.exec(control.body)?.[1];
 
+    /*
+     * Every pane opener's source must RESOLVE.
+     *
+     * This is the part of the deep-link rule that is not optional: a `resid`
+     * with no matching resource never resolves, so the host opens nothing at all
+     * and says nothing -- the same silent-registration failure as an over-length
+     * resource id (ADR-0082). Asserting "the resource exists" is what keeps a
+     * second page from becoming a second nothing.
+     */
+    if (opensPane) {
+      const page = sourceResId === undefined ? undefined : urls.get(sourceResId);
+      if (page === undefined) {
+        errors.push(
+          `manifest.xml control ${control.id} opens the pane at resource ${sourceResId ?? "none"}, which resolves to no page; the host opens nothing and reports nothing (ADR-0109)`,
+        );
+      }
+    }
+
     if (control.id !== TASKPANE_CONTROL_ID) {
       /*
-       * One error per control, describing what it wrongly is. A control that
-       * already opens a pane is named for that; reporting its TaskpaneId and
-       * source as well would triple-count one defect and describe all three as
-       * "runs a function", which it does not.
+       * A pane command must name THE pane, and it must be this one.
+       *
+       * Microsoft documents sharing an id as the normal pattern for several
+       * controls addressing one pane: "Use the same TaskpaneId for different
+       * actions that share the same pane... the pane container will remain open."
+       *
+       * This assertion once forbade the id entirely, on a misreading of the
+       * shared-runtime guidance, and that was the direct cause of two panes: two
+       * ShowTaskpane actions with no id are two independent panes, confirmed in a
+       * real Word. The rule is one IDENTITY \u2014 neither "no id" nor "one opener".
        */
-      if (opensPane) {
+      if (opensPane && taskpaneId !== TASKPANE_ID) {
         errors.push(
-          `manifest.xml control ${control.id} opens its own pane; only ${TASKPANE_CONTROL_ID} may, because a second pane identity forks the pane (ADR-0101)`,
+          `manifest.xml control ${control.id} opens the pane and must use taskpane ${TASKPANE_ID}, got ${taskpaneId}; a different id is a second pane (ADR-0108)`,
         );
-      } else {
-        if (taskpaneId) {
-          errors.push(
-            `manifest.xml control ${control.id} runs a function and must not declare TaskpaneId ${taskpaneId}; the one task pane is the openPage default (ADR-0101)`,
-          );
-        }
-        if (sourceResId) {
-          errors.push(
-            `manifest.xml control ${control.id} runs a function and must not declare its own source; the one task pane is the openPage default (ADR-0101)`,
-          );
-        }
+      }
+      if (!opensPane && taskpaneId) {
+        errors.push(
+          `manifest.xml control ${control.id} runs a function and must not declare TaskpaneId ${taskpaneId}; only a pane command names a pane (ADR-0108)`,
+        );
+      }
+      if (!opensPane && sourceResId) {
+        errors.push(
+          `manifest.xml control ${control.id} runs a function and must not declare its own source; the one task pane is declared by the ShowTaskpane controls (ADR-0107)`,
+        );
       }
       continue;
     }
 
     if (!opensPane) {
       errors.push(
-        `manifest.xml task pane control ${TASKPANE_CONTROL_ID} must use ShowTaskpane; it is the one control allowed to open the pane (ADR-0101)`,
+        `manifest.xml task pane control ${TASKPANE_CONTROL_ID} must use ShowTaskpane (ADR-0101)`,
       );
     }
+    /*
+     * The shared pane identity.
+     *
+     * This element is what makes ONE pane. Microsoft documents it: "Use the same
+     * TaskpaneId for different actions that share the same pane... the pane
+     * container will remain open but the contents will be replaced." The
+     * context-menu control below carries the same id, so both routes raise the
+     * same container.
+     *
+     * This assertion once FORBADE the id, on a misreading of the shared-runtime
+     * guidance, and that was the direct cause of two panes: two ShowTaskpane
+     * actions with no id are two independent panes, confirmed in a real Word as
+     * the context menu and the ribbon each opening their own instance. See
+     * ADR-0108, which reverts ADR-0104.
+     */
     if (taskpaneId !== TASKPANE_ID) {
       errors.push(
         `manifest.xml task pane ${TASKPANE_CONTROL_ID} must use taskpane ${TASKPANE_ID}, got ${taskpaneId}`,

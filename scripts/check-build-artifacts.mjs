@@ -5,7 +5,29 @@ import { fileURLToPath } from "node:url";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dist = join(root, "dist");
 const maxJavaScriptBytes = 600 * 1024;
-const expectedEntries = ["runtime", "taskpane", "commands"];
+/*
+ * The pages and entries the build must emit are read from the manifest, not
+ * restated here.
+ *
+ * Both lists were literals naming the two pages this add-in had when it was
+ * first packaged. Adding the semantic deep-link page (ADR-0109) then produced a
+ * build that was correct in every respect and a check that either ignored the new
+ * page or failed on it, depending on which list it consulted. A check that
+ * restates its subject can only ever be wrong in one direction.
+ */
+const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
+const expectedPages = [
+  ...new Set(
+    (manifest.extensions ?? [])
+      .flatMap((extension) => extension.runtimes ?? [])
+      .map((runtime) => runtime?.code?.page)
+      .filter((page) => typeof page === "string" && /^https?:\/\//.test(page))
+      .map((page) => new URL(page).pathname.replace(/^\//, "")),
+  ),
+];
+if (expectedPages.length === 0) throw new Error("manifest.json declares no runtime page to build");
+/** A page `taskpane.html` is emitted by the `taskpane` entry; `commands.html` by `commands`. */
+const expectedEntries = ["runtime", ...expectedPages.map((page) => page.replace(/\.html$/, ""))];
 const allowedExternalScripts = new Set([
   "https://officeapis.public.onecdn.static.microsoft/1/office.js",
   "https://appsforoffice.microsoft.com/lib/1/hosted/office.js",
@@ -51,7 +73,7 @@ for (const entry of expectedEntries) {
   if (!entryFile) throw new Error(`Missing production entry chunk for ${entry}`);
 }
 
-for (const page of ["taskpane.html", "commands.html"]) {
+for (const page of expectedPages) {
   const pagePath = join(dist, page);
   if (!existsSync(pagePath)) throw new Error(`Missing production page: ${page}`);
   const html = readFileSync(pagePath, "utf8");

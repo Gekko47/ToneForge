@@ -87,10 +87,32 @@
                     <bt:Image size="32" resid="Icon.32x32" />
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
+                  <!--
+  THE SHARED PANE IDENTITY, and it is the point of this element.
+
+  Microsoft documents it directly: "When you have multiple ShowTaskpane actions,
+  use a different TaskpaneId if you want an INDEPENDENT pane for each. Use the
+  SAME TaskpaneId for different actions that share the same pane. When users
+  choose commands that share the same TaskpaneId, the pane container will remain
+  open but the contents will be replaced with the corresponding SourceLocation."
+
+  So this id, repeated verbatim on the context-menu control below, is what makes
+  ONE pane. Both controls raise the same container rather than opening a second
+  one.
+
+  It was previously absent, on the reasoning that a shared runtime must carry no
+  TaskpaneId. That misread the guidance, which concerns the auto-open
+  convention rather than naming a pane, and removing it was the direct cause of
+  two panes: two ShowTaskpane actions with no id are two independent panes,
+  confirmed in a real Word as the context menu and the ribbon each opening their
+  own instance.
+
+  See ADR-0101 and ADR-0104, which is reverted by ADR-0108.
+-->
+<Action xsi:type="ShowTaskpane">
+  <TaskpaneId>ButtonId1</TaskpaneId>
+  <SourceLocation resid="Taskpane.Url" />
+</Action>
                 </Control>
               </Group>
             </OfficeTab>
@@ -361,9 +383,43 @@
                   <bt:Image size="32" resid="Icon.32x32" />
                   <bt:Image size="80" resid="Icon.80x80" />
                 </Icon>
-                <Action xsi:type="ExecuteFunction">
-                  <FunctionName>ToneForgeSemantic</FunctionName>
-                </Action>
+                <!--
+  ShowTaskpane, not ExecuteFunction, and this is the fix for a blank second window.
+
+  Microsoft documents two kinds of add-in command. A TASK PANE COMMAND opens the
+  pane and its code is "provided by Office": no JavaScript runs, so the host
+  resolves the pane itself. A FUNCTION COMMAND runs our code, and ours called
+  Office.addin.showAsTaskpane(), which takes no pane id and only promises to show
+  "the task pane associated with the add-in". In a real Word it could not resolve
+  one and opened the shared runtime's function file instead: a blank window
+  running /commands.html, which identified itself by logging syncSemanticRibbon
+  with ControlIdNotFound, a message only commands.ts emits.
+
+  Declared here, the host does what "Review in Editor" does: it opens the pane, or
+  raises the pane already open, with no runtime in the path that could fall back
+  to the wrong page.
+
+  The source location is the same Taskpane.Url the Home-tab control uses, so both
+  routes address ONE pane. See ADR-0107.
+-->
+<!--
+  A DIFFERENT PAGE of the ONE pane, not a second pane.
+
+  Same <TaskpaneId> as the Home-tab control above, so the container is reused
+  rather than duplicated; a different SourceLocation, so the contents are replaced
+  with the page that opens on Semantic Review. Microsoft documents exactly this:
+  commands sharing a TaskpaneId keep "the pane container open but the contents of
+  the pane will be replaced with the corresponding Action SourceLocation."
+
+  The context menu is a task pane command (ADR-0107), so it runs no JavaScript of
+  ours and there is nothing that could navigate an open pane from inside. The page
+  a command loads IS the instruction (ADR-0109). Semantic Review then reads the
+  selection as it mounts, so the text the user right-clicked arrives with the page.
+-->
+<Action xsi:type="ShowTaskpane">
+  <TaskpaneId>ButtonId1</TaskpaneId>
+  <SourceLocation resid="Taskpane.Semantic.Url" />
+</Action>
               </Control>
             </OfficeMenu>
           </ExtensionPoint>
@@ -379,6 +435,7 @@
       <bt:Urls>
         <bt:Url id="ToneForge.Commands.Url" DefaultValue="https://localhost:3000/commands.html" />
         <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html" />
+        <bt:Url id="Taskpane.Semantic.Url" DefaultValue="https://localhost:3000/semantic.html" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="ToneForge.GroupLabel" DefaultValue="ToneForge" />

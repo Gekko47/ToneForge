@@ -137,6 +137,13 @@ const dev = {
       chunks: ["runtime", "taskpane"],
       inject: "body",
     }),
+    // The second page of the ONE pane, reached by the context menu (ADR-0109).
+    new HtmlWebpackPlugin({
+      template: "./src/taskpane/semantic.html",
+      filename: "semantic.html",
+      chunks: ["runtime", "semantic"],
+      inject: "body",
+    }),
     new HtmlWebpackPlugin({
       template: "./src/commands/commands.html",
       filename: "commands.html",

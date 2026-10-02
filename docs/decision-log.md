@@ -3231,10 +3231,11 @@ formatting` governed the body style, the list standard, the table standard,
   "this control mentions one", so it passed on the manifest that carried the defect
   and would have failed on the correct one. A check written about the commands
   rather than about the pane is a check on the wrong subject.
-- **Decision**:
+- **Decision** (rule 1 amended by ADR-0104, which removed the `TaskpaneId`):
   1. Exactly one ToneForge control may declare `ShowTaskpane`: `ToneForgeTaskpane`,
-     with `TaskpaneId` `ButtonId1` and `SourceLocation` `resid="Taskpane.Url"`. It is
-     the identity every other route resolves to.
+     with `SourceLocation` `resid="Taskpane.Url"`. It is the identity every other route
+     resolves to. A `TaskpaneId` was named here and is now forbidden; see ADR-0104 for
+     why naming the pane is itself what forked it.
   2. Every other ToneForge control — ribbon and context menu alike — runs a
      function, and names neither a pane nor a source. Every command id therefore has
      an exported global alias.
@@ -3339,9 +3340,12 @@ formatting` governed the body style, the list standard, the table standard,
   nobody read it as a symptom.
 - **Decision**:
   1. **A collapsed or whitespace-only selection expands to its containing
-     paragraph.** `Paragraph.getRange("Whole")` is WordApi 1.1 and is the only
-     reason a caret has offsets at all. The scope carries
-     `source: "caret-paragraph"` rather than pretending the user selected it.
+     paragraph.** The scope carries `source: "caret-paragraph"` rather than
+     pretending the user selected it. Two corrections to this record, both from
+     ADR-0105: `Paragraph.getRange` is **WordApi 1.3**, not 1.1 as stated here and
+     in the declaration in `types/office.d.ts`, and this path did not run on any
+     host until then, because a validity guard written for the drag case returned
+     `no-selection` first.
   2. **A caret in an empty paragraph is still `no-selection`.** There is nothing
      there, and padding it out would be a fabrication.
   3. **The pane states both facts.** The text is labelled as "the paragraph the
@@ -3377,3 +3381,415 @@ formatting` governed the body style, the list standard, the table standard,
   `src/types/office.d.ts`; `src/taskpane/components/semantic/SemanticReviewScope.tsx`;
   `tests/unit/word/selectionScope.test.ts`; `tests/unit/word/selectionWatcher.test.ts`;
   `tests/unit/taskpane/pages/SemanticReview.test.tsx`; `docs/manual-verification.md`.
+
+## ADR-0106: A command that cannot deliver its instruction does not open a pane
+
+- Amends: ADR-0104 (the pane identity is fixed; the delivery channel is a
+  separate question, and this is its answer).
+- Status: Accepted (2026-10-02)
+- **Context**: the context menu still opened a second pane after the `TaskpaneId`
+  was removed, and the trace carried the line that explains it: **"Tracking
+  Prevention blocked access to storage for \<URL\>"**.
+- `localStorage` is unavailable in this Word host. The bridge writes its
+  instruction there and the task pane reads it back, so the write went nowhere
+  \u2014 and `setItem` **returned normally**. The commands runtime believed it had
+  queued a navigation; nothing was queued.
+- `Office.addin.showAsTaskpane()` was then called anyway, and that call opens a
+  pane whether or not there is anything to tell it where to go. So the sequence
+  was: user right-clicks a paragraph, a blank second window opens beside the
+  live one, and the selection is nowhere. The two symptoms the user reported as
+  separate \u2014 a new pane, and no selection used \u2014 are one cause.
+- **Decision**:
+  1. **A function command never opens a task pane.** `showAsTaskpane()` was
+     called by every command, on the assumption that it reveals the pane the user
+     already has. It does not: the host opened a **second window running
+     `/commands.html`**, the shared runtime's own function file, which is blank
+     and has no page in it. That window identified itself \u2014 it logged
+     `syncSemanticRibbon` with `ControlIdNotFound`, and that message is emitted
+     only by `commands.ts`, never by the task pane \u2014 and it is the same
+     fingerprint ADR-0101 recorded, which is why ADR-0101's diagnosis was right
+     and this one was wrong twice before it landed.
+     Only the Home-tab control opens the pane. A command delivers and returns; if
+     no pane is open the instruction waits in the bridge and is consumed on the
+     next mount, so the user opens the pane and lands where they asked.
+  2. **A successful `setItem` is not a delivery receipt.** The value is read
+     straight back and compared. A silent discard is the failure a real host
+     produced, and a test asserting only that the call did not throw would pass on
+     exactly that host.
+  3. **The instruction does not depend on storage.** It goes out over three
+     routes, and any one carrying it is enough: a **module variable** (free and
+     instant when a shared runtime gives both sides one JavaScript context, which
+     is what a shared runtime is _for_), then **`BroadcastChannel`** (same-origin,
+     and unlike storage not something a privacy setting switches off), then
+     `localStorage`.
+     The first two are not redundant, and the reason is worth recording: a
+     `BroadcastChannel` does not deliver to the channel that posted. Separate
+     documents \u2014 which is when the channel is needed \u2014 hold separate channel
+     objects, so it delivers; a shared runtime \u2014 when the variable is needed \u2014 does
+     not.
+  4. **Every route is cleared on every consume.** An intermediate version returned
+     as soon as the in-memory copy was found and left the storage copy behind, so
+     the same instruction was handed out twice: once live, and again on the next
+     mount, long after the user acted on it. Single consumption has to hold across
+     every route or it does not hold at all, and the test that asserted it is what
+     found this.
+  5. **The in-memory route is not counted as a delivery.** A later version added
+     `sharesJavaScriptContext()`, reasoning that `Office.addin` existing meant the
+     commands and the pane shared one context. It does not: `showAsTaskpane` being
+     available says the runtime is long-lived, not that this module instance is
+     shared. So it reported a delivery the module variable could not make, and the
+     symptom was a pane that opened and received nothing \u2014 which is the regression
+     the user reported between two otherwise identical builds. `announced` and
+     `stored` are facts; the in-memory route is a possibility, and a caller cannot
+     check it.
+  6. **The manifest is unchanged, and ADR-0101 is vindicated.** ADR-0101's
+     diagnosis was right: the context menu reached a different pane from the one
+     the live pane was on. The failure was never that `TaskpaneId` existed \u2014 it is
+     that a _function command_ called `showAsTaskpane()` at all. Removing the id was
+     attempted on the strength of a documentation rule untested in this host, and it
+     removed the pane's identity without giving the shared runtime one to use, which
+     made the fallback worse rather than better.
+- **Consequences**:
+  - `localStorage` remains blocked on the host that reported it. Nothing here
+    changes that; it is simply no longer load-bearing.
+  - `ADR-0079`'s "delivered whenever it is pressed" no longer depends on the pane
+    being closed. It is **still unverified in a real Word**, and the host gate says
+    so.
+  - A command with no pane open now does nothing visible, and the instruction waits
+    for the next mount. That is a real limitation and the correct one: opening a
+    blank window is not a way of delivering a command.
+  - The `consumeTaskpaneTarget` single-consume race noted in ADR-0104 is still
+    unmeasured. Two mounted panes are still a second consumer.
+  - **Two diagnoses in a row were wrong, and both were defended with evidence.** The
+    first blamed the storage channel when storage was blocked but was not what
+    opened the window; the second blamed the `TaskpaneId` on a documentation rule
+    nobody had run in this host. What actually identified it was a console message
+    in the offending window \u2014 `syncSemanticRibbon`, which only `commands.ts` emits.
+    A symptom reported by a user in the _other_ window is evidence, and reading it
+    is cheaper than another build-and-sideload cycle.
+- **Evidence**: `src/shared/office/taskpaneNavigation.ts`;
+  `src/commands/commandHandlers.ts`; `tests/unit/commands/commands.test.ts`;
+  `docs/manual-verification.md`.
+
+## ADR-0107: The context menu is a task pane command, not a function command
+
+- Amends: ADR-0106 (a function command never opens a pane \u2014 now it also does not
+  need to), ADR-0101 (more than one control may open the pane; one _pane_ is the
+  rule).
+- Status: Accepted (2026-10-02)
+- **Context**: "Context menu currently opens its own pane which works, and the
+  ribbon button runs its own instance." Reported from a real Word, and it is the
+  most useful sentence in this stretch: the context menu stopped producing a
+  blank window, and what remained was that **the two routes are two panes**.
+- Microsoft documents two kinds of add-in command, and the distinction is the
+  whole defect:
+
+  | Kind                  | What it does         | Who provides the code |
+  | --------------------- | -------------------- | --------------------- |
+  | **Task pane command** | Opens the pane       | **Office**            |
+  | **Function command**  | Runs your JavaScript | Your runtime          |
+
+  A task pane command is declared entirely in markup, and the host resolves the
+  pane itself. Our context menu was a **function command** that called
+  `Office.addin.showAsTaskpane()` \u2014 which takes no pane id and only promises to
+  show "the task pane associated with the add-in". When the host could not
+  resolve one it opened the shared runtime's **function file** instead: a blank
+  window running `/commands.html`, which identified itself by logging
+  `syncSemanticRibbon` with `ControlIdNotFound`, a message only `commands.ts`
+  emits.
+
+- **Decision**:
+  1. **The context menu becomes a task pane command** (`ShowTaskpane` in the XML,
+     `openPage` in the JSON), pointing at the same source location the Home-tab
+     entry point uses. Office resolves the pane; no runtime sits in the path able
+     to open the wrong page.
+  2. **The rule becomes "one pane", not "one opener".** Two controls may open the
+     pane; they must name the **same** source. The previous check counted openers
+     and would have rejected this change \u2014 a check that fails on the fix is a
+     check guarding the defect, which this repository has now done twice.
+  3. **No control may declare a `TaskpaneId`** \u2014 **reverted by ADR-0108.** This
+     was wrong. A named id is not inherently a _separate_ pane: sharing one is
+     precisely how several controls address one pane, and its absence here made
+     every pane command its own pane.
+  4. **`showAsTaskpane()` leaves the function commands permanently**, so no
+     runtime can reintroduce the fallback.
+  5. **`Office.addin` is declared in `types/office.d.ts`** \u2014 optional, narrow, as
+     the host declares it. It was entirely absent, which is why every call for
+     five attempts was a hand-rolled cast and no compiler ever checked the shape.
+- **Consequences**:
+  - **The context menu no longer names a destination.** A task pane command runs
+    no JavaScript, so it cannot write a navigation instruction, and the pane it
+    opens will mount on whatever page it last had. Telling an **already-open**
+    pane which page to show remains unsolved and is deferred to a second phase:
+    the pane would have to announce itself, and that mechanism is unproven in a
+    real Word, exactly as `BroadcastChannel` was. It is deliberately not bundled
+    with this change so a failure has one cause.
+  - **"Review in Editor" is not a model for this.** It is Microsoft's first-party
+    pane, with no manifest and no public API to open it. The transferable idea is
+    the table above, not the feature.
+  - **A repository check must be read against the fix.** Three guards here
+    asserted the old shape, and one of them \u2014 "exactly one ShowTaskpane control"
+    \u2014 would have failed the correct manifest. They now assert one _destination_.
+  - The host gate stays open. A green build and two panes is the failure this
+    guards against, so it closes only by a person in a real Word after a full
+    sideload cycle.
+- **Evidence**: `manifest.xml` (`ToneForgeSemanticContextControl`);
+  `manifest.json` (context menu `actionId`); `scripts/validate-manifest.mjs`
+  (`validateSingleTaskPane`); `src/commands/commandHandlers.ts`
+  (`routeToTaskpane`); `src/types/office.d.ts` (`Office.Addin`);
+  `tests/unit/architecture/oneTaskpane.test.ts`;
+  `tests/unit/commands/commandContracts.test.ts`;
+  `plans/context-menu-pane-routing.md`; Microsoft: _Add-in commands_, _Show or
+  hide the task pane of your Office Add-in_. **Decision 3 is reverted by ADR-0108,
+  which restores the `TaskpaneId` and corrects what this record claims about it.**
+
+## ADR-0104: The pane belongs to the shared runtime, and is therefore not named
+
+- Amends: ADR-0101 (rule 1 named the pane `ButtonId1`; the name was the second identity).
+- Status: **REVERTED by ADR-0108 (2026-10-02).** Kept because the reasoning
+  below is the clearest example in this log of a documented rule read past its
+  scope: it is not wrong that a shared runtime supports one pane, and it is wrong
+  that this follows by removing the id. It did \u2014 and with no id every pane command
+  became its own pane.
+- **Context**: ADR-0101 converted all eight ribbon controls to `ExecuteFunction`
+  because Word keys a task pane on the `TaskpaneId` a `ShowTaskpane` action names.
+  It left that name in place on the one control that opens the pane, and the fork
+  survived: choosing Semantic Review from the right-click menu still opened a
+  second add-in window beside the live one. Reported from a real Word.
+- A `TaskpaneId` names a **separate** task pane. This manifest declares a
+  long-lifetime shared runtime on the same `<Host>`, and a shared runtime supports
+  exactly one task pane, so the name was a second identity for the same add-in. The
+  consequence is specific and was measured in the host: with nothing else to show,
+  `Office.addin.showAsTaskpane()` — which every command calls — was resolved by the
+  host opening **the shared runtime's own function file** as a pane. The extra
+  window's console reported its page as `/commands.html`. The user saw a blank
+  ToneForge window; the code called a method that resolved successfully.
+- **Decision**:
+  1. The one `ShowTaskpane` action declares **no** `TaskpaneId`. The pane belongs
+     to the shared runtime, and every route — the entry point, the seven commands,
+     the context menu — resolves to it.
+  2. The rule is **conditional on the manifest**, not hard-coded: a manifest that
+     declares a long-lifetime `<Runtime>` may not name a pane; one that does not may.
+     Read from the file, because a rule about manifests should follow the manifest.
+  3. Both guards that required the defect are inverted. `oneTaskpane.test.ts`
+     _asserted_ that `<TaskpaneId>ButtonId1</TaskpaneId>` was present, and
+     `validateSingleTaskPane` required the same id — the repository's check
+     demanded the element that caused the fault. It now forbids it, and asserts the
+     shared runtime whose presence makes the prohibition true rather than arbitrary.
+  4. The manifest's prose no longer describes the pane by an id it does not have.
+- **Consequences**:
+  - **A check can demand the defect.** This is the third time a green repository has
+    passed on a manifest the host rejected, and the first time the check was not
+    merely blind but _positive_ about the wrong thing. A test that asserts a
+    specific value is not a weaker version of one that asserts its absence; it is a
+    different claim, and it is falsifiable only by the defect.
+  - A `<Control>` is no longer uniquely identified by its pane. Word's own uniqueness
+    rule is about UI element ids, and the entry point keeps its `id`, so nothing else
+    moves.
+  - The unified manifest is unaffected and stays the primary: its `openPage` action
+    already addressed one pane, which is why the fork was XML-only (ADR-0070).
+  - **The host gate stays open.** A build that passes and two panes is the failure
+    this guards against, so it is closed only by a person in a real Word, after a full
+    sideload cycle — Word caches the manifest at registration.
+  - One question is still open and is not this ADR's to answer: whether the
+    `storage` event carries a command from the shared runtime to an open pane at
+    all. The pane identity is fixed; the delivery channel is measured separately, and
+    the bridge now logs who wrote and who consumed each instruction.
+- **Evidence**: `manifest.xml` (`ToneForgeTaskpane` action, `Runtimes`);
+  `scripts/validate-manifest.mjs` (`validateSingleTaskPane`, `declaresSharedRuntime`);
+  `tests/unit/architecture/oneTaskpane.test.ts`;
+  `tests/unit/commands/commandContracts.test.ts`;
+  `src/shared/office/taskpaneNavigation.ts`; `docs/manual-verification.md`.
+
+## ADR-0105: A caret is a caret because its text is empty, not because its offsets agree
+
+- Amends: ADR-0103 (the caret path could not be reached; `Paragraph.getRange` is
+  WordApi 1.3, not 1.1).
+- Status: Accepted (2026-10-02)
+- **Context**: "Paragraph identification based on cursor location does not work,
+  but selecting text does" — reported from a real Word, and accurate. ADR-0103 had
+  shipped a caret path an hour earlier.
+- It had never run. The capture checked its offsets first: `if (start < 0 || end <
+start) return no-selection`. A real Word reports a bare caret as `start: 1193,
+end: 1192`, so that guard returned nine lines **above** the caret branch and the
+  user was told "There is nothing to review here. Click inside a paragraph, or
+  select the text you want checked" — the exact sentence describing the feature
+  that was sitting unreachable below it. The guard was written for the drag case,
+  predates the caret feature, and silently ate it.
+- No test could see it, because every fixture supplied an ordered pair. That is
+  ADR-0100's shape for the third time: the double was the thing that was supposed to
+  catch this, and it modelled a tidier host than the one that failed.
+- **Decision**:
+  1. **Order the offsets; do not refuse them.** A pair is unusable only when one of
+     the two is missing. `min`/`max` also makes a right-to-left drag produce an
+     anchor the revision adapter can hold, since its precondition compares `text`
+     against an ordered span.
+  2. **Empty text is the caret test.** `text.trim().length === 0` is what
+     distinguishes a caret, and it is the fact the user can see. `end === start` was
+     a second way of asking, and one the host can answer "no" to while the text is
+     plainly empty.
+  3. **Every refusal names itself.** The caret path returned bare `null` at five
+     points, which reaches the page as "nothing is selected" and is the same
+     conflation `SelectionScopeResult` was split to remove, re-entered one layer
+     down. Each now carries a `refusalCategory`, and the branch decision logs the
+     offsets that produced it.
+  4. **The `WordApi 1.1` claim was wrong and is corrected.** `Word.Paragraph.getRange`
+     is **WordApi 1.3**; ADR-0103, the declaration in `types/office.d.ts` and the
+     comment in `capabilityProbe.ts` all said 1.1 and "is everywhere", while
+     `manifest.xml` requires only 1.1. The method is still checked at runtime and
+     still optional, which is the correct shape — the claim behind it was the part
+     that was wrong, and it is corrected rather than relied on.
+- **Consequences**:
+  - A feature can ship, pass a review, and be dead on arrival when a guard written
+    before it can reach it. The generalisable rule is the one ADR-0100 states: a
+    check is only as good as the host it models, and a fixture supplied with a
+    fixture-friendly shape is a hole in the suite dressed as its opposite.
+  - Two new tests carry the pair that would have caught it: an inverted caret pair
+    must still expand, and an inverted drag must arrive ordered.
+  - The diagnostic fields are named to survive `redactDiagnosticContext`. `keyPresent`
+    and `documentPath` were both redacted to `[REDACTED]` and `[REDACTED_CONTENT]`
+    by the `/key/` and `/document/` rules, which would have made the logs useless in
+    the one place they were needed.
+  - Still unverified in a real Word: whether this host's caret paragraph has
+    `getRange` at all, and whether a caret inside a table cell or a text box
+    resolves to the paragraph the user is looking at. The refusal categories now
+    distinguish those answers.
+- **Evidence**: `src/word/selectionScope.ts`; `tests/unit/word/selectionScope.test.ts`;
+  `src/types/office.d.ts`; `src/word/capabilityProbe.ts`; `docs/manual-verification.md`.
+
+## ADR-0108: One pane is a shared TaskpaneId, not the absence of one
+
+- **Reverts**: ADR-0104, which removed the `TaskpaneId` and forbade it in checks.
+- Amends: ADR-0101 (one control opens the pane, and now so does the context menu,
+  sharing that pane's identity), ADR-0107 (its decision 3 was wrong).
+- Status: Accepted (2026-10-02)
+- **Context**: ADR-0107 made the context menu a task pane command, and a real Word
+  reported the result plainly: _"the context menu currently opens its own pane
+  which works and the ribbon button runs its own instance."_ A blank window had
+  become a second **working** window.
+- The _Action element_ reference states the rule this had been reading backwards:
+  _"When you have multiple `ShowTaskpane` actions, use a different `<TaskpaneId>`
+  if you want an **independent** pane for each. **Use the same `<TaskpaneId>` for
+  different actions that share the same pane.** When users choose commands that
+  share the same `<TaskpaneId>`, **the pane container will remain open** but the
+  contents of the pane will be replaced with the corresponding Action
+  `SourceLocation`."_
+- **What ADR-0104 got wrong.** It removed the id on the reasoning that a shared
+  runtime must carry no `TaskpaneID`. That guidance concerns the **auto-open**
+  convention (`Office.AutoShowTaskpaneWithDocument`), not a prohibition on naming
+  a pane — and the authoritative element reference shows sharing an id as the
+  normal pattern for several controls addressing one pane. Removing it was not
+  neutral: with no id, **two `ShowTaskpane` actions are two independent panes**,
+  which is exactly what the host then showed.
+- **Decision**:
+  1. **Restore `<TaskpaneId>ButtonId1</TaskpaneId>` on every pane command**, so the
+     context menu and the ribbon entry point raise the same container. This is
+     Microsoft's documented meaning of one pane.
+  2. **The guard is one IDENTITY.** Every pane-opening control must carry **the
+     same** id — neither "no id" (ADR-0104, wrong) nor "one opener" (ADR-0107,
+     also wrong, and it would have rejected the correct manifest).
+  3. **The pane reads the selection when it is summoned**, with no channel. A fresh
+     pane reads on mount; a pane already open re-reads on
+     `onVisibilityModeChanged`. `readSelectionScope()` already handles a dragged
+     selection and a caret expanded to its paragraph (ADR-0105, verified in a real
+     Word), so this is working code invoked at the right moment rather than new
+     capability. **No cross-document channel is involved**, which matters because
+     `localStorage` is blocked on the host that reported the original bug
+     (ADR-0106).
+  4. **`Office.addin` is declared** in `types/office.d.ts` (optional, narrow) and
+     reached through `shared/office/taskpaneVisibility.ts`. It was absent
+     entirely, which is why every call was a hand-rolled cast.
+- **Consequences**:
+  - **Four diagnoses in this area were wrong**, and three of them changed the
+    manifest. What finally identified each was evidence from the host — a console
+    line in the offending window, then a report of which window opened which.
+    **A repository check must be read against the fix**: three guards here
+    asserted a shape, and each was wrong in the direction that made the defect
+    look correct.
+  - **"No id" and "one opener" are both wrong answers to one question.** The
+    question is how many _identities_ exist, and one shared id answers it.
+  - `onVisibilityModeChanged` firing when an **already-open** pane is raised is
+    documented but **unverified in this host**, and no claim is made that it is.
+    If it does not fire, the pane still reads on mount and the manual control
+    remains — a smaller gap, not a regression.
+  - The context menu still cannot _name_ a destination: a task pane command runs
+    no JavaScript, so there is no instruction to carry. The pane decides for
+    itself by reading, which is why it lands on Semantic Review's scope rather
+    than being told to.
+  - The host gate stays open. Only a person in a real Word, after a full sideload
+    cycle, can close it.
+- **Evidence**: `manifest.xml` (both `ShowTaskpane` actions);
+  `scripts/validate-manifest.mjs` (`validateSingleTaskPane`);
+  `src/types/office.d.ts` (`Office.Addin`, `VisibilityMode`);
+  `src/shared/office/taskpaneVisibility.ts`; `src/taskpane/pages/SemanticReview.tsx`;
+  `tests/unit/shared/office/taskpaneVisibility.test.ts`;
+  `tests/unit/architecture/oneTaskpane.test.ts`; `plans/context-menu-pane-routing.md`;
+  Microsoft: _Action element_ (`TaskpaneId`), _Show or hide the task pane of your
+  Office Add-in_.
+
+## ADR-0109: The page a command loads is the instruction it carries
+
+- Amends: ADR-0108 (decision 3's consequence that the context menu "cannot _name_ a
+  destination" is resolved by this ADR), ADR-0107, ADR-0101.
+- Status: Accepted (2026-10-02)
+- **Context**: ADR-0108 restored one pane, and left a consequence standing: a task
+  pane command is _"code provided by Office"_, so it runs no JavaScript of ours and
+  has no channel on which to tell an open pane where to go. It opens the pane, and
+  the pane then reads the selection for itself. That satisfies "review what I
+  selected" but not "land on Semantic Review": both routes loaded the same page.
+- The same Microsoft sentence that settles the identity also settles the page.
+  Commands sharing a `TaskpaneId` keep the container open and have _"the contents of
+  the pane [...] replaced with the corresponding Action `SourceLocation`"_. The
+  source location is therefore not merely a destination — it is **the one thing such
+  a command can say**, and the only supported way to address a page.
+- **Decision**:
+  1. **One pane, two pages.** `taskpane.html` is the landing page;
+     `semantic.html` is the Semantic Review page. Both are emitted from one entry
+     chain — `bootstrap.tsx` holds the mount, `index.tsx` calls `start()`, and
+     `semantic.tsx` calls `start("semantic-review")` — so the two pages cannot drift
+     in the error boundary, the icon registration, or the root element.
+  2. **`Dashboard` takes an `initialPage`**, threaded to the first page the pane
+     renders. This is a page of the existing pane, not a second pane and not a
+     second runtime with its own identity.
+  3. **The context menu keeps `<TaskpaneId>ButtonId1</TaskpaneId>` and points at
+     `Taskpane.Semantic.Url`.** The pane reads the selection on mount as before
+     (ADR-0108 decision 3), so the deep link composes with the read rather than
+     replacing it.
+  4. **A check that restated the arrangement was replaced by one that states the
+     rule.** Four places named pages or commands literally and all four broke on the
+     addition: the manifest validator exempted one hard-coded pane id, the release
+     checker exempted two hard-coded page names, and the build checker asserted a
+     hard-coded entry list. Each now reads the page list **from `manifest.json`**,
+     and the registry exemption is **by kind** (`openPage` is a task pane command,
+     so it is not a function command and cannot be in `commandDefinitions.json`).
+  5. **The guard is still one pane.** Differing `SourceLocation`s are now
+     explicitly allowed and asserted as the deep link; what must be unique is the
+     `TaskpaneId`. Every pane opener's source must still **resolve** — a `resid`
+     with no resource opens nothing and reports nothing (ADR-0082).
+- **Consequences**:
+  - **A task pane command cannot read, only load.** The selection read stays in the
+    page. That is a real division of labour, not a workaround: the command chooses
+    the page, the page chooses the text.
+  - The repository's page and entry lists were **couples to the manifest**. Three of
+    them failed the moment a second page was added, and one of those failures was in
+    the _fixture_, not the product. Data-driven lists remove the class.
+  - `semantic.html` is bundle-checked like every other page, so a second page that
+    shipped no JavaScript — a blank pane, the exact ADR-0101 symptom — fails the
+    build rather than the user.
+  - **Host evidence: one host reported working (2026-10-02).** After a full
+    registration cycle in Windows desktop Word, the maintainer reports one pane,
+    on Semantic Review, with the selection read, and the ribbon button still on the
+    landing page. It was **not** a per-step record: whether the container is raised
+    or replaced, and whether `onVisibilityModeChanged` fires on a raise
+    (ADR-0108), were not observed in isolation and remain untested paths. Mac and
+    Word on the web are open, so `word-host-evidence` stays **pending** overall.
+    See `docs/manual-verification.md`.
+- **Evidence**: `manifest.xml` (`Taskpane.Semantic.Url`, shared `TaskpaneId`);
+  `manifest.json` (`taskpaneSemantic` runtime, `openPage` action);
+  `src/taskpane/semantic.html`, `src/taskpane/semantic.tsx`, `src/taskpane/bootstrap.tsx`,
+  `src/taskpane/index.tsx`; `src/taskpane/pages/Dashboard.tsx` (`initialPage`);
+  `webpack.common.js`, `webpack.prod.js`, `webpack.dev.js`;
+  `scripts/validate-manifest.mjs` (`validateSingleTaskPane`, registry exemption);
+  `scripts/check-release-package.mjs` (`manifestPages`), `scripts/check-build-artifacts.mjs`;
+  `tests/unit/architecture/oneTaskpane.test.ts`, `tests/unit/commands/commandContracts.test.ts`;
+  Microsoft: _Action element_ (`TaskpaneId`, `SourceLocation`).

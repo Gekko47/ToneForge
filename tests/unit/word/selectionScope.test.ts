@@ -52,8 +52,9 @@ interface HostOptions {
   /** Models a host with no `document.getSelection` at all. */
   withoutSelection?: boolean;
   /**
-   * Whether paragraphs answer `getRange("Whole")`, which is WordApi 1.1 and the
-   * only reason a collapsed caret is reviewable at all.
+   * Whether paragraphs answer `getRange("Whole")`, which is WordApi **1.3** and
+   * the only way a collapsed caret gets offsets at all. (1.1, as this comment and
+   * ADR-0103 said, was wrong; see ADR-0105.)
    *
    * Off by default so the "this host cannot name the paragraph" cases stay
    * reachable, and on for the caret cases. Modelling both is the point: a fixture
@@ -369,6 +370,34 @@ describe("readSelectionScope", () => {
       expect(log.paragraphRequests).toContain("whole/end");
     });
 
+    /*
+     * The pair that would have caught the shipped defect.
+     *
+     * A real Word reported a bare caret as `start: 1193, end: 1192`. The guard
+     * this test defeats read an inverted pair as "there is no range here", so it
+     * returned `no-selection` nine lines above the caret branch and the caret
+     * review never ran \u2014 on any host, for any document. Every fixture above
+     * supplies an ordered pair, so a suite of 2 404 tests could not see it: the
+     * fixture was the thing that was supposed to catch this, and it modelled a
+     * tidier host than the one that failed.
+     */
+    it("expands even when the host reports the caret's offsets the other way round", async () => {
+      installHost({
+        text: "",
+        start: 1193,
+        end: 1192,
+        withParagraphRange: true,
+        paragraphs: [{ text: SAMPLE, uniqueLocalId: "p-91" }],
+      });
+
+      const result = await readSelectionScope();
+      expect(result.status).toBe("ok");
+      if (result.status !== "ok") return;
+
+      expect(result.scope.source).toBe("caret-paragraph");
+      expect(result.scope.anchor.selectedText).toBe(SAMPLE);
+    });
+
     it("reports no selection when the host cannot hand back the paragraph range", async () => {
       installHost({ text: "", start: 40, end: 40 });
       expect(await readSelectionScope()).toEqual({ status: "no-selection" });
@@ -399,6 +428,29 @@ describe("readSelectionScope", () => {
       if (result.status !== "ok") return;
       expect(result.scope.source).toBe("caret-paragraph");
       expect(result.scope.anchor.selectedText).toBe("A paragraph with trailing space.   ");
+    });
+
+    /*
+     * The same inverted pair on the drag path, where ordering still matters: the
+     * revision adapter's precondition compares `text` against an ordered span, so
+     * a right-to-left drag has to arrive as an anchor that can be held.
+     */
+    it("orders a backwards drag instead of refusing it", async () => {
+      installHost({
+        text: SAMPLE,
+        start: 176,
+        end: 120,
+        paragraphs: [{ text: SAMPLE, uniqueLocalId: "p-42" }],
+      });
+
+      const result = await readSelectionScope();
+      expect(result.status).toBe("ok");
+      if (result.status !== "ok") return;
+
+      expect(result.scope.source).toBe("selection");
+      expect(result.scope.anchor.selectedText).toBe(SAMPLE);
+      expect(result.scope.anchor.startOffset).toBe(120);
+      expect(result.scope.anchor.endOffset).toBe(176);
     });
 
     it("reads no more than a selection-sized read", async () => {

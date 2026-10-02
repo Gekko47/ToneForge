@@ -35,7 +35,8 @@ export interface WordCapabilities {
    * Whether this host can replace a *character* range — `Range.set({ start, end })`.
    *
    * `Range.set` is WordApiDesktop 1.4 and is absent on Word on the web, while
-   * `Paragraph.getRange("Whole")` is WordApi 1.1 and is everywhere. So a whole
+   * `Paragraph.getRange("Whole")` is WordApi 1.3 \u2014 not 1.1, as this comment and
+   * ADR-0103 both claimed; see ADR-0105. So a whole
    * paragraph can be rewritten on any host and part of one cannot. Probed
    * rather than assumed: the apply path already calls
    * `supportsRangedReplacement()` at write time and refuses with a stated reason

@@ -64,10 +64,23 @@ export async function watchDocumentSelection(
 ): Promise<boolean> {
   const context = currentContext();
   if (context === null || typeof context.addHandlerAsync !== "function") {
-    logger.warn("This host exposes no document-selection event, so the pane reads on demand", {
-      verificationResult: "unavailable",
-      refusalCategory: "selection_event_unsupported",
-    });
+    /*
+     * `info`, not `warn`, and this is the whole change.
+     *
+     * It logged at `warn` on the reasoning that a refusal should always name
+     * itself \u2014 a rule that is right for a *loss* and wrong here. Nothing is lost:
+     * this host has no selection event, the pane reads on demand instead, and the
+     * page says so to the user in as many words. The caller is handed `false` and
+     * handles it by design.
+     *
+     * A warning is read as "something is wrong", and a user whose host has no
+     * `documentSelectionChanged` has nothing wrong \u2014 a documented consequence of
+     * ADR-0103, which left the host question open precisely so a build would not
+     * assume either way. Logging the designed path as a fault every time Semantic
+     * Review mounts puts noise where the user looks for errors, and buries the
+     * refusals that are refusals.
+     */
+    logger.info("This host exposes no document-selection event, so the pane reads on demand");
     return false;
   }
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   associateCommandActions,
   COMMAND_REGISTRY,
@@ -19,6 +19,16 @@ function setOffice(value: unknown): void {
 }
 
 describe("command entry points", () => {
+  /*
+   * The bridge holds its instruction in module state as well as in storage, so a
+   * command's instruction would otherwise leak into the next test and be consumed
+   * by the wrong assertion.
+   */
+  beforeEach(() => {
+    window.localStorage.clear();
+    consumeTaskpaneTarget();
+  });
+
   afterEach(() => {
     setOffice(undefined);
     vi.restoreAllMocks();
@@ -137,7 +147,36 @@ describe("command entry points", () => {
     expect(consumeTaskpaneTarget()).toEqual({ target: "pending-changes" });
     await openTroubleshooting();
     expect(consumeTaskpaneTarget()).toEqual({ target: "debugging" });
-    expect(showAsTaskpane).toHaveBeenCalledTimes(5);
+  });
+
+  /*
+   * The assertion that would have caught the second pane.
+   *
+   * Every command used to call `Office.addin.showAsTaskpane()`, on the
+   * assumption that it reveals the pane the user already has. In a real Word it
+   * does not: the host opened a second window running `/commands.html` \u2014 the
+   * shared runtime's own function file, which is blank. Its console identified
+   * it, logging `syncSemanticRibbon` with `ControlIdNotFound`, a message only
+   * `commands.ts` emits. So a function command opening a pane is not a degraded
+   * result, it is a second pane \u2014 and ADR-0101 and ADR-0104 are both right that
+   * this add-in must have exactly one.
+   *
+   * Not one call, for any command, whatever the pane is doing.
+   */
+  it("never opens a pane from a function command", async () => {
+    const showAsTaskpane = vi.fn().mockResolvedValue(undefined);
+    setOffice({ addin: { showAsTaskpane } });
+
+    await openFindings();
+    await reviewForConsistency();
+    await openProfile();
+    await openPendingChanges();
+    await openTroubleshooting();
+    await openSemanticReview();
+    await scanNow();
+    await ToneForgeSemantic();
+
+    expect(showAsTaskpane).not.toHaveBeenCalled();
   });
 
   /**
@@ -183,6 +222,51 @@ describe("command entry points", () => {
     // The destination is still recorded, so the pane opens on AI Review when the
     // host eventually provides it rather than losing the user's intent.
     expect(consumeTaskpaneTarget()).toEqual({ target: "ai-review" });
+  });
+
+  /*
+   * The failure a real Word produced: "Tracking Prevention blocked access to
+   * storage for <URL>". `setItem` went nowhere while `showAsTaskpane()` opened a
+   * pane regardless, so the user got a blank second window and no selection.
+   *
+   * The pane is still opened \u2014 the user's requirement is "the current pane, or a
+   * working new one" \u2014 but the instruction no longer depends on storage being
+   * available, and the fallback is logged rather than silent. A blank window is
+   * now a host limitation with a named cause, not the default behaviour.
+   */
+  it("still directs the command when this host blocks storage", async () => {
+    const showAsTaskpane = vi.fn().mockResolvedValue(undefined);
+    setOffice({ addin: { showAsTaskpane } });
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+
+    await openSemanticReview();
+
+    expect(consumeTaskpaneTarget()).toEqual({
+      target: "semantic-review",
+      action: "read-selection",
+    });
+    expect(showAsTaskpane).not.toHaveBeenCalled();
+    setItem.mockRestore();
+  });
+
+  it("does not treat a silently discarded write as a delivery", async () => {
+    /*
+     * The harder version of the same host failure: `setItem` returns normally and
+     * the value is simply not there. A check that only asserted "did not throw"
+     * would pass on exactly the host that failed, so the value is read back and
+     * compared \u2014 and the verdict comes from the routes that actually carried it.
+     */
+    const showAsTaskpane = vi.fn().mockResolvedValue(undefined);
+    setOffice({ addin: { showAsTaskpane } });
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => undefined);
+
+    await openSemanticReview();
+
+    expect(window.localStorage.getItem("ToneForge.TaskpaneNavigation")).toBeNull();
+    expect(showAsTaskpane).not.toHaveBeenCalled();
+    setItem.mockRestore();
   });
 
   it("registers the command actions when Office becomes ready", async () => {

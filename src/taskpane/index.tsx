@@ -1,44 +1,11 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { ErrorBoundary } from "react-error-boundary";
-import { initializeIcons } from "@fluentui/react/lib/Icons";
-import App from "./App";
-import "./taskpane.css";
+/**
+ * The landing page of the one ToneForge pane.
+ *
+ * `semantic.html` is the *same* pane on a different page (ADR-0109), and it
+ * imports `start` from `bootstrap.tsx` rather than from this file: importing this
+ * module would run its own `start()` as a side effect and mount a second time,
+ * which is the very duplication this arrangement exists to avoid.
+ */
+import { start } from "./bootstrap";
 
-// Register Fluent UI icons (ChevronDown, etc.) before any component renders.
-// Without this call, Fluent UI emits "icon not registered" warnings for every
-// ComboBox, Dropdown, and icon-bearing control in the taskpane. The ComboBox
-// caret is the default ChevronDown icon once fonts are registered; no custom
-// buttonIconProps is needed.
-initializeIcons();
-
-function renderFallback(): React.ReactNode {
-  return (
-    <div role="alert">
-      <h2>Something went wrong</h2>
-      <p>Reload the add-in to try again.</p>
-    </div>
-  );
-}
-
-function bootstrap(): void {
-  const rootEl = document.getElementById("root");
-  if (!rootEl) {
-    document.body.innerHTML = '<div id="root"></div>';
-    return bootstrap();
-  }
-  const root = ReactDOM.createRoot(rootEl);
-  root.render(
-    <React.StrictMode>
-      <ErrorBoundary fallbackRender={renderFallback}>
-        <App />
-      </ErrorBoundary>
-    </React.StrictMode>,
-  );
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", bootstrap);
-} else {
-  bootstrap();
-}
+start();

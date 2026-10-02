@@ -486,13 +486,26 @@ Per host (Windows desktop, Mac desktop, Word on the web):
 Record the host and version for each. A label that is correct in one manifest and
 stale in the other is a passing build and a wrong product, so check both.
 
-## Open gate — one add-in, one task pane (P14, ADR-0101)
+## Open gate — one add-in, one task pane (P14, ADR-0101; identity per ADR-0108)
 
 A blank second add-in window beside the live one was reported from a real Word. The
-live pane was correct throughout, so the fork presented as a rendering fault. The
-ribbon opened `ButtonId1` and the context menu reached the pane by function, landing
-on the runtime's `openPage` identity — two panes, and the host ran both. All eight
-ribbon controls now run a function and reach the one pane.
+live pane was correct throughout, so the fork presented as a rendering fault. All
+eight ribbon controls now run a function and reach the one pane.
+
+**The conclusion recorded here until 2026-10-02 was wrong, and removing the fix is
+what produced the second pane.** ADR-0104 read the shared-runtime guidance as a
+prohibition on naming a pane and deleted `<TaskpaneId>ButtonId1</TaskpaneId>`. It
+concerns the **auto-open** convention (`Office.AutoShowTaskpaneWithDocument`), not
+naming a pane, and Microsoft's _Action element_ reference says the opposite: _"use
+a different `<TaskpaneId>` if you want an **independent** pane for each. **Use the
+same `<TaskpaneId>` for different actions that share the same pane.**"_
+
+With no id, the two `ShowTaskpane` actions became **two independent panes**, which
+is exactly what the host then reported: _"the context menu currently opens its own
+pane which works and the ribbon button runs its own instance."_ The id is restored
+and the guard now requires one shared **identity** (ADR-0108). The deep link that
+now gives the two commands different pages is ADR-0109, and its procedure is the
+next section.
 
 **Requires the full sideload cycle** (`npm run stop` — close every Word window —
 `npm run sideload`). The action type is manifest data and Word caches the manifest
@@ -503,16 +516,19 @@ Per host (Windows desktop, Mac desktop, Word on the web):
 1. Open the pane from the Home-tab ToneForge button. Confirm **one** pane opens and
    renders it.
 2. With that pane **still open**, press each of the seven ToneForge ribbon controls
-   in turn. Each must navigate the pane already open. A second window — blank,
-   or showing the Home page — is the pre-P14 behaviour and means Word is holding
-   a cached manifest.
+   in turn. Each must navigate the pane already open. A second window — blank, or
+   showing `/commands.html` — is the pre-ADR-0108 behaviour and means Word is
+   holding a cached manifest. A window that is blank _and_ has no ToneForge UI at
+   all is the function file being shown as a pane; open its devtools and read
+   `location.pathname` to tell the two apart.
 3. With the pane still open, right-click a paragraph and choose Semantic Review.
-   Confirm **no** new window appears and the pane navigates to Semantic Review with
-   the selection already read.
-4. Close the pane entirely. Repeat step 3. Confirm the pane opens once, with the
-   selection read.
+   Confirm **no** new window appears and the pane shows Semantic Review. The
+   selection read is procedure in the next section, not a claim here.
+4. Close the pane entirely. Repeat step 3. Confirm the pane opens **once**.
 5. Press the Home-tab button last, with a pane already open. Confirm it does not
-   produce a second pane of its own.
+   produce a second pane of its own, and that it lands on the **landing** page —
+   the ribbon and the context menu now open different pages of one pane, and if
+   they are indistinguishable, `SourceLocation` was not honoured.
 6. Confirm no control is inert: every one of the eight must do something visible.
    A control that runs a function nothing exports registers silently and does
    nothing at all — that is the failure mode to look for here.
@@ -520,12 +536,27 @@ Per host (Windows desktop, Mac desktop, Word on the web):
 Record the host and version for each. Two pane identities is a passing build and a
 wrong product, so step 2 is the one that matters.
 
-## Open gate — caret tracking (P16, ADR-0103)
+## Open gate — caret tracking (P16, ADR-0103; the read itself per ADR-0105)
 
 Whether a Word host fires `documentSelectionChanged` was ADR-0094's open question
 and is still open. The repository side is settled; this procedure settles the host
 side. A host that says no is not a failure of this build — the pane says it is
 not tracking and the manual control still works.
+
+**Step 2 was reported failing on a real Word and had never run there.** The caret
+path was unreachable: a validity guard written for drag selections rejected the
+host's inverted caret offsets (`start: 1193, end: 1192`) and returned "nothing is
+selected" nine lines above the feature. Run step 2 with the devtools console open
+on the task pane, because a refusal is now named rather than silent — look for
+`"refusalCategory"` and record which one:
+
+| `refusalCategory`              | Means                                                                                    |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `paragraph-get-range-absent`   | The host has no `Paragraph.getRange` (WordApi 1.3, not 1.1 as this project long claimed) |
+| `selection-has-no-paragraph`   | A collapsed selection's paragraph collection is empty here                               |
+| `paragraph-range-not-usable`   | The paragraph range came back without usable offsets or with empty text                  |
+| `paragraph-items-load-refused` | The host refused to enumerate the selection's paragraphs                                 |
+| none                           | The read succeeded; `isCaretBranch: true` in an `info` line is the proof                 |
 
 Per host (Windows desktop, Mac desktop, Word on the web):
 
@@ -533,7 +564,8 @@ Per host (Windows desktop, Mac desktop, Word on the web):
    "follows the cursor" or "does not report cursor movement".
 2. Click once inside a paragraph with **nothing selected**. Confirm the paragraph
    appears in the Selection card within about a second, and that it is labelled
-   _the paragraph the cursor is in, not a selection you made_.
+   _the paragraph the cursor is in, not a selection you made_. Record the
+   `refusalCategory` above if the card is empty.
 3. Click inside a **different** paragraph. Confirm the card updates to that one,
    and that it does **not** need a button press.
 4. Click into an **empty paragraph**. Confirm the pane says there is nothing to
@@ -549,9 +581,99 @@ Per host (Windows desktop, Mac desktop, Word on the web):
 8. Press Keep original, then click into another paragraph. Confirm tracking resumes.
 9. Navigate away from Semantic Review and back. Confirm the card reflects the
    current cursor, not the one from before, and that no duplicate pane appears.
+10. Repeat step 2 with the caret inside a **table cell** and inside a **text box**.
+    Both are places where the selection's paragraph collection may not cover the
+    caret, and both are expected to answer "nothing to review" rather than to guess.
+    Confirm the pane says so rather than reviewing a neighbouring paragraph.
 
 Record the host and version for each. Steps 2 and 3 are the feature; step 5 and
-step 7 are the promises that keep it from costing anything.
+step 7 are the promises that keep it from costing anything, and step 2 is the one a
+green build has already got wrong.
+
+## Open gate — the context menu, one pane, two pages (ADR-0108, ADR-0109)
+
+**This gate is open because every check in this repository passed while the pane
+was wrong.** Four diagnoses were made and three changed the manifest; two of the
+three guards written to prevent the defect were themselves wrong in the direction
+that made it look correct. Nothing below can be closed from an automated run
+(ADR-0051) — it needs a person in a real Word.
+
+**Run the full cycle first.** Word caches the manifest at registration, so a pane
+refresh or a dev-server restart proves nothing:
+
+```text
+npm run stop          # unregister first, or Word keeps the old manifest
+# close every Word window — a background Word process keeps the registration
+npm run sideload      # re-register with the new manifest
+```
+
+Per host (Windows desktop, Mac desktop, Word on the web):
+
+1. **Nothing open.** Right-click a paragraph → **ToneForge → Semantic Review**.
+   Expect **one** pane, opening **on Semantic Review**, not on the landing page.
+   Record whether the pane was raised or replaced.
+2. **The text.** Confirm the Selection card holds the right-clicked paragraph —
+   or, with a drag selection before the right-click, the selected words. This is
+   the whole original complaint, so record it as PASS or FAIL verbatim.
+3. **Already open, on the landing page.** Leave the ribbon pane on the landing
+   page, right-click a selection → Semantic Review. Expect **no second window**,
+   and the pane showing **Semantic Review**. A second window here means the
+   identity is still forking, and its devtools console identifies which page
+   booted it — that console line was the only evidence that ever settled this.
+4. **Already open, on Semantic Review.** Repeat step 3. Expect no second window.
+   Confirm whether the pane re-reads the selection, and record whether it does so
+   without a button press. If the card is stale, record whether
+   `onVisibilityModeChanged` fired — documented, and **still unverified in any
+   host**, which is ADR-0108's standing caveat.
+5. **Caret, no selection.** Click inside a paragraph with nothing selected, then
+   right-click → Semantic Review. Expect the caret's paragraph in the card
+   (ADR-0105, separately verified). Right-clicking places the caret, so this is
+   the realistic path a user actually takes.
+6. **Both routes, one identity.** Confirm the ribbon entry point still opens the
+   **landing** page and not Semantic Review. If the two are indistinguishable in
+   the host, record that — it means `SourceLocation` was not honoured, which is a
+   different defect from two panes and must not be reported as a pass.
+7. **Empty paragraph.** Right-click in an empty paragraph → Semantic Review.
+   Expect the pane's "nothing to review" sentence, and **no** paragraph borrowed
+   from the neighbouring one.
+
+**What a pass here does and does not mean.** A pass closes the two-pane gate and
+the deep-link gate for that host. It does not close the caret gate (its own
+procedure above), and it does not close the `word-host-evidence` gate for any
+other host.
+
+### Local debugging evidence — 2026-10-02
+
+**Host:** Windows desktop Word, development sideload at `https://localhost:3000`.
+**Procedure:** the full cycle above — `npm run stop`, every Word window closed,
+`npm run sideload`. **Reported by the maintainer:** the context menu works.
+
+| Gate                                                          | State                           |
+| ------------------------------------------------------------- | ------------------------------- |
+| No second pane from the context menu                          | **RESOLVED** — reported working |
+| Context menu lands on Semantic Review, not the landing page   | **RESOLVED** — reported working |
+| The right-clicked text reaches the Selection card             | **RESOLVED** — reported working |
+| The ribbon button still lands on the landing page             | **RESOLVED** — reported working |
+| Whether the container is **raised** or **replaced** when open | not separately measured         |
+| Whether `onVisibilityModeChanged` fires on a raise (ADR-0108) | not separately measured         |
+
+**What this evidence is, precisely.** It is a maintainer's report that the defect
+is gone in the host the defect came from, after a full registration cycle. It is
+**not** a per-step record: the two rows marked _not separately measured_ were not
+observed in isolation, so ADR-0108's caveat about `onVisibilityModeChanged` stands
+unchanged — a stale card on an already-open pane remains an untested path rather
+than a closed one.
+
+It covers **one host**. Mac desktop and Word on the web are still open, and the
+`word-host-evidence` gate stays **pending** for this add-in overall (ADR-0051).
+
+**Why this entry matters more than the fix.** Four diagnoses were made in this
+area and three changed the manifest; two guards written to prevent the defect were
+themselves wrong in the direction that made it look correct. Every one of those
+was argued from documentation and a mock. What settled each was evidence from the
+host — first a console line in the window the user did not expect, then a report
+of which window opened which. This record exists so the next defect in this area
+is read from the host first.
 
 ## Open gate — the semantic review path (P12)
 

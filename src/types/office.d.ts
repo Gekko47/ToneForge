@@ -230,8 +230,14 @@ declare global {
        */
       uniqueLocalId?: string;
       /**
-       * WordApi 1.1: `Paragraph.getRange("Whole")` resolves this paragraph to a
-       * Range. Optional because the revision adapter checks for it at runtime
+       * WordApi **1.3**: `Paragraph.getRange("Whole")` resolves this paragraph to
+       * a Range \u2014 not 1.1, as ADR-0103 and this declaration both claimed until
+       * a real Word reported a caret whose offsets came back inverted and sent the
+       * caret path into a guard written for drags (ADR-0105). `manifest.xml`
+       * requires WordApi 1.1, so a host below 1.3 has no such method and the
+       * runtime check below is load-bearing rather than defensive.
+       *
+       * Optional because the revision adapter checks for it at runtime
        * and refuses a paragraph-unit change with a stated reason when a host
        * does not expose it.
        */
@@ -294,6 +300,59 @@ declare global {
      * `Office.initialize` callback.
      */
     type OnReadyCallback = (info: HostInfo) => void;
+
+    /**
+     * How the pane is currently presented, as Office spells it.
+     *
+     * Named because the handler receives it and a caller has to compare against
+     * something; the string union is the shape Microsoft documents.
+     */
+    type VisibilityMode = "Taskpane" | "TaskpaneFooter" | "Hidden";
+
+    /**
+     * Payload of `onVisibilityModeChanged`.
+     */
+    interface VisibilityModeChangedMessage {
+      visibilityMode: VisibilityMode;
+    }
+
+    /**
+     * `Office.addin`, the surface that shows and hides the task pane.
+     *
+     * **Every member is optional, and the reason is not tidiness.** These exist
+     * only on a **shared runtime** (SharedRuntime 1.1), so a host without one has
+     * no `addin` object at all. A required member would force every caller to
+     * cast to talk to a host that may not have it \u2014 which is ADR-0084's failure
+     * mode, and exactly what this add-in did for five attempts: each call was a
+     * hand-rolled `(globalThis as { Office?: { addin?: ... } })` cast, so no
+     * compiler ever checked the shape against the documented one.
+     *
+     * Declared now, and declared the way the host declares it, so that a host
+     * that lacks the surface is a runtime answer rather than a type error.
+     */
+    interface Addin {
+      /**
+       * Shows the task pane associated with the add-in.
+       *
+       * Takes **no pane id** \u2014 there is no overload \u2014 and only promises to show
+       * "the task pane associated with the add-in". When the host cannot resolve
+       * one it has been observed opening the shared runtime's function file
+       * instead (ADR-0107). Prefer a task pane command in the manifest, where
+       * Office resolves the pane itself.
+       */
+      showAsTaskpane(): Promise<void>;
+      /** Hides the task pane. Visibility only \u2014 it does not unload the pane. */
+      hide(): Promise<void>;
+      /**
+       * Fires when the pane is shown or hidden. Shared runtime only.
+       *
+       * Returns the deregister handler, which is itself asynchronous \u2014 await it
+       * before relying on the removal having happened.
+       */
+      onVisibilityModeChanged(
+        handler: (message: VisibilityModeChangedMessage) => void,
+      ): Promise<() => Promise<void>>;
+    }
   }
 
   interface Actions {
@@ -301,6 +360,10 @@ declare global {
   }
 
   const Office: {
+    /**
+     * Absent on a host without a shared runtime. See `Office.Addin`.
+     */
+    addin?: Office.Addin;
     /**
      * Legacy test-double entry point. The real Word host does not expose
      * `Office.run`; production code must use `Word.run`.

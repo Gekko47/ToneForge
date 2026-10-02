@@ -94,13 +94,20 @@ describe("command and manifest contracts", () => {
 
   it("rejects missing runtime actions, mismatched destinations, and missing XML resources", async () => {
     const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as {
-      extensions: Array<{ runtimes: Array<{ actions: Array<{ id: string }> }> }>;
+      extensions: Array<{ runtimes: Array<{ id: string; actions: Array<{ id: string }> }> }>;
     };
     const xml = readFileSync(repositoryPath("manifest.xml"), "utf8");
     const missingAction = structuredClone(manifest);
-    const action = missingAction.extensions[0]?.runtimes[1]?.actions.find(
-      ({ id }) => id === "ToneForgeScan",
-    );
+    /*
+     * The runtime is found BY ID, not by index. It used to be `runtimes[1]`, and
+     * the semantic deep-link runtime (ADR-0109) was inserted at index 1 \u2014 so the
+     * lookup found nothing, nothing was mutated, and this assertion passed over a
+     * manifest that was never altered. A fixture addressed by position silently
+     * stops testing the thing it names the moment the file grows an entry.
+     */
+    const action = missingAction.extensions[0]?.runtimes
+      .find((runtime) => runtime.id === "CommandsRuntime")
+      ?.actions.find(({ id }) => id === "ToneForgeScan");
     if (action) action.id = "UnexpectedAction";
     expect(
       await validateManifests({
@@ -154,48 +161,97 @@ describe("command and manifest contracts", () => {
       expect(await validate(xml)).toEqual([]);
     });
 
-    it("rejects a second control that opens its own pane, which is what forked it", async () => {
-      const forked = xml.replace(
-        /<Action xsi:type="ExecuteFunction">(\s*)<FunctionName>ToneForgeScan<\/FunctionName>(\s*)<\/Action>/,
-        '<Action xsi:type="ShowTaskpane">$1<TaskpaneId>ButtonId1</TaskpaneId>$1' +
-          '<SourceLocation resid="Taskpane.Url" />$2</Action>',
+    /*
+     * Two controls opening DIFFERENT PAGES of one pane is correct, and is the
+     * whole mechanism (ADR-0109). Two controls opening DIFFERENT panes is the
+     * fork, and that is asserted by IDENTITY below \u2014 `TaskpaneId`, not
+     * `SourceLocation`.
+     *
+     * This assertion once inverted the other way round and rejected a manifest
+     * for using a documented Office feature: the context menu points at
+     * `semantic.html` while the ribbon points at `taskpane.html`, and Microsoft
+     * states the pane container stays open with "the contents of the pane
+     * replaced with the corresponding Action SourceLocation".
+     */
+    it("accepts a second page of the one pane, which is the deep link", async () => {
+      const deepLinked = xml.replace(
+        '<SourceLocation resid="Taskpane.Semantic.Url" />',
+        '<SourceLocation resid="Taskpane.Url" />',
       );
-      expect(forked).not.toEqual(xml);
-      const errors = await validate(forked);
-      expect(errors).toContain(
-        "manifest.xml must declare exactly one ToneForge task pane; found 2 controls that open one. A second pane identity is what put a blank add-in pane beside the live one (ADR-0101)",
+      expect(deepLinked).not.toEqual(xml);
+      // Same page twice is not a defect either \u2014 it is merely a redundant route.
+      expect(await validate(deepLinked)).toEqual([]);
+    });
+
+    it("rejects a pane command whose source names a resource that does not exist", async () => {
+      const dangling = xml.replace(
+        '<SourceLocation resid="Taskpane.Semantic.Url" />',
+        '<SourceLocation resid="Other.Url" />',
       );
-      expect(errors).toContain(
-        "manifest.xml control ToneForgeScan opens its own pane; only ToneForgeTaskpane may, because a second pane identity forks the pane (ADR-0101)",
+      expect(dangling).not.toEqual(xml);
+      // A resid with no resource never resolves, and the host opens nothing at
+      // all without saying so \u2014 the same shape as an over-length resource id.
+      expect(await validate(dangling)).toContain(
+        "manifest.xml control ToneForgeSemanticContextControl opens the pane at resource Other.Url, which resolves to no page; the host opens nothing and reports nothing (ADR-0109)",
       );
     });
 
-    it("rejects a function control that smuggles a pane identity back in", async () => {
+    it("rejects a second, DIFFERENT pane identity, because that is a second pane", async () => {
+      /*
+       * Microsoft: "use a different TaskpaneId if you want an independent pane for
+       * each" \u2014 so a different id is the thing that creates a second pane, and a
+       * *shared* one is how several controls address the same pane.
+       *
+       * This assertion once forbade the id outright (ADR-0104), which is what made
+       * two `ShowTaskpane` actions into two instances in a real Word.
+       */
+      const forked = xml.replace(/<TaskpaneId>ButtonId1<\/TaskpaneId>/g, "");
+      expect(forked).not.toEqual(xml);
+      const errors = await validate(forked);
+      expect(errors.some((error) => error.includes("must use taskpane ButtonId1"))).toBe(true);
+    });
+
+    it("rejects a function control that smuggles a pane source back in", async () => {
       const forked = xml.replace(
         "<FunctionName>ToneForgeScan</FunctionName>",
-        "<TaskpaneId>ButtonId1</TaskpaneId>\n" +
-          '                  <SourceLocation resid="Taskpane.Url" />\n' +
-          "                  <FunctionName>ToneForgeScan</FunctionName>",
+        '<SourceLocation resid="Taskpane.Url" />\n                  <FunctionName>ToneForgeScan</FunctionName>',
       );
       expect(forked).not.toEqual(xml);
       const errors = await validate(forked);
       expect(errors).toContain(
-        "manifest.xml control ToneForgeScan runs a function and must not declare TaskpaneId ButtonId1; the one task pane is the openPage default (ADR-0101)",
+        "manifest.xml control ToneForgeScan runs a function and must not declare its own source; the one task pane is declared by the ShowTaskpane controls (ADR-0107)",
       );
-      expect(errors).toContain(
-        "manifest.xml control ToneForgeScan runs a function and must not declare its own source; the one task pane is the openPage default (ADR-0101)",
+    });
+
+    /*
+     * One pane identity, asserted from both directions.
+     *
+     * Microsoft: "Use the same TaskpaneId for different actions that share the
+     * same pane... use a different TaskpaneId if you want an independent pane for
+     * each."
+     *
+     * These two replace an assertion that forbade the id outright (ADR-0104). That
+     * was backwards, and it is what made two panes: with no id, the context menu
+     * and the ribbon each became their own instance, confirmed in a real Word.
+     */
+    it("rejects a pane command whose identity is missing", async () => {
+      const forked = xml.replace(/<TaskpaneId>ButtonId1<\/TaskpaneId>\n\s*/g, "");
+      expect(forked).not.toEqual(xml);
+      const errors = await validate(forked);
+      expect(errors.some((error) => error.includes("must use taskpane ButtonId1"))).toBe(true);
+    });
+
+    it("rejects a pane command renamed to its own independent pane", async () => {
+      const forked = xml.replace(
+        /<TaskpaneId>ButtonId1<\/TaskpaneId>/g,
+        "<TaskpaneId>Other</TaskpaneId>",
       );
+      expect(forked).not.toEqual(xml);
+      const errors = await validate(forked);
+      expect(errors.some((error) => error.includes("a different id is a second pane"))).toBe(true);
     });
 
     it("rejects the pane control being pointed at something other than the pane", async () => {
-      const wrongId = xml.replace(
-        "<TaskpaneId>ButtonId1</TaskpaneId>",
-        "<TaskpaneId>ButtonId2</TaskpaneId>",
-      );
-      expect(await validate(wrongId)).toContain(
-        "manifest.xml task pane ToneForgeTaskpane must use taskpane ButtonId1, got ButtonId2",
-      );
-
       const wrongPage = xml.replace(
         '<bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html" />',
         '<bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/other.html" />',
@@ -390,7 +446,13 @@ describe("command and manifest contracts", () => {
   it("rejects incoherent dummy release packages", () => {
     const staging = mkdtempSync(join(tmpdir(), "toneforge-release-package-test-"));
     try {
-      for (const file of ["manifest.json", "manifest.xml", "taskpane.html", "commands.html"]) {
+      for (const file of [
+        "manifest.json",
+        "manifest.xml",
+        "taskpane.html",
+        "semantic.html",
+        "commands.html",
+      ]) {
         writeFileSync(resolve(staging, file), "test");
       }
       cpSync(resolve(process.cwd(), "assets"), resolve(staging, "assets"), { recursive: true });
@@ -407,13 +469,27 @@ describe("command and manifest contracts", () => {
       cpSync(resolve(process.cwd(), "manifest.json"), resolve(staging, "manifest.json"));
       cpSync(resolve(process.cwd(), "manifest.xml"), resolve(staging, "manifest.xml"));
       cpSync(resolve(process.cwd(), "assets"), resolve(staging, "assets"), { recursive: true });
-      const bundle = "taskpane.abcdef12.js";
-      writeFileSync(resolve(staging, "taskpane.html"), `<script src="${bundle}"></script>`);
-      writeFileSync(resolve(staging, "commands.html"), `<script src="${bundle}"></script>`);
-      writeFileSync(resolve(staging, bundle), "console.log('bundle')");
+      /*
+       * One bundle per page, not one for the lot.
+       *
+       * `checkReleasePackage` bundle-checks every page the manifest names, so a
+       * package where all three pages share one bundle passes for the wrong
+       * reason -- and a real build emits one content-hashed entry per page. The
+       * fixture therefore mirrors the build, and the assertion below is that all
+       * three were checked.
+       */
+      const pages = ["taskpane.html", "semantic.html", "commands.html"];
+      for (const page of pages) {
+        const pageBundle = `${page.replace(/\.html$/, "")}.abcdef12.js`;
+        writeFileSync(resolve(staging, page), `<script src="${pageBundle}"></script>`);
+        writeFileSync(resolve(staging, pageBundle), "console.log('bundle')");
+      }
       const result = checkReleasePackage(staging);
-      expect(result.javascriptCount).toBe(1);
-      expect(result.referencedBundles).toEqual([bundle]);
+      expect(result.pages).toEqual(pages);
+      expect(result.javascriptCount).toBe(pages.length);
+      expect([...result.referencedBundles].sort()).toEqual(
+        pages.map((page) => page.replace(/\.html$/, "") + ".abcdef12.js").sort(),
+      );
     } finally {
       rmSync(staging, { recursive: true, force: true });
     }

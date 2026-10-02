@@ -47,6 +47,21 @@ const prod = {
         removeComments: true,
       },
     }),
+    /*
+     * The semantic page, which is a PAGE of the one pane rather than a second
+     * pane: the context menu is a task pane command, so the page it loads is the
+     * only instruction it can carry (ADR-0109).
+     */
+    new HtmlWebpackPlugin({
+      template: "./src/taskpane/semantic.html",
+      filename: "semantic.html",
+      chunks: ["runtime", "semantic"],
+      inject: "body",
+      minify: {
+        collapseWhitespace: true,
+        removeComments: true,
+      },
+    }),
     new HtmlWebpackPlugin({
       template: "./src/commands/commands.html",
       filename: "commands.html",
