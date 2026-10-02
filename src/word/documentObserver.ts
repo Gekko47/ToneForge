@@ -152,6 +152,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     supportsListLevel: false,
     supportsRevisions: false,
     supportsSelection: false,
+    supportsRangedReplacement: false,
     supportsParagraphResolution: false,
     supportsHighlight: false,
     supportsContextMenuApi: false,

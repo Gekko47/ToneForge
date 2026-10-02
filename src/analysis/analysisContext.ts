@@ -23,6 +23,15 @@ export interface AnalysisCapabilities {
   supportsListLevel: boolean;
   supportsRevisions: boolean;
   supportsSelection: boolean;
+  /**
+   * Whether this host can replace a character range.
+   *
+   * Carried here rather than left in `word/` because the semantic apply path
+   * resolves its target from it, and `reformat/semanticApply.ts` reads an
+   * `AnalysisCapabilities` — the same narrowing ADR-0086 introduced for the
+   * structural scopes. Acquisition does not use it; the semantic review does.
+   */
+  supportsRangedReplacement: boolean;
   supportsParagraphResolution: boolean;
   supportsHighlight: boolean;
   /**

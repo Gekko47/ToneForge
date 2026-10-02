@@ -104,6 +104,7 @@ const UNPROBED_CAPABILITIES: AnalysisCapabilities = {
   supportsListLevel: false,
   supportsRevisions: false,
   supportsSelection: false,
+  supportsRangedReplacement: false,
   supportsParagraphResolution: false,
   supportsHighlight: false,
   supportsContextMenuApi: false,
@@ -543,15 +544,23 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
   const [consistencyResult, setConsistencyResult] = useState<ConsistencyReport | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   /*
-   * Whether the Semantic tab is holding a paragraph, `null` until it says.
+   * What Semantic Review is currently holding, for the Troubleshooting panel.
    *
-   * Held here rather than in Semantic because the page that needs it is a
-   * different one: Troubleshooting has to explain a greyed-out Propose rewrite,
-   * and the Semantic tab is unmounted by the time anyone reads that. `null` is
-   * distinct from `false` — the tab not having been opened is not a fault, and
-   * reporting it as one would put a blocker on a page that has none.
+   * Held here rather than on the page because the surface that needs it is a
+   * different one: by the time anyone reads Troubleshooting, the review page has
+   * been unmounted, and a greyed-out Apply or Review has no explanation left on
+   * screen. `null` is distinct from `false` — the page not having been opened is
+   * not a fault, and reporting it as one would put a blocker on a panel that has
+   * none.
+   *
+   * One state, not two. The characters and the refusal both come from a single
+   * `onReviewStatus` call, so splitting them would create two copies of one
+   * event and a way for them to disagree about whether a review is on screen.
    */
-  const [semanticSelectionCaptured, setSemanticSelectionCaptured] = useState<boolean | null>(null);
+  const [semanticReviewStatus, setSemanticReviewStatus] = useState<{
+    heldChars: number | null;
+    preservationRefused: boolean;
+  } | null>(null);
   /*
    * The semantic review session, held above the page.
    *
@@ -574,7 +583,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
    */
   useEffect(() => {
     if (page === "semantic-review" || page === "semantic-style") return;
-    setSemanticSelectionCaptured(null);
+    setSemanticReviewStatus(null);
   }, [page]);
   /*
    * The in-flight flag lives in `PendingChanges`, beside the button it disables.
@@ -1309,7 +1318,7 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
               onBack={back}
               onOpenSettings={() => navigate("settings")}
               onOpenSemanticStyle={() => navigate("semantic-style")}
-              onSelectionCaptured={setSemanticSelectionCaptured}
+              onReviewStatus={setSemanticReviewStatus}
               /*
                * The session is owned here, above the page, so navigating away and
                * back does not discard a review the user has paid for. The page
@@ -1348,7 +1357,15 @@ function DashboardWithProfile({ activeProfile }: { activeProfile: StyleProfile }
                       limitations: consistencyResult.coverage.limitations,
                     }
               }
-              semanticSelectionCaptured={semanticSelectionCaptured}
+              // `null` for "not established" and `false` for "read and found
+              // nothing" are the same answer here only because both mean no
+              // selection is held. The panel's third state is the page having
+              // never reported at all, which this cannot be: the effect above
+              // clears the state on the way out, so a null here always means the
+              // pages are not open.
+              semanticSelectionCaptured={semanticReviewStatus?.heldChars !== null}
+              semanticSelectionChars={semanticReviewStatus?.heldChars ?? null}
+              semanticPreservationRefused={semanticReviewStatus?.preservationRefused ?? false}
             />
           )}
         </Suspense>

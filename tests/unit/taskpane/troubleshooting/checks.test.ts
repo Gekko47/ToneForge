@@ -4,6 +4,7 @@ import {
   troubleshootingCheckIds,
   type TroubleshootingInput,
 } from "../../../../src/taskpane/troubleshooting/checks";
+import { MAX_REVIEW_SELECTION_CHARS } from "../../../../src/taskpane/semantic/gates";
 
 /** Everything switched on and nothing pending: the state with no blockers. */
 function healthy(overrides: Partial<TroubleshootingInput> = {}): TroubleshootingInput {
@@ -16,12 +17,16 @@ function healthy(overrides: Partial<TroubleshootingInput> = {}): Troubleshooting
     rawTextConsent: true,
     plannedCount: 0,
     reviewedCount: 0,
-    // A paragraph in hand, a complete run with a model behind it, and a host
-    // with the context-menu API. `null` here would mean "not established", which
-    // is its own case and is exercised separately below.
+    // A selection in hand, a complete run with a model behind it, and a host
+    // with the context-menu API and ranged replacement. `null` where a value is
+    // marked below would mean "not established", which is its own case and is
+    // exercised separately.
     semanticSelectionCaptured: true,
+    semanticSelectionChars: 240,
+    semanticPreservationRefused: false,
     consistency: { usedModel: true, complete: true, limitations: [] },
     contextMenuApi: true,
+    rangedReplacementSupported: true,
     ...overrides,
   };
 }
@@ -154,11 +159,14 @@ describe("the troubleshooting registry", () => {
         reviewedCount: 0,
         coverage: { complete: false } as never,
         semanticSelectionCaptured: false,
+        semanticSelectionChars: 41_000,
+        semanticPreservationRefused: true,
         consistency: { usedModel: false, complete: true, limitations: [] },
         contextMenuApi: false,
+        rangedReplacementSupported: false,
       }),
     );
-    expect(notes).toHaveLength(9);
+    expect(notes).toHaveLength(12);
     notes.forEach((note) => {
       expect(note.remedyTarget.label.length).toBeGreaterThan(0);
       // Every label names a page and a control, not just a page.
@@ -168,32 +176,122 @@ describe("the troubleshooting registry", () => {
       "Settings → Scanning → Scan automatically as the document changes",
       "Settings → Tracked editing → Allow ToneForge to apply tracked changes",
       "Deterministic Review → Findings → Review on each finding you want applied",
-      "Semantic → Semantic profiles → Create empty profile",
+      "Semantic Style → Semantic profiles → Create empty profile",
       "Settings → Provider and privacy → Provider, then enter the key",
       "Troubleshooting → Analysis coverage diagnostics",
-      "Semantic → Semantic rewrite → Read current selection",
+      "Semantic Review → Use current selection",
+      "Semantic Review → Use current selection, then narrow the selection in Word",
+      "Semantic Review → Regenerate review",
       "Settings → Provider and privacy → Provider, then enter the key",
       "Add-ins ribbon → Deterministic Review group",
+      "Semantic Review → Use current selection, then select the whole paragraph in Word",
     ]);
   });
 
-  it("explains a rewrite that cannot run because no paragraph was ever read", () => {
+  it("explains a review that cannot run because nothing was ever read", () => {
     /*
      * The button is disabled for this reason alone and says nothing about it.
      * Without the note, the user has three settings to check that are all fine.
      */
     const notes = diagnoseSituation(healthy({ semanticSelectionCaptured: false }));
-    expect(notes[0]?.id).toBe("semantic-rewrite-has-no-paragraph");
+    expect(notes[0]?.id).toBe("semantic-review-has-no-selection");
+    expect(notes[0]?.remedyTarget.label).toBe("Semantic Review → Use current selection");
+  });
+
+  it("does not blame an unread selection when the page was never opened", () => {
+    // `null` is "not established". Reporting a blocker on the strength of the
+    // user never having visited a page would put a fault on a pane that has none.
+    const notes = diagnoseSituation(healthy({ semanticSelectionCaptured: null }));
+    expect(notes.map((note) => note.id)).not.toContain("semantic-review-has-no-selection");
+  });
+
+  /*
+   * The three situations the semantic review introduced, none of which had a
+   * check when the split shipped. Each is a refusal the user sees as a greyed-out
+   * button, and each has a cause that no setting in ToneForge changes — so
+   * without a note the panel's advice is actively wrong.
+   */
+
+  it("explains a selection that is too long, with both numbers", () => {
+    // The gate refuses above the cap rather than truncating. A note that said
+    // only "too long" would send the user to check their selection with no way
+    // to judge how much of it to cut, and the cap is the one number that
+    // matters.
+    const notes = diagnoseSituation(
+      healthy({ semanticSelectionCaptured: true, semanticSelectionChars: 41_000 }),
+    );
+    expect(notes[0]?.id).toBe("semantic-selection-too-long");
+    expect(notes[0]?.cause).toContain("41,000");
+    expect(notes[0]?.cause).toContain(MAX_REVIEW_SELECTION_CHARS.toLocaleString());
     expect(notes[0]?.remedyTarget.label).toBe(
-      "Semantic → Semantic rewrite → Read current selection",
+      "Semantic Review → Use current selection, then narrow the selection in Word",
     );
   });
 
-  it("does not blame an unread paragraph when the Semantic tab was never opened", () => {
-    // `null` is "not established". Reporting a blocker on the strength of the
-    // user never having visited a tab would put a fault on a pane that has none.
-    const notes = diagnoseSituation(healthy({ semanticSelectionCaptured: null }));
-    expect(notes.map((note) => note.id)).not.toContain("semantic-rewrite-has-no-paragraph");
+  it("says nothing about length when the cap is not exceeded", () => {
+    // Exactly at the cap is allowed. An off-by-one here would refuse the
+    // boundary the gate permits.
+    const notes = diagnoseSituation(
+      healthy({ semanticSelectionChars: MAX_REVIEW_SELECTION_CHARS }),
+    );
+    expect(notes.map((note) => note.id)).not.toContain("semantic-selection-too-long");
+  });
+
+  it("says nothing about length when no selection has been read", () => {
+    // There is no length to report. The no-selection check already covers this
+    // state, and a second note would be a second answer to one question.
+    const notes = diagnoseSituation(
+      healthy({ semanticSelectionCaptured: false, semanticSelectionChars: null }),
+    );
+    expect(notes.map((note) => note.id)).toEqual(["semantic-review-has-no-selection"]);
+  });
+
+  it("explains a revision the local check refused, and does not blame a setting", () => {
+    const notes = diagnoseSituation(healthy({ semanticPreservationRefused: true }));
+    expect(notes[0]?.id).toBe("semantic-preservation-refused");
+    // The protection is not a preference. Telling the user to turn it off would
+    // be advice the product cannot follow.
+    expect(notes[0]?.remedy).toMatch(/cannot be switched off/i);
+    expect(notes[0]?.remedyTarget.label).toBe("Semantic Review → Regenerate review");
+  });
+
+  it("explains a host that cannot write part of a paragraph, as a host limit", () => {
+    const notes = diagnoseSituation(healthy({ rangedReplacementSupported: false }));
+    expect(notes[0]?.id).toBe("semantic-ranged-replace-unsupported");
+    // The whole-paragraph path is the same host's working path, so the note has
+    // to say that or the user will conclude the feature is broken.
+    expect(notes[0]?.cause).toMatch(/whole paragraph/i);
+    expect(notes[0]?.remedyTarget.label).toBe(
+      "Semantic Review → Use current selection, then select the whole paragraph in Word",
+    );
+  });
+
+  it("says nothing about ranged replacement before the probe has run", () => {
+    // `null` is "not established". Claiming the host lacks it on the strength of
+    // not having looked is the failure ADR-0084 is about.
+    const notes = diagnoseSituation(healthy({ rangedReplacementSupported: null }));
+    expect(notes.map((note) => note.id)).not.toContain("semantic-ranged-replace-unsupported");
+  });
+
+  it("keeps the three semantic refusals apart from each other", () => {
+    // All three are true in a plausible session: a long selection on a host
+    // without ranged replacement, on a revision the local check refused. They
+    // have three different causes and only the right combination of remedies
+    // gets the user moving, so collapsing them into one note would be wrong in
+    // the way that matters most.
+    const notes = diagnoseSituation(
+      healthy({
+        semanticSelectionCaptured: true,
+        semanticSelectionChars: 41_000,
+        semanticPreservationRefused: true,
+        rangedReplacementSupported: false,
+      }),
+    );
+    const ids = notes.map((note) => note.id);
+    expect(ids).toContain("semantic-selection-too-long");
+    expect(ids).toContain("semantic-preservation-refused");
+    expect(ids).toContain("semantic-ranged-replace-unsupported");
+    expect(ids).not.toContain("semantic-review-has-no-selection");
   });
 
   it("distinguishes a consistency run with no model from an incomplete one", () => {
@@ -300,10 +398,52 @@ describe("the troubleshooting registry", () => {
       "no-provider",
       "no-raw-text-consent",
       "coverage-incomplete",
-      "semantic-rewrite-has-no-paragraph",
+      "semantic-review-has-no-selection",
+      "semantic-selection-too-long",
+      "semantic-preservation-refused",
       "consistency-review-partial",
       "context-menu-api-absent",
+      "semantic-ranged-replace-unsupported",
     ]);
+  });
+
+  it("produces every registered id from some input, so none is dead", () => {
+    /*
+     * The reachability check the order test's comment claims and does not make.
+     * A check whose `appliesTo` can never be true is invisible: it costs nothing,
+     * breaks nothing, and reports a situation that cannot occur — which is the
+     * worst kind of dead code in a registry whose whole job is to be complete.
+     *
+     * Three inputs, because the semantic checks are mutually exclusive by
+     * construction: one turns on everything that is not about the semantic
+     * prerequisites, one is missing the profile *and* the provider, and one has
+     * both and has withdrawn consent \u2014 which is the only state
+     * `no-raw-text-consent` can be true in, and the reason it is written the way
+     * it is. Writing only the first two made this test report that check as
+     * unreachable, which is the test doing its job on itself.
+     */
+    const all = diagnoseSituation(
+      healthy({
+        autoScan: false,
+        trackedEditing: false,
+        plannedCount: 2,
+        reviewedCount: 0,
+        coverage: { complete: false } as never,
+        semanticSelectionCaptured: false,
+        semanticSelectionChars: 41_000,
+        semanticPreservationRefused: true,
+        consistency: { usedModel: false, complete: true, limitations: [] },
+        contextMenuApi: false,
+        rangedReplacementSupported: false,
+      }),
+    );
+    const noProfile = diagnoseSituation(
+      healthy({ semanticProfileActive: false, providerConfigured: false, rawTextConsent: false }),
+    );
+    const consentWithdrawn = diagnoseSituation(healthy({ rawTextConsent: false }));
+    const reached = new Set([...all, ...noProfile, ...consentWithdrawn].map((note) => note.id));
+
+    expect([...troubleshootingCheckIds()].filter((id) => !reached.has(id))).toEqual([]);
   });
 
   it("gives every note a distinct id so two blockers cannot collapse into one row", () => {

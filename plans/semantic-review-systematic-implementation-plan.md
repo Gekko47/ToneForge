@@ -1740,7 +1740,7 @@ so. 4: `ToneForgeSemantic` kept, delegating to the renamed `openSemanticReview`.
    the same commit that removed the thing it pointed at. P10 still owns the
    capability split and the `ux-state-matrix` table.
 
-### P10 — Diagnostics, setup status, terminology
+#### P10 — Diagnostics, setup status, terminology _(LANDED 2026-10-02)_
 
 1. `troubleshooting/checks.ts`: new checks, updated remedy labels, and the
    pinned-label test updated in the same commit (**ADR-0069**).
@@ -1750,6 +1750,58 @@ so. 4: `ToneForgeSemantic` kept, delegating to the renamed `openSemanticReview`.
    is how a rewrite button can be enabled with no provider.
 3. `Home.tsx`, `ProviderPrivacySettingsSection.tsx`, `docs/ux-state-matrix.md`
    semantic-tab table rewritten.
+
+**Exit, as met.** 1: three new checks \u2014 a selection over the cap, a revision
+the local preservation check refused, and a host that cannot write part of a
+paragraph \u2014 each naming the control that resolves it, each with its remedy label
+pinned. `semantic-rewrite-has-no-paragraph` becomes
+`semantic-review-has-no-selection`, and the four stale labels are corrected. The
+registry's order test now lists thirteen ids. 2: `semanticRewrite` is split into
+`semanticStyleLearning` (provider only \u2014 it does not need the profile it
+produces) and `semanticReview` (profile and provider). 3: `Home.tsx` copy
+corrected; the one semantic-tab table is now two tables, one per page, with the
+review page's states written from the gates that produce them.
+
+**Deviations.**
+
+1. **A `supportsRangedReplacement` capability was added.** Not in the plan. The
+   ranged-replacement refusal is a new one from P6, and Troubleshooting cannot
+   explain it from a probe that never ran \u2014 which is the same defect
+   `contextMenuApi` already documents. The probe is a guarded, non-destructive
+   inspection (`hasMethod(range, "set")`), the same rule ADR-0012 sets, and it
+   measures something real: whether `Range.set` exists, which is not the same
+   claim as whether a selection event exists (ADR-0094, where nothing consumes
+   the answer). Adding it made fourteen test fixtures fail to compile, which is
+   ADR-0084 working: a fixture that describes a host now has to say something
+   true about this capability too.
+2. **`SemanticReview.onSelectionCaptured` became `onReviewStatus`, and the
+   Dashboard's one boolean became one object.** The registry has to explain a
+   selection that is _too long_ and a revision the local check refused. A boolean
+   cannot say either. Two separate callbacks would have been two places to forget
+   to call, and there are three sites that clear a scope, so the report is
+   derived in an effect from `scope` and `result` rather than pushed from each
+   mutation.
+3. **`onReviewStatus` resets to `null` on leaving the pages, so the panel cannot
+   report a selection the page has forgotten.** This is the existing rule \u2014 the
+   old boolean reset the same way \u2014 kept. The consequence is that
+   `semanticSelectionCaptured` reaching the panel as `false` means "read and found
+   nothing", never "never opened", and the check that fires on `false` says so in
+   its own remedy.
+4. **`ProviderPrivacySettingsSection.tsx` needed no change.** The plan listed it.
+   Its toggle is labelled "Allow semantic analysis" and the remedy already named
+   it exactly, which is the outcome ADR-0069 asks for; there was no stale wording
+   to correct. Recorded rather than silently skipped.
+5. **The ranged-replacement check is ordered last, beside the context-menu check.**
+   It is a platform fact, and a platform fact is almost never the answer when a
+   setting is also missing \u2014 the registry is ordered by how often a check turns
+   out to be the answer, so putting it with the other host limitation is the
+   ordering rule applied rather than a preference. The order test caught the
+   placement.
+6. **A reachability test was added.** The order test's own comment claimed that
+   the tests around it established every id is producible; they established
+   nothing of the sort. A check whose `appliesTo` can never be true is invisible
+   \u2014 it costs nothing, breaks nothing, and reports a situation that cannot
+   occur \u2014 so the claim is now an assertion.
 
 ### P11 — Documentation and governance
 

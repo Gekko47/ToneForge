@@ -119,6 +119,7 @@ const FALLBACK_CAPABILITIES = {
   supportsListLevel: false,
   supportsRevisions: false,
   supportsSelection: false,
+  supportsRangedReplacement: false,
   supportsParagraphResolution: false,
   supportsHighlight: false,
   supportsContextMenuApi: false,

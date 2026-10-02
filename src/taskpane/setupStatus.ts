@@ -141,8 +141,32 @@ export function setupStatusFromState(state: PersistedState): SetupStatus {
  * except review semantically. Collapsing that to one boolean is what produced a first run
  * that felt entirely switched off.
  */
+/**
+ * **Two semantic capabilities, not one.**
+ *
+ * `semanticRewrite` claimed only a semantic profile, which is how a rewrite
+ * button could be enabled with no provider to ask and no consent to send with —
+ * the button was enabled, and pressing it produced a refusal on a different
+ * page. Splitting them says the two real facts:
+ *
+ * - `semanticStyleLearning` needs a provider and consent, because learning runs
+ *   a model over the sample. It does **not** need a profile: that is the thing
+ *   it produces.
+ * - `semanticReview` needs all three, because a review sends the user's own
+ *   paragraph to a model and measures the answer against a voice.
+ *
+ * The consent item is not in the checklist. It is deliberately not a `SetupItem`,
+ * because a user who has declined is not in a broken setup — they are using the
+ * product with a decision made — and a checklist row that says "not set up" for a
+ * declined permission is a claim about their configuration that is false.
+ */
 export type Capability =
-  "scan" | "apply" | "consistencyReview" | "semanticRewrite" | "governancePolicy";
+  | "scan"
+  | "apply"
+  | "consistencyReview"
+  | "semanticStyleLearning"
+  | "semanticReview"
+  | "governancePolicy";
 
 /**
  * A list rather than one item, because a capability can need more than one thing.
@@ -158,7 +182,11 @@ const CAPABILITY_ITEMS: Readonly<Record<Capability, readonly SetupItemId[]>> = {
   // deterministic profile for the governing policy and a provider for
   // adjudication, so both are real prerequisites rather than assumed ones.
   consistencyReview: ["deterministicProfile", "llmProvider"],
-  semanticRewrite: ["semanticProfile"],
+  // Provider first: a user with no provider cannot learn a style at all, and a
+  // style with no provider behind it is a hand-written profile, which the
+  // "Create empty profile" control already offers.
+  semanticStyleLearning: ["llmProvider"],
+  semanticReview: ["semanticProfile", "llmProvider"],
   governancePolicy: ["deterministicProfile"],
 };
 

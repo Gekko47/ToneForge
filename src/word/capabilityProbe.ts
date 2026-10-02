@@ -31,6 +31,18 @@ export interface WordCapabilities {
   supportsListLevel: boolean;
   supportsRevisions: boolean;
   supportsSelection: boolean;
+  /**
+   * Whether this host can replace a *character* range — `Range.set({ start, end })`.
+   *
+   * `Range.set` is WordApiDesktop 1.4 and is absent on Word on the web, while
+   * `Paragraph.getRange("Whole")` is WordApi 1.1 and is everywhere. So a whole
+   * paragraph can be rewritten on any host and part of one cannot. Probed
+   * rather than assumed: the apply path already calls
+   * `supportsRangedReplacement()` at write time and refuses with a stated reason
+   * when the answer is no, and Troubleshooting cannot explain that refusal
+   * without knowing it beforehand.
+   */
+  supportsRangedReplacement: boolean;
   supportsParagraphResolution: boolean;
   supportsHighlight: boolean;
   /**
@@ -85,6 +97,7 @@ export function toAnalysisCapabilities(capabilities: WordCapabilities): Analysis
     supportsListLevel: capabilities.supportsListLevel,
     supportsRevisions: capabilities.supportsRevisions,
     supportsSelection: capabilities.supportsSelection,
+    supportsRangedReplacement: capabilities.supportsRangedReplacement,
     supportsParagraphResolution: capabilities.supportsParagraphResolution,
     supportsHighlight: capabilities.supportsHighlight,
     supportsContextMenuApi: capabilities.supportsContextMenuApi,
@@ -96,6 +109,15 @@ export function toAnalysisCapabilities(capabilities: WordCapabilities): Analysis
   };
 }
 
+/**
+ * The all-false host.
+ *
+ * A probe that fails returns this, and a caller with no probe result at all must
+ * build it by hand — so this is the shape every hand-built copy has to match. A
+ * capability missing here would be `undefined` in a hand-built copy, which is
+ * neither `true` nor `false`, and every `=== false` comparison in the codebase
+ * would silently pass.
+ */
 const DEFAULT_CAPABILITIES: WordCapabilities = {
   supportsInsertText: false,
   supportsReplaceText: false,
@@ -108,6 +130,7 @@ const DEFAULT_CAPABILITIES: WordCapabilities = {
   supportsListLevel: false,
   supportsRevisions: false,
   supportsSelection: false,
+  supportsRangedReplacement: false,
   supportsParagraphResolution: false,
   supportsHighlight: false,
   supportsContextMenuApi: false,
@@ -290,6 +313,21 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
       async () => {
         const result = await runInWordSafe(async (context) => {
           return typeof context.document.getSelection === "function";
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsRangedReplacement",
+      async () => {
+        // The same guarded, non-destructive inspection `rangeResolution.ts`
+        // performs at apply time (ADR-0012: a probe reads the object model and
+        // writes nothing). Asking for it here rather than at refusal time is
+        // what lets Troubleshooting say *before* the user presses Apply that
+        // this host cannot write part of a paragraph.
+        const result = await runInWordSafe(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range, "set");
         });
         return result === true;
       },

@@ -37,6 +37,7 @@ const ALL_ON: AnalysisCapabilities = {
   supportsListLevel: true,
   supportsRevisions: true,
   supportsSelection: true,
+  supportsRangedReplacement: true,
   supportsParagraphResolution: true,
   supportsHighlight: true,
   supportsContextMenuApi: true,

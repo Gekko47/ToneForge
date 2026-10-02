@@ -22,6 +22,7 @@
  * any surface can call it, and a check cannot disagree with itself.
  */
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
+import { MAX_REVIEW_SELECTION_CHARS } from "../semantic/gates";
 
 /**
  * Where a remedy actually lives.
@@ -56,7 +57,7 @@ export interface TroubleshootingInput {
   autoScan: boolean;
   trackedEditing: boolean;
   coverage: CoverageReport | null;
-  /** A semantic profile is in effect, so the rewrite has a voice to match. */
+  /** A semantic profile is in effect, so the review has a voice to match. */
   semanticProfileActive: boolean;
   /** A provider is configured and reachable enough to send a request to. */
   providerConfigured: boolean;
@@ -73,13 +74,33 @@ export interface TroubleshootingInput {
   plannedCount: number;
   reviewedCount: number;
   /**
-   * Whether the Semantic tab currently holds a paragraph to rewrite.
+   * Whether Semantic Review currently holds a selection to review.
    *
    * `null` when the tab has not reported one either way. A check that fired on
-   * `null` would report a blocker the pane has not established: the Semantic tab
-   * simply has not been opened, which is not a fault.
+   * `null` would report a blocker the pane has not established: the page simply
+   * has not been opened, which is not a fault.
    */
   semanticSelectionCaptured: boolean | null;
+  /**
+   * Characters in the captured selection, or `null` when none is held.
+   *
+   * A number rather than a boolean because the refusal is a *size*: the gate
+   * caps a review at `MAX_REVIEW_SELECTION_CHARS` and says so above the cap
+   * rather than truncating. A registry that could only say "too long" would send
+   * the user to check their selection with no way to judge how much of it to
+   * cut. Quoting the cap here keeps the number in one place.
+   */
+  semanticSelectionChars: number | null;
+  /**
+   * Whether the last semantic revision on screen was refused by the local
+   * preservation check.
+   *
+   * The gate is `preservationPassed`, and this records the same fact for a panel
+   * the user reaches *after* the page has been navigated away from — which is
+   * when they discover Apply was never going to work. Without it the only
+   * explanation lives on a page they have already left.
+   */
+  semanticPreservationRefused: boolean;
   /**
    * The last Consistency Review's own account of how much of the document it
    * compared, or `null` when no report has been produced.
@@ -105,6 +126,16 @@ export interface TroubleshootingInput {
    * it must say which of the two it is talking about.
    */
   contextMenuApi: boolean | null;
+  /**
+   * Whether this host can replace a character range (`Range.set`).
+   *
+   * `null` until the probe has run. `Range.set` is WordApiDesktop 1.4 and is
+   * absent on Word on the web, so a partial selection can be reviewed on a host
+   * that cannot be written back to. The refusal is stated at apply time; this is
+   * what lets the panel state it *before* the user spends a model call finding
+   * out.
+   */
+  rangedReplacementSupported: boolean | null;
 }
 
 /**
@@ -212,21 +243,21 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     id: "no-semantic-profile",
     appliesTo: (input) => input.semanticProfileActive === false,
     situation:
-      "The Semantic tab has no measured style, and the ribbon's semantic button is greyed out",
+      "Semantic Review has no style to measure against, and the ribbon's semantic button is greyed out",
     cause:
-      "A semantic profile says how the writing should sound, so with none active there is nothing to measure, nothing to edit, and no voice for a rewrite to match.",
+      "A semantic profile says how the writing should sound, so with none active there is nothing to measure, nothing to edit, and no voice for a review to match.",
     remedy:
-      "Create one on the Semantic tab. Learn Style needs a sample of a few paragraphs; Create empty profile gives you a blank one to fill in by hand, with no sample and no provider involved.",
+      "Create one on Semantic Style. Learn style needs a sample of a few paragraphs; Create empty profile gives you a blank one to fill in by hand, with no sample and no provider involved.",
     remedyTarget: {
-      label: "Semantic → Semantic profiles → Create empty profile",
+      label: "Semantic Style → Semantic profiles → Create empty profile",
     },
   },
   {
     id: "no-provider",
     appliesTo: (input) => input.providerConfigured === false,
-    situation: "The semantic rewrite and AI Review are unavailable",
+    situation: "Semantic Review and Consistency Review are unavailable",
     cause:
-      "No AI provider is configured. The deterministic checks and the whole Deterministic Review review still work; only the parts that send your text to a model are unavailable.",
+      "No AI provider is configured. The deterministic checks and the whole of Deterministic Review still work; only the parts that send your text to a model are unavailable.",
     remedy:
       "Add a provider and a key. Nothing is sent anywhere until you also allow it — the two permissions are separate and both are yours to grant.",
     remedyTarget: {
@@ -237,9 +268,9 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     id: "no-raw-text-consent",
     appliesTo: (input) =>
       input.rawTextConsent === false && input.providerConfigured && input.semanticProfileActive,
-    situation: "The semantic rewrite is unavailable even though everything else is set up",
+    situation: "Semantic Review is unavailable even though everything else is set up",
     cause:
-      "Sending your text to a provider is switched off. The provider and the semantic profile are both ready, so nothing else is missing — the rewrite is refused because that one permission has not been granted.",
+      "Sending your text to a provider is switched off. The provider and the semantic profile are both ready, so nothing else is missing — the review is refused because that one permission has not been granted.",
     remedy:
       "Turn it on. Nothing is sent anywhere until you do, and you can withdraw it again in Settings at any time.",
     remedyTarget: {
@@ -259,15 +290,42 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     },
   },
   {
-    id: "semantic-rewrite-has-no-paragraph",
+    id: "semantic-review-has-no-selection",
     appliesTo: (input) => input.semanticSelectionCaptured === false,
-    situation: "Propose rewrite is greyed out, and pressing Read current selection changes nothing",
+    situation: "Review selection is greyed out, and pressing Use current selection changes nothing",
     cause:
-      "The rewrite works on one paragraph, not on the document, and no paragraph has been read yet, so the button is disabled. Anything else the rewrite needs is reported separately, if it is also missing.",
+      "A review works on the text you select, not on the document, and nothing has been read yet, so the button is disabled. Reading the selection is a local Word call and sends nothing; anything else the review needs is reported separately, if it is also missing.",
     remedy:
-      "Select the text you want rewritten in Word itself, then press Read current selection on the Semantic tab and the paragraph appears above the button.",
+      "Select the text you want reviewed in Word itself, then press Use current selection on Semantic Review and the selection appears above the button.",
     remedyTarget: {
-      label: "Semantic → Semantic rewrite → Read current selection",
+      label: "Semantic Review → Use current selection",
+    },
+  },
+  {
+    id: "semantic-selection-too-long",
+    appliesTo: (input) =>
+      input.semanticSelectionChars !== null &&
+      input.semanticSelectionChars > MAX_REVIEW_SELECTION_CHARS,
+    situation:
+      "Review selection is greyed out although text is selected and everything else is set up",
+    cause: (input) =>
+      `The selection is ${input.semanticSelectionChars?.toLocaleString() ?? 0} characters, and a single review is capped at ${MAX_REVIEW_SELECTION_CHARS.toLocaleString()}. The cap is stated rather than silently shortened: a review of the first ${MAX_REVIEW_SELECTION_CHARS.toLocaleString()} characters of a passage is not a review of the passage.`,
+    remedy:
+      "Select less text, or review the passage in two passes. Nothing about the document has changed, and the selection you made is still there.",
+    remedyTarget: {
+      label: "Semantic Review → Use current selection, then narrow the selection in Word",
+    },
+  },
+  {
+    id: "semantic-preservation-refused",
+    appliesTo: (input) => input.semanticPreservationRefused === true,
+    situation: "Apply revision is greyed out on a review that was produced successfully",
+    cause:
+      "The revision changes something this machine's local check protects — a date, a number, a name, or a negation — so it is not offered for writing. The check runs on your machine, before any write, and it is the reason a review can be produced and still not be applicable.",
+    remedy:
+      "Regenerate the review, or keep the original and edit the passage yourself. The protection cannot be switched off, and nothing has been written to the document either way.",
+    remedyTarget: {
+      label: "Semantic Review → Regenerate review",
     },
   },
   {
@@ -322,6 +380,19 @@ const CHECKS: readonly TroubleshootingCheck[] = [
       "Use the ribbon instead. This is a host limitation rather than a setting: no control in ToneForge turns the context menu on, and a menu that is absent here cannot be restored from inside the add-in.",
     remedyTarget: {
       label: "Add-ins ribbon → Deterministic Review group",
+    },
+  },
+  {
+    id: "semantic-ranged-replace-unsupported",
+    appliesTo: (input) => input.rangedReplacementSupported === false,
+    situation:
+      "A revision of part of a paragraph cannot be written, on a host that can write a whole paragraph",
+    cause:
+      "Replacing part of a paragraph needs Range.set, which is WordApiDesktop 1.4 and is not available in Word on the web. Replacing a whole paragraph does not — it goes through Paragraph.getRange, which every host has — so a whole-paragraph selection works here and a partial one does not.",
+    remedy:
+      "Select the whole paragraph and review it again. This is a host limitation rather than a setting: no control in ToneForge adds ranged replacement to a Word that does not have it.",
+    remedyTarget: {
+      label: "Semantic Review → Use current selection, then select the whole paragraph in Word",
     },
   },
 ];

@@ -41,6 +41,7 @@ const NO_STRUCTURAL_SUPPORT: AnalysisCapabilities = {
   supportsListLevel: true,
   supportsRevisions: true,
   supportsSelection: true,
+  supportsRangedReplacement: true,
   supportsParagraphResolution: true,
   supportsHighlight: true,
   supportsContextMenuApi: true,

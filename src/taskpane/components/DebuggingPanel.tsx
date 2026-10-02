@@ -32,10 +32,23 @@ interface DebuggingPanelProps {
     limitations: readonly string[];
   } | null;
   /**
-   * Whether the Semantic tab is holding a paragraph to rewrite, `null` if it
-   * has not been opened. Held by the Dashboard for the same reason.
+   * Whether Semantic Review is holding a selection, `null` if it has not been
+   * opened. Held by the Dashboard for the same reason.
    */
   semanticSelectionCaptured?: boolean | null;
+  /**
+   * Characters in the captured selection, `null` when none is held.
+   *
+   * The cap is a size, so the panel can only explain the refusal with the size.
+   * See `TroubleshootingInput.semanticSelectionChars`.
+   */
+  semanticSelectionChars?: number | null;
+  /**
+   * Whether the last revision on screen was refused by the local preservation
+   * check, so a greyed-out Apply can be explained after the user has navigated
+   * away from the page that said why.
+   */
+  semanticPreservationRefused?: boolean;
 }
 
 /**
@@ -53,7 +66,10 @@ function currentInput(input: {
   reviewedCount: number;
   consistency: { usedModel: boolean; complete: boolean; limitations: readonly string[] } | null;
   semanticSelectionCaptured: boolean | null;
+  semanticSelectionChars: number | null;
+  semanticPreservationRefused: boolean;
   contextMenuApi: boolean | null;
+  rangedReplacementSupported: boolean | null;
 }): TroubleshootingInput {
   const state = loadState();
   return {
@@ -67,7 +83,10 @@ function currentInput(input: {
     reviewedCount: input.reviewedCount,
     consistency: input.consistency,
     semanticSelectionCaptured: input.semanticSelectionCaptured,
+    semanticSelectionChars: input.semanticSelectionChars,
+    semanticPreservationRefused: input.semanticPreservationRefused,
     contextMenuApi: input.contextMenuApi,
+    rangedReplacementSupported: input.rangedReplacementSupported,
   };
 }
 
@@ -87,6 +106,8 @@ export default function DebuggingPanel({
   reviewedCount = 0,
   consistency = null,
   semanticSelectionCaptured = null,
+  semanticSelectionChars = null,
+  semanticPreservationRefused = false,
 }: DebuggingPanelProps): React.ReactNode {
   const [capabilities, setCapabilities] = useState<Awaited<
     ReturnType<typeof prepareReformatHost>
@@ -132,6 +153,10 @@ export default function DebuggingPanel({
   // this point in most sessions, and `null` is the honest answer — "not yet
   // established" rather than "the host does not have it".
   const contextMenuApi = capabilities === null ? null : capabilities.supportsContextMenuApi;
+  // `null` until the probe has run, for the same reason as the context menu: a
+  // panel that has not looked cannot say the host lacks something.
+  const rangedReplacementSupported =
+    capabilities === null ? null : capabilities.supportsRangedReplacement;
 
   const notes = diagnoseSituation(
     currentInput({
@@ -141,7 +166,10 @@ export default function DebuggingPanel({
       reviewedCount,
       consistency,
       semanticSelectionCaptured,
+      semanticSelectionChars,
+      semanticPreservationRefused,
       contextMenuApi,
+      rangedReplacementSupported,
     }),
   );
 

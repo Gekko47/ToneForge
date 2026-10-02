@@ -21,6 +21,7 @@ const FULL_CAPABILITIES: WordCapabilities = {
   supportsListLevel: true,
   supportsRevisions: false,
   supportsSelection: true,
+  supportsRangedReplacement: true,
   supportsParagraphResolution: true,
   supportsHighlight: true,
   supportsContextMenuApi: true,

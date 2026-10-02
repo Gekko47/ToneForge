@@ -59,8 +59,21 @@ export interface SemanticReviewProps {
   /** The session the Dashboard holds, so a navigation does not discard it. */
   session: SemanticReviewSession | null;
   onSession: (session: SemanticReviewSession | null) => void;
-  /** Told when a capture succeeds or fails, for the Troubleshooting registry. */
-  onSelectionCaptured?: (captured: boolean) => void;
+  /**
+   * Told what the page currently holds, for the Troubleshooting registry.
+   *
+   * One callback carrying both facts, reported from an effect rather than from
+   * each mutation site: the registry has to explain a selection that is *too
+   * long* (a size, which a boolean cannot say) and a revision the local check
+   * refused (which is not visible until the user has navigated away from the
+   * page that said why). Two callbacks would be two places to forget to call,
+   * and a diagnostic that reports a stale answer is worse than one that reports
+   * none.
+   *
+   * `heldChars: null` is "nothing read", which the registry keeps distinct from
+   * "the page was never opened" — that distinction is the whole of one check.
+   */
+  onReviewStatus?: (status: { heldChars: number | null; preservationRefused: boolean }) => void;
 }
 
 export default function SemanticReview({
@@ -70,7 +83,7 @@ export default function SemanticReview({
   navigation,
   session,
   onSession,
-  onSelectionCaptured,
+  onReviewStatus,
 }: SemanticReviewProps): React.ReactNode {
   const [scope, setScope] = React.useState<SelectionScope | null>(null);
   const [emptyReason, setEmptyReason] = React.useState<string | null>(null);
@@ -94,6 +107,21 @@ export default function SemanticReview({
   React.useEffect(() => {
     setLocalSession(session);
   }, [session]);
+
+  /*
+   * What the Troubleshooting panel is told, in one place.
+   *
+   * Derived rather than pushed, so it cannot be stale: the two facts come from
+   * `scope` and `result`, which are already state, and an effect is the only way
+   * to report them without a call at every site that clears one of them. Three
+   * sites currently clear a scope, and a fourth added later would have been the
+   * one that forgot.
+   */
+  const heldChars = scope?.anchor.selectedText.length ?? null;
+  const preservationRefused = result !== null && !result.preservation.pass;
+  React.useEffect(() => {
+    onReviewStatus?.({ heldChars, preservationRefused });
+  }, [onReviewStatus, heldChars, preservationRefused]);
   const commitSession = (next: SemanticReviewSession | null): void => {
     setLocalSession(next);
     onSession(next);
@@ -124,7 +152,6 @@ export default function SemanticReview({
       setEmptyReason(null);
       setUnavailableReason(null);
       setError(null);
-      onSelectionCaptured?.(true);
       return;
     }
     /*
@@ -137,7 +164,6 @@ export default function SemanticReview({
      */
     setScope(null);
     setResult(null);
-    onSelectionCaptured?.(false);
     if (captured.status === "unavailable") {
       setUnavailableReason(captured.reason);
       setEmptyReason(null);
@@ -282,7 +308,6 @@ export default function SemanticReview({
       setResult(null);
       setScope(null);
       commitSession(advanceSession(liveSession, "applied", new Date().toISOString()));
-      onSelectionCaptured?.(false);
       setStatus("The revision was written as a tracked change. Reject it in Word to undo it.");
     } catch (failure: unknown) {
       // A throw is a fault, not a refusal, and says so. Collapsing the two is what
