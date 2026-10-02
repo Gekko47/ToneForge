@@ -51,6 +51,15 @@ interface HostOptions {
   missingParagraphProperties?: string[];
   /** Models a host with no `document.getSelection` at all. */
   withoutSelection?: boolean;
+  /**
+   * Whether paragraphs answer `getRange("Whole")`, which is WordApi 1.1 and the
+   * only reason a collapsed caret is reviewable at all.
+   *
+   * Off by default so the "this host cannot name the paragraph" cases stay
+   * reachable, and on for the caret cases. Modelling both is the point: a fixture
+   * that only knows the capable host cannot tell a refusal from a working read.
+   */
+  withParagraphRange?: boolean;
 }
 
 interface HostLog {
@@ -79,6 +88,7 @@ function installHost(options: HostOptions = {}): void {
   const paragraphs =
     options.paragraphs === undefined ? [{ text, uniqueLocalId: "p-42" }] : options.paragraphs;
   refusedSelection = new Set(options.missingSelectionProperties ?? []);
+  let offsetsSoFar = 0;
   refusedParagraph = new Set(options.missingParagraphProperties ?? []);
   log = { selectionRequests: [], paragraphRequests: [], bodyLoads: [] };
 
@@ -101,7 +111,48 @@ function installHost(options: HostOptions = {}): void {
       });
       return this;
     },
+    /*
+     * The paragraph's own range, with the offsets a caret cannot supply. Recorded
+     * as its own requests so a test can see that the caret path loaded `start`
+     * and `end` rather than only `text` — the variadic failure (ADR-0100) was
+     * exactly a read of `start` that had never been loaded.
+     */
+    ...(options.withParagraphRange === true
+      ? {
+          getRange(location: string) {
+            log.paragraphRequests.push(`getRange/${location}`);
+            const [first, last] = offsetsOf(paragraph.text ?? "");
+            return attachOfficeLoad(
+              {
+                get text() {
+                  return paragraph.text ?? "";
+                },
+                get start() {
+                  return first;
+                },
+                get end() {
+                  return last;
+                },
+              },
+              (property) => log.paragraphRequests.push(`whole/${property}`),
+            );
+          },
+        }
+      : {}),
   }));
+
+  /**
+   * Where a paragraph's own range sits, for the caret path.
+   *
+   * `offset` places the first paragraph in the document and each later one
+   * immediately after it, so two paragraphs in one test never collide on offsets
+   * the way a fixed start would.
+   */
+  function offsetsOf(paragraphText: string): [number, number] {
+    const offset = text.length + 2 + offsetsSoFar;
+    offsetsSoFar += paragraphText.length + 1;
+    return [offset, offset + paragraphText.length];
+  }
 
   const selection = attachOfficeLoad(
     {
@@ -263,18 +314,123 @@ describe("readSelectionScope", () => {
     expect(anchorMatches(first.anchor, second.anchor.selectedText)).toBe(false);
   });
 
-  describe("when there is nothing selected", () => {
+  /*
+   * A caret is reviewable now, and the tests below are the pair that says so.
+   *
+   * The version of this that shipped asserted `no-selection` for a bare caret,
+   * and it passed for two years, which is how it could ship: the message it
+   * produced was accurate about the code and wrong about the host, and nothing
+   * contradicted it. The paragraph double also had no `getRange`, so it went on
+   * passing after the caret path was implemented — for the wrong reason. Both
+   * hosts are modelled now, because a fixture that only knows the capable host
+   * cannot tell a working read from a refusal.
+   */
+  describe("a bare caret", () => {
+    it("expands to the paragraph it is in", async () => {
+      installHost({
+        text: "",
+        start: 40,
+        end: 40,
+        withParagraphRange: true,
+        paragraphs: [{ text: SAMPLE, uniqueLocalId: "p-91" }],
+      });
+
+      const result = await readSelectionScope();
+      expect(result.status).toBe("ok");
+      if (result.status !== "ok") return;
+
+      expect(result.scope.source).toBe("caret-paragraph");
+      expect(result.scope.anchor.selectedText).toBe(SAMPLE);
+      expect(result.scope.anchor.nodeIds).toEqual(["p-91"]);
+      expect(result.scope.verification).toBe("paragraph-identified");
+      expect(result.scope.coversWholeParagraph).toBe(true);
+      expect(result.scope.anchor.startOffset).toBeGreaterThanOrEqual(0);
+      expect(result.scope.anchor.endOffset).toBe(result.scope.anchor.startOffset + SAMPLE.length);
+    });
+
+    it("says which text it chose, because a caret review is a decision", async () => {
+      installHost({ withParagraphRange: true });
+      expect((await capture()).source).toBe("selection");
+    });
+
+    it("loads the paragraph range as one array, not as three arguments", async () => {
+      installHost({
+        text: "",
+        start: 40,
+        end: 40,
+        withParagraphRange: true,
+        paragraphs: [{ text: "A paragraph the cursor sits in.", uniqueLocalId: "p-7" }],
+      });
+      await readSelectionScope();
+
+      expect(log.paragraphRequests).toContain("getRange/Whole");
+      expect(log.paragraphRequests).toContain("whole/text");
+      expect(log.paragraphRequests).toContain("whole/start");
+      expect(log.paragraphRequests).toContain("whole/end");
+    });
+
+    it("reports no selection when the host cannot hand back the paragraph range", async () => {
+      installHost({ text: "", start: 40, end: 40 });
+      expect(await readSelectionScope()).toEqual({ status: "no-selection" });
+    });
+
+    it("reports no selection for a caret in an empty paragraph", async () => {
+      installHost({
+        text: "",
+        start: 40,
+        end: 40,
+        withParagraphRange: true,
+        paragraphs: [{ text: "\r", uniqueLocalId: "p-empty" }],
+      });
+      expect(await readSelectionScope()).toEqual({ status: "no-selection" });
+    });
+
+    it("treats a drag that caught only whitespace as a caret", async () => {
+      installHost({
+        text: "   ",
+        start: 40,
+        end: 43,
+        withParagraphRange: true,
+        paragraphs: [{ text: "A paragraph with trailing space.   ", uniqueLocalId: "p-8" }],
+      });
+
+      const result = await readSelectionScope();
+      expect(result.status).toBe("ok");
+      if (result.status !== "ok") return;
+      expect(result.scope.source).toBe("caret-paragraph");
+      expect(result.scope.anchor.selectedText).toBe("A paragraph with trailing space.   ");
+    });
+
+    it("reads no more than a selection-sized read", async () => {
+      installHost({
+        text: "",
+        start: 40,
+        end: 40,
+        withParagraphRange: true,
+        paragraphs: [{ text: SAMPLE, uniqueLocalId: "p-91" }],
+      });
+      await readSelectionScope();
+
+      expect(log.bodyLoads).toEqual([]);
+    });
+  });
+
+  describe("when there is nothing reviewable", () => {
     it("reports no selection for an empty one", async () => {
       installHost({ text: "", start: 40, end: 40 });
 
       expect(await readSelectionScope()).toEqual({ status: "no-selection" });
     });
 
-    it("reports no selection for a bare caret, rather than an empty review", async () => {
-      installHost({ text: "   ", start: 40, end: 40 });
+    /*
+     * Whitespace with a host that cannot name the paragraph is still nothing. This
+     * is the "cannot" half of the pair above: the caret path exists, and it still
+     * declines when there is no paragraph to expand into.
+     */
+    it("reports no selection when a whitespace-only drag has no paragraph to expand", async () => {
+      installHost({ text: "   ", start: 40, end: 43 });
 
-      const result = await readSelectionScope();
-      expect(result.status).toBe("no-selection");
+      expect(await readSelectionScope()).toEqual({ status: "no-selection" });
     });
 
     it("does not read the document to decide that", async () => {

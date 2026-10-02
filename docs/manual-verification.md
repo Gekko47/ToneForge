@@ -520,6 +520,39 @@ Per host (Windows desktop, Mac desktop, Word on the web):
 Record the host and version for each. Two pane identities is a passing build and a
 wrong product, so step 2 is the one that matters.
 
+## Open gate — caret tracking (P16, ADR-0103)
+
+Whether a Word host fires `documentSelectionChanged` was ADR-0094's open question
+and is still open. The repository side is settled; this procedure settles the host
+side. A host that says no is not a failure of this build — the pane says it is
+not tracking and the manual control still works.
+
+Per host (Windows desktop, Mac desktop, Word on the web):
+
+1. Open Semantic Review. Record which sentence the pane shows about tracking:
+   "follows the cursor" or "does not report cursor movement".
+2. Click once inside a paragraph with **nothing selected**. Confirm the paragraph
+   appears in the Selection card within about a second, and that it is labelled
+   _the paragraph the cursor is in, not a selection you made_.
+3. Click inside a **different** paragraph. Confirm the card updates to that one,
+   and that it does **not** need a button press.
+4. Click into an **empty paragraph**. Confirm the pane says there is nothing to
+   review rather than reviewing the paragraph before it.
+5. Drag-select three words. Confirm the card switches to those words and no longer
+   carries the caret sentence. This is the regression that matters: the selection
+   path must be untouched.
+6. Type a sentence in a new paragraph and stop. Confirm **one** read, not one per
+   keystroke — the card should settle rather than flicker.
+7. With a selection in the card, press Review. Move the cursor to another paragraph
+   while the proposal is on screen. Confirm the proposal is **still there**. The
+   tracker must stop while a review is held.
+8. Press Keep original, then click into another paragraph. Confirm tracking resumes.
+9. Navigate away from Semantic Review and back. Confirm the card reflects the
+   current cursor, not the one from before, and that no duplicate pane appears.
+
+Record the host and version for each. Steps 2 and 3 are the feature; step 5 and
+step 7 are the promises that keep it from costing anything.
+
 ## Open gate — the semantic review path (P12)
 
 Everything below is a **procedure, not a result**. The P12 phase of

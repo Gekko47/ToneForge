@@ -39,6 +39,22 @@
   Deterministic Review" while navigating Home. See ADR-0102. _Found by hand in a real
   Word._
 
+- **Fixed: putting the cursor in a paragraph and pressing the command reported
+  "nothing is selected".** Dragging text and selecting it worked; clicking and
+  pressing the button did not. The capture treated a collapsed selection as
+  nothing — deliberately, with a comment and a test saying so — but a caret has no
+  extent to review, so the unit has to be the paragraph it sits in. Clicking now
+  reads that paragraph, and the page says which text it chose, because a caret
+  review is a judgement made for the user rather than a selection they made.
+- **The pane now follows the cursor.** Word exposes
+  `documentSelectionChanged` through the Office surface, and the Semantic Review
+  page subscribes to it. Click into any paragraph and it is read, without
+  pressing anything. It is debounced, it stops the moment a review is on screen
+  so a caret move cannot discard a proposal you are reading, and it stops
+  entirely on a host that has no such event — where the page says so and keeps
+  the manual control. See ADR-0103. _Whether Word fires the event is still a
+  host question and still needs a person in Word._
+
 Repository-complete; **host-unverified**. `npm run verify` is green across all
 thirteen stages and 2 350 tests. Per ADR-0051 that is not a release claim, and
 `npm run release:check` stays blocked. The named host procedures are in

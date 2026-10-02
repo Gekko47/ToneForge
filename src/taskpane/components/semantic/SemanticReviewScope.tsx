@@ -18,6 +18,14 @@ import type { SemanticGate } from "../../semantic/gates";
  */
 export interface SemanticReviewScopeProps {
   scope: SelectionScope | null;
+  /**
+   * Whether the host fires selection events and the pane is following them.
+   *
+   * Stated rather than implied, because "the pane did not update when I clicked
+   * elsewhere" is indistinguishable from a frozen pane unless the page says it is
+   * listening.
+   */
+  tracking: boolean;
   /** Why nothing is held, when the read succeeded and found nothing. */
   emptyReason: string | null;
   /** Why a read is impossible on this host, which is a different sentence. */
@@ -35,6 +43,7 @@ export interface SemanticReviewScopeProps {
 
 export default function SemanticReviewScope({
   scope,
+  tracking,
   emptyReason,
   unavailableReason,
   reviewing,
@@ -61,6 +70,14 @@ export default function SemanticReviewScope({
           <p className="tf-sub">
             {scope.wordCount} {scope.wordCount === 1 ? "word" : "words"}
             {/*
+              Which text this is, because a caret review is a judgement made for
+              the user. They clicked once to place the cursor and ToneForge chose
+              the paragraph; saying "48 words" alone would let them believe they
+              had selected it.
+            */}
+            {scope.source === "caret-paragraph" &&
+              " · the paragraph the cursor is in, not a selection you made"}
+            {/*
               How far the anchor could be verified, stated rather than implied.
 
               A host that names its paragraphs gives a target that can be re-found
@@ -84,6 +101,12 @@ export default function SemanticReviewScope({
           {reviewing ? "Reviewing…" : "Review selection"}
         </button>
       </div>
+
+      <p className="tf-sub" data-testid="tf-semantic-tracking">
+        {tracking
+          ? "This pane follows the cursor. Click into any paragraph and it is read here."
+          : "This Word build does not report cursor movement, so press Use current selection to read it."}
+      </p>
 
       {/*
         The blocker, beside the control it explains.

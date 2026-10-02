@@ -34,6 +34,26 @@ declare global {
         version: string;
       };
       sync(): Promise<void>;
+
+      /*
+       * Event subscription, declared narrowly and optionally.
+       *
+       * Optional because absence is the interesting case and must stay
+       * expressible: ADR-0094 recorded selection-change events as an open question
+       * precisely because "not in our declarations" is not "not in the API", so a
+       * required member would have forced a cast to talk to a host that may not
+       * have it. Narrow because this add-in subscribes to exactly one event type
+       * and models only the parts of the registration it uses.
+       *
+       * The event type is passed as the string Office documents
+       * (`"documentSelectionChanged"`), not as an `Office.EventType` value, so the
+       * declaration does not have to model a runtime class we never construct.
+       */
+      addHandlerAsync?: (
+        eventType: string,
+        callback: (event: { type: string; source?: unknown }) => void,
+      ) => Promise<unknown>;
+      removeHandlerAsync?: (eventType: string, options?: { id?: string }) => Promise<unknown>;
     }
 
     interface Document {

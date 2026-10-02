@@ -6,6 +6,7 @@ import PreservationSummary from "../components/semantic/PreservationSummary";
 import { semanticGate, type SemanticGateInput } from "../semantic/gates";
 import { deriveSemanticAnnouncement } from "../state/semanticAnnouncement";
 import { readSelectionScope, type SelectionScope } from "../../word/selectionScope";
+import { stopWatchingDocumentSelection, watchDocumentSelection } from "../../word/selectionWatcher";
 import { reviewSemanticSelection } from "../../analysis/semantic/semanticReviewEngine";
 import {
   advanceSession,
@@ -87,6 +88,8 @@ export default function SemanticReview({
 }: SemanticReviewProps): React.ReactNode {
   const [scope, setScope] = React.useState<SelectionScope | null>(null);
   const [emptyReason, setEmptyReason] = React.useState<string | null>(null);
+  /** Whether the host fires selection events at all, for the disclosure below. */
+  const [trackingSelection, setTrackingSelection] = React.useState(false);
   const [unavailableReason, setUnavailableReason] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<SemanticReviewResult | null>(null);
   const [status, setStatus] = React.useState<string | null>(null);
@@ -145,6 +148,45 @@ export default function SemanticReview({
     void readSelection();
   }, [navigation]);
 
+  /**
+   * Whether a review is currently on screen, readable from a stale closure.
+   *
+   * The watcher's callback is captured once, at subscription, so it cannot see
+   * `result` from the render it was created in. A ref is the only way to ask
+   * "is the user holding a paid-for proposal right now" without re-subscribing
+   * on every state change.
+   */
+  const heldResult = React.useRef<SemanticReviewResult | null>(null);
+  heldResult.current = result;
+
+  /**
+   * Follow the caret while nothing is being decided.
+   *
+   * **It stops the moment a review is on screen.** Reading on every caret move
+   * would replace the proposal the user is reading with a new one for the
+   * paragraph they just clicked into, silently discarding work they paid for.
+   * Staleness is already the page's answer to "this no longer describes what is
+   * on screen" (`currentSession`), so tracking is not needed to detect it.
+   *
+   * The subscription is optional by design: a host with no
+   * `documentSelectionChanged` keeps the manual "Use current selection" control,
+   * which is the behaviour this product shipped with (ADR-0094).
+   */
+  React.useEffect(() => {
+    let active = true;
+    void watchDocumentSelection(() => {
+      if (!active || heldResult.current !== null) return;
+      void readSelection();
+    }).then((subscribed) => {
+      if (!active) void stopWatchingDocumentSelection();
+      else setTrackingSelection(subscribed);
+    });
+    return () => {
+      active = false;
+      void stopWatchingDocumentSelection();
+    };
+  }, []);
+
   async function readSelection(): Promise<void> {
     const captured = await readSelectionScope();
     if (captured.status === "ok") {
@@ -170,7 +212,9 @@ export default function SemanticReview({
       setError(null);
     } else {
       setUnavailableReason(null);
-      setEmptyReason("Nothing is selected. Select the paragraph you want reviewed.");
+      setEmptyReason(
+        "There is nothing to review here. Click inside a paragraph, or select the text you want checked.",
+      );
     }
   }
 
@@ -368,7 +412,7 @@ export default function SemanticReview({
 
       <h1 className="tf-title">Semantic Review</h1>
       <p className="tf-sub">
-        Select the text you want checked against your semantic style. The selection is sent to your
+        Click into the paragraph you want checked, or select text. What is read here is sent to your
         configured provider only when you press Review, and nothing is written until you press
         Apply.
       </p>
@@ -393,6 +437,7 @@ export default function SemanticReview({
 
       <SemanticReviewScope
         scope={scope}
+        tracking={trackingSelection}
         emptyReason={emptyReason}
         unavailableReason={unavailableReason}
         reviewing={reviewing}

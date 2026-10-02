@@ -2086,6 +2086,39 @@ exactly the users still setting the app up.
    state rather than being redirected") — the code did not, and the test made
    the gap invisible rather than closing it.
 
+#### P16 — the caret reviews its paragraph _(LANDED 2026-10-02)_
+
+**Also found by hand, and also invisible to this plan.** "Paragraph
+identification based on cursor location is still not working, but the selection of
+text is working."
+
+**What was found.** `readSelectionScope` returned `no-selection` for a collapsed
+selection. That was deliberate, documented, and tested — the module's own comment
+said so and a test asserted it for two years. What shipped was a sentence that was
+true of the code and false of the world: click into a paragraph, press the command,
+be told nothing is selected; drag instead and it works. The code had the drag path
+and no click path, and the message about the missing path was accurate enough that
+nobody read it as a symptom.
+
+**Deviations.**
+
+1. **A collapsed or whitespace-only selection expands to its paragraph** via
+   `Paragraph.getRange("Whole")` (WordApi 1.1), and the scope says
+   `source: "caret-paragraph"`. A caret in an empty paragraph is still
+   `no-selection`; there is genuinely nothing there.
+2. **The pane states what it decided on the user's behalf**, and states whether it
+   is following the cursor. Both are visible before any provider call.
+3. **Live tracking is attempted and optional.**
+   `word/selectionWatcher.ts` subscribes to `documentSelectionChanged`, debounced
+   250 ms, and **stops while a review is on screen** so a caret move cannot discard
+   a proposal the user is reading. A host that refuses keeps the manual control.
+   This resolves ADR-0094 on the repository side and leaves the host question open
+   with its procedure.
+4. **ADR-0103 records it.** It is also the second time a test written to describe
+   an intentional behaviour turned out to describe a difference nobody had checked
+   — the first was the duplicate-id check (ADR-0082), this one the bare-caret
+   assertion. A test can be green and be the reason a defect lasts.
+
 ## 9. Test strategy
 
 ### Structure (mirrors source, per the coverage rule)

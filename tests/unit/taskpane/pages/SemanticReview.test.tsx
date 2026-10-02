@@ -20,7 +20,20 @@ const mocks = vi.hoisted(() => ({
   reviewSemanticSelection: vi.fn(),
   applyApprovedSemanticRevision: vi.fn(),
   saveSemanticReviewOutcome: vi.fn(),
+  /*
+   * The watcher is mocked so these tests can decide, deliberately, whether the
+   * host reports cursor movement. What it does with each answer is covered in
+   * `selectionWatcher.test.ts`; what the *page* does is covered here, and the two
+   * cannot be answered in the same test without a real Word host.
+   */
+  watchDocumentSelection: vi.fn(),
+  stopWatchingDocumentSelection: vi.fn(),
   state: {} as Record<string, unknown>,
+}));
+
+vi.mock("../../../../src/word/selectionWatcher", () => ({
+  watchDocumentSelection: mocks.watchDocumentSelection,
+  stopWatchingDocumentSelection: mocks.stopWatchingDocumentSelection,
 }));
 
 vi.mock("../../../../src/word/selectionScope", () => ({
@@ -155,10 +168,17 @@ describe("the Semantic Review page", () => {
     mocks.reviewSemanticSelection.mockReset();
     mocks.applyApprovedSemanticRevision.mockReset();
     mocks.saveSemanticReviewOutcome.mockReset();
+    mocks.watchDocumentSelection.mockReset();
+    mocks.stopWatchingDocumentSelection.mockReset();
+    // Subscribed, by default. Every pre-P16 test in this file would otherwise be
+    // asserting against a host with no selection event, which is the degraded
+    // path and is asserted separately below.
+    mocks.watchDocumentSelection.mockResolvedValue(true);
     mocks.readSelectionScope.mockResolvedValue({
       status: "ok",
       scope: {
         anchor: anchor(),
+        source: "selection" as const,
         documentIdVerified: true,
         paragraphCount: 1,
         coversWholeParagraph: true,
@@ -176,6 +196,82 @@ describe("the Semantic Review page", () => {
 
     await waitFor(() => expect(mocks.reviewSemanticSelection).toHaveBeenCalledTimes(1));
     expect(document.querySelectorAll('[role="status"], [role="alert"]')).toHaveLength(1);
+  });
+
+  describe("following the cursor", () => {
+    it("says the text is the paragraph the cursor is in, not a selection", async () => {
+      /*
+       * A caret review is a decision made for the user: they clicked once to
+       * place the cursor and ToneForge chose the paragraph. Saying "14 words"
+       * alone would let them believe they had selected it.
+       */
+      mocks.readSelectionScope.mockResolvedValue({
+        status: "ok",
+        scope: {
+          anchor: anchor(),
+          source: "caret-paragraph",
+          documentIdVerified: true,
+          paragraphCount: 1,
+          coversWholeParagraph: true,
+          wordCount: 14,
+          verification: "paragraph-identified",
+        },
+      });
+      renderPage();
+      await userEvent.click(screen.getByRole("button", { name: /use current selection/i }));
+
+      expect(
+        await screen.findByText(/the paragraph the cursor is in, not a selection you made/),
+      ).toBeInTheDocument();
+    });
+
+    it("says it is following the cursor, so a pause is not read as a frozen pane", async () => {
+      renderPage();
+
+      expect(await screen.findByTestId("tf-semantic-tracking")).toHaveTextContent(
+        /follows the cursor/i,
+      );
+    });
+
+    it("says so when the host has no selection event, rather than pretending to track", async () => {
+      mocks.watchDocumentSelection.mockResolvedValue(false);
+      renderPage();
+
+      expect(await screen.findByTestId("tf-semantic-tracking")).toHaveTextContent(
+        /does not report cursor movement/i,
+      );
+      // The manual control is the fallback, so it has to still be there.
+      expect(screen.getByRole("button", { name: /use current selection/i })).toBeInTheDocument();
+    });
+
+    it("stops following the cursor once a review is on screen", async () => {
+      /*
+       * Reading on every caret move would replace the proposal the user is reading
+       * with a new one for the paragraph they clicked into, discarding work they
+       * paid for. Staleness is the page's answer to "this no longer describes what
+       * is on screen", so tracking is not needed to detect it.
+       */
+      renderPage();
+      await waitFor(() => expect(mocks.watchDocumentSelection).toHaveBeenCalled());
+      const onChanged = mocks.watchDocumentSelection.mock.calls[0]?.[0] as (() => void) | undefined;
+      await userEvent.click(screen.getByRole("button", { name: /use current selection/i }));
+      await userEvent.click(screen.getByRole("button", { name: /review selection/i }));
+      await waitFor(() => expect(screen.getByText("Proposed")).toBeInTheDocument());
+      const readsBefore = mocks.readSelectionScope.mock.calls.length;
+
+      onChanged?.();
+
+      expect(mocks.readSelectionScope).toHaveBeenCalledTimes(readsBefore);
+    });
+
+    it("unsubscribes when the page goes away", async () => {
+      const { unmount } = renderPage();
+      await waitFor(() => expect(mocks.watchDocumentSelection).toHaveBeenCalled());
+
+      unmount();
+
+      await waitFor(() => expect(mocks.stopWatchingDocumentSelection).toHaveBeenCalled());
+    });
   });
 
   it("sends nothing to a provider until Review is pressed", async () => {

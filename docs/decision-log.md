@@ -3321,3 +3321,59 @@ formatting` governed the body style, the list standard, the table standard,
   `src/taskpane/pages/ReviewWithoutProfile.tsx`;
   `src/taskpane/components/TaskPaneHeader.tsx`;
   `tests/unit/taskpane/pages/DashboardNoProfile.test.tsx`.
+
+## ADR-0103: A caret reviews its paragraph, and the pane says so
+
+- Closes: ADR-0094 (selection awareness is measured, not declared), on the
+  repository side. The host-side question stays open and keeps its procedure.
+- Status: Accepted (2026-10-02)
+- **Context**: "Paragraph identification based on cursor location does not work,
+  but selecting text does" — reported from a real Word, and accurate.
+- The capture returned `no-selection` for any collapsed selection. That was a
+  decision, not an oversight: the module's own doc comment said so, and a test
+  asserted it and passed for two years. What made it shippable was that the
+  message was **true of the code and false of the world**. A user clicks into a
+  paragraph, presses the command, and is told nothing is selected — while the
+  same click followed by a drag works perfectly. The code had a path for the drag
+  and no path for the click, and the sentence about it was accurate enough that
+  nobody read it as a symptom.
+- **Decision**:
+  1. **A collapsed or whitespace-only selection expands to its containing
+     paragraph.** `Paragraph.getRange("Whole")` is WordApi 1.1 and is the only
+     reason a caret has offsets at all. The scope carries
+     `source: "caret-paragraph"` rather than pretending the user selected it.
+  2. **A caret in an empty paragraph is still `no-selection`.** There is nothing
+     there, and padding it out would be a fabrication.
+  3. **The pane states both facts.** The text is labelled as "the paragraph the
+     cursor is in, not a selection you made", and the pane says whether it is
+     following the cursor or waiting to be told.
+  4. **Live tracking is attempted, and optional.**
+     `word/selectionWatcher.ts` subscribes to `documentSelectionChanged` through
+     `Office.context.addHandlerAsync`, debounced 250 ms, and **stops the moment a
+     review is on screen** so a caret move cannot discard a proposal the user is
+     reading. It returns whether it could subscribe, and a host that says no
+     keeps the manual control it always had.
+- **Consequences**:
+  - ADR-0094's open question is now **two** questions. "Does a Word host fire
+    `documentSelectionChanged`?" is still unanswered and still needs a person in a
+    real Word; "what does this repository do either way" is settled and tested.
+    Merging them into one would repeat the mistake ADR-0094 warned about —
+    treating absence from our own type declarations as absence from the API.
+  - The declaration of `addHandlerAsync` is **optional and narrow**. Optional
+    because absence has to stay expressible, or every caller needs a cast for a
+    host that may not have it; narrow because modelling an `Office.EventType` we
+    never construct would be the ADR-0100 pattern again.
+  - A caret review costs a provider call on a paragraph the user never
+    highlighted. It is visible before the call — the text is on screen with its
+    word count and its provenance — and it never happens without Review being
+    pressed, but it is a judgement, and saying "48 words" alone would hide it.
+  - The debounce is a correctness requirement, not a nicety: the host fires on
+    every keystroke and each read is a `context.sync()`.
+  - The watcher test found a real gap while being written — a host exposing
+    `addHandlerAsync` without `removeHandlerAsync` left a handler outliving the
+    page, silently. It now warns, because a leak nobody can see is what every
+    refusal category in this codebase exists to prevent.
+- **Evidence**: `src/word/selectionScope.ts`; `src/word/selectionWatcher.ts`;
+  `src/types/office.d.ts`; `src/taskpane/components/semantic/SemanticReviewScope.tsx`;
+  `tests/unit/word/selectionScope.test.ts`; `tests/unit/word/selectionWatcher.test.ts`;
+  `tests/unit/taskpane/pages/SemanticReview.test.tsx`; `docs/manual-verification.md`.

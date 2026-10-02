@@ -65,8 +65,21 @@ export const UNIDENTIFIED_DOCUMENT = "unidentified-document";
  */
 export type AnchorVerification = "paragraph-identified" | "offsets-and-text";
 
+/**
+ * Where the reviewed text came from, because the user did not choose it.
+ *
+ * `"selection"` is text the user dragged. `"caret-paragraph"` is the whole
+ * paragraph the cursor happened to be in \u2014 they clicked once to place the caret
+ * and ToneForge decided that was the unit. The pane must say which, because the
+ * second is a judgement: a review of it costs a provider call on a paragraph the
+ * user never highlighted.
+ */
+export type SelectionSource = "selection" | "caret-paragraph";
+
 export interface SelectionScope {
   anchor: SemanticSelectionAnchor;
+  /** Whether the user selected this text or the caret merely sat in it. */
+  source: SelectionSource;
   /** False when `anchor.documentId` is the placeholder rather than a host id. */
   documentIdVerified: boolean;
   /** Containing paragraphs the host enumerated, whether or not it named them. */
@@ -114,6 +127,11 @@ interface ParagraphView {
   text?: string;
   uniqueLocalId?: string;
   load?: (propertyNames: string | string[]) => unknown;
+  /**
+   * WordApi 1.1. `"Whole"` gives the paragraph's own range, with the offsets a
+   * caret cannot supply \u2014 which is what makes a caret reviewable at all.
+   */
+  getRange?: (rangeLocation: string) => SelectionRangeView;
 }
 
 interface CapturedSelection {
@@ -123,6 +141,7 @@ interface CapturedSelection {
   documentId: string;
   nodeIds: string[];
   paragraphTexts: string[];
+  source: SelectionSource;
 }
 
 type CaptureOutcome =
@@ -133,11 +152,17 @@ type CaptureOutcome =
 /**
  * Read the current selection and turn it into a semantic anchor.
  *
- * Returns `no-selection` for a collapsed or empty selection — including the
- * caret a user leaves behind by clicking in a paragraph — so the pane can say
- * what to do rather than sending an empty review to a provider.
- */
-export async function readSelectionScope(): Promise<SelectionScopeResult> {
+ * **A caret reviews its paragraph.** A collapsed or whitespace-only selection is
+ * not treated as nothing: the containing paragraph is read whole and the scope says
+ * `source: "caret-paragraph"` so the pane can tell the user what it decided. This
+ * returned `no-selection` for a bare caret before, which is why clicking into a
+ * paragraph and pressing the command reported "nothing is selected" while the same
+ * click followed by a drag worked. The caret path was not implemented, and the
+ * message it produced was accurate about the code and wrong about the host.
+ *
+ * A caret in an empty paragraph still returns `no-selection`: there is genuinely
+ * nothing there, and padding it out would be a fabrication.
+ */ export async function readSelectionScope(): Promise<SelectionScopeResult> {
   const outcome = await captureSelection();
 
   if (outcome.status === "no-selection") return { status: "no-selection" };
@@ -170,6 +195,7 @@ export async function readSelectionScope(): Promise<SelectionScopeResult> {
     status: "ok",
     scope: {
       anchor: anchor.data,
+      source: captured.source,
       documentIdVerified: captured.documentId !== UNIDENTIFIED_DOCUMENT,
       paragraphCount: captured.paragraphTexts.length,
       coversWholeParagraph: coversWholeParagraph(captured.text, captured.paragraphTexts),
@@ -217,8 +243,27 @@ async function captureSelection(): Promise<CaptureOutcome> {
       if (start < 0 || end < start) {
         return { status: "no-selection" };
       }
+      /*
+       * A caret, or a drag that caught nothing but whitespace. Neither is text the
+       * user chose, and neither carries offsets worth reviewing \u2014 so the unit is
+       * the paragraph the cursor is in. Recorded as `caret-paragraph` rather than
+       * `selection` so the pane can say what it decided on the user's behalf.
+       */
       if (text.trim().length === 0 || end === start) {
-        return { status: "no-selection" };
+        const caret = await readCaretParagraph(context, range);
+        if (caret === null) return { status: "no-selection" };
+        return {
+          status: "ok",
+          captured: {
+            text: caret.text,
+            start: caret.start,
+            end: caret.end,
+            documentId: context.document.id ?? UNIDENTIFIED_DOCUMENT,
+            nodeIds: caret.nodeIds,
+            paragraphTexts: [caret.text],
+            source: "caret-paragraph",
+          },
+        };
       }
 
       const containing = await readContainingParagraphs(context, range);
@@ -231,11 +276,72 @@ async function captureSelection(): Promise<CaptureOutcome> {
           documentId: context.document.id ?? UNIDENTIFIED_DOCUMENT,
           nodeIds: containing.nodeIds,
           paragraphTexts: containing.paragraphTexts,
+          source: "selection",
         },
       };
     });
   } catch {
     return { status: "unavailable", reason: NO_RUNTIME_REASON };
+  }
+}
+
+/**
+ * Expand a collapsed selection to the whole paragraph the caret is in.
+ *
+ * A caret has offsets but no extent, so there is nothing to review until the
+ * paragraph is asked for its own range. `Paragraph.getRange("Whole")` is WordApi
+ * 1.1 and is the only reason a caret is reviewable at all.
+ *
+ * `null` means "no paragraph here to review", and the caller turns that into
+ * `no-selection`. It is a normal answer, not an error: an empty paragraph, a
+ * caret in a text box the paragraph collection does not cover, and a host without
+ * `getRange` all land here, and all of them correctly have nothing to review.
+ *
+ * The first item is taken rather than the last. A collapsed caret belongs to
+ * exactly one paragraph; if a host enumerates more, the paragraph the range was
+ * taken from is the one carrying that range, not the last one it listed.
+ */
+async function readCaretParagraph(
+  context: Office.Context,
+  range: SelectionRangeView,
+): Promise<{ text: string; start: number; end: number; nodeIds: string[] } | null> {
+  const collection = range.paragraphs;
+  if (!collection || typeof collection.load !== "function") return null;
+  try {
+    collection.load("items");
+    await context.sync();
+  } catch {
+    return null;
+  }
+  const items = Array.isArray(collection.items) ? collection.items : [];
+  const paragraph = items[0];
+  if (!paragraph || typeof paragraph.getRange !== "function") return null;
+
+  try {
+    /*
+     * One load, one sync, for the paragraph range and its own id. Splitting them
+     * would be a second transaction that could observe a *different* caret if the
+     * user moved between the two reads — which would anchor the review to a
+     * paragraph the user is no longer in.
+     */
+    const whole = paragraph.getRange("Whole");
+    whole?.load?.(["text", "start", "end"]);
+    paragraph.load?.(["uniqueLocalId"]);
+    await context.sync();
+    if (!whole) return null;
+
+    const text = typeof whole.text === "string" ? whole.text : "";
+    const start = typeof whole.start === "number" ? whole.start : -1;
+    const end = typeof whole.end === "number" ? whole.end : -1;
+    // An empty paragraph is a real paragraph with nothing in it, and its text is
+    // the paragraph mark alone.
+    if (start < 0 || end < start || text.trim().length === 0) return null;
+
+    const nodeId =
+      typeof paragraph.uniqueLocalId === "string" ? paragraph.uniqueLocalId.trim() : "";
+    return { text, start, end, nodeIds: nodeId.length > 0 ? [nodeId] : [] };
+  } catch {
+    return null;
   }
 }
 
