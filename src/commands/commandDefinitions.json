@@ -3,7 +3,7 @@
     "id": "ToneForgeScan",
     "label": "Scan Now",
     "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
+    "xmlAction": "ExecuteFunction",
     "navigationTarget": "review",
     "xmlNavigationTarget": "default"
   },
@@ -11,7 +11,7 @@
     "id": "ToneForgeFindings",
     "label": "Findings",
     "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
+    "xmlAction": "ExecuteFunction",
     "navigationTarget": "findings",
     "xmlNavigationTarget": "default"
   },
@@ -19,7 +19,7 @@
     "id": "ToneForgeReview",
     "label": "Review for Consistency",
     "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
+    "xmlAction": "ExecuteFunction",
     "navigationTarget": "ai-review",
     "xmlNavigationTarget": "default"
   },
@@ -27,7 +27,7 @@
     "id": "ToneForgeProfile",
     "label": "Style Profile",
     "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
+    "xmlAction": "ExecuteFunction",
     "navigationTarget": "profile",
     "xmlNavigationTarget": "default"
   },
@@ -35,7 +35,7 @@
     "id": "ToneForgeGovernancePolicy",
     "label": "Governance Policy",
     "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
+    "xmlAction": "ExecuteFunction",
     "navigationTarget": "governance-policy",
     "xmlNavigationTarget": "default"
   },
@@ -43,7 +43,7 @@
     "id": "ToneForgePendingChanges",
     "label": "Pending Changes",
     "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
+    "xmlAction": "ExecuteFunction",
     "navigationTarget": "pending-changes",
     "xmlNavigationTarget": "default"
   },
@@ -51,7 +51,7 @@
     "id": "ToneForgeTroubleshooting",
     "label": "Troubleshooting",
     "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
+    "xmlAction": "ExecuteFunction",
     "navigationTarget": "debugging",
     "xmlNavigationTarget": "default"
   },
@@ -59,7 +59,7 @@
     "id": "ToneForgeSemantic",
     "label": "Semantic Review",
     "jsonAction": "executeFunction",
-    "xmlAction": "ShowTaskpane",
+    "xmlAction": "ExecuteFunction",
     "navigationTarget": "semantic-review",
     "xmlNavigationTarget": "default"
   }

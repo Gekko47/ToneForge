@@ -42,17 +42,34 @@ describe("command and manifest contracts", () => {
     }
   });
 
-  it("records XML as navigation-only with a shared default task-pane destination", async () => {
+  it("records XML as running the same function as JSON, onto one shared default pane", async () => {
     const definitions = JSON.parse(
       readFileSync(repositoryPath("src/commands/commandDefinitions.json"), "utf8"),
     ) as Array<{
       id: string;
+      jsonAction: string;
       xmlAction: string;
       navigationTarget: string;
       xmlNavigationTarget: string;
     }>;
     expect(definitions.length).toBeGreaterThan(0);
-    expect(definitions.every((definition) => definition.xmlAction === "ShowTaskpane")).toBe(true);
+    /*
+     * `ExecuteFunction` on the XML side, not `ShowTaskpane`.
+     *
+     * This assertion used to require `ShowTaskpane`, which is what let the XML
+     * manifest name a pane of its own (`ButtonId1`) while the JSON manifest
+     * reached the default one — two identities, and Word opened a second blank
+     * pane beside the live one whenever the context menu was used. The field
+     * looked like a description of a difference that was intentional; it was a
+     * description of a difference nobody had checked, because nothing failed
+     * when it happened. (ADR-0101.)
+     */
+    expect(definitions.every((definition) => definition.xmlAction === "ExecuteFunction")).toBe(
+      true,
+    );
+    expect(definitions.every((definition) => definition.jsonAction === "executeFunction")).toBe(
+      true,
+    );
     expect(definitions.every((definition) => definition.xmlNavigationTarget === "default")).toBe(
       true,
     );
@@ -93,6 +110,12 @@ describe("command and manifest contracts", () => {
       }),
     ).toContain("manifest.json is missing runtime action for command: ToneForgeScan");
 
+    /*
+     * The destination belongs to the one control that opens the pane. Before
+     * ADR-0101 every ribbon control named it, so a function control that named
+     * none looked wrong; now that every command reaches the pane by function,
+     * asking a command for a destination would be the wrong question.
+     */
     const mismatchedDestination = xml.replace(
       /<SourceLocation resid="Taskpane.Url" \/>/g,
       '<SourceLocation resid="Missing.Url" />',
@@ -104,7 +127,7 @@ describe("command and manifest contracts", () => {
         runOfficialValidator: false,
       }),
     ).toContain(
-      "manifest.xml destination mismatch for ToneForgeScan: expected Taskpane.Url, got Missing.Url",
+      "manifest.xml destination mismatch for ToneForgeTaskpane: expected Taskpane.Url, got Missing.Url",
     );
 
     const missingResource = xml.replace(
@@ -117,7 +140,70 @@ describe("command and manifest contracts", () => {
         xml: missingResource,
         runOfficialValidator: false,
       }),
-    ).toContain("manifest.xml is missing destination resource Taskpane.Url for ToneForgeScan");
+    ).toContain("manifest.xml is missing destination resource Taskpane.Url for ToneForgeTaskpane");
+  });
+
+  describe("the single task pane (ADR-0101)", () => {
+    const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as object;
+    const xml = readFileSync(repositoryPath("manifest.xml"), "utf8");
+
+    const validate = (candidate: string): Promise<string[]> =>
+      validateManifests({ manifest, xml: candidate, runOfficialValidator: false });
+
+    it("passes on the published manifest", async () => {
+      expect(await validate(xml)).toEqual([]);
+    });
+
+    it("rejects a second control that opens its own pane, which is what forked it", async () => {
+      const forked = xml.replace(
+        /<Action xsi:type="ExecuteFunction">(\s*)<FunctionName>ToneForgeScan<\/FunctionName>(\s*)<\/Action>/,
+        '<Action xsi:type="ShowTaskpane">$1<TaskpaneId>ButtonId1</TaskpaneId>$1' +
+          '<SourceLocation resid="Taskpane.Url" />$2</Action>',
+      );
+      expect(forked).not.toEqual(xml);
+      const errors = await validate(forked);
+      expect(errors).toContain(
+        "manifest.xml must declare exactly one ToneForge task pane; found 2 controls that open one. A second pane identity is what put a blank add-in pane beside the live one (ADR-0101)",
+      );
+      expect(errors).toContain(
+        "manifest.xml control ToneForgeScan opens its own pane; only ToneForgeTaskpane may, because a second pane identity forks the pane (ADR-0101)",
+      );
+    });
+
+    it("rejects a function control that smuggles a pane identity back in", async () => {
+      const forked = xml.replace(
+        "<FunctionName>ToneForgeScan</FunctionName>",
+        "<TaskpaneId>ButtonId1</TaskpaneId>\n" +
+          '                  <SourceLocation resid="Taskpane.Url" />\n' +
+          "                  <FunctionName>ToneForgeScan</FunctionName>",
+      );
+      expect(forked).not.toEqual(xml);
+      const errors = await validate(forked);
+      expect(errors).toContain(
+        "manifest.xml control ToneForgeScan runs a function and must not declare TaskpaneId ButtonId1; the one task pane is the openPage default (ADR-0101)",
+      );
+      expect(errors).toContain(
+        "manifest.xml control ToneForgeScan runs a function and must not declare its own source; the one task pane is the openPage default (ADR-0101)",
+      );
+    });
+
+    it("rejects the pane control being pointed at something other than the pane", async () => {
+      const wrongId = xml.replace(
+        "<TaskpaneId>ButtonId1</TaskpaneId>",
+        "<TaskpaneId>ButtonId2</TaskpaneId>",
+      );
+      expect(await validate(wrongId)).toContain(
+        "manifest.xml task pane ToneForgeTaskpane must use taskpane ButtonId1, got ButtonId2",
+      );
+
+      const wrongPage = xml.replace(
+        '<bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html" />',
+        '<bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/other.html" />',
+      );
+      expect(await validate(wrongPage)).toContain(
+        "manifest.xml task pane ToneForgeTaskpane must open taskpane.html, got https://localhost:3000/other.html",
+      );
+    });
   });
 
   it("rejects a resource id the host would refuse, which fails registration silently", async () => {

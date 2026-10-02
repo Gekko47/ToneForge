@@ -14,6 +14,20 @@
   silently drop, and a test rules over the source. See ADR-0100. _Found by hand in
   a real Word, which is what the open host-verification gate is for._
 
+- **Fixed: choosing Semantic Review from the right-click menu opened a second,
+  blank add-in window beside the live one.** The original pane held the correct
+  selection on the correct page throughout, which made it look like a rendering
+  fault. It was two task panes. Word keys a pane on the `TaskpaneId` a
+  `ShowTaskpane` action names, and the ribbon declared one—`ButtonId1`—while
+  the context menu reached the pane by function and so landed on the runtime's
+  own `openPage` identity. All eight ribbon controls now run a function and
+  reach the one pane; only `ToneForgeTaskpane` opens it. Every command id has an
+  exported global alias, because an `ExecuteFunction` naming nothing registers
+  silently. The repository check had been asking every _command_ for a
+  `TaskpaneId`, which cannot tell "opens the pane" from "mentions one", so it
+  passed on the manifest that had the defect. See ADR-0101. _Found by hand in a
+  real Word, again._
+
 Repository-complete; **host-unverified**. `npm run verify` is green across all
 thirteen stages and 2 350 tests. Per ADR-0051 that is not a release claim, and
 `npm run release:check` stays blocked. The named host procedures are in

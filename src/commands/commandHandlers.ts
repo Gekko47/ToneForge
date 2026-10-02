@@ -93,14 +93,51 @@ export async function openSemanticReview(): Promise<void> {
   await showTaskpane("semantic-review", "read-selection");
 }
 
-/**
- * The name the XML manifest's `onAction` attribute calls.
+/*
+ * The names the XML manifest's `onAction` attribute calls.
  *
  * The XML manifest resolves `onAction` against a global on the function file's
- * window, not against the JSON action registry, so this alias has to exist under
- * exactly this name. It delegates rather than duplicating the logic, so the two
- * manifests cannot reach the pane by different routes.
+ * window, not against the JSON action registry, so each alias has to exist under
+ * exactly the name the manifest uses. They delegate rather than duplicating the
+ * logic, so the two manifests cannot reach the pane by different routes.
+ *
+ * **Every ribbon control has one, which is the point.** Previously only
+ * `ToneForgeSemantic` existed, because it was the only XML control that ran a
+ * function: the other seven ribbon buttons used `ShowTaskpane` with
+ * `TaskpaneId` `ButtonId1`, while the context menu ran a function and so reached
+ * the *default* pane. Two identities for one add-in, and Word opened a second
+ * blank pane beside the live one when the context menu was used. Aliasing all of
+ * them lets every control share one pane, which is what ADR-0101 requires.
  */
+
 export async function ToneForgeSemantic(): Promise<void> {
   await openSemanticReview();
+}
+
+export async function ToneForgeScan(): Promise<void> {
+  await scanNow();
+}
+
+export async function ToneForgeFindings(): Promise<void> {
+  await openFindings();
+}
+
+export async function ToneForgeReview(): Promise<void> {
+  await reviewForConsistency();
+}
+
+export async function ToneForgeProfile(): Promise<void> {
+  await openProfile();
+}
+
+export async function ToneForgeGovernancePolicy(): Promise<void> {
+  await openGovernancePolicy();
+}
+
+export async function ToneForgePendingChanges(): Promise<void> {
+  await openPendingChanges();
+}
+
+export async function ToneForgeTroubleshooting(): Promise<void> {
+  await openTroubleshooting();
 }

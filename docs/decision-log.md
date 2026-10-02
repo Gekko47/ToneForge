@@ -3201,3 +3201,71 @@ formatting` governed the body style, the list standard, the table standard,
   `src/word/documentReader.ts`; `tests/fixtures/officeLoad.ts`;
   `tests/unit/word/officeLoadContract.test.ts`;
   `tests/unit/architecture/variadicLoadGuard.test.ts`; `docs/manual-verification.md`.
+
+## ADR-0101: One add-in, one task pane, and one way to name it
+
+- Extends: ADR-0079 (a ribbon command is delivered whenever it is pressed)
+- Amends: ADR-0070 (a manifest change requires re-registration, and the two
+  manifests must agree)
+- Status: Accepted (2026-10-02)
+- **Context**: Word keys a task pane on the `TaskpaneId` a `ShowTaskpane` action
+  names. A control that reaches the pane by function — the context menu, or a
+  ribbon button that calls `openPage` itself — lands on whatever identity the
+  runtime's own `openPage` action created. Those are two identities, and the host
+  runs both.
+- `manifest.xml` declared eight ribbon controls with `ShowTaskpane` and
+  `TaskpaneId` `ButtonId1`, and the context menu with `ExecuteFunction`. Choosing
+  Semantic Review from the context menu therefore produced a **second, blank add-in
+  window beside the live one**. The original pane held the correct selection on the
+  correct page throughout, which is what made it read as a rendering fault rather
+  than a manifest fork: the pane that worked was working, and the pane that was
+  broken was not the one already on screen.
+- `manifest.json` already used `executeFunction` for every control, so the fork was
+  XML-only — which means ADR-0070's "the two manifests must agree" check could
+  not see it. The XML used `ShowTaskpane` because the global function aliases
+  existed only for `ToneForgeSemantic`; the other seven commands had no exported
+  function for an `ExecuteFunction` action to name, so `ShowTaskpane` was the only
+  thing that would have worked.
+- The repository's own check asked **every command control** for `TaskpaneId`
+  `ButtonId1`. That question cannot distinguish "this control opens the pane" from
+  "this control mentions one", so it passed on the manifest that carried the defect
+  and would have failed on the correct one. A check written about the commands
+  rather than about the pane is a check on the wrong subject.
+- **Decision**:
+  1. Exactly one ToneForge control may declare `ShowTaskpane`: `ToneForgeTaskpane`,
+     with `TaskpaneId` `ButtonId1` and `SourceLocation` `resid="Taskpane.Url"`. It is
+     the identity every other route resolves to.
+  2. Every other ToneForge control — ribbon and context menu alike — runs a
+     function, and names neither a pane nor a source. Every command id therefore has
+     an exported global alias.
+  3. `validateSingleTaskPane` asserts the whole ribbon surface in **both**
+     directions: one opener, named and identified correctly; no other control
+     carrying a `TaskpaneId` or a `SourceLocation`. The per-command destination rule
+     is now conditional on the action being `ShowTaskpane`, because asking a
+     function control where its pane lives asks a question that no longer has an
+     answer.
+- **Consequences**:
+  - The manifest could not be converted on its own. An `ExecuteFunction` control
+    naming no exported function registers nothing and fails **silently**, which is
+    ADR-0080's failure mode exactly; the seven aliases had to exist before the XML
+    could change. A manifest change that removes an action is only safe once the
+    replacement is known to resolve.
+  - `validateSingleTaskPane` scans the whole document rather than
+    `toneForgeTabBounds`. The one pane-opening control sits on the Home tab and the
+    commands sit on the ToneForge tab, so a scan bounded to either tab alone sees
+    half the ribbon. This check was first written against the ToneForge tab and
+    reported **zero** panes — not a manifest defect, but a rule that could only
+    ever see half the thing it governs. It also strips XML comments first, because
+    this repository documents its own decisions inline and a check that can be
+    fooled by prose about itself is not a check.
+  - ADR-0070 held that a manifest change requires the two manifests to agree. They
+    did agree here, both were checked against each other, and the host still ran
+    two panes. Internal agreement is not host agreement; ADR-0080 said so before
+    this happened, and this is the second time it has cost something.
+  - ADR-0079's "delivered whenever it is pressed" now applies to all eight controls
+    rather than one. Pressing a ToneForge ribbon button delivers a command that
+    navigates the **existing** pane instead of opening another one.
+- **Evidence**: `manifest.xml`; `manifest.json`; `src/commands/commandHandlers.ts`;
+  `src/commands/commandDefinitions.json`; `scripts/validate-manifest.mjs`;
+  `tests/unit/architecture/oneTaskpane.test.ts`;
+  `tests/unit/commands/commandContracts.test.ts`; `docs/manual-verification.md`.

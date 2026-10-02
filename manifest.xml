@@ -122,10 +122,15 @@
                     <bt:Image size="32" resid="Icon.32x32" />
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
+                  <!--
+  Runs a function, not a ShowTaskpane action, so that this control and the
+  context-menu control address the SAME task pane. Two identities (this one
+  and the openPage default) made Word open a second blank pane beside the
+  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
+-->
+<Action xsi:type="ExecuteFunction">
+  <FunctionName>ToneForgeScan</FunctionName>
+</Action>
                 </Control>
                 <Control xsi:type="Button" id="ToneForgeFindings">
                   <Label resid="ToneForge.FindingsLabel" />
@@ -138,10 +143,15 @@
                     <bt:Image size="32" resid="Icon.32x32" />
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
+                  <!--
+  Runs a function, not a ShowTaskpane action, so that this control and the
+  context-menu control address the SAME task pane. Two identities (this one
+  and the openPage default) made Word open a second blank pane beside the
+  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
+-->
+<Action xsi:type="ExecuteFunction">
+  <FunctionName>ToneForgeFindings</FunctionName>
+</Action>
                 </Control>
               </Group>
               <Group id="ToneForgeAIReviewGroup">
@@ -162,10 +172,15 @@
                     <bt:Image size="32" resid="Icon.32x32" />
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
+                  <!--
+  Runs a function, not a ShowTaskpane action, so that this control and the
+  context-menu control address the SAME task pane. Two identities (this one
+  and the openPage default) made Word open a second blank pane beside the
+  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
+-->
+<Action xsi:type="ExecuteFunction">
+  <FunctionName>ToneForgeReview</FunctionName>
+</Action>
                 </Control>
               </Group>
               <!--
@@ -204,10 +219,15 @@
                     <bt:Image size="32" resid="Icon.32x32" />
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
+                  <!--
+  Runs a function, not a ShowTaskpane action, so that this control and the
+  context-menu control address the SAME task pane. Two identities (this one
+  and the openPage default) made Word open a second blank pane beside the
+  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
+-->
+<Action xsi:type="ExecuteFunction">
+  <FunctionName>ToneForgeProfile</FunctionName>
+</Action>
                 </Control>
                 <Control xsi:type="Button" id="ToneForgeGovernancePolicy">
                   <Label resid="ToneForge.GovernancePolicyLabel" />
@@ -220,10 +240,15 @@
                     <bt:Image size="32" resid="Icon.32x32" />
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
+                  <!--
+  Runs a function, not a ShowTaskpane action, so that this control and the
+  context-menu control address the SAME task pane. Two identities (this one
+  and the openPage default) made Word open a second blank pane beside the
+  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
+-->
+<Action xsi:type="ExecuteFunction">
+  <FunctionName>ToneForgeGovernancePolicy</FunctionName>
+</Action>
                 </Control>
                 <!--
                   Disabled here and enabled only by `syncSemanticRibbon`. A semantic
@@ -243,10 +268,15 @@
                     <bt:Image size="32" resid="Icon.32x32" />
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
+                  <!--
+  Runs a function, not a ShowTaskpane action, so that this control and the
+  context-menu control address the SAME task pane. Two identities (this one
+  and the openPage default) made Word open a second blank pane beside the
+  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
+-->
+<Action xsi:type="ExecuteFunction">
+  <FunctionName>ToneForgeSemantic</FunctionName>
+</Action>
                   <Enabled>false</Enabled>
                 </Control>
               </Group>
@@ -268,10 +298,15 @@
                     <bt:Image size="32" resid="Icon.32x32" />
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
+                  <!--
+  Runs a function, not a ShowTaskpane action, so that this control and the
+  context-menu control address the SAME task pane. Two identities (this one
+  and the openPage default) made Word open a second blank pane beside the
+  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
+-->
+<Action xsi:type="ExecuteFunction">
+  <FunctionName>ToneForgePendingChanges</FunctionName>
+</Action>
                 </Control>
                 <Control xsi:type="Button" id="ToneForgeTroubleshooting">
                   <Label resid="ToneForge.TroubleshootingLabel" />
@@ -284,10 +319,15 @@
                     <bt:Image size="32" resid="Icon.32x32" />
                     <bt:Image size="80" resid="Icon.80x80" />
                   </Icon>
-                  <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
-                    <SourceLocation resid="Taskpane.Url" />
-                  </Action>
+                  <!--
+  Runs a function, not a ShowTaskpane action, so that this control and the
+  context-menu control address the SAME task pane. Two identities (this one
+  and the openPage default) made Word open a second blank pane beside the
+  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
+-->
+<Action xsi:type="ExecuteFunction">
+  <FunctionName>ToneForgeTroubleshooting</FunctionName>
+</Action>
                 </Control>
               </Group>
             </OfficeTab>

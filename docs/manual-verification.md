@@ -486,6 +486,40 @@ Per host (Windows desktop, Mac desktop, Word on the web):
 Record the host and version for each. A label that is correct in one manifest and
 stale in the other is a passing build and a wrong product, so check both.
 
+## Open gate — one add-in, one task pane (P14, ADR-0101)
+
+A blank second add-in window beside the live one was reported from a real Word. The
+live pane was correct throughout, so the fork presented as a rendering fault. The
+ribbon opened `ButtonId1` and the context menu reached the pane by function, landing
+on the runtime's `openPage` identity — two panes, and the host ran both. All eight
+ribbon controls now run a function and reach the one pane.
+
+**Requires the full sideload cycle** (`npm run stop` — close every Word window —
+`npm run sideload`). The action type is manifest data and Word caches the manifest
+at registration; a pane refresh shows the old behaviour.
+
+Per host (Windows desktop, Mac desktop, Word on the web):
+
+1. Open the pane from the Home-tab ToneForge button. Confirm **one** pane opens and
+   renders it.
+2. With that pane **still open**, press each of the seven ToneForge ribbon controls
+   in turn. Each must navigate the pane already open. A second window — blank,
+   or showing the Home page — is the pre-P14 behaviour and means Word is holding
+   a cached manifest.
+3. With the pane still open, right-click a paragraph and choose Semantic Review.
+   Confirm **no** new window appears and the pane navigates to Semantic Review with
+   the selection already read.
+4. Close the pane entirely. Repeat step 3. Confirm the pane opens once, with the
+   selection read.
+5. Press the Home-tab button last, with a pane already open. Confirm it does not
+   produce a second pane of its own.
+6. Confirm no control is inert: every one of the eight must do something visible.
+   A control that runs a function nothing exports registers silently and does
+   nothing at all — that is the failure mode to look for here.
+
+Record the host and version for each. Two pane identities is a passing build and a
+wrong product, so step 2 is the one that matters.
+
 ## Open gate — the semantic review path (P12)
 
 Everything below is a **procedure, not a result**. The P12 phase of

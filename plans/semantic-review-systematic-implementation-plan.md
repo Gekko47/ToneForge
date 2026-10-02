@@ -2004,6 +2004,52 @@ second call site, and ADR-0100 records the general rule.
    re-test procedure, alongside the open ones. Closing one gate is evidence the
    boundary is real, not evidence the rest is closed — eight remain.
 
+#### P14 — one add-in, one task pane _(LANDED 2026-10-02)_
+
+**Also not in the original plan, and also found by hand in a real Word.** Choosing
+Semantic Review from the right-click menu opened a **second, blank add-in window
+beside the live one**, while the original pane held the correct selection on the
+correct page throughout. The pane that worked was working and the pane that was
+broken was not the one already on screen, which is why it presented as a rendering
+fault rather than a manifest fork.
+
+**What was found.** Word keys a task pane on the `TaskpaneId` a `ShowTaskpane`
+action names. `manifest.xml` declared all eight ribbon controls with `ShowTaskpane`
+and `ButtonId1`, while the context menu used `ExecuteFunction` and so reached the
+pane by function — landing on the runtime's own `openPage` identity. Two
+identities, and the host runs both. `manifest.json` already used `executeFunction`
+everywhere, so the fork was **XML-only** and ADR-0070's "the two manifests must
+agree" could not see it.
+
+**Why it belongs in this plan's deviations list.** D10 decided that one ribbon
+command serves two destinations. It reasoned about _navigation_ and never about
+_pane identity_, so the phase that introduced `semantic-review` left the XML's
+`ShowTaskpane` usage in place for all eight controls. The check that should have
+caught it asked every **command** for a `TaskpaneId`, a question that cannot tell
+"opens the pane" from "mentions one"; it passed on the manifest carrying the defect.
+
+**Deviations.**
+
+1. **All eight ribbon controls now run a function; only `ToneForgeTaskpane` opens
+   the pane.** The XML could not be converted on its own: an `ExecuteFunction`
+   naming no exported function registers nothing and fails **silently**, so seven
+   global aliases had to exist first (`ToneForgeScan`, `ToneForgeFindings`,
+   `ToneForgeReview`, `ToneForgeProfile`, `ToneForgeGovernancePolicy`,
+   `ToneForgePendingChanges`, `ToneForgeTroubleshooting`).
+2. **The destination rules became conditional, and a whole-ribbon rule replaced
+   them.** `validateSingleTaskPane` asserts exactly one opener across the entire
+   document and that no other ToneForge control names a pane or a source. The
+   per-command destination check now runs only for `ShowTaskpane`. It was first
+   written against `toneForgeTabBounds` and reported **zero** panes — the one
+   opener is on the Home tab and the commands are on the ToneForge tab, so a scan
+   bounded to either sees half the ribbon. It scans the whole document and strips
+   XML comments first, so that prose about the rule cannot satisfy or trip it.
+3. **ADR-0101 records it**, extending ADR-0079 (a ribbon command is delivered
+   whenever it is pressed, now for all eight controls rather than one) and amending
+   ADR-0070, since the two manifests agreed while the host still ran two panes.
+4. **`manual-verification.md` gains an open gate** with a per-host procedure:
+   press every ribbon control with the pane already open, and confirm one pane.
+
 ## 9. Test strategy
 
 ### Structure (mirrors source, per the coverage rule)

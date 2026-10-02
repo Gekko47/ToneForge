@@ -284,23 +284,47 @@ function validateCommandParity(manifest, xml, definitions, errors) {
         `manifest.xml action mismatch for ${definition.id}: expected ${definition.xmlAction}, got ${actionType}`,
       );
     }
-    if (sourceResId !== "Taskpane.Url") {
-      errors.push(
-        `manifest.xml destination mismatch for ${definition.id}: expected Taskpane.Url, got ${sourceResId}`,
-      );
-    }
-    const destination = sourceResId ? urls.get(sourceResId) : undefined;
-    if (!destination) {
-      errors.push(
-        `manifest.xml is missing destination resource ${sourceResId ?? "Taskpane.Url"} for ${definition.id}`,
-      );
-    } else if (!destination.endsWith("/taskpane.html")) {
-      errors.push(
-        `manifest.xml command ${definition.id} must open taskpane.html, got ${destination}`,
-      );
-    }
-    if (taskpaneId !== "ButtonId1") {
-      errors.push(`manifest.xml command ${definition.id} must use taskpane ButtonId1`);
+    /*
+     * ADR-0101: one add-in, one task pane.
+     *
+     * Only a `ShowTaskpane` action names a pane, so only a `ShowTaskpane`
+     * action can be asked for a destination and a taskpane id. An
+     * `ExecuteFunction` control must carry neither: naming one there is how a
+     * second pane identity appeared beside the live one, because the ribbon
+     * opened `ButtonId1` while the context menu opened the default `openPage`
+     * pane and the host ran both.
+     *
+     * The rules are therefore conditional. The inverse -- that a function
+     * control names no pane -- is asserted across the whole ribbon by
+     * `validateSingleTaskPane`, which is where the single-pane rule belongs:
+     * it covers the one control that legitimately opens the pane, which this
+     * per-command loop never sees.
+     */
+    const opensNamedPane = actionType === "ShowTaskpane";
+    if (opensNamedPane) {
+      if (sourceResId !== "Taskpane.Url") {
+        errors.push(
+          `manifest.xml destination mismatch for ${definition.id}: expected Taskpane.Url, got ${sourceResId}`,
+        );
+      }
+      const destination = sourceResId ? urls.get(sourceResId) : undefined;
+      if (!destination) {
+        errors.push(
+          `manifest.xml is missing destination resource ${sourceResId ?? "Taskpane.Url"} for ${definition.id}`,
+        );
+      } else if (!destination.endsWith("/taskpane.html")) {
+        errors.push(
+          `manifest.xml command ${definition.id} must open taskpane.html, got ${destination}`,
+        );
+      }
+      if (taskpaneId !== "ButtonId1") {
+        errors.push(`manifest.xml command ${definition.id} must use taskpane ButtonId1`);
+      }
+    } else {
+      const functionName = /<FunctionName>([^<]+)<\/FunctionName>/.exec(xmlControl)?.[1];
+      if (!functionName) {
+        errors.push(`manifest.xml command ${definition.id} runs a function but names none`);
+      }
     }
   }
 
@@ -352,6 +376,121 @@ function validateResourceIdLength(xml, errors) {
     errors.push(
       `manifest.xml resource id "${id}" is ${id.length} characters; the host limit is ${MAX_RESOURCE_ID_LENGTH} and an over-length id prevents the add-in from registering`,
     );
+  }
+}
+
+/** The one control permitted to open the pane, and the identity it must use. */
+const TASKPANE_CONTROL_ID = "ToneForgeTaskpane";
+const TASKPANE_RESOURCE_ID = "Taskpane.Url";
+const TASKPANE_ID = "ButtonId1";
+
+/**
+ * Reject a ribbon that declares more than one task pane (ADR-0101).
+ *
+ * Word keys a task pane on the `TaskpaneId` a `ShowTaskpane` action names. A
+ * control that opens no pane, or one that reaches the pane by function, lands on
+ * whatever identity the runtime's `openPage` action creates. Those are different
+ * identities, and the host runs both: the ribbon opened `ButtonId1`, the context
+ * menu opened the default, and the user got a second, blank add-in window beside
+ * the working one. The live pane was correct throughout, which is what made it
+ * read as a rendering fault rather than a manifest fork.
+ *
+ * So the shape is asserted rather than assumed, in both directions. Exactly one
+ * ToneForge control may open a pane, and it must be the one named above with the
+ * one id and the one destination; every other ToneForge control runs a function
+ * and names neither a pane nor a source. The old check asked each *command* for a
+ * `TaskpaneId`, which is why it passed on a manifest that had the defect: it
+ * could not distinguish "this control opens the pane" from "this control merely
+ * mentions one".
+ *
+ * This is the same class of defect as ADR-0082 (a host rule with no check) and
+ * ADR-0080 (internal consistency mistaken for host agreement): both manifests
+ * agreed, both repository checks passed, and only the host saw two panes.
+ *
+ * Scanned across the whole document rather than `toneForgeTabBounds`. The one
+ * control that opens the pane sits on the Home tab, and the commands sit on the
+ * ToneForge tab, so a scan bounded to either alone sees exactly half the ribbon:
+ * bounded to the ToneForge tab it finds no pane at all, which is why this check
+ * was first written there and reported zero. A rule about one pane has to read
+ * the surface that panes appear on, which is the manifest.
+ *
+ * Comments are stripped first. This file documents its own decisions inline, and
+ * a comment that names `<Control>` would otherwise be parsed as one -- a check
+ * that can be fooled by prose about itself is not a check.
+ */
+function validateSingleTaskPane(xml, errors) {
+  const surface = xml.replace(/<!--[\s\S]*?-->/g, "");
+  const urls = parseXmlResources(xml, "Url");
+
+  const controls = [...surface.matchAll(/<Control\b([^>]*)>([\s\S]*?)<\/Control>/g)]
+    .map((match) => ({ id: /\bid="([^"]+)"/.exec(match[1])?.[1] ?? "", body: match[2] }))
+    .filter((control) => control.id.startsWith("ToneForge"));
+
+  const openers = controls.filter((control) =>
+    /<Action\s+xsi:type="ShowTaskpane"/.test(control.body),
+  );
+  if (openers.length !== 1) {
+    errors.push(
+      `manifest.xml must declare exactly one ToneForge task pane; found ${openers.length} controls that open one. A second pane identity is what put a blank add-in pane beside the live one (ADR-0101)`,
+    );
+  }
+
+  for (const control of controls) {
+    const opensPane = /<Action\s+xsi:type="ShowTaskpane"/.test(control.body);
+    const taskpaneId = /<TaskpaneId>([^<]+)<\/TaskpaneId>/.exec(control.body)?.[1];
+    const sourceResId = /<SourceLocation\s+resid="([^"]+)"\s*\/>/.exec(control.body)?.[1];
+
+    if (control.id !== TASKPANE_CONTROL_ID) {
+      /*
+       * One error per control, describing what it wrongly is. A control that
+       * already opens a pane is named for that; reporting its TaskpaneId and
+       * source as well would triple-count one defect and describe all three as
+       * "runs a function", which it does not.
+       */
+      if (opensPane) {
+        errors.push(
+          `manifest.xml control ${control.id} opens its own pane; only ${TASKPANE_CONTROL_ID} may, because a second pane identity forks the pane (ADR-0101)`,
+        );
+      } else {
+        if (taskpaneId) {
+          errors.push(
+            `manifest.xml control ${control.id} runs a function and must not declare TaskpaneId ${taskpaneId}; the one task pane is the openPage default (ADR-0101)`,
+          );
+        }
+        if (sourceResId) {
+          errors.push(
+            `manifest.xml control ${control.id} runs a function and must not declare its own source; the one task pane is the openPage default (ADR-0101)`,
+          );
+        }
+      }
+      continue;
+    }
+
+    if (!opensPane) {
+      errors.push(
+        `manifest.xml task pane control ${TASKPANE_CONTROL_ID} must use ShowTaskpane; it is the one control allowed to open the pane (ADR-0101)`,
+      );
+    }
+    if (taskpaneId !== TASKPANE_ID) {
+      errors.push(
+        `manifest.xml task pane ${TASKPANE_CONTROL_ID} must use taskpane ${TASKPANE_ID}, got ${taskpaneId}`,
+      );
+    }
+    if (sourceResId !== TASKPANE_RESOURCE_ID) {
+      errors.push(
+        `manifest.xml destination mismatch for ${TASKPANE_CONTROL_ID}: expected ${TASKPANE_RESOURCE_ID}, got ${sourceResId}`,
+      );
+    }
+    const destination = sourceResId ? urls.get(sourceResId) : undefined;
+    if (!destination) {
+      errors.push(
+        `manifest.xml is missing destination resource ${TASKPANE_RESOURCE_ID} for ${TASKPANE_CONTROL_ID}`,
+      );
+    } else if (!destination.endsWith("/taskpane.html")) {
+      errors.push(
+        `manifest.xml task pane ${TASKPANE_CONTROL_ID} must open taskpane.html, got ${destination}`,
+      );
+    }
   }
 }
 
@@ -510,6 +649,7 @@ export async function validateManifests({
     validateResourceIdLength(xml, errors);
     validateControlType(xml, errors);
     validateUniqueUiElementIds(xml, errors);
+    validateSingleTaskPane(xml, errors);
     validateCommandParity(manifest, xml, definitions, errors);
   }
 

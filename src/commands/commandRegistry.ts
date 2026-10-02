@@ -35,7 +35,18 @@ export interface CommandDefinition {
   readonly id: string;
   readonly label: string;
   readonly jsonAction: "executeFunction";
-  readonly xmlAction: "ShowTaskpane";
+  /**
+   * What the XML manifest does for this control.
+   *
+   * **`ExecuteFunction`, and that is the change.** It was `ShowTaskpane`, which
+   * meant the XML ribbon opened `TaskpaneId` `ButtonId1` while the XML context
+   * menu ran a function and reached the *default* pane: two identities for one
+   * add-in, and Word opened a second blank pane beside the live one. Both
+   * manifests now run the same function, so `jsonAction` and `xmlAction` agree
+   * \u2014 which is what ADR-0070 has been asking for and this field is what makes it
+   * checkable rather than aspirational. (ADR-0101.)
+   */
+  readonly xmlAction: "ExecuteFunction";
   readonly navigationTarget: TaskpaneTarget;
   /** XML cannot encode command-specific targets; all XML controls use the default pane. */
   readonly xmlNavigationTarget: "default";
@@ -46,7 +57,12 @@ const CommandDefinitionSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   jsonAction: z.literal("executeFunction"),
-  xmlAction: z.literal("ShowTaskpane"),
+  xmlAction: z.literal("ExecuteFunction"),
+  /**
+   * Still `"default"`, and now load-bearing rather than a note: every control
+   * reaches the one pane the entry point declares, because none of them names
+   * a pane of its own. (ADR-0101.)
+   */
   xmlNavigationTarget: z.literal("default"),
   navigationTarget: z.enum([
     "review",
