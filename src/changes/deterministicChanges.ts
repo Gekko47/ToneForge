@@ -102,7 +102,6 @@ export const DETERMINISTIC_CORRECTABLE_CATEGORIES: ReadonlySet<string> = new Set
   "formatting.styleStandard",
   "formatting.listStyle",
   "formatting.emptyStyle",
-  "formatting.headingHierarchy",
   "formatting.listLevel",
 ]);
 
@@ -127,6 +126,15 @@ export const DETERMINISTIC_REPORTED_ONLY_CATEGORIES: ReadonlySet<string> = new S
    * would be ToneForge choosing the author's figure for them.
    */
   "language.currency.magnitude",
+  /*
+   * A heading level is not a paragraph style. Promoting or demoting one rewrites
+   * the document outline, and a skipped level has several legitimate
+   * resolutions - insert the missing heading, renumber the ones below it, or
+   * accept the gap - none of which ToneForge can choose for the author. The
+   * planner used to apply a single-paragraph style change here, computed by
+   * re-parsing the finding's own message; see ADR-0116.
+   */
+  "formatting.headingHierarchy",
   /*
    * A required term that is absent. There is no text to rewrite, so any correction
    * would be the tool writing the author's prose; the finding says what the house
@@ -384,18 +392,6 @@ function typographyReplacement(finding: Finding): string | null {
   }
 }
 
-function headingStyle(message: string): string {
-  const previous = /follows\s+[”"']?Heading\s+(\d+)/i.exec(message);
-  if (previous?.[1] !== undefined) {
-    const previousLevel = Number.parseInt(previous[1], 10);
-    if (Number.isInteger(previousLevel) && previousLevel >= 1 && previousLevel < 9) {
-      return `Heading ${previousLevel + 1}`;
-    }
-  }
-  const match = /Heading\s*(\d+)/i.exec(message);
-  return match?.[1] !== undefined ? `Heading ${match[1]}` : "Heading 1";
-}
-
 function single(change: Change | null): Change[] {
   return change === null ? [] : [change];
 }
@@ -523,9 +519,23 @@ export function planDeterministicChange(finding: Finding): Change[] {
     case "formatting.emptyStyle":
       return single(styleChange(finding, finding.expected ?? "Normal"));
 
-    case "formatting.headingHierarchy": {
-      return single(styleChange(finding, finding.expected ?? headingStyle(finding.message)));
-    }
+    /*
+     * `formatting.headingHierarchy` has no case here on purpose (ADR-0116).
+     *
+     * It used to, and it derived the style to apply by re-parsing the finding's
+     * own message: `/follows\s+[”"']?Heading\s+(\d+)/` captured the level the
+     * heading *followed* and added one. For a Heading 3 after a Heading 1 that
+     * answers `Heading 2` — a level the message never proposed — so the
+     * fallback was wrong exactly when a finding lacked `expected`. Both analyzer
+     * findings do set it, which is why it never fired in production, but a
+     * second answer to the same question is a latent defect: it is dead today and
+     * live the moment a third caller appears.
+     *
+     * The category is report-only instead. Renumbering a heading rewrites the
+     * document outline, and a skipped level has several legitimate resolutions.
+     */
+    case "formatting.headingHierarchy":
+      return [];
 
     case "formatting.listLevel": {
       const expected = finding.deterministic?.expected;

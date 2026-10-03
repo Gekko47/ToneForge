@@ -239,6 +239,35 @@ describe("findFormattingIssues", () => {
       expect(hierarchy).toHaveLength(1);
       expect(hierarchy[0]?.deterministic?.profilePath).toBe("structure.maxHeadingLevel");
     });
+
+    /*
+     * A heading level is part of the outline, not a paragraph style (ADR-0116).
+     * The planner used to apply a single-paragraph style change here, so these
+     * two are the assertions that pin the new classification at the source
+     * rather than only in the planner.
+     */
+    it("offers no correction for a heading deeper than the maximum", () => {
+      const findings = run([paragraph(0, "Deep", "Heading 5")], {
+        structure: structure({ maxHeadingLevel: 3 }),
+      });
+      const hierarchy = findings.filter((f) => f.category === "formatting.headingHierarchy");
+      expect(hierarchy[0]?.deterministic?.correctionAvailable).toBe(false);
+      expect(hierarchy[0]?.deterministic?.correctionReason).toMatch(/outline/);
+    });
+
+    it("offers no correction for a skipped heading level", () => {
+      const findings = run(
+        [paragraph(0, "Intro", "Heading 1"), paragraph(1, "Detail", "Heading 3")],
+        { structure: structure({ allowSkippedHeadingLevels: false }) },
+      );
+      const hierarchy = findings.filter((f) => f.category === "formatting.headingHierarchy");
+      expect(hierarchy).toHaveLength(1);
+      expect(hierarchy[0]?.deterministic?.profilePath).toBe("structure.allowSkippedHeadingLevels");
+      expect(hierarchy[0]?.deterministic?.correctionAvailable).toBe(false);
+      // The suggested level stays on the finding as information; it is not a
+      // correction, and the UI is free to show it as one thing among several.
+      expect(hierarchy[0]?.expected).toBe("Heading 2");
+    });
   });
 
   describe("direct formatting (spec §10.3)", () => {

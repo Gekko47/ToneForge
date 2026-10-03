@@ -4322,3 +4322,93 @@ not.
 `tests/unit/taskpane/findingLocation.test.ts` (new);
 `tests/unit/formatting/analyzer.test.ts`;
 `tests/unit/analysis/incrementalCoordinator.test.ts`.
+
+## ADR-0116 — A heading level is part of the outline, not a paragraph style
+
+- **Status**: Accepted
+- **Date**: 2026-10-03
+- **Plan item**: Phase 4, item 19
+
+### Context
+
+`planDeterministicChange` had this case:
+
+```ts
+case "formatting.headingHierarchy": {
+  return single(styleChange(finding, finding.expected ?? headingStyle(finding.message)));
+}
+```
+
+and `headingStyle` recovered the style to apply by re-parsing the finding's own
+message:
+
+```ts
+const previous = /follows\s+[”"']?Heading\s+(\d+)/i.exec(message);
+// ...previousLevel + 1 -> "Heading N"
+```
+
+Two problems, one visible and one latent.
+
+**Latent, and the reason the audit flagged it.** For a `Heading 3` following a
+`Heading 1`, the regex captures the level that was _followed_ (`1`) and adds one,
+answering `Heading 2` — a level the message never proposed and the author never
+considered. Both analyzer findings do set `expected`, so the fallback never fired in
+production; but it was a second, divergent answer to a question the rule had
+already answered, kept alive only by an `??` no one expected to reach. That is the
+shape that becomes a live defect the moment a third caller appears.
+
+**Visible, and the reason the category should never have been correctable.**
+Neither `expected` value is a safe single-paragraph edit:
+
+- a heading deeper than `structure.maxHeadingLevel` proposed applying
+  `Heading 3` to a `Heading 5`, silently promoting it and severing whatever
+  `Heading 4` structure sat between them;
+- a skipped level proposed applying the intermediate level (`Heading 2` to the
+  `Heading 3`), which is one of at least three legitimate repairs — insert the
+  missing heading, renumber everything below it, or accept the gap.
+
+Applying a Word style rewrites the document outline. That is a structural decision,
+and the tool does not have standing to make it.
+
+### Decision
+
+1. `headingStyle()` is deleted. A finding's `message` is prose for a reader; a
+   planner that parses it is deriving a value from a string nobody promised to keep
+   in that shape.
+2. `formatting.headingHierarchy` moves from `DETERMINISTIC_CORRECTABLE_CATEGORIES`
+   to `DETERMINISTIC_REPORTED_ONLY_CATEGORIES`, and its planner case returns no
+   changes. The case is kept, with the reason inline, rather than deleted — the
+   registry audit asserts that a rule calling itself non-correctable has said so
+   where the planner can see it.
+3. `checkHeadingHierarchy` sets `correctable: false` and a
+   `correctionReason` on both findings, so the UI states why rather than showing a
+   missing button with no explanation.
+4. `structure/headingHierarchy` in the rule registry is declared `correctable:
+false`. The rule is not removed: it still reports a real deviation.
+5. `expected` stays on both findings. It is the level the gap _suggests_, useful
+   information to show; it is no longer a correction, and the tests pin that the
+   planner produces nothing whether or not it is present.
+
+### Consequences
+
+- **No style change can be planned from a heading-hierarchy finding**, so the
+  outline is never rewritten by an Approve.
+- **The regex is gone rather than fixed.** Making it read the heading's own level
+  would still leave the structural problem, and a parser kept alive only by a
+  fallback is a parser nobody maintains.
+- **`DETERMINISTIC_REPORTED_ONLY_CATEGORIES` is the honest home.** The registry
+  audit already cross-checks it against the planner, so this category is now
+  checked in both directions rather than only as "a planner case exists".
+- **A user sees the finding and must act in Word.** That is the intended cost of
+  not letting the tool choose the author's outline.
+- **`structure.allowSkippedHeadingLevels` and `structure.maxHeadingLevel` are
+  unaffected** — both still produce findings; only their correctability changed.
+
+### Evidence
+
+`src/changes/deterministicChanges.ts` (`DETERMINISTIC_CORRECTABLE_CATEGORIES`,
+`DETERMINISTIC_REPORTED_ONLY_CATEGORIES`, `planDeterministicChange`; `headingStyle`
+removed); `src/formatting/analyzer.ts` (`HEADING_HIERARCHY_REASON`,
+`checkHeadingHierarchy`); `src/analysis/deterministic/ruleRegistry.ts`
+(`structure/headingHierarchy`); `tests/unit/changes/planner.test.ts`;
+`tests/unit/formatting/analyzer.test.ts`.

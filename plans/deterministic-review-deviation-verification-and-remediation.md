@@ -1235,3 +1235,58 @@ per new unit, asserting all nodes come back rather than none.
 
 **Verification at this point:** typecheck clean, lint 0 warnings, **2623 tests /
 187 files passing**.
+
+### Phase 4d — Item 19, heading hierarchy is report-only
+
+**What the audit claimed, and what was true.** Confirmed, and the defect is worse
+than "a message is parsed where a field would do".
+
+`planDeterministicChange` had `case "formatting.headingHierarchy"` building a
+`styleChange`, and `headingStyle()` recovered the style to apply by re-parsing the
+finding's own message with `/follows\s+[”"']?Heading\s+(\d+)/`, capturing the level
+the heading **followed** and adding one. For a `Heading 3` after a `Heading 1`
+that answers `Heading 2` — a level the message never proposed.
+
+**Why it never fired, and why that is not a defence.** Both analyzer findings set
+`expected`, and the parser was behind a `??`. So the wrong answer sat in the tree
+unreachable. But it was a second, divergent answer to a question the rule had
+already answered, kept alive by an `??` nobody expected to reach — exactly the
+shape that becomes a live defect the moment a third caller appears.
+
+**Why the category should never have been correctable at all.** Neither `expected`
+value is a safe single-paragraph edit. A heading deeper than the profile's maximum
+proposed applying `Heading 3` to a `Heading 5`, silently promoting it and
+severing whatever `Heading 4` structure sat between them. A skipped level proposed
+applying the intermediate level, which is one of at least three legitimate
+repairs: insert the missing heading, renumber everything below it, or accept the
+gap. Applying a Word style rewrites the document outline, and that is a structural
+decision the tool does not get to make.
+
+**What changed**
+
+- `headingStyle()` is deleted. A message is prose for a reader; a planner that
+  parses it derives a value from a string nobody promised to keep in that shape.
+- `formatting.headingHierarchy` moved from `DETERMINISTIC_CORRECTABLE_CATEGORIES`
+  to `DETERMINISTIC_REPORTED_ONLY_CATEGORIES`, and its planner case returns no
+  changes. The case is kept with the reason inline, because the registry audit
+  asserts that a rule calling itself non-correctable has said so where the planner
+  can see it.
+- `checkHeadingHierarchy` sets `correctable: false` and a `correctionReason` on
+  both findings, so the UI states why rather than showing a missing button with no
+  explanation.
+- `structure/headingHierarchy` in the registry is declared `correctable: false`.
+  The rule is not removed: it still reports a real deviation.
+- `expected` stays on both findings — it is the level the gap _suggests_, useful
+  information — and a test pins that the planner produces nothing whether or not
+  it is present.
+
+**Tests.** `tests/unit/changes/planner.test.ts`: the test that asserted the parsed
+style is replaced by two — one for a hierarchy finding with no `expected`, one for
+one _with_ it, because the old planner would have applied the second. The old
+behaviour is quoted in the comment rather than deleted silently.
+`tests/unit/formatting/analyzer.test.ts` gains two cases pinning
+`correctionAvailable: false` and the reason at the source rather than only in the
+planner.
+
+**Verification at this point:** typecheck clean, lint 0 warnings, **2626 tests /
+187 files passing**.

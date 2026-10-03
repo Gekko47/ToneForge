@@ -337,7 +337,17 @@ describe("planChanges", () => {
     expect(plan.findings).toHaveLength(1);
   });
 
-  it("derives the intermediate heading level from the finding message", () => {
+  /*
+   * The old behaviour, recorded as a regression rather than deleted.
+   *
+   * The planner derived the style to apply by re-parsing the finding's own
+   * message: `/follows\s+[”"']?Heading\s+(\d+)/` captured the level the heading
+   * *followed* and added one. For a Heading 3 after a Heading 1 that answers
+   * "Heading 2" - a level the message never proposed. It was dead only because
+   * both analyzer findings set `expected`; a second answer to the same question
+   * is live the moment a third caller appears. See ADR-0116.
+   */
+  it("plans no style change for a skipped heading level", () => {
     const plan = planFor([
       finding({
         category: "formatting.headingHierarchy",
@@ -346,10 +356,34 @@ describe("planChanges", () => {
         unit: "paragraph",
         message:
           'Heading level skipped: "Heading 3" follows "Heading 1" without an intermediate level',
+        deterministic: {
+          profilePath: "structure.allowSkippedHeadingLevels",
+          correctionAvailable: false,
+          correctionReason: "A heading level is part of the document outline.",
+        },
       }),
     ]);
 
-    expect(soleChange(plan).payload).toEqual({ styleName: "Heading 2" });
+    expect(plan.changes).toEqual([]);
+  });
+
+  it("plans no style change even when a hierarchy finding carries an expected value", () => {
+    // Belt and braces: the finding *does* carry `expected` in production, and the
+    // old planner would have applied it. Report-only means report-only whether or
+    // not a value is present.
+    const plan = planFor([
+      finding({
+        category: "formatting.headingHierarchy",
+        start: 2,
+        end: 3,
+        unit: "paragraph",
+        expected: "Heading 2",
+        message:
+          'Heading level skipped: "Heading 3" follows "Heading 1" without an intermediate level',
+      }),
+    ]);
+
+    expect(plan.changes).toEqual([]);
   });
 
   it("plans only an explicit valid list-level target", () => {

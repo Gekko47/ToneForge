@@ -1222,6 +1222,18 @@ function checkPageSetup(
  * rule that fired on both regardless would contradict a profile that had
  * explicitly answered them.
  */
+/**
+ * Why a heading-hierarchy finding is never correctable.
+ *
+ * Quoted by the UI rather than paraphrased, so the reason a control is missing is
+ * never a reworded guess. A heading level is not a paragraph style: changing one
+ * rewrites the document outline, and a gap has several legitimate resolutions —
+ * insert the missing heading, renumber everything below it, or accept the gap —
+ * so the choice belongs to the author, not to a correction button.
+ */
+const HEADING_HIERARCHY_REASON =
+  "A heading level is part of the document outline, not a paragraph style. Renumbering one rewrites the structure of the document, and a skipped level has more than one reasonable fix. ToneForge reports the gap; choosing the repair is yours.";
+
 function checkHeadingHierarchy(
   snapshot: FormattingSnapshot,
   structure: DocumentStructureProfile,
@@ -1246,6 +1258,8 @@ function checkHeadingHierarchy(
           expected: `Heading ${structure.maxHeadingLevel}`,
           expectedValue: structure.maxHeadingLevel,
           actualValue: level,
+          correctable: false,
+          correctionReason: HEADING_HIERARCHY_REASON,
         }),
       );
     }
@@ -1264,9 +1278,14 @@ function checkHeadingHierarchy(
           evidence: paragraph.text.slice(0, 40),
           paragraph,
           profilePath: "structure.allowSkippedHeadingLevels",
+          // Kept as the level the gap *suggests*, not as a correction. A skipped
+          // level has several legitimate resolutions and picking one is the
+          // author's decision; see `HEADING_HIERARCHY_REASON`.
           expected: `Heading ${previousLevel + 1}`,
           expectedValue: `Heading ${previousLevel + 1}`,
           actualValue: styleName,
+          correctable: false,
+          correctionReason: HEADING_HIERARCHY_REASON,
         }),
       );
     }

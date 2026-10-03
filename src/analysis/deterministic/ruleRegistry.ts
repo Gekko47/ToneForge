@@ -758,7 +758,14 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "paragraph",
     category: "formatting.headingHierarchy",
     profilePaths: ["structure.allowSkippedHeadingLevels", "structure.maxHeadingLevel"],
-    correctable: true,
+    /*
+     * Not correctable (ADR-0116). Renumbering a heading rewrites the document
+     * outline, and a gap has several legitimate repairs. The rule still declares
+     * `correctable: false` rather than being removed, because it still reports
+     * a real deviation; `DETERMINISTIC_REPORTED_ONLY_CATEGORIES` is where the
+     * registry audit looks to confirm the planner agrees.
+     */
+    correctable: false,
     analyze: (ruleContext) => formatting(ruleContext, ["formatting.headingHierarchy"]),
   },
   {
