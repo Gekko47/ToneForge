@@ -51,9 +51,25 @@ function makeProfile(): StyleProfile {
       lexicalPreferences: { ...SEMANTIC.lexicalPreferences, toneAvoid: ["very"] },
     },
     typography: sampleTypography(),
-    houseStyle: {
-      preferredTerminology: { client: "customer" },
+    // Wording lives on `language` (ADR-0110); the house-style copy is gone (ND-13).
+    // Spread from the empty profile so the section keeps its schema defaults —
+    // `language` has eight leaves and this fixture names three of them.
+    language: {
+      ...createEmptyProfile("Saved profile", 1).language,
+      terminology: [
+        {
+          id: "term-1",
+          source: "client",
+          replacement: "customer",
+          caseSensitive: false,
+          wholeWord: true,
+          severity: "advisory",
+          scope: {},
+        },
+      ],
       bannedTerms: ["utilize"],
+    },
+    houseStyle: {
       capitalization: { sentenceCase: true, titleCaseWords: ["ToneForge"] },
       spellingVariant: "en-US",
     },
@@ -194,7 +210,9 @@ describe("ProfileEditor", () => {
       expect(mocks.saveProfileRecord).toHaveBeenCalledTimes(1);
     });
     const saved = mocks.saveProfileRecord.mock.calls[0]?.[0] as ProfileRecord;
-    expect(saved.draft?.houseStyle.bannedTerms).toEqual(["leverage"]);
+    // ND-13: the form's banned-terms control writes the live `language` record
+    // now, not the inert house-style one.
+    expect(saved.draft?.language.bannedTerms).toEqual(["leverage"]);
     expect(saved.id).toBe(profile.id);
     // The record assigns the next revision; the editor never invents one.
     expect(saved.draft?.revision).toBe(2);
@@ -328,8 +346,6 @@ describe("ProfileEditor", () => {
         ellipsis: "three-dots",
       }),
       houseStyle: {
-        preferredTerminology: { api: "interface" },
-        bannedTerms: [],
         capitalization: { sentenceCase: false, titleCaseWords: [] },
         spellingVariant: "en-GB",
       },

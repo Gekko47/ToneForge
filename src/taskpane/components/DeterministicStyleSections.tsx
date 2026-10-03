@@ -31,8 +31,10 @@ import {
   PageStandardSchema,
   TableFormattingStandardSchema,
   type DeterministicStyleProfile,
+  type TerminologyRule,
 } from "../../core/domain/StyleProfile";
 import type { WordCapabilities } from "../../word/capabilityProbe";
+import { formatTermList, parseTermList } from "../settings/terminologyText";
 
 export interface DeterministicStyleSectionsProps {
   profile: DeterministicStyleProfile;
@@ -152,6 +154,132 @@ function CompareToggle({
   );
 }
 
+/**
+ * A terminology rule with no replacement.
+ *
+ * `exactOptionalPropertyTypes` distinguishes an absent field from `undefined`, so
+ * "this rule wants no replacement" has to be expressed by omitting the key. A
+ * spread with `replacement: undefined` would not type-check, and a rule that
+ * parsed with a blank replacement would be one the planner could build a
+ * deletion from.
+ */
+function withoutReplacement(rule: TerminologyRule): TerminologyRule {
+  const { replacement: _replacement, ...rest } = rule;
+  return rest;
+}
+
+/** An id no existing rule is using, so a new row cannot collide with an old one. */
+function nextTermId(existing: readonly TerminologyRule[]): string {
+  const taken = new Set(existing.map((rule) => rule.id));
+  const candidates = Array.from(
+    { length: taken.size + 1 },
+    (_unused, index) => `term-${index + 1}`,
+  );
+  return candidates.find((candidate) => !taken.has(candidate)) ?? `term-${candidates.length + 1}`;
+}
+
+/**
+ * One editable terminology rule.
+ *
+ * **Why a row per rule rather than a `term: replacement` textarea.** A flat line
+ * format can express a substitution and nothing else, so writing it back would
+ * have to drop the four other things a rule carries — `wholeWord`, `caseSensitive`,
+ * `severity` and its scope. A user who set a mandatory term and reopened the page
+ * would find their setting silently reverted to an advisory one. A row shows every
+ * field the rule actually has, which is also what makes "give every editable field
+ * a reachable control" checkable rather than aspirational.
+ *
+ * **Why the source is locally held.** `source` cannot be blank, so a half-typed
+ * term would make `LanguageConventionProfileSchema.parse` throw inside a keystroke
+ * and take the pane down with it. The row keeps the draft text, refuses the commit,
+ * and says why; the profile keeps the last value that did parse.
+ */
+function TerminologyRow({
+  rule,
+  withReplacement,
+  onChange,
+  onRemove,
+}: {
+  rule: TerminologyRule;
+  /** A required-term row has nothing to substitute, so it hides the replacement. */
+  withReplacement: boolean;
+  onChange: (next: TerminologyRule) => boolean;
+  onRemove: () => void;
+}): React.ReactNode {
+  const [source, setSource] = React.useState(rule.source);
+  const [replacement, setReplacement] = React.useState(rule.replacement ?? "");
+  const [sourceProblem, setSourceProblem] = React.useState<string | null>(null);
+
+  function commitSource(next: string): void {
+    setSource(next);
+    if (!onChange({ ...rule, source: next })) {
+      setSourceProblem("A term cannot be blank.");
+      return;
+    }
+    setSourceProblem(null);
+  }
+
+  function commitReplacement(next: string): void {
+    setReplacement(next);
+    const candidate =
+      next.trim().length === 0 ? withoutReplacement(rule) : { ...rule, replacement: next };
+    onChange(candidate);
+  }
+
+  return (
+    <fieldset className="tf-standard-block">
+      <legend>{rule.id}</legend>
+      <label className="tf-field">
+        <span>Term</span>
+        <input type="text" value={source} onChange={(event) => commitSource(event.target.value)} />
+        {sourceProblem !== null ? <span className="tf-sub">{sourceProblem}</span> : null}
+      </label>
+      {withReplacement ? (
+        <label className="tf-field">
+          <span>Replacement</span>
+          <input
+            type="text"
+            value={replacement}
+            onChange={(event) => commitReplacement(event.target.value)}
+          />
+          <span className="tf-sub">Blank means the term is flagged, never rewritten.</span>
+        </label>
+      ) : null}
+      <label className="tf-field tf-field-inline">
+        <input
+          type="checkbox"
+          checked={rule.wholeWord}
+          onChange={(event) => onChange({ ...rule, wholeWord: event.target.checked })}
+        />
+        <span>Match whole words only</span>
+      </label>
+      <label className="tf-field tf-field-inline">
+        <input
+          type="checkbox"
+          checked={rule.caseSensitive}
+          onChange={(event) => onChange({ ...rule, caseSensitive: event.target.checked })}
+        />
+        <span>Case sensitive</span>
+      </label>
+      <label className="tf-field">
+        <span>Severity</span>
+        <select
+          value={rule.severity}
+          onChange={(event) =>
+            onChange({ ...rule, severity: event.target.value as "mandatory" | "advisory" })
+          }
+        >
+          <option value="advisory">Advisory</option>
+          <option value="mandatory">Mandatory</option>
+        </select>
+      </label>
+      <button type="button" className="tf-link-button" onClick={onRemove}>
+        Remove
+      </button>
+    </fieldset>
+  );
+}
+
 export default function DeterministicStyleSections({
   profile,
   onChange,
@@ -174,6 +302,23 @@ export default function DeterministicStyleSections({
    * setting, and the section here exists to summarise and to hold what has no
    * control yet — not to duplicate what does.
    */
+  /*
+   * A commit that is allowed to fail.
+   *
+   * `patchLanguage` throws by design: a value that does not parse must never be
+   * written. A terminology row is mid-keystroke, though, and "color" passing
+   * while "" does not is normal rather than exceptional — so a row that cannot
+   * parse reports the problem and leaves the profile alone. Dropping the commit
+   * is the whole point: the alternative is a pane that unmounts itself because
+   * somebody pressed backspace.
+   */
+  const tryPatchLanguage = (values: Record<string, unknown>): boolean => {
+    const parsed = LanguageConventionProfileSchema.safeParse({ ...profile.language, ...values });
+    if (!parsed.success) return false;
+    onChange(set(profile, "language", parsed.data));
+    return true;
+  };
+
   const patchFormatting = (values: Record<string, unknown>): void =>
     onChange(
       set(
@@ -274,22 +419,117 @@ export default function DeterministicStyleSections({
         defaultOpen
       >
         {/*
-         * No terminology field here, and that is a correction rather than an
-         * omission.
+         * Terminology lives here, and this is the only place it is authored.
          *
-         * This section originally carried its own "Preferred terminology" box,
-         * which duplicated the one in the House style panel immediately below —
-         * two controls with the same label, editing the same record through two
-         * different parse paths, and the House style one is the one with the
-         * line-validation that tells a user their `term: replacement` is
-         * malformed. The duplicate silently won on save for whichever was
-         * touched last, and the existing test for the parse error broke on the
-         * ambiguity.
-         *
-         * So the field stays in one place. What belongs here is what has no
-         * editor anywhere: the settings the registry reads and nothing in the
-         * pane reaches.
+         * It used to be on the *governance* policy page, which was the wrong
+         * record twice over: governance governs protection and editability, and two
+         * of these three fields were read by nothing at all. Preferred terms,
+         * banned terms and required terms are house wording — a deterministic
+         * standard — so they are authored beside the rules that consume them.
          */}
+        <h4 className="tf-subheading">Preferred terminology</h4>
+        <p className="tf-sub">
+          Words the house always spells one way. A replacement is offered; accepting it is the
+          user's decision, never automatic.
+        </p>
+        {profile.language.terminology.map((rule) => (
+          <TerminologyRow
+            key={rule.id}
+            rule={rule}
+            withReplacement
+            onChange={(next) =>
+              tryPatchLanguage({
+                terminology: profile.language.terminology.map((entry) =>
+                  entry.id === next.id ? next : entry,
+                ),
+              })
+            }
+            onRemove={() =>
+              tryPatchLanguage({
+                terminology: profile.language.terminology.filter((entry) => entry.id !== rule.id),
+              })
+            }
+          />
+        ))}
+        <button
+          type="button"
+          className="tf-link-button"
+          onClick={() =>
+            tryPatchLanguage({
+              terminology: [
+                ...profile.language.terminology,
+                {
+                  id: nextTermId(profile.language.terminology),
+                  source: "term",
+                  replacement: "term",
+                  caseSensitive: false,
+                  wholeWord: true,
+                  severity: "advisory",
+                  scope: {},
+                },
+              ],
+            })
+          }
+        >
+          Add preferred term
+        </button>
+
+        <h4 className="tf-subheading">Banned terms</h4>
+        <p className="tf-sub">One per line. Flagged, never rewritten.</p>
+        <textarea
+          rows={4}
+          value={formatTermList(profile.language.bannedTerms)}
+          onChange={(event) => tryPatchLanguage({ bannedTerms: parseTermList(event.target.value) })}
+        />
+
+        <h4 className="tf-subheading">Required terms</h4>
+        <p className="tf-sub">
+          Words that must appear somewhere in the document. Reported when absent; never inserted
+          automatically.
+        </p>
+        {profile.language.requiredTerms.map((rule) => (
+          <TerminologyRow
+            key={rule.id}
+            rule={rule}
+            withReplacement={false}
+            onChange={(next) =>
+              tryPatchLanguage({
+                requiredTerms: profile.language.requiredTerms.map((entry) =>
+                  entry.id === next.id ? next : entry,
+                ),
+              })
+            }
+            onRemove={() =>
+              tryPatchLanguage({
+                requiredTerms: profile.language.requiredTerms.filter(
+                  (entry) => entry.id !== rule.id,
+                ),
+              })
+            }
+          />
+        ))}
+        <button
+          type="button"
+          className="tf-link-button"
+          onClick={() =>
+            tryPatchLanguage({
+              requiredTerms: [
+                ...profile.language.requiredTerms,
+                {
+                  id: nextTermId(profile.language.requiredTerms),
+                  source: "term",
+                  caseSensitive: false,
+                  wholeWord: true,
+                  severity: "advisory",
+                  scope: {},
+                },
+              ],
+            })
+          }
+        >
+          Add required term
+        </button>
+
         <label className="tf-field tf-field-inline">
           <input
             type="checkbox"
@@ -314,9 +554,9 @@ export default function DeterministicStyleSections({
           />
         </label>
         <p className="tf-sub">
-          Terminology, abbreviations, and the number, date, currency and unit conventions are set in
-          the House style panel and through the governance policy. This section is where the
-          capitalisation and locale settings live.
+          Abbreviations, and the number, date, currency and unit conventions are set in the House
+          style panel; typography is set in the Typography panel. Every field a rule reads has a
+          control here or in one of those two.
         </p>
       </ProfileSection>
 

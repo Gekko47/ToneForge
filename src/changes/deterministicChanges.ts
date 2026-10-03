@@ -73,12 +73,15 @@ export const DETERMINISTIC_CORRECTABLE_CATEGORIES: ReadonlySet<string> = new Set
   "language.capitalisation.prohibited",
   "language.abbreviation.prohibited",
   "language.abbreviation.firstUse",
-  "language.number.decimalSeparator",
+  // No `language.number.decimalSeparator`: that check moved to the typography
+  // rule (D2), which owns both separators. Keeping the case here would have been a
+  // planner branch no finding can reach.
   "language.number.percentageSpacing",
   "language.number.range",
   "language.currency.spacing",
   "language.unit.spacing",
   "language.unit.capitalisation",
+  "language.unit.preferredSymbol",
   "language.bannedTerm",
   "formatting.bodyStyle",
   "formatting.headingStyle",
@@ -103,6 +106,12 @@ export const DETERMINISTIC_REPORTED_ONLY_CATEGORIES: ReadonlySet<string> = new S
   "language.date.format",
   "language.number.spelling",
   "language.currency.representation",
+  /*
+   * A required term that is absent. There is no text to rewrite, so any correction
+   * would be the tool writing the author's prose; the finding says what the house
+   * expects and the author decides where it belongs.
+   */
+  "language.terminology.missing",
   "formatting.directFormatting",
   "formatting.unknownStyle",
   "formatting.emptyHeading",
@@ -411,12 +420,16 @@ export function planDeterministicChange(finding: Finding): Change[] {
     case "language.capitalisation.prohibited":
     case "language.abbreviation.prohibited":
     case "language.abbreviation.firstUse":
-    case "language.number.decimalSeparator":
     case "language.number.percentageSpacing":
     case "language.number.range":
     case "language.currency.spacing":
     case "language.unit.spacing":
-    case "language.unit.capitalisation": {
+    case "language.unit.capitalisation":
+    // D4: a named unit written where the house prefers its symbol. A plain
+    // `replaceText` for the same reason as the cases above — the symbol and the
+    // name denote the same quantity, so the edit restates the measurement and
+    // cannot change it.
+    case "language.unit.preferredSymbol": {
       if (finding.deterministic?.correctionAvailable !== true) return [];
       if (typeof finding.expected !== "string") return [];
       return single(textChange(finding, finding.expected));

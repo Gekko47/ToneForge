@@ -54,6 +54,20 @@ declare global {
         callback: (event: { type: string; source?: unknown }) => void,
       ) => Promise<unknown>;
       removeHandlerAsync?: (eventType: string, options?: { id?: string }) => Promise<unknown>;
+
+      /**
+       * The host's requirement sets, and the question that matters for a member
+       * added in one of them.
+       *
+       * Declared narrowly and optionally for the same reason as `addHandlerAsync`:
+       * absence is the interesting case and has to stay expressible, because a
+       * host that cannot answer reports "unsupported" rather than throwing. Narrow
+       * because this add-in asks exactly one question — whether WordApiDesktop 1.4
+       * is served, which is what decides whether `Range.set` exists.
+       */
+      requirements?: {
+        isSetSupported?: (requirementSet: string, version: string) => boolean;
+      };
     }
 
     interface Document {

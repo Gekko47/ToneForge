@@ -52,6 +52,11 @@ interface HostOptions {
   /** Models a host with no `document.getSelection` at all. */
   withoutSelection?: boolean;
   /**
+   * Whether the host serves WordApiDesktop 1.4, which is what `Range.start` and
+   * `Range.end` belong to. On by default; off models a host without them.
+   */
+  withoutRangeOffsets?: boolean;
+  /**
    * Whether paragraphs answer `getRange("Whole")`, which is WordApi **1.3** and
    * the only way a collapsed caret gets offsets at all. (1.1, as this comment and
    * ADR-0103 said, was wrong; see ADR-0105.)
@@ -206,6 +211,10 @@ function installHost(options: HostOptions = {}): void {
   const context = {
     document,
     host: { name: "Word", version: "16.0" },
+    requirements: {
+      isSetSupported: (set: string, asked: string) =>
+        options.withoutRangeOffsets !== true || !(set === "WordApiDesktop" && asked === "1.4"),
+    },
     sync: async () => {
       // Office rejects the *whole* request when a name is unknown, so a refused
       // name has to surface here rather than at the `load` call site, or the
@@ -531,6 +540,7 @@ describe("readSelectionScope", () => {
 
   describe("when the host cannot support a safe review", () => {
     it("refuses with a reason when the selection has no offsets", async () => {
+      // A host that *claims* WordApiDesktop 1.4 and then refuses the load.
       installHost({ missingSelectionProperties: ["start"] });
 
       const result = await readSelectionScope();
@@ -539,6 +549,33 @@ describe("readSelectionScope", () => {
       // ADR-0069: a refusal names the remedy. Asserted on shape rather than on
       // wording, because the wording is a UI decision and the remedy is not.
       expect(result.status === "unavailable" && result.reason).toMatch(/Update Word|copy the text/);
+    });
+
+    it("reports unavailable rather than no-selection when the offsets are not a usable pair", async () => {
+      /*
+       * The distinction `SelectionScopeResult` exists for. A host that serves 1.4
+       * and returns an unusable pair is saying it will not say *where* the
+       * selection is; it is not saying there is nothing selected. "no-selection"
+       * here sent "There is nothing to review here" for a paragraph that was there.
+       */
+      installHost({ start: -1 });
+
+      const result = await readSelectionScope();
+
+      expect(result.status).toBe("unavailable");
+      expect(result.status === "unavailable" && result.reason).toMatch(/Update Word|copy the text/);
+    });
+
+    it("does not request offsets from a host that does not serve WordApiDesktop 1.4", async () => {
+      // Asking for `start`/`end` on such a host does not yield absent numbers — the
+      // host refuses the whole transaction. So the request is not made.
+      installHost({ withoutRangeOffsets: true });
+
+      await readSelectionScope();
+
+      expect(log.selectionRequests).not.toContain("start");
+      expect(log.selectionRequests).not.toContain("end");
+      expect(log.selectionRequests).toContain("text");
     });
 
     it("refuses with a reason when the host exposes no selection", async () => {

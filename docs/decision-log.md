@@ -3793,3 +3793,98 @@ end: 1192`, so that guard returned nine lines **above** the caret branch and the
   `scripts/check-release-package.mjs` (`manifestPages`), `scripts/check-build-artifacts.mjs`;
   `tests/unit/architecture/oneTaskpane.test.ts`, `tests/unit/commands/commandContracts.test.ts`;
   Microsoft: _Action element_ (`TaskpaneId`, `SourceLocation`).
+
+## ADR-0110: Wording belongs to the profile, protection belongs to the governance policy
+
+- Amends: ADR-0061 (governance policy is authorable, and takes precedence over
+  learned evidence)
+- Status: Accepted (2026-10-03)
+- **Context**: the governance policy page carried three wording editors —
+  preferred terms, banned terms and required terms — under a `terminology` key on
+  `GovernanceProfileSchema`. Two problems, and they were not the same problem.
+  First, governance governs **protection and editability**: which regions may be
+  changed, how severely a finding is treated, who may override what. A house's
+  preferred spelling is none of those, so the placement was wrong on its own terms.
+  Second, and worse, **two of the three fields were read by nothing at all**.
+  `resolveHouseStyle` and `resolveLanguage` merged governance wording into the
+  resolved policy, but no rule, no planner branch and no `src/ai/` module read a
+  terminology value — so the page persisted three vocabularies, validated them on
+  save, and none of them could affect a single finding. `requiredTerms` was the
+  worst case: it was editable, it was type-checked, it round-tripped through
+  storage, and it was inert.
+- **Decision**: split the record along what each half governs.
+  - **The style profile owns wording.** `language.terminology`,
+    `language.bannedTerms` and `language.requiredTerms` live on
+    `LanguageConventionProfileSchema`, are authored in the deterministic style
+    editor beside the rules that consume them, and are read by
+    `findTerminologyIssues`. `TerminologyPolicySchema` and the `terminology` key
+    are **deleted** from the governance profile.
+  - **The governance policy keeps protection, scope, editorial pinning and rules**,
+    unchanged.
+  - **`requiredTerms` becomes enforced rather than stored.** A required term is a
+    house word that must appear somewhere in the document. When it is absent the
+    rule emits `language.terminology.missing` — a **report-only** finding, declared
+    in `DETERMINISTIC_REPORTED_ONLY_CATEGORIES`, carrying a zero-length range at
+    offset 0 and **no** `safeBatchKey`. Nothing is ever inserted into the author's
+    document automatically; there is no correct place to put a word the author did
+    not choose to write, so the honest output is the observation and a "Go to
+    item" affordance.
+  - **A row per rule, not a `term: replacement` line format.** Each rule exposes
+    source, replacement, `wholeWord`, `caseSensitive` and `severity`. A flat text
+    format can express a substitution and nothing else, so writing it back would
+    have silently dropped the other four fields — a user who set a mandatory term
+    would reopen the page and find it reset to advisory.
+  - **Zod strips the retired key on load.** A governance record written before this
+    change still parses; its `terminology` is discarded rather than honoured. That
+    is the desired outcome, and it is asserted rather than assumed.
+- **Consequences**:
+  - There is now **one** place a wording value is stored and one place it is read.
+    The prior arrangement could not drift, because neither copy was ever read —
+    but it also could not work, and a user editing one saw no effect from the other.
+  - The removal was safe here because there are no users to migrate: no stored
+    governance record can hold a value anyone depended on. If that changes, the
+    migration belongs at the version boundary and not in a read path (ADR-0092).
+  - `resolveHouseStyle`/`resolveLanguage` lost their governance parameter. A merge
+    that copied protection settings into wording would have re-blurred the same
+    line this ADR draws.
+  - `resolveResolvedPolicy` no longer imports `TerminologyRuleSchema` at all,
+    which is what makes the separation checkable rather than documentary.
+  - **Known residue, deliberately not hidden**: the preferred-term finding still
+    carries the category `houseStyle.terminology` while its `profilePath` is
+    `language.terminology.<id>`, and `houseStyle.terminology` is also a
+    `GOVERNANCE_RULE_SOURCES` binding. The category name now contradicts the field
+    that produced it. Renaming it is a taxonomy change with a planner and registry
+    blast radius, so it is recorded as its own follow-up rather than smuggled in
+    here — but it is a **real inconsistency**, not a naming preference.
+  - **ND-13 — a second set of terminology fields was inert, and is now gone.**
+    `HouseStyleSchema.preferredTerminology` (a flat `Record<string, string>`) and
+    `HouseStyleSchema.bannedTerms` looked authoritative: authored in the House
+    style panel, validated on save, persisted through a round trip. They produced
+    **no findings at all**, because `ruleRegistry.ts` calls
+    `findHouseStyleIssues` through
+    `selectCategories(..., ["houseStyle.capitalization.titleCase"])` — the
+    terminology checks were filtered out of every report in favour of the
+    `language` rules. This is the "it saved but ignored my entry" failure, and it is
+    why `PROFILE_FIELD_PATHS` now declares `houseStyle.capitalization.titleCaseWords`
+    at all: the list named no `houseStyle` field, so the mechanism meant to catch
+    an unreachable field was not looking at that section.
+    Both fields, and both checks, are **deleted**. `findTerminologyIssues` is the one
+    terminology engine and is strictly more capable than the flat record it
+    replaces — a `TerminologyRule` carries `wholeWord`, `caseSensitive`, `severity`
+    and a scope, where `Record<string, string>` carried a term and a replacement and
+    nothing else. The House style form still exists and now writes the live record,
+    through a merge that preserves a matched rule's severity and scope.
+    The construction-report fixture is the other half of the evidence: it passed
+    over this defect for months because `findTerminologyIssues` also reads
+    `language.legacyPreferredTerminology`, so the corpus satisfied the engine
+    through a neighbouring field while the field under test did nothing.
+- **Evidence**: `src/core/domain/GovernanceProfile.ts` (`TerminologyPolicySchema`
+  deleted); `src/core/domain/StyleProfile.ts` (`LanguageConventionProfileSchema.requiredTerms`);
+  `src/core/domain/ResolvedPolicy.ts`; `src/rules/language.ts`
+  (`findTerminologyIssues`);
+  `src/changes/deterministicChanges.ts` (`DETERMINISTIC_REPORTED_ONLY_CATEGORIES`);
+  `src/taskpane/components/GovernancePolicySection.tsx`,
+  `src/taskpane/components/DeterministicStyleSections.tsx`;
+  `tests/unit/core/state/terminologyPersistence.test.ts`,
+  `tests/unit/rules/requiredTerms.test.ts`,
+  `tests/unit/core/domain/GovernanceProfile.test.ts`.

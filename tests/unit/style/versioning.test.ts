@@ -28,13 +28,28 @@ describe("diffProfiles", () => {
   });
 
   it("reports array and record changes", () => {
+    /*
+     * Wording moved to `language` (ADR-0110), and the house-style copy is gone
+     * (ND-13). The diff entries moved with it, which is what keeps a terminology
+     * edit visible in the changelog rather than silently untracked.
+     */
     const from = createEmptyProfile("Saved profile");
     const to = {
       ...from,
-      houseStyle: {
-        ...from.houseStyle,
+      language: {
+        ...from.language,
         bannedTerms: ["utilize"],
-        preferredTerminology: { client: "customer" },
+        terminology: [
+          {
+            id: "term-1",
+            source: "client",
+            replacement: "customer",
+            caseSensitive: false,
+            wholeWord: true,
+            severity: "advisory" as const,
+            scope: {},
+          },
+        ],
       },
     };
     const diff = diffProfiles(from, to);

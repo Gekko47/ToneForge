@@ -401,14 +401,22 @@ describe("findAbbreviationIssues", () => {
 });
 
 describe("findNumberIssues", () => {
-  it("reports a decimal separator the profile does not use", () => {
+  it("no longer reports a decimal separator - typography owns both separators (D2)", () => {
+    /*
+     * The check moved to `checkDecimalSeparator` in `src/rules/typography.ts`.
+     *
+     * Running it here as well meant both rules reported the same character, which
+     * produced two overlapping changes and let the planner refuse an entire plan
+     * over one separator (ND-2). Owner decision D2 gives both separators to
+     * `typography`, so this asserts the category is gone rather than merely
+     * changed - a weaker assertion would let it creep back.
+     */
     const findings = findNumberIssues({
       text: "It cost 3,50 units.",
-      rules: profile({ numbers: { decimalSeparator: "dot" } }),
+      rules: profile({}),
     });
 
-    expect(categories(findings)).toEqual(["language.number.decimalSeparator"]);
-    expect(findings[0]?.expected).toBe(".");
+    expect(categories(findings)).not.toContain("language.number.decimalSeparator");
   });
 
   it("reports a percentage written with the wrong spacing", () => {
@@ -532,36 +540,29 @@ describe("findNumberIssues", () => {
     // A figure is the one thing a formatting tool must not alter. `1,000` and
     // `4,200,000` are grouped, and the previous lookaround reported a
     // decimal-separator deviation at every group mark.
+    // Grouped figures are never a decimal separator, here or in the typography
+    // rule that now owns the check (ND-1).
     const grouped = findNumberIssues({
       text: "The total was 1,000 and then 4,200,000.",
-      rules: profile({ numbers: { decimalSeparator: "dot" } }),
+      rules: profile({}),
     });
     expect(categories(grouped)).not.toContain("language.number.decimalSeparator");
-
-    // A real decimal under the same profile is still reported, and corrected.
-    const decimal = findNumberIssues({
-      text: "It cost 3,50 units.",
-      rules: profile({ numbers: { decimalSeparator: "dot" } }),
-    });
-    expect(categories(decimal)).toEqual(["language.number.decimalSeparator"]);
-    expect(decimal[0]?.expected).toBe(".");
-    expect(decimal[0]?.deterministic?.correctionAvailable).toBe(true);
   });
 
-  it("reports an ambiguous separator without offering to decide it", () => {
+  it("reports no separator finding at all", () => {
     /*
-     * `0,1234` is neither a clean decimal nor a clean thousands group, and the
-     * two readings differ by a factor of a thousand. Reporting it tells the
-     * reader a convention was broken; correcting it would pick one for them.
+     * The three cases this file used to assert here - a clean decimal, a grouped
+     * figure and an ambiguous `0,1234` - are all covered in
+     * `tests/unit/rules/separatorDiscrimination.test.ts` against the rule that now
+     * owns them. Keeping duplicates here would mean two places to update and one
+     * of them quietly testing nothing.
      */
     const findings = findNumberIssues({
-      text: "The value was 0,1234 units.",
-      rules: profile({ numbers: { decimalSeparator: "dot" } }),
+      text: "It cost 3,50 units and the total was 1,000 or 0,1234.",
+      rules: profile({}),
     });
 
-    expect(categories(findings)).toEqual(["language.number.decimalSeparator"]);
-    expect(findings[0]?.deterministic?.correctionAvailable).toBe(false);
-    expect(findings[0]?.deterministic?.safeBatchKey).toBeUndefined();
+    expect(categories(findings)).not.toContain("language.number.decimalSeparator");
   });
 });
 

@@ -340,20 +340,79 @@ describe("DeterministicStyleSections", () => {
     expect(last.formatting.bodyStyle.styleName).toBe("Body Text");
   });
 
-  it("leaves terminology to the House style panel rather than duplicating it", () => {
+  it("authors all three vocabularies, and says which record each one writes", () => {
     /*
-     * The correction this section records.
+     * Terminology was relocated here from the governance policy page, where two
+     * of the three fields were read by nothing at all. Asserting the three
+     * controls exist is the minimum; asserting each one *labels its record* is
+     * what stops the section from silently becoming a second, competing
+     * vocabulary store.
      *
-     * It originally carried its own "Preferred terminology" box, which
-     * duplicated the one in the House style panel directly below: two controls
-     * with the same accessible name, editing the same record through two parse
-     * paths, and the House style one is the one with the line validation that
-     * tells a user their `term: replacement` is malformed. A second editor for
-     * terminology is the defect, not the feature.
+     * **Two editors of one record, on purpose.** The House style form offers the
+     * compact `term: replacement` view; this section offers the per-rule view.
+     * Both write `language.terminology` (ADR-0110), so there is one record and one
+     * engine behind them.
+     *
+     * This was not always true. `houseStyle.preferredTerminology` and
+     * `houseStyle.bannedTerms` were a second pair of fields that validated,
+     * persisted, and produced **nothing** — the registry filtered both checks out
+     * of `findHouseStyleIssues` in favour of these rules. That is ND-13. Those
+     * fields and checks are gone, and the House style form was re-pointed here
+     * rather than deleted, so the capability a user had is preserved and finally
+     * wired.
      */
-    const { container } = renderSections(CAPABLE);
-    expect(container.querySelectorAll("textarea")).toHaveLength(0);
-    expect(screen.getByText(/set in the House style panel/)).toBeInTheDocument();
+    renderSections(CAPABLE);
+
+    expect(screen.getByRole("heading", { name: "Preferred terminology" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Banned terms" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Required terms" })).toBeInTheDocument();
+    // One multi-line control: the banned list, which is genuinely a flat list.
+    // Preferred and required terms are rule objects and get a row each, because
+    // a line format cannot express wholeWord/caseSensitive/severity. Queried by
+    // tag rather than role, because `textbox` also matches every single-line
+    // `<input>` the formatting section renders.
+    expect(document.querySelectorAll("textarea")).toHaveLength(1);
+  });
+
+  it("writes a preferred-term edit through to language.terminology", () => {
+    const { onChange } = renderSections(CAPABLE);
+    fireEvent.click(screen.getByRole("button", { name: "Add preferred term" }));
+
+    expect(onChange).toHaveBeenCalled();
+    const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(last.language.terminology).toHaveLength(1);
+    expect(last.language.terminology[0]?.id).toBe("term-1");
+    // The new row is not saved as an empty term; it carries a draft source so
+    // the schema parses and the user has something to overwrite.
+    expect(last.language.terminology[0]?.source).toBe("term");
+  });
+
+  it("refuses to commit a term the schema will not accept, and keeps the last good one", () => {
+    /*
+     * `source` cannot be blank, so a half-typed term must not throw inside a
+     * keystroke. The pane going down because somebody pressed backspace is the
+     * worst possible outcome for a form field.
+     */
+    const { onChange } = renderSections(CAPABLE);
+    fireEvent.click(screen.getByRole("button", { name: "Add preferred term" }));
+    onChange.mockClear();
+
+    // The Term field specifically: the new row also seeds a Replacement of
+    // "term", so a bare display-value query matches both.
+    fireEvent.change(screen.getByLabelText("Term"), { target: { value: "" } });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText("A term cannot be blank.")).toBeInTheDocument();
+  });
+
+  it("writes a required-term edit through to language.requiredTerms", () => {
+    const { onChange } = renderSections(CAPABLE);
+    fireEvent.click(screen.getByRole("button", { name: "Add required term" }));
+
+    const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    expect(last.language.requiredTerms).toHaveLength(1);
+    // A required term has no replacement: there is no correct text to insert.
+    expect(last.language.requiredTerms[0]).not.toHaveProperty("replacement");
   });
 
   it("carries the capitalisation toggle into the change callback", async () => {

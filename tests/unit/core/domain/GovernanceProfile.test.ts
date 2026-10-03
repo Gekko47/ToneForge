@@ -5,12 +5,11 @@ import {
   ScopePolicySchema,
   ProtectionPolicySchema,
   EditorialPolicySchema,
-  TerminologyPolicySchema,
   GovernanceRuleSchema,
   ruleForSource,
   EDITORIAL_OVERRIDE_FIELDS,
 } from "../../../../src/core/domain/GovernanceProfile";
-import { StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
+import { StyleProfileSchema, createEmptyProfile } from "../../../../src/core/domain/StyleProfile";
 import { SEMANTIC_DIMENSIONS } from "../../../../src/core/domain/SemanticStyleProfile";
 import { v4 as uuidv4 } from "uuid";
 
@@ -79,13 +78,26 @@ describe("EditorialPolicySchema", () => {
   });
 });
 
-describe("TerminologyPolicySchema", () => {
-  it("defaults terminology fields correctly", () => {
-    const result = TerminologyPolicySchema.parse({});
-    expect(result.preferredTerms).toEqual({});
-    expect(result.bannedTerms).toEqual([]);
-    expect(result.requiredTerms).toEqual([]);
-    expect(result.locale).toBe("en-US");
+describe("terminology has left the governance contract", () => {
+  /*
+   * Governance governs protection and editability; house wording is a
+   * deterministic-review standard on the style profile.
+   *
+   * Asserted structurally rather than by absence of a compile error: a schema
+   * brought back would parse silently, and the whole point is that these four
+   * fields must not be authorable here.
+   */
+  it("no longer parses on a governance profile", () => {
+    const profile = createEmptyProfile("Test");
+    const parsed = GovernanceProfileSchema.safeParse({
+      ...createGovernanceProfile(profile),
+      terminology: { preferredTerms: { color: "colour" } },
+    });
+
+    expect(parsed.success).toBe(true);
+    // Zod strips unknown keys, so the stored value is discarded rather than
+    // honoured — which is the whole point of removing the field.
+    if (parsed.success) expect(parsed.data).not.toHaveProperty("terminology");
   });
 });
 
@@ -190,12 +202,9 @@ describe("GovernanceProfileSchema", () => {
     expect(profile.version).toBe(1);
     expect(profile.style).toEqual(style);
     expect(profile.rules).toEqual([]);
-    expect(profile.terminology).toEqual({
-      preferredTerms: {},
-      bannedTerms: [],
-      requiredTerms: [],
-      locale: "en-US",
-    });
+    // No `terminology`: wording belongs to the deterministic style profile, not to
+    // governance, which governs protection and editability.
+    expect(profile).not.toHaveProperty("terminology");
     expect(profile.scope).toEqual(ScopePolicySchema.parse({}));
     expect(profile.protection).toEqual(ProtectionPolicySchema.parse({}));
     expect(profile.editorial).toEqual(EditorialPolicySchema.parse({}));
@@ -256,17 +265,18 @@ describe("GovernanceProfileSchema", () => {
       },
       scope: { includeBody: true, includeHeadersFooters: true },
       protection: { protectQuotedText: true, protectCaptions: true },
-      // V1 shape: `tone` was a free string. It is mapped into `tone.description`
-      // and marked pinned, because V2 has no trait named "formal".
+      // V1 shape: `tone` was a free string. It is carried into `tone.description`,
+      // but **not** pinned: "formal" names no V2 trait, and a pin takes the whole
+      // dimension, so pinning it would replace the learned `tone.primary` with the
+      // schema default "neutral".
       editorial: { tone: "formal" },
       provenance: { createdAt: new Date().toISOString(), createdBy: "admin", lineage: [] },
     });
     expect(profile.rules).toHaveLength(1);
-    expect(profile.terminology.preferredTerms).toEqual({ "e.g.": "for example" });
     expect(profile.scope.includeHeadersFooters).toBe(true);
     expect(profile.protection.protectQuotedText).toBe(true);
     expect(profile.editorial.tone).toEqual({ description: "formal" });
-    expect(profile.editorial.explicitFields).toEqual(["tone"]);
+    expect(profile.editorial.explicitFields).toEqual([]);
   });
 });
 

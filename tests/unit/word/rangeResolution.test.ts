@@ -75,6 +75,24 @@ describe("resolveWholeParagraphIndex", () => {
     expect(resolveWholeParagraphIndex(anchor({ endOffset: 12 }), NODES)).toBeNull();
   });
 
+  it("refuses a partial selection even where the offsets are unusable", () => {
+    /*
+     * A negative offset is what `selectionScope` reports when the host did not
+     * serve WordApiDesktop 1.4, and it is the one case where the ids stand in.
+     * Here they must still not: the paragraph they name is not the text the
+     * anchor holds.
+     */
+    const partial = anchor({ nodeIds: [], startOffset: -1, endOffset: -1 });
+    expect(resolveWholeParagraphIndex(partial, NODES)).toBeNull();
+  });
+
+  it("resolves by node id when the host served no offsets", () => {
+    // The whole-paragraph case on a host without WordApiDesktop 1.4: the offsets
+    // are absent, and identity is the only claim the capture could make.
+    const withoutOffsets = anchor({ startOffset: -1, endOffset: -1 });
+    expect(resolveWholeParagraphIndex(withoutOffsets, NODES)).toBe(0);
+  });
+
   it("refuses a multi-paragraph selection", () => {
     expect(
       resolveWholeParagraphIndex(anchor({ endOffset: SAMPLE.endOffset + 20 }), NODES),
@@ -102,7 +120,7 @@ describe("supportsRangedReplacement", () => {
   const originalOffice = (globalThis as { Office?: unknown }).Office;
 
   beforeEach(() => {
-    installOffice(withRangeSet(true));
+    installOffice(hostServingRequirementSet("WordApiDesktop", "1.4", true));
   });
 
   afterEach(() => {
@@ -110,12 +128,23 @@ describe("supportsRangedReplacement", () => {
     vi.restoreAllMocks();
   });
 
-  it("reports true for a host whose range can be narrowed", async () => {
+  it("reports true for a host that serves WordApiDesktop 1.4", async () => {
     await expect(supportsRangedReplacement()).resolves.toBe(true);
   });
 
-  it("reports false for a host without Range.set, which is Word on the web", async () => {
-    installOffice(withRangeSet(false));
+  it("reports false for a host without WordApiDesktop 1.4, which is Word on the web", async () => {
+    installOffice(hostServingRequirementSet("WordApiDesktop", "1.4", false));
+
+    await expect(supportsRangedReplacement()).resolves.toBe(false);
+  });
+
+  it("reports false when the host exposes Range.set but does not serve the set", async () => {
+    /*
+     * The reason this asks the requirement set rather than the object model. A
+     * desktop build exposes `Range.set` regardless of whether 1.4 is in its
+     * requirement set, so a method probe answers "yes" and the write then fails.
+     */
+    installOffice(hostServingRequirementSet("WordApiDesktop", "1.4", false, { set: vi.fn() }));
 
     await expect(supportsRangedReplacement()).resolves.toBe(false);
   });
@@ -132,13 +161,13 @@ describe("supportsRangedReplacement", () => {
   });
 });
 
-function withRangeSet(present: boolean): unknown {
-  const selection: Record<string, unknown> = { text: "", load: vi.fn() };
-  if (present) {
-    selection["set"] = vi.fn(function (this: unknown) {
-      return this;
-    });
-  }
+function hostServingRequirementSet(
+  requirementSet: string,
+  version: string,
+  supported: boolean,
+  selectionOverrides: Record<string, unknown> = {},
+): unknown {
+  const selection: Record<string, unknown> = { text: "", load: vi.fn(), ...selectionOverrides };
   return {
     run: <T>(func: (context: unknown) => Promise<T>): Promise<T> =>
       func({
@@ -147,6 +176,12 @@ function withRangeSet(present: boolean): unknown {
           body: { text: "", load: vi.fn() },
         },
         host: { name: "Word", version: "16.0" },
+        requirements: {
+          isSetSupported: vi.fn(
+            (set: string, asked: string) =>
+              set === requirementSet && asked === version && supported,
+          ),
+        },
         sync: vi.fn(),
       }),
   };

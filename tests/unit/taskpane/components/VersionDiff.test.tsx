@@ -19,8 +19,6 @@ function makeProfile(overrides: Partial<StyleProfile> = {}): StyleProfile {
     // here without this test having to be amended to stay type-correct.
     typography: sampleTypography(overrides.typography ?? {}),
     houseStyle: {
-      preferredTerminology: {},
-      bannedTerms: [],
       capitalization: { sentenceCase: true, titleCaseWords: [] },
       spellingVariant: "en-US",
       ...overrides.houseStyle,
@@ -42,7 +40,8 @@ describe("VersionDiff", () => {
     const current = makeProfile({
       name: "Edited profile",
       semantic: { ...saved.semantic, tone: { ...saved.semantic.tone, primary: "persuasive" } },
-      houseStyle: { ...saved.houseStyle, bannedTerms: ["utilize"] },
+      // ND-13: banned terms moved to `language`, and so did their diff entry.
+      language: { ...saved.language, bannedTerms: ["utilize"] },
     });
 
     const { container } = render(<VersionDiff savedProfile={saved} currentProfile={current} />);

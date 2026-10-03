@@ -47,6 +47,30 @@ export function countSubstring(text: string, needle: string): number {
   return count;
 }
 
+/**
+ * Whether the character at `index` is a thousands group mark.
+ *
+ * **Why this lives here.** Two rules decide whether a separator between digits is a
+ * decimal point or a group mark, and they must agree exactly: when they disagree, one
+ * of them offers to rewrite `1,000` as `1.000` and the other reports the same comma as
+ * correct, and the planner then holds two overlapping changes over one character.
+ * A shared predicate is what makes "exactly one section owns each behaviour" checkable
+ * rather than aspirational.
+ *
+ * The test is structural and separator-agnostic, because `1.000` is grouped under a
+ * comma-decimal profile just as `1,000` is under a dot-decimal one. A mark is a group
+ * mark when it has one to three digits before it since the last non-digit, and exactly
+ * three after it.
+ */
+export function isThousandsGroupMark(text: string, index: number): boolean {
+  let leading = 0;
+  while (index - leading > 0 && /\d/u.test(text[index - leading - 1] ?? "")) leading += 1;
+  if (leading < 1 || leading > 3) return false;
+  const boundary = text[index - leading - 1];
+  if (boundary !== undefined && /\d/u.test(boundary)) return false;
+  return /^\d{3}(?!\d)/u.test(text.slice(index + 1));
+}
+
 /** Mean of a numeric array; returns null for empty input. */
 export function mean(values: readonly number[]): number | null {
   if (values.length === 0) return null;

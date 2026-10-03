@@ -621,6 +621,43 @@ button:disabled {
   text-transform: uppercase;
 }
 
+/*
+ * A sub-heading inside one collapsible profile section.
+ *
+ * The Language section carries three distinct vocabularies — preferred, banned
+ * and required — and a run-on list of controls with no divider is exactly how a
+ * user ends up believing a banned term is a preferred one. The heading is `<h4>`
+ * rather than a styled `<p>` so it stays in the document outline the section
+ * headings already establish.
+ */
+.tf-subheading {
+  margin: 0.9rem 0 0.2rem;
+  color: var(--tf-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/*
+ * An inline add/remove control.
+ *
+ * `border: 0` with an inherited `color` and `background: none` is deliberate: a
+ * hard-coded background or border colour is exactly what makes a control ignore
+ * the host theme (UX-4a). This button has no paint of its own, so it inherits the
+ * pane's dark or light surface from whatever the theme says.
+ */
+.tf-link-button {
+  align-self: flex-start;
+  padding: 0.2rem 0;
+  border: 0;
+  background: none;
+  color: var(--tf-accent);
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .tf-pending-actions {
   display: flex;
   gap: 0.5rem;

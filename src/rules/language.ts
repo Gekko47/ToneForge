@@ -296,6 +296,49 @@ export function findTerminologyIssues(options: LanguageCheckOptions): Finding[] 
   if (text.length === 0) return [];
   const sectionHeads = options.sectionHeads ?? [];
 
+  /*
+   * Required terms, checked first.
+   *
+   * A required term is a wording the house insists on, so its absence is the
+   * deviation. Checked before the substitution pass because an absence overlaps
+   * nothing: it is reported at offset 0 with a zero-length range, and a
+   * substitution that claims that span would be reporting the wrong problem.
+   *
+   * Reported, never corrected. There is no text to rewrite - the term is not there -
+   * and inventing a sentence to contain it would be the tool writing the author's
+   * prose. The finding names the term and says where it would be expected.
+   *
+   * Matched with the same case sensitivity the rule declares, so a house that
+   * insists on a lower-case term is not satisfied by a capitalised one and vice
+   * versa. A term already present is silent, which is the compliant case.
+   */
+  const required: Finding[] = rules.requiredTerms
+    .map((rule) => ({ rule, source: rule.source.trim() }))
+    .filter((entry) => entry.source.length > 0)
+    .filter(
+      (entry) =>
+        findMatches(text, termPattern(entry.source, entry.rule.wholeWord, entry.rule.caseSensitive))
+          .length === 0,
+    )
+    .map((entry) =>
+      makeFinding({
+        category: "language.terminology.missing",
+        ruleId: "language/terminology",
+        profilePath: `language.requiredTerms.${entry.rule.id}`,
+        // Zero-length at the document start: there is no span in the text to point
+        // at, and a range that names one would send "Go to text" somewhere the
+        // term is not.
+        range: { start: 0, end: 0, unit: "character" },
+        message: `This style requires the term “${entry.source}”`,
+        severity: severityOf(entry.rule),
+        actual: "",
+        expected: entry.source,
+        // No correction exists. Offering one would advertise an Apply that has
+        // nothing to apply.
+        correctionAvailable: false,
+      }),
+    );
+
   const legacy: TerminologyRule[] = Object.entries(rules.legacyPreferredTerminology)
     .filter(([source, replacement]) => source.trim().length > 0 && replacement.trim().length > 0)
     .map(([source, replacement]) => ({
@@ -399,7 +442,10 @@ export function findTerminologyIssues(options: LanguageCheckOptions): Finding[] 
       );
     });
 
-  return findings.sort(
+  // The required-term findings lead, because an absence is a whole-document
+  // observation while a substitution is anchored at a span, and a reader working
+  // top-down should see what is missing before what is misspelled.
+  return [...required, ...findings].sort(
     (left, right) => left.range.start - right.range.start || left.range.end - right.range.end,
   );
 }
@@ -617,66 +663,22 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
   const findings: Finding[] = [];
   const numbers = rules.numbers;
 
-  const wanted = numbers.decimalSeparator === "comma" ? "," : ".";
-  const unwanted = numbers.decimalSeparator === "comma" ? "." : ",";
   /*
-   * A separator between digits is not necessarily a decimal separator: `1,000`
-   * and `1.000` are both grouped thousands. The lookaround matched every one of
-   * them, so a document written with grouping under a profile preferring the
-   * other separator reported a decimal-separator deviation at each group mark
-   * and offered to rewrite `1,000` as `1.000` — a figure altered by a
-   * punctuation rule.
+   * **The decimal separator check moved out of this rule (D2, ND-2).**
    *
-   * The group is recognised structurally rather than by counting separators, and
-   * for **both** separator characters rather than for one: a separator preceded
-   * by one to three digits from a non-digit boundary and followed by exactly
-   * three digits is a thousands group mark, whatever the profile's own
-   * `thousandsSeparator` says, because `1.000` is grouped whether or not the
-   * house asked for it. Restricting this to the comma left a document using dot
-   * grouping under a comma-decimal profile being offered a "decimal" correction
-   * on every group mark — the same corrupted-figure bug, reachable through the
-   * other separator.
+   * It used to run here as well as in `checkDecimalSeparator`, and both reported
+   * the same character: the typography scanner under `typography.decimalSeparator`
+   * and this one under `language.number.decimalSeparator`. Two changes over one
+   * range is a plan the conflict detector is entitled to refuse, so a single
+   * separator deviation could block every unrelated correction in the document.
+   *
+   * The two settings were never genuinely duplicates — `1.00` is a decimal,
+   * `1,000` is a group — but only one rule may report either. `typography` owns
+   * both separators, it applies the same structural group-mark guard, and this
+   * function now owns only what the number *convention* adds: percentage
+   * spacing, the number-word threshold, the range style and the negative-number
+   * form.
    */
-  const isGroupMark = (index: number): boolean => {
-    let leading = 0;
-    while (index - leading > 0 && /\d/u.test(text[index - leading - 1] ?? "")) leading += 1;
-    if (leading < 1 || leading > 3) return false;
-    const boundary = text[index - leading - 1];
-    if (boundary !== undefined && /\d/u.test(boundary)) return false;
-    const after = /^\d{3}(?!\d)/u.exec(text.slice(index + 1));
-    return after !== null;
-  };
-  [...text.matchAll(new RegExp(`(?<=\\d)\\${unwanted}(?=\\d)`, "g"))].forEach((match) => {
-    const start = match.index;
-    if (start === undefined) return;
-    if (isGroupMark(start)) return;
-    /*
-     * A separator that is neither a clean decimal nor a clean group is
-     * ambiguous: `0,1234` could be either, and picking one rewrites a figure.
-     * Those are reported so the reader knows a convention was broken, and marked
-     * non-correctable so nothing offers to decide it. As with the group mark
-     * above, the test is on the shape of the digits and not on which separator
-     * character it is — `0.1234` is exactly as ambiguous under a comma-decimal
-     * profile as `0,1234` is under a dot-decimal one.
-     */
-    const ambiguous = /^\d{3,}(?!\d)/u.test(text.slice(start + 1));
-    findings.push(
-      makeFinding({
-        category: "language.number.decimalSeparator",
-        ruleId: "language/numbers",
-        profilePath: "language.numbers.decimalSeparator",
-        range: { start, end: start + 1, unit: "character" },
-        message: `Use “${wanted}” as the decimal separator`,
-        severity: "warning",
-        actual: unwanted,
-        expected: wanted,
-        // A figure is the one thing a formatting tool must not alter, so an
-        // ambiguous run is pointed at and left for the user to resolve.
-        correctionAvailable: !ambiguous,
-        ...(ambiguous ? {} : { safeBatchKey: `decimal:${wanted}` }),
-      }),
-    );
-  });
 
   /*
    * Percentage spacing.
@@ -1040,6 +1042,61 @@ export function findUnitIssues(options: LanguageCheckOptions): Finding[] {
     .map((symbol) => symbol.trim())
     .filter((symbol) => symbol.length > 0);
   if (symbols.length === 0) return findings;
+
+  /*
+   * The preferred-rendering half of the map (D4).
+   *
+   * `units.symbols` is a map from a **named** unit to the **symbol** the house
+   * prefers — `kilogram` → `kg`. Until now only the values were read (for
+   * spacing) and the keys were used solely to word a capitalisation message, so
+   * half the record governed nothing: a document could write "5 kilogram" against
+   * a house that says "5 kg" and get no finding at all.
+   *
+   * This is a *named substitution*, the same shape as a terminology rule, and it
+   * is correctable for the same reason: replacing a spelled-out unit with its
+   * declared symbol changes no magnitude, so the value survives the edit. The
+   * planner builds a `replaceText` and the review shows it for approval.
+   *
+   * Two guards, both load-bearing:
+   *  - A name that already *is* its symbol (`m` → `m`) contributes nothing, or
+   *    every occurrence would be reported as its own correction.
+   *  - A multi-word name is matched whole, so "second" inside "secondary" is not
+   *    a measurement.
+   */
+  const claimed = new Set<number>();
+  Object.entries(units.symbols).forEach(([name, symbol]) => {
+    const trimmedName = name.trim();
+    const trimmedSymbol = symbol.trim();
+    if (trimmedName.length === 0 || trimmedSymbol.length === 0) return;
+    // A house that maps a name to itself has expressed no preference, and a
+    // case-only difference belongs to the capitalisation check below.
+    if (trimmedName.toLowerCase() === trimmedSymbol.toLowerCase()) return;
+
+    findMatches(text, termPattern(trimmedName, true, false)).forEach((range) => {
+      // Already preferred — the document wrote the symbol, so nothing to say.
+      if (text.slice(range.start, range.end).toLowerCase() === trimmedSymbol.toLowerCase()) return;
+      if ([...claimed].some((start) => start < range.end && range.start < start + 1)) return;
+      claimed.add(range.start);
+      findings.push(
+        makeFinding({
+          category: "language.unit.preferredSymbol",
+          ruleId: "language/units",
+          profilePath: `language.units.symbols.${trimmedName}`,
+          range: makeRange(range),
+          message: `Use “${trimmedSymbol}” instead of “${text.slice(range.start, range.end)}”`,
+          severity: "warning",
+          actual: text.slice(range.start, range.end),
+          expected: trimmedSymbol,
+          // Safe because a unit's name and its symbol denote the same quantity:
+          // the edit is a restatement, never a change of magnitude. The unit
+          // spacing check above deliberately makes no such claim, because
+          // inserting a space *does* alter the written form.
+          correctionAvailable: true,
+          safeBatchKey: `unitSymbol:${trimmedName}:${trimmedSymbol}`,
+        }),
+      );
+    });
+  });
   // Longest first, so "mg" is preferred over "g" where both are declared, and
   // every alternative is bounded so `10kg.` cannot match on the `k`.
   const alternatives = [...new Set(symbols)]

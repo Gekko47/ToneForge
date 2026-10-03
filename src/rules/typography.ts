@@ -21,6 +21,7 @@ import {
   LEFT_SINGLE_QUOTE,
   RIGHT_SINGLE_QUOTE,
   NON_BREAKING_SPACE,
+  isThousandsGroupMark,
 } from "../shared/utils/text";
 
 export interface TypographyCheckOptions {
@@ -385,18 +386,35 @@ function checkApostrophes(text: string, rules: TypographyRules): Finding[] {
   return findings;
 }
 
+/**
+ * The decimal separator, with group marks excluded.
+ *
+ * **ND-1.** This rule used to match `\d<sep>\d` and nothing else, so under a
+ * dot-decimal profile the comma in `1,000` matched and the rule offered a
+ * `replaceText` rewriting it to `1.000`. A figure was altered by a punctuation
+ * rule, and the planner could then be handed two changes over the same character
+ * when the language number rule reported the same comma (ND-2).
+ *
+ * The fix is the shared structural discriminator rather than a narrower pattern: a
+ * mark with one to three digits before it and exactly three after it is a group
+ * mark whichever separator the profile prefers, because `1.000` is grouped just as
+ * `1,000` is. `isThousandsGroupMark` is the same predicate the language rule uses,
+ * which is what stops the two from disagreeing again.
+ */
 function checkDecimalSeparator(text: string, rules: TypographyRules): Finding[] {
   const findings: Finding[] = [];
   const wrongSeparator = rules.decimalSeparator === "dot" ? "," : ".";
 
   const escapedSeparator = wrongSeparator.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   findMatches(text, new RegExp(`\\d${escapedSeparator}\\d`, "g")).forEach((m) => {
-    const separator = text.charAt(m.start + 1);
+    const separatorIndex = m.start + 1;
+    const separator = text.charAt(separatorIndex);
     if (separator === undefined) return;
+    if (isThousandsGroupMark(text, separatorIndex)) return;
     findings.push(
       makeFinding({
         category: "typography.decimalSeparator",
-        range: { start: m.start + 1, end: m.start + 2, unit: "character" },
+        range: { start: separatorIndex, end: separatorIndex + 1, unit: "character" },
         message: `Use ${rules.decimalSeparator === "dot" ? "dot (.)" : "comma (,)"} as the decimal separator`,
         severity: "warning",
         evidence: separator,

@@ -21,8 +21,20 @@ function learnedProfile() {
   return StyleProfileSchema.parse({
     ...createEmptyProfile("Learned"),
     typography: { emDash: "hyphen" },
-    houseStyle: {
-      preferredTerminology: { color: "colour" },
+    // Wording lives on `language` (ADR-0110), and `houseStyle`'s own terminology
+    // fields are gone (ND-13) because nothing read them.
+    language: {
+      terminology: [
+        {
+          id: "term-1",
+          source: "color",
+          replacement: "colour",
+          caseSensitive: false,
+          wholeWord: true,
+          severity: "advisory",
+          scope: {},
+        },
+      ],
       bannedTerms: ["obsolete"],
     },
     semantic: {
@@ -38,10 +50,6 @@ describe("resolveResolvedPolicy", () => {
     const profile = learnedProfile();
     const governance = GovernanceProfileSchema.parse({
       ...createGovernanceProfile(profile),
-      terminology: {
-        preferredTerms: { color: "brand-color" },
-        bannedTerms: ["forbidden"],
-      },
       editorial: withExplicitEditorialFields(
         {
           tone: { primary: "restrained" },
@@ -54,8 +62,14 @@ describe("resolveResolvedPolicy", () => {
     const resolved = resolveResolvedPolicy(profile, governance);
 
     expect(resolved.typography).toEqual(profile.typography);
-    expect(resolved.houseStyle.preferredTerminology).toEqual({ color: "brand-color" });
-    expect(resolved.houseStyle.bannedTerms).toEqual(["obsolete", "forbidden"]);
+    // Wording comes from the profile alone. Governance no longer merges terminology
+    // in, so these are exactly what the learned profile said - which is the point of
+    // the extraction: one place to author a house term, no ambiguity about which
+    // record is in force.
+    expect(resolved.language.terminology).toHaveLength(1);
+    expect(resolved.language.terminology[0]?.source).toBe("color");
+    expect(resolved.language.terminology[0]?.replacement).toBe("colour");
+    expect(resolved.language.bannedTerms).toEqual(["obsolete"]);
     // A pinned dimension is normative in full. The whole tone group is replaced
     // by the author's, which is why the learned `secondary` list does not survive
     // — a per-leaf merge would have kept it, and would then have meant the author
@@ -80,8 +94,8 @@ describe("resolveResolvedPolicy", () => {
 
     expect(resolved.semantic.tone.primary).toBe("persuasive");
     expect(resolved.semantic.lexicalPreferences.toneAvoid).toEqual(["jargon"]);
-    expect(resolved.houseStyle.preferredTerminology).toEqual({ color: "colour" });
-    expect(resolved.houseStyle.bannedTerms).toEqual(["obsolete"]);
+    expect(resolved.language.terminology[0]?.replacement).toBe("colour");
+    expect(resolved.language.bannedTerms).toEqual(["obsolete"]);
   });
 
   it("keeps an explicitly set governance value authoritative even when it equals the default", () => {
@@ -100,39 +114,15 @@ describe("resolveResolvedPolicy", () => {
   });
 
   /*
-   * Governance is a record of preferred terms; the language profile's
-   * terminology is a list of rules. The resolution has to make the second
-   * enforceable from the first, and these three cases are the ones that decide
-   * whether it does.
+   * Terminology no longer crosses the governance boundary.
+   *
+   * These three cases used to cover the merge: governance preferred terms became
+   * terminology rules, a governance term overrode a learned one for the same
+   * word, and governance banned terms were unioned in. All three are gone, and the
+   * case that replaces them is the one that matters — that a rule the author wrote
+   * on the profile survives resolution with its own severity and identity intact.
    */
-  it("turns a governance preferred term into a terminology rule", () => {
-    const profile = learnedProfile();
-    const governance = GovernanceProfileSchema.parse({
-      ...createGovernanceProfile(profile),
-      terminology: { preferredTerms: { color: "brand-color" }, bannedTerms: [] },
-    });
-
-    const resolved = resolveResolvedPolicy(profile, governance);
-
-    expect(resolved.language.terminology).toEqual([
-      {
-        id: "governance:color",
-        source: "color",
-        replacement: "brand-color",
-        caseSensitive: false,
-        wholeWord: true,
-        severity: "advisory",
-        scope: {},
-      },
-    ]);
-  });
-
-  it("lets a governance term replace a learned rule for the same word", () => {
-    /*
-     * Two rules for one word would report the same deviation twice with
-     * different severities, and the user would see a finding they cannot act
-     * on twice. The normative value is the one that should win.
-     */
+  it("passes profile terminology through unchanged, with no governance merge", () => {
     const profile = StyleProfileSchema.parse({
       ...createEmptyProfile("Learned"),
       language: {
@@ -140,35 +130,45 @@ describe("resolveResolvedPolicy", () => {
           { id: "learned", source: "color", replacement: "colour", severity: "mandatory" },
           { id: "other", source: "organise", replacement: "organize" },
         ],
+        bannedTerms: ["obsolete"],
       },
     });
-    const governance = GovernanceProfileSchema.parse({
-      ...createGovernanceProfile(profile),
-      terminology: { preferredTerms: { color: "brand-color" }, bannedTerms: [] },
-    });
 
-    const resolved = resolveResolvedPolicy(profile, governance);
+    const resolved = resolveResolvedPolicy(profile, createGovernanceProfile(profile));
 
     expect(resolved.language.terminology.map((rule) => [rule.id, rule.replacement])).toEqual([
+      ["learned", "colour"],
       ["other", "organize"],
-      ["governance:color", "brand-color"],
     ]);
+    expect(resolved.language.terminology[0]?.severity).toBe("mandatory");
+    expect(resolved.language.bannedTerms).toEqual(["obsolete"]);
   });
 
-  it("merges governance banned terms into the language profile", () => {
-    const profile = StyleProfileSchema.parse({
-      ...createEmptyProfile("Learned"),
-      language: { bannedTerms: ["obsolete"] },
-    });
-    const governance = GovernanceProfileSchema.parse({
-      ...createGovernanceProfile(profile),
-      terminology: { preferredTerms: {}, bannedTerms: ["forbidden", "obsolete"] },
-    });
+  it("applies schema defaults so a rule never sees a partial section", () => {
+    /*
+     * Parsing, not pass-through, is what `resolveLanguage` does now. A profile that
+     * names no terminology at all must reach a rule as a complete section, or a rule
+     * reading `language.terminology.length` sees `undefined`.
+     */
+    const profile = createEmptyProfile("Bare");
+    const resolved = resolveResolvedPolicy(profile, createGovernanceProfile(profile));
 
-    const resolved = resolveResolvedPolicy(profile, governance);
+    expect(resolved.language.terminology).toEqual([]);
+    expect(resolved.language.bannedTerms).toEqual([]);
+    // ND-13: the house-style wording fields are gone, so there is nothing left
+    // there to default. Capitalisation still survives there and is what the
+    // legacy title-case rule reads.
+    expect(resolved.houseStyle.capitalization.titleCaseWords).toEqual([]);
+  });
 
-    // Deduped, not concatenated: the same banned term in both records is one
-    // rule, and reporting it twice would be the duplication spec 4.3 is about.
-    expect(resolved.language.bannedTerms).toEqual(["obsolete", "forbidden"]);
+  it("no longer carries terminology on the house-style section (ND-13)", () => {
+    const profile = createEmptyProfile("NoHouseTerminology");
+    const resolved = resolveResolvedPolicy(profile, createGovernanceProfile(profile));
+
+    // The schema no longer accepts the keys, so this asserts the contract rather
+    // than the current stored value: a future edit that re-adds them cannot
+    // produce a profile carrying them.
+    expect(Object.keys(resolved.houseStyle)).not.toContain("preferredTerminology");
+    expect(Object.keys(resolved.houseStyle)).not.toContain("bannedTerms");
   });
 });

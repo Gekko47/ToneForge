@@ -12,6 +12,8 @@ import {
   RHETORICAL_STYLE_VALUES,
   SEMANTIC_DIMENSIONS,
   v1EditorialPins,
+  V1_EDITORIAL_FIELD_DIMENSIONS,
+  ToneTraitSchema,
   ToneProfileSchema,
   VoiceProfileSchema,
   FormalityProfileSchema,
@@ -120,14 +122,30 @@ export const ProtectionPolicySchema = z.object({
 
 export type ProtectionPolicy = z.infer<typeof ProtectionPolicySchema>;
 
-export const TerminologyPolicySchema = z.object({
-  preferredTerms: z.record(z.string(), z.string()).default({}),
-  bannedTerms: z.array(z.string()).default([]),
-  requiredTerms: z.array(z.string()).default([]),
-  locale: z.string().default("en-US"),
-});
-
-export type TerminologyPolicy = z.infer<typeof TerminologyPolicySchema>;
+/**
+ * Governance governs *protection and editability*, not wording.
+ *
+ * The `TerminologyPolicySchema` this replaces carried preferred terms, banned
+ * terms, required terms and a locale. None of them is a governance concern:
+ * governance decides what may be changed and what must be left alone, while house
+ * wording is a deterministic-review standard (owner decision, and the ADR recorded
+ * with this change).
+ *
+ * The evidence that the split is real rather than a preference: a search of
+ * `src/ai/` returns **no** reference to terminology at all, so none of these fields
+ * ever fed the semantic pipeline. Their only consumers were `resolveHouseStyle` and
+ * `resolveLanguage`, which exist purely to hand wording to deterministic rules.
+ *
+ * Two of the four were dead even there. `requiredTerms` and `locale` were editable
+ * in `GovernancePolicySection.tsx` and read by no code - two settings in the
+ * governance contract that governed nothing, the same defect class as a profile
+ * field with no rule.
+ *
+ * They are therefore relocated rather than migrated: `requiredTerms` becomes
+ * `language.requiredTerms` on the deterministic profile (D1), the rest are authored
+ * there too, and none requires a data migration because the deterministic profile
+ * is a separate record with its own defaults.
+ */
 
 /**
  * The dimensions a governance author can pin, which are the sixteen semantic
@@ -218,10 +236,17 @@ function migrateEditorialFromV1(value: unknown): Record<string, unknown> {
 
   const mapped: Record<string, unknown> = {};
   if (has("tone") && typeof source.tone === "string") {
-    mapped.tone = { description: String(source.tone) };
+    const trait = v1ToneTrait(source.tone);
+    // A recognised string becomes the enum it names, because a pin takes the whole
+    // dimension: an editorial `tone` of only `{ description }` would be parsed
+    // through `ToneProfileSchema`, fill `primary` with its default, and overwrite
+    // a learned tone the author never spoke about.
+    mapped.tone = { ...(trait === null ? {} : { primary: trait }), description: source.tone };
   }
   if (has("voice") && typeof source.voice === "string") {
-    mapped.voice = { description: String(source.voice) };
+    const fields = v1VoiceFields(source.voice);
+    // Same reason as tone: an unpinnable string leaves the enums learned.
+    mapped.voice = { ...fields, description: source.voice };
   }
   if (has("formality") && typeof source.formality === "number") {
     mapped.formality = { score: Math.round(source.formality) };
@@ -240,8 +265,89 @@ function migrateEditorialFromV1(value: unknown): Record<string, unknown> {
     mapped.lexicalPreferences = { toneAvoid: source.avoidWords };
   }
 
-  mapped.explicitFields = v1EditorialPins(source);
+  mapped.explicitFields = migratedEditorialPins(source);
   return mapped;
+}
+
+/**
+ * The pins a stored V1 editorial block yields.
+ *
+ * Two witnesses are combined rather than one chosen between. `v1EditorialPins`
+ * applies the legacy "non-default" rule to the values, which is how a block with no
+ * `explicitFields` states its intent; a stored list states intent directly, but its
+ * entries may be V1 *field* names (`preferredSentenceLength`), which are not V2
+ * dimensions and would fail the enum outright. Stored entries are therefore mapped
+ * through `V1_EDITORIAL_FIELD_DIMENSIONS` — a name already valid in V2 passes
+ * through — and unioned with the computed set, so a V13 block that recorded one pin
+ * and also held another non-default value does not lose the second.
+ */
+function migratedEditorialPins(source: Record<string, unknown>): string[] {
+  const stored = Array.isArray(source.explicitFields)
+    ? source.explicitFields
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) =>
+          (SEMANTIC_DIMENSIONS as readonly string[]).includes(entry)
+            ? entry
+            : V1_EDITORIAL_FIELD_DIMENSIONS.get(entry),
+        )
+        .filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const pins = [...new Set([...stored, ...v1EditorialPins(source)])];
+  /*
+   * Two of those are then removed.
+   *
+   * For `tone` and `voice` the legacy rule is one step too eager: a V1 free string
+   * that names no V2 enum (`"formal"`, `"conversational"`) leaves nothing normative
+   * behind, so pinning it would override the learned dimension with schema
+   * defaults. The V1 value stays visible as `description`, and nothing it could not
+   * express governs.
+   */
+  if (typeof source.tone === "string" && v1ToneTrait(source.tone) === null) {
+    return pins.filter((pin) => pin !== "tone");
+  }
+  if (typeof source.voice === "string" && Object.keys(v1VoiceFields(source.voice)).length === 0) {
+    return pins.filter((pin) => pin !== "voice");
+  }
+  return pins;
+}
+
+/** A V1 tone string that names a V2 tone trait, or null when it names none. */
+function v1ToneTrait(value: string): z.infer<typeof ToneTraitSchema> | null {
+  const parsed = ToneTraitSchema.safeParse(value.trim().toLowerCase());
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * The V2 voice leaves a V1 voice string names.
+ *
+ * V1 voice was one free string covering person *and* construction, so a value that
+ * names either is mapped onto that leaf alone and the other stays learned. Keyed
+ * by a normalised form because V1 wrote `"third person"` as readily as
+ * `"third-person"`.
+ */
+const V1_VOICE_FIELDS: ReadonlyMap<string, Readonly<Record<string, string>>> = new Map([
+  ["first", { person: "first" }],
+  ["firstperson", { person: "first" }],
+  ["firstpersonplural", { person: "first" }],
+  ["we", { person: "first" }],
+  ["third", { person: "third" }],
+  ["thirdperson", { person: "third" }],
+  ["he", { person: "third" }],
+  ["she", { person: "third" }],
+  ["they", { person: "third" }],
+  ["mixed", { person: "mixed" }],
+  ["impersonal", { person: "impersonal" }],
+  ["active", { construction: "active" }],
+  ["passive", { construction: "passive" }],
+  ["balanced", { construction: "balanced" }],
+]);
+
+function v1VoiceFields(value: string): Record<string, string> {
+  const key = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+  return { ...(V1_VOICE_FIELDS.get(key) ?? {}) };
 }
 
 /**
@@ -295,10 +401,7 @@ export const StoredEditorialPolicySchema = z.preprocess((value) => {
   if (!isV1) return value;
   return {
     ...migrateEditorialFromV1(source),
-    explicitFields:
-      Array.isArray(source.explicitFields) && source.explicitFields.length > 0
-        ? source.explicitFields
-        : v1EditorialPins(source),
+    explicitFields: migratedEditorialPins(source),
   };
 }, EditorialPolicySchema);
 export type StoredEditorialPolicy = z.output<typeof StoredEditorialPolicySchema>;
@@ -377,7 +480,15 @@ export const GovernanceProfileSchema = z.object({
   version: z.number().int().nonnegative().default(1),
   style: StyleProfileSchema,
   rules: z.array(GovernanceRuleSchema).default([]),
-  terminology: TerminologyPolicySchema.default({}),
+  /*
+   * No `terminology`. Governance governs protection and editability; house wording
+   * is a deterministic-review standard and is authored on the profile itself. See
+   * the note where `TerminologyPolicySchema` used to be declared.
+   *
+   * A stored record carrying the key still parses - Zod strips unknown keys - so no
+   * migration is needed, and nothing is lost that a rule was reading, because no
+   * rule was.
+   */
   scope: ScopePolicySchema.default({}),
   protection: ProtectionPolicySchema.default({}),
   editorial: StoredEditorialPolicySchema.default({}),

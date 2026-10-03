@@ -13,7 +13,6 @@ import {
   DocumentStructureProfileSchema,
   HouseStyleSchema,
   LanguageConventionProfileSchema,
-  TerminologyRuleSchema,
   StyleProfileSchema,
   TypographyRulesSchema,
   type HouseStyle,
@@ -85,80 +84,33 @@ export const ResolvedPolicySchema = z.object({
 
 export type ResolvedPolicy = z.infer<typeof ResolvedPolicySchema>;
 
-function unique(values: readonly string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))];
-}
-
-function resolveHouseStyle(
-  learned: StyleProfile["houseStyle"],
-  terminology: GovernanceProfile["terminology"],
-): HouseStyle {
-  return HouseStyleSchema.parse({
-    ...learned,
-    preferredTerminology: {
-      ...learned.preferredTerminology,
-      ...terminology.preferredTerms,
-    },
-    bannedTerms: unique([...learned.bannedTerms, ...terminology.bannedTerms]),
-  });
+/**
+ * The house-style section, parsed.
+ *
+ * Parsing rather than passing through is the point: it is what applies the schema
+ * defaults, so a record written before a field existed reaches a rule as a complete
+ * object. The governance merge that used to happen here is gone - wording is
+ * authored on the profile, and a second place to write it was the ambiguity the
+ * audit's §3 describes.
+ */
+function resolveHouseStyle(learned: StyleProfile["houseStyle"]): HouseStyle {
+  return HouseStyleSchema.parse(learned);
 }
 
 /**
- * Merge governance's terminology into the language conventions.
+ * The language conventions, parsed.
  *
- * Governance is a `record` of preferred terms and a list of banned ones, while
- * the profile's `terminology` is a list of rules with ids, severities and
- * matching options. The two have to meet, so a governance term becomes a rule
- * with a derived id and otherwise default behaviour.
+ * Parsed rather than hand-built for the same reason as `resolveHouseStyle`: the
+ * schema supplies `caseSensitive`, `wholeWord`, `severity`, `scope` and the rest,
+ * and a literal would have to restate every default to satisfy the type — which is
+ * exactly where a default can drift from the schema without a test noticing.
  *
- * The profile's own rules come first and a governance term with the same
- * `from` replaces them rather than joining them: a governance author overriding
- * a learned rule means the normative value, not the measured one, and two rules
- * for the same word would report the same deviation twice with different
- * severities.
+ * The governance merge this used to perform is gone. Wording is authored on the
+ * profile alone, so there is one place to state a house term and no question about
+ * which record is in force when the two disagreed.
  */
-function resolveLanguage(
-  learned: LanguageConventionProfile,
-  terminology: GovernanceProfile["terminology"],
-): LanguageConventionProfile {
-  /*
-   * Parsed rather than hand-built. The schema supplies `caseSensitive`,
-   * `wholeWord`, `severity` and `scope`, and a literal would have to restate
-   * those defaults to satisfy the type — which is exactly the place a default
-   * can drift from the schema without a test noticing.
-   *
-   * Built from the *entries*, not from the keys. `unique(Object.keys(...))`
-   * trimmed each key and then looked the replacement up with the trimmed key,
-   * so a governance author who wrote `" color "` produced a rule whose
-   * `replacement` was `undefined` — and an absent replacement is how a
-   * terminology rule says "banned term", so the rule would have deleted the
-   * word instead of rewriting it. Trimming each side and skipping an entry
-   * whose trimmed source or replacement is empty keeps a whitespace-padded
-   * record behaving like the clean one it was meant to be.
-   */
-  const governed = TerminologyRuleSchema.array().parse(
-    Object.entries(terminology.preferredTerms).flatMap(([source, replacement]) => {
-      const trimmedSource = source.trim();
-      const trimmedReplacement = replacement.trim();
-      if (trimmedSource.length === 0 || trimmedReplacement.length === 0) return [];
-      return [
-        {
-          id: `governance:${trimmedSource}`,
-          source: trimmedSource,
-          replacement: trimmedReplacement,
-        },
-      ];
-    }),
-  );
-  const governedSources = new Set(governed.map((rule) => rule.source));
-  return LanguageConventionProfileSchema.parse({
-    ...learned,
-    terminology: [
-      ...learned.terminology.filter((rule) => !governedSources.has(rule.source)),
-      ...governed,
-    ],
-    bannedTerms: unique([...learned.bannedTerms, ...terminology.bannedTerms]),
-  });
+function resolveLanguage(learned: LanguageConventionProfile): LanguageConventionProfile {
+  return LanguageConventionProfileSchema.parse(learned);
 }
 
 /**
@@ -247,8 +199,22 @@ export function resolveResolvedPolicy(
     profile,
     governance,
     typography: profile.typography,
-    houseStyle: resolveHouseStyle(profile.houseStyle, governance.terminology),
-    language: resolveLanguage(profile.language, governance.terminology),
+    /*
+     * Governance no longer supplies wording.
+     *
+     * Both resolvers used to merge `governance.terminology` into the profile's
+     * sections, which meant two places to author one rule and no way to tell which
+     * was in force. The terminology policy has been removed from the governance
+     * profile (governance governs protection and editability; the profile owns
+     * wording), so the profile's own sections are now the whole answer.
+     *
+     * The resolvers are kept rather than inlined because each still does something:
+     * `resolveHouseStyle` parses, which is what applies the schema defaults, and
+     * `resolveLanguage` will gain the same treatment when the migrated terminology
+     * rules are wired.
+     */
+    houseStyle: resolveHouseStyle(profile.houseStyle),
+    language: resolveLanguage(profile.language),
     formatting: profile.formatting,
     structure: profile.structure,
     semantic: resolveSemantic(profile.semantic, governance.editorial),

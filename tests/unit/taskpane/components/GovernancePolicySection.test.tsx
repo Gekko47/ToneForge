@@ -32,9 +32,6 @@ import { DocumentNodeSchema } from "../../../../src/core/domain/DocumentSnapshot
 function draft(overrides: Partial<PolicyDraft> = {}): PolicyDraft {
   return {
     rules: [],
-    preferredTerms: "",
-    bannedTerms: "",
-    requiredTerms: "",
     protection: ProtectionPolicySchema.parse({}),
     scope: ScopePolicySchema.parse({}),
     ...overrides,
@@ -71,8 +68,16 @@ describe("policyProblem", () => {
     expect(policyProblem(draft({ scope: narrow }))).not.toBeNull();
   });
 
-  it("reports a malformed preferred-term line", () => {
-    expect(policyProblem(draft({ preferredTerms: "e.g." }))).toContain("term: replacement");
+  it("has no terminology to validate", () => {
+    /*
+     * The malformed preferred-term line case used to live here, because this page
+     * parsed them. It no longer does: terminology moved to the deterministic style
+     * profile, and the parse that reported the error moved with it. Asserting the
+     * absence keeps the removal from being silently undone.
+     */
+    expect(draft()).not.toHaveProperty("preferredTerms");
+    expect(draft()).not.toHaveProperty("bannedTerms");
+    expect(draft()).not.toHaveProperty("requiredTerms");
   });
 
   it("refuses a rule with no description", () => {

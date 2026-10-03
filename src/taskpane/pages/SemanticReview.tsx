@@ -253,6 +253,16 @@ export default function SemanticReview({
       setEmptyReason(null);
       setUnavailableReason(null);
       setError(null);
+      /*
+       * A proposal belongs to the text it was written for.
+       *
+       * Reading a *new* selection leaves the old proposal on screen, and the old
+       * revision's `original` is a different paragraph — so Apply would pair the
+       * new scope with a revision describing the previous one. The acknowledgement
+       * goes with it for the same reason: it was given for that comparison.
+       */
+      setResult(null);
+      setAcknowledged(false);
       return;
     }
     /*
@@ -304,7 +314,15 @@ export default function SemanticReview({
     reviewing,
     applying,
     hasProposal: result !== null,
-    preservationPassed: result?.preservation.pass === true,
+    /*
+     * Both signals, not one.
+     *
+     * `preservation.pass` is the local protected-fact check; `actionable` is the
+     * engine's own verdict, which also accounts for meaning preservation and the
+     * anchor. A proposal the engine refused is not applyable however clean the
+     * local check was, and gating on the local check alone offered Apply for it.
+     */
+    preservationPassed: result?.preservation.pass === true && result.actionable,
     warningsAcknowledged: acknowledged,
     selectionChars: scope?.anchor.selectedText.length ?? 0,
   };
@@ -386,7 +404,10 @@ export default function SemanticReview({
           anchor: scope.anchor,
           coversWholeParagraph: scope.coversWholeParagraph,
           rationale: result.assessment.summary,
-          actionable: isApplicable(liveSession),
+          // The engine's refusal and the session's applicability are both required,
+          // so the revision that reaches the adapter carries the same answer the
+          // Apply button was gated on.
+          actionable: result.actionable && isApplicable(liveSession),
           ...(result.refusalReason === undefined ? {} : { refusalReason: result.refusalReason }),
         },
       });

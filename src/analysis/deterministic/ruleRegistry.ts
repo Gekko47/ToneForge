@@ -243,6 +243,7 @@ export const PROFILE_FIELD_PATHS: readonly string[] = [
   "language.terminology",
   "language.legacyPreferredTerminology",
   "language.bannedTerms",
+  "language.requiredTerms",
   "language.capitalisation.sentenceCase",
   "language.capitalisation.properNouns",
   "language.capitalisation.prohibitedCapitalised",
@@ -251,8 +252,10 @@ export const PROFILE_FIELD_PATHS: readonly string[] = [
   "language.abbreviations.preferredExpanded",
   "language.abbreviations.requireFirstUseExpansion",
   "language.abbreviations.prohibitedVariants",
-  "language.numbers.decimalSeparator",
-  "language.numbers.thousandsSeparator",
+  // No `decimalSeparator` / `thousandsSeparator`: those were declared here as well
+  // as in `typography` (owner decision D2), and two owners for one behaviour meant
+  // two rules reporting the same character. `typography` owns both separators and
+  // the fields were removed from `NumberProfileSchema` rather than left inert.
   "language.numbers.percentageSpacing",
   "language.numbers.numberWordThreshold",
   "language.numbers.negativeNumber",
@@ -268,6 +271,21 @@ export const PROFILE_FIELD_PATHS: readonly string[] = [
   "language.units.capitalisation",
   "language.units.symbols",
   "language.locale",
+
+  /*
+   * House style (spec §4.3), capitalisation only.
+   *
+   * This list previously named no `houseStyle` field at all, which is exactly why
+   * the registry audit could not see ND-13: `houseStyle.preferredTerminology` and
+   * `houseStyle.bannedTerms` were two user-facing, persisting, validated fields
+   * that no rule reached, and the one mechanism designed to catch an unreachable
+   * field was not looking at this section.
+   *
+   * `spellingVariant` is deliberately absent. It is metadata — no rule reads it,
+   * and `METADATA_ONLY_PROFILE_PATHS` is the place a field with no rule says so
+   * rather than pretending to be wired.
+   */
+  "houseStyle.capitalization.titleCaseWords",
 
   // Typography (spec §5).
   "typography.emDash",
@@ -352,38 +370,44 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     analyze: (ruleContext) => typography(ruleContext, ["typography.ellipsis"]),
   },
   {
+    /*
+     * The number rules, and the home of the two separators.
+     *
+     * **ND-2, resolved.** This rule previously ran the typography scanner *and*
+     * `findNumberIssues`, and both reported the same separator at the same
+     * offset. Two changes over one range is a plan the conflict detector is
+     * entitled to refuse, so one document defect could block unrelated
+     * corrections.
+     *
+     * Owner decision D2 settles the ownership question: `typography.decimalSeparator`
+     * owns the decimal separator and `typography.thousandsSeparator` owns the
+     * group separator. They are distinct behaviours, not duplicates — `1.00` is a
+     * decimal, `1,000` is a group — but only one rule may report either. So the
+     * language scanner's separator emission is dropped here and its categories are
+     * no longer claimed, which is what leaves `language.numbers` owning the things
+     * only it can express: percentage spacing, ranges, the number-word threshold
+     * and the negative-number convention.
+     *
+     * `language.numbers.decimalSeparator` therefore ceases to be a profile path
+     * this rule reads. It stays in the schema and in `PROFILE_FIELD_PATHS` because
+     * a persisted profile carries it, but it is now read by the typography rule's
+     * `typography.decimalSeparator`, which is the normative one. Retiring the
+     * duplicate field is Phase 3 work and must not silently leave it unwired.
+     */
     id: "typography/numbers",
     group: "typography",
     scope: "text",
     category: "typography.decimalSeparator",
-    /*
-     * Declared rather than inferred, and the reason it is long: this rule runs
-     * two scanners, so its findings arrive under six different categories. The
-     * previous declaration named one of them, which made the registry describe a
-     * rule the engine was not running. The parity test in
-     * `tests/unit/changes/deterministicChanges.test.ts` is what caught it.
-     */
     emits: [
       "typography.decimalSeparator",
       "typography.thousandsSeparator",
-      "language.number.decimalSeparator",
       "language.number.percentageSpacing",
       "language.number.range",
       "language.number.spelling",
     ],
-    /*
-     * The number-word threshold, the negative-number convention and the range
-     * style are declared here rather than left for T8 to add, because the
-     * registry audit failed on exactly these three while they were missing. A
-     * rule that reads a profile section is the claim that the section is wired;
-     * leaving three fields unclaimed is what the audit reported — which is the
-     * audit working, not the audit being wrong.
-     */
     profilePaths: [
       "typography.decimalSeparator",
       "typography.thousandsSeparator",
-      "language.numbers.decimalSeparator",
-      "language.numbers.thousandsSeparator",
       "language.numbers.percentageSpacing",
       "language.numbers.numberWordThreshold",
       "language.numbers.negativeNumber",
@@ -398,7 +422,6 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     analyze: (ruleContext) => [
       ...typography(ruleContext, NUMBER_CATEGORIES),
       ...language(ruleContext, findNumberIssues, [
-        "language.number.decimalSeparator",
         "language.number.percentageSpacing",
         "language.number.spelling",
         "language.number.range",
@@ -441,12 +464,27 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "language",
     scope: "text",
     category: "houseStyle.terminology",
-    profilePaths: ["language.terminology", "language.legacyPreferredTerminology"],
+    emits: ["houseStyle.terminology", "language.terminology.missing"],
+    profilePaths: [
+      "language.terminology",
+      "language.legacyPreferredTerminology",
+      "language.requiredTerms",
+    ],
+    /*
+     * Mixed, deliberately. The substitution and banned-term findings are correctable;
+     * `language.terminology.missing` is not, because a required term that is absent
+     * has no text to rewrite and inventing a sentence to contain it would be the tool
+     * writing the author's prose. It is reported so the reader knows the house expects
+     * the term, and the per-finding `correctionAvailable` is what the review reads.
+     */
     correctable: true,
-    // Only the substitution category. A banned term is a separate rule below,
+    // Only the substitution category here. A banned term is a separate rule below,
     // and a rule that emitted both would report every banned term twice.
     analyze: (ruleContext) =>
-      language(ruleContext, findTerminologyIssues, ["houseStyle.terminology"]),
+      language(ruleContext, findTerminologyIssues, [
+        "houseStyle.terminology",
+        "language.terminology.missing",
+      ]),
   },
   {
     id: "language/banned",
@@ -462,20 +500,28 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     /*
      * The legacy title-case word list, and only that.
      *
-     * `findHouseStyleIssues` also reports sentence case, and that check is left
+     * `findHouseStyleIssues` also reported sentence case, and that check was left
      * unemitted on purpose: `language/capitalisation` below already reports the
      * same thing from the normative section, so running both put two findings on
      * the same character and the planner then built two overlapping changes and
-     * refused the plan as conflicting. The title-case word list has no
-     * equivalent in the expanded section, so it keeps its own owner until the
-     * legacy record is retired.
+     * refused the plan as conflicting. Its terminology checks are now **deleted**
+     * outright (ND-13): they were also filtered out here, which meant the
+     * `houseStyle.preferredTerminology` / `houseStyle.bannedTerms` fields a user
+     * edited produced nothing at all. The title-case word list has no equivalent
+     * in the expanded section, so it keeps its own owner.
+     *
+     * `profilePaths` names what this rule actually reads. It previously claimed
+     * `language.capitalisation.headingCase`, which this rule never touches —
+     * `language/capitalisation` below owns it. A rule claiming a field it does
+     * not read is the registry audit's blind spot: it makes the field look wired
+     * to a reader that would never fire.
      */
     id: "language/legacyTitleCase",
     group: "language",
     scope: "text",
     category: "houseStyle.capitalization.titleCase",
     emits: ["houseStyle.capitalization.titleCase"],
-    profilePaths: ["language.capitalisation.headingCase"],
+    profilePaths: ["houseStyle.capitalization.titleCaseWords"],
     correctable: true,
     analyze: (ruleContext) =>
       selectCategories(
@@ -572,7 +618,16 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "language",
     scope: "text",
     category: "language.unit",
-    emits: ["language.unit", "language.unit.spacing", "language.unit.capitalisation"],
+    emits: [
+      "language.unit",
+      "language.unit.spacing",
+      "language.unit.capitalisation",
+      // D4: the preferred-rendering half of the symbol map. Before this, the
+      // record's *keys* were read only to word a capitalisation message, so a
+      // house that said "kilogram → kg" got no finding for a document that wrote
+      // "5 kilogram".
+      "language.unit.preferredSymbol",
+    ],
     profilePaths: [
       "language.units.valueSpacing",
       "language.units.capitalisation",
@@ -583,6 +638,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       language(ruleContext, findUnitIssues, [
         "language.unit.spacing",
         "language.unit.capitalisation",
+        "language.unit.preferredSymbol",
       ]),
   },
   {

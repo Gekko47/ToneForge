@@ -111,7 +111,18 @@ export default function LearnSemanticStyle({
       setRefusal(validated.rejection.sentence);
       return;
     }
-    const text = await file.text();
+    let text: string;
+    try {
+      text = await file.text();
+    } catch (error: unknown) {
+      // A read can be refused after the size and type passed — a locked file, a
+      // revoked permission, an I/O failure — and an unhandled rejection here would
+      // leave the user with a control that did nothing and said nothing.
+      setRefusal(
+        `The file could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
     const content = validateImportedText(text);
     if (!content.ok) {
       setRefusal(content.rejection.sentence);

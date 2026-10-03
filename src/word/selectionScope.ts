@@ -220,19 +220,33 @@ async function captureSelection(): Promise<CaptureOutcome> {
         return { status: "unavailable", reason: NO_RANGE_REASON };
       }
 
-      // The offsets are loaded with the text in one load. Splitting them would
-      // cost a second round trip to learn nothing extra, and a host that refuses
-      // the pair is a host this module cannot build a safe anchor from anyway.
+      /*
+       * The offsets are requested only where the host serves them.
+       *
+       * `Range.start` / `Range.end` are WordApiDesktop 1.4, the same requirement
+       * set as `Range.set`. Asking for them on a host without it does not yield
+       * absent numbers — the host refuses the transaction, which is what the
+       * `catch` below has always been reporting as "no offsets here". So the
+       * question is asked of the requirement set, and on a host without it only the
+       * text is loaded: the paragraph ids and paragraph texts are still readable,
+       * so the pane can say what it did read rather than describing a failure.
+       *
+       * Still one load. Splitting text from offsets would cost a second round trip
+       * that could observe a different selection if the user moved between the two.
+       */
+      const servesOffsets =
+        context.requirements?.isSetSupported?.("WordApiDesktop", "1.4") === true;
       try {
         // An **array**, not three arguments. `load` takes one; the host loads the
         // first positional argument and ignores the rest, so the variadic form
         // compiles here and throws on the next line in a real Word (ADR-0100).
-        range.load(["text", "start", "end"]);
+        range.load(servesOffsets ? ["text", "start", "end"] : ["text"]);
         await context.sync();
       } catch {
         logger.warn("Selection offsets are unreadable in this host", {
           verificationResult: "refused",
           refusalCategory: "selection_offsets_unavailable",
+          servesOffsets,
         });
         return { status: "unavailable", reason: NO_OFFSETS_REASON };
       }
@@ -258,6 +272,15 @@ async function captureSelection(): Promise<CaptureOutcome> {
        * revision adapter can hold, since its precondition compares `text` against
        * an ordered span.
        */
+      /*
+       * Unavailable, not "no selection".
+       *
+       * A missing or unusable pair says the host would not tell us *where* the
+       * selection is; it says nothing about whether anything is selected. Reporting
+       * `no-selection` here sent the user the sentence "There is nothing to review
+       * here" for a paragraph that was there — and removed the one sentence that
+       * names a host limitation and a remedy.
+       */
       if (reportedStart < 0 || reportedEnd < 0) {
         logger.warn("Selection offsets are not a usable pair", {
           refusalCategory: "selection_offsets_incomplete",
@@ -265,7 +288,7 @@ async function captureSelection(): Promise<CaptureOutcome> {
           startOffset: reportedStart,
           endOffset: reportedEnd,
         });
-        return { status: "no-selection" };
+        return { status: "unavailable", reason: NO_OFFSETS_REASON };
       }
       const start = Math.min(reportedStart, reportedEnd);
       const end = Math.max(reportedStart, reportedEnd);

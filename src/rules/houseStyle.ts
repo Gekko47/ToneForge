@@ -1,9 +1,12 @@
 /**
  * Deterministic house-style engine.
  *
- * Scans document text against preferred terminology, banned terms,
- * capitalization preferences, and a bounded spelling-variant dictionary. Pure:
- * no Office, LLM, or UI imports — fully unit-testable without Word.
+ * Scans document text against capitalization preferences. Pure: no Office, LLM,
+ * or UI imports — fully unit-testable without Word.
+ *
+ * Terminology was removed from this module (ND-13): the checks were filtered
+ * out of the registry, so the fields they read were inert. `findTerminologyIssues`
+ * in `language.ts` is the one terminology engine.
  *
  * Boundary rule: this module may only import from `core/domain` and
  * `shared/utils` (see docs/architecture.md and ADR-0006).
@@ -42,14 +45,32 @@ interface MatchRange {
  * things this table could not be.
  */
 
-/** Scan text against house-style preferences and return deterministic findings. */
+/**
+ * Scan text against house-style preferences and return deterministic findings.
+ *
+ * **Terminology is no longer checked here.** This module used to run three
+ * checks — preferred terminology, banned terms and capitalisation — and the
+ * registry filtered all but title case out of the result, because
+ * `language/capitalisation` and `language/terminology` already reported the
+ * same two things from the normative `language` section. The two terminology
+ * checks were therefore reachable only through their own unit tests: a user who
+ * typed a house term into the House style panel got a field that validated,
+ * persisted, and produced nothing. That is ND-13, and it is the "it saved but
+ * ignored my entry" failure in its purest form — the field looked authoritative
+ * and governed nothing.
+ *
+ * `findTerminologyIssues` is the single terminology engine now. It is strictly
+ * more capable: the flat record this module read could express a term and a
+ * replacement and nothing else, while a `TerminologyRule` carries
+ * `wholeWord`, `caseSensitive`, `severity` and a section/style scope. Nothing
+ * was lost by retiring this half; a `caseSensitive: false, wholeWord: true,
+ * severity: "advisory"` rule reproduces the old record's behaviour exactly.
+ */
 export function findHouseStyleIssues(options: HouseStyleCheckOptions): Finding[] {
   const { text, rules } = options;
   if (text.length === 0) return [];
 
   const findings: Finding[] = [];
-  findings.push(...checkPreferredTerminology(text, rules));
-  findings.push(...checkBannedTerms(text, rules));
   findings.push(...checkSentenceCase(text, rules));
   findings.push(...checkTitleCaseWords(text, rules));
   return findings;
@@ -137,107 +158,6 @@ function makeFinding(params: {
 
 function makeRange(range: MatchRange): Range {
   return { start: range.start, end: range.end, unit: "character" };
-}
-
-function overlaps(left: MatchRange, right: MatchRange): boolean {
-  return left.start < right.end && right.start < left.end;
-}
-
-interface TerminologyCandidate {
-  term: string;
-  preferred: string;
-  index: number;
-  range: MatchRange;
-}
-
-function checkPreferredTerminology(text: string, rules: HouseStyle): Finding[] {
-  const findings: Finding[] = [];
-  const entries = Object.entries(rules.preferredTerminology)
-    .filter(([term, preferred]) => term.trim().length > 0 && preferred.trim().length > 0)
-    .map(([term, preferred], index) => ({ term: term.trim(), preferred: preferred.trim(), index }));
-  const candidates: TerminologyCandidate[] = entries.flatMap((entry) =>
-    findMatches(text, boundedTermPattern(entry.term)).map((range) => ({
-      ...entry,
-      range,
-    })),
-  );
-
-  candidates
-    .sort((left, right) => {
-      const leftLength = left.range.end - left.range.start;
-      const rightLength = right.range.end - right.range.start;
-      const byLength = rightLength - leftLength;
-      if (byLength !== 0) return byLength;
-      const byStart = left.range.start - right.range.start;
-      if (byStart !== 0) return byStart;
-      return left.index - right.index;
-    })
-    .forEach((candidate) => {
-      if (findings.some((finding) => overlaps(candidate.range, finding.range))) return;
-
-      findings.push(
-        makeFinding({
-          category: "houseStyle.terminology",
-          profilePath: "houseStyle.preferredTerminology",
-          range: makeRange(candidate.range),
-          message: `Use “${candidate.preferred}” instead of “${candidate.term}”`,
-          severity: "warning",
-          evidence: text.slice(candidate.range.start, candidate.range.end),
-          actual: text.slice(candidate.range.start, candidate.range.end),
-          expected: candidate.preferred,
-          // A named substitution the profile asked for by value. Two occurrences
-          // of the same `term → preferred` pair want the same edit, so the batch
-          // key is the pair rather than the category: `program → programme` and
-          // `colour → color` must never be approved together.
-          safeBatchKey: `terminology:${candidate.term}->${candidate.preferred}`,
-        }),
-      );
-    });
-
-  return findings.sort(
-    (left, right) => left.range.start - right.range.start || left.range.end - right.range.end,
-  );
-}
-
-function checkBannedTerms(text: string, rules: HouseStyle): Finding[] {
-  const findings: Finding[] = [];
-  const seenRanges = new Set<string>();
-
-  rules.bannedTerms.forEach((rawTerm) => {
-    const term = rawTerm.trim();
-    if (term.length === 0) return;
-    findMatches(text, boundedTermPattern(term)).forEach((range) => {
-      const key = `${range.start}:${range.end}`;
-      if (seenRanges.has(key)) return;
-      seenRanges.add(key);
-      findings.push(
-        makeFinding({
-          category: "houseStyle.bannedTerm",
-          profilePath: "houseStyle.bannedTerms",
-          range: makeRange(range),
-          message: `Remove banned term “${term}”`,
-          severity: "error",
-          evidence: text.slice(range.start, range.end),
-          actual: text.slice(range.start, range.end),
-          expected: "",
-          /*
-           * No `safeBatchKey`, deliberately.
-           *
-           * Unlike a substitution, a deletion is not semantically neutral: it
-           * removes the author's words rather than restating them, and the
-           * planner already builds it as a non-reversible `deleteRange`. §13
-           * permits batch approval only where the correction is neutral, so a
-           * banned term is a group the user approves one occurrence at a time.
-           * Leaving the key off is what makes `groupFindings` refuse, and it
-           * refuses with a reason the UI can show rather than by hiding the
-           * control.
-           */
-        }),
-      );
-    });
-  });
-
-  return findings;
 }
 
 function firstCasedCharacter(

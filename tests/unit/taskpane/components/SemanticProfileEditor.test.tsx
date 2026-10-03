@@ -116,11 +116,29 @@ describe("SemanticProfileEditor", () => {
     // about how a paste is delivered.
     fireEvent.change(avoid, { target: { value: "very\n\nreally" } });
 
+    // Normalisation happens on blur, not on the keystroke: committing per keystroke
+    // stripped the blank line and any trailing space as they were typed.
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.blur(avoid);
+
     await waitFor(() =>
       expect(onSave.mock.calls.at(-1)?.[0]).toMatchObject({
         lexicalPreferences: { toneAvoid: ["very", "really"] },
       }),
     );
+  });
+
+  it("keeps blank lines and trailing spaces visible while the field is being typed in", async () => {
+    const onSave = vi.fn();
+    render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
+
+    const avoid = screen.getByLabelText(/Words to avoid for tone/i) as HTMLTextAreaElement;
+    fireEvent.change(avoid, { target: { value: "very \n\nreally" } });
+
+    // The draft is what the user sees. Normalising it here is what made the list
+    // reshape itself under the caret mid-entry.
+    expect((avoid as HTMLTextAreaElement).value).toBe("very \n\nreally");
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("re-seeds when a different profile is edited, rather than keeping stale values", async () => {

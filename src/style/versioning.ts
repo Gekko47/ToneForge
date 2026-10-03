@@ -133,8 +133,12 @@ const diffFields: readonly { label: string; path: readonly string[] }[] = [
   { label: "Decimal separator", path: ["typography", "decimalSeparator"] },
   { label: "Thousands separator", path: ["typography", "thousandsSeparator"] },
   { label: "Ellipsis", path: ["typography", "ellipsis"] },
-  { label: "Preferred terminology", path: ["houseStyle", "preferredTerminology"] },
-  { label: "Banned terms", path: ["houseStyle", "bannedTerms"] },
+  // ND-13: the flat `houseStyle.preferredTerminology` / `houseStyle.bannedTerms`
+  // diff entries are gone with the fields. Wording is diffed through the
+  // `language` section's own entries below, so a terminology edit still appears
+  // in the changelog.
+  { label: "Preferred terminology", path: ["language", "terminology"] },
+  { label: "Banned terms", path: ["language", "bannedTerms"] },
   { label: "Sentence case", path: ["houseStyle", "capitalization", "sentenceCase"] },
   { label: "Title-case words", path: ["houseStyle", "capitalization", "titleCaseWords"] },
   /*

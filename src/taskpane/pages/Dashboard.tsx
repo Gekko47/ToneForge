@@ -660,16 +660,19 @@ function DashboardWithProfile({
    */
   const [semanticSession, setSemanticSession] = useState<SemanticReviewSession | null>(null);
   /*
-   * Back to "not established" when the tab is left.
+   * Back to "not established" when the tab is left — but not for Troubleshooting.
    *
    * The flag describes what the Semantic page is holding right now, and it is
    * unmounted the moment the user navigates away. Leaving the last answer in
-   * place would make Troubleshooting report a greyed-out Propose rewrite — or a
-   * held paragraph — for a tab that has not been opened since, and the page
-   * holding the paragraph has by definition forgotten it.
+   * place on an unrelated page would be meaningless, but Troubleshooting is the
+   * page whose entire purpose is to report this flag: clearing it on arrival
+   * meant the panel the user opened to find out why Apply was greyed out always
+   * answered "not established", and the state had to survive being observed.
    */
   useEffect(() => {
-    if (page === "semantic-review" || page === "semantic-style") return;
+    if (page === "semantic-review" || page === "semantic-style" || page === "troubleshooting") {
+      return;
+    }
     setSemanticReviewStatus(null);
   }, [page]);
   /*
@@ -1449,8 +1452,12 @@ function DashboardWithProfile({
               // selection is held. The panel's third state is the page having
               // never reported at all, which this cannot be: the effect above
               // clears the state on the way out, so a null here always means the
-              // pages are not open.
-              semanticSelectionCaptured={semanticReviewStatus?.heldChars !== null}
+              // pages are not open. `null` survives as `null`: `undefined !== null`
+              // is true, which would report a page that was never opened as a
+              // selection that was captured.
+              semanticSelectionCaptured={
+                semanticReviewStatus === null ? null : semanticReviewStatus.heldChars !== null
+              }
               semanticSelectionChars={semanticReviewStatus?.heldChars ?? null}
               semanticPreservationRefused={semanticReviewStatus?.preservationRefused ?? false}
             />

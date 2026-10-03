@@ -27,19 +27,24 @@ import type { SemanticSelectionAnchor } from "../core/domain/SemanticReviewSessi
 import { wordParagraphNodeId, type DocumentNode } from "../core/domain/DocumentSnapshot";
 
 /**
- * Whether this host can replace a character range at all.
+ * Whether this host serves WordApiDesktop 1.4, and so has `Range.set`.
  *
- * A guarded, non-destructive inspection of the object model — the same rule
- * ADR-0012 sets for the capability probe: nothing is written, and a host that
- * cannot answer reports `false` rather than throwing.
+ * Asked of the requirement set rather than of the object model. `Range.set` is
+ * present on every desktop Word build, so `typeof range.set === "function"` answers
+ * "yes" on a host whose requirement set does not include 1.4 and returns `false` from
+ * the subsequent `set` at write time — a refusal discovered mid-apply instead of
+ * before it. `requirements.isSetSupported("WordApiDesktop", "1.4")` is the question
+ * the requirement sets exist to answer, and it is what Troubleshooting reports.
+ *
+ * Still guarded and still non-destructive (ADR-0012): a host that cannot answer
+ * reports `false` rather than throwing.
  */
 export async function supportsRangedReplacement(): Promise<boolean> {
   try {
     return await runInWord(async (context) => {
-      const range = context.document.getSelection() as unknown as {
-        set?: (properties: { start?: number; end?: number }) => unknown;
-      };
-      return typeof range?.set === "function";
+      const requirements = context.requirements;
+      if (requirements?.isSetSupported === undefined) return false;
+      return requirements.isSetSupported("WordApiDesktop", "1.4");
     });
   } catch {
     logger.warn("Ranged replacement could not be established on this host", {
@@ -63,22 +68,42 @@ export async function supportsRangedReplacement(): Promise<boolean> {
  *
  * `null` is the honest answer whenever the host gave no ids and the offsets do
  * not line up with a paragraph, and the caller falls back to the character path.
+ *
+ * **Node ids stand in for offsets the host did not serve.** `Range.start` /
+ * `Range.end` are WordApiDesktop 1.4, so a host without them cannot produce
+ * offsets to match on, and a whole-paragraph selection would be unresolvable even
+ * though the host named the paragraph it sits in.
+ *
+ * Narrowly, though: this path is for offsets that are **absent**, not offsets that
+ * *disagree*. A partial selection, a multi-paragraph one, and an anchor whose ids
+ * point at a different paragraph than its offsets all arrive with usable numbers
+ * that match nothing — and resolving those by id would substitute the paragraph
+ * the user did not select for the one they did. Those stay `null`, which is what
+ * sends the caller to the character path.
  */
 export function resolveWholeParagraphIndex(
   anchor: SemanticSelectionAnchor,
   nodes: readonly DocumentNode[],
 ): number | null {
+  const offsetsServed = anchor.startOffset >= 0 && anchor.endOffset >= 0;
+  const namedById = (node: DocumentNode): boolean => {
+    // The anchor holds the host's raw `uniqueLocalId`; the node holds the id built
+    // from it. `wordParagraphNodeId` is the one place that relationship is stated,
+    // so this comparison cannot drift from the acquisition's.
+    if (anchor.nodeIds.length === 0) return false;
+    return anchor.nodeIds.some((id) => wordParagraphNodeId(id) === node.nodeId);
+  };
   const candidates = nodes.filter((node) => {
+    if (!offsetsServed) return namedById(node);
     const range = node.sourceRange;
     if (range === undefined) return false;
     if (range.startOffset !== anchor.startOffset || range.endOffset !== anchor.endOffset) {
       return false;
     }
-    if (anchor.nodeIds.length === 0) return true;
-    // The anchor holds the host's raw `uniqueLocalId`; the node holds the id built
-    // from it. `wordParagraphNodeId` is the one place that relationship is stated,
-    // so this comparison cannot drift from the acquisition's.
-    return anchor.nodeIds.some((id) => wordParagraphNodeId(id) === node.nodeId);
+    // Ids are corroboration, never a substitute, when the offsets are present: a
+    // paragraph sitting at the right offsets but not the one the user pointed at is
+    // not a substitute for it.
+    return anchor.nodeIds.length === 0 || namedById(node);
   });
   if (candidates.length !== 1) return null;
   return candidates[0]?.sourceRange?.paragraphIndex ?? null;

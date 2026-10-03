@@ -42,6 +42,10 @@ export interface WordCapabilities {
    * `supportsRangedReplacement()` at write time and refuses with a stated reason
    * when the answer is no, and Troubleshooting cannot explain that refusal
    * without knowing it beforehand.
+   *
+   * Asked of `requirements.isSetSupported("WordApiDesktop", "1.4")` rather than of
+   * the presence of the method, because desktop Word exposes `Range.set` on hosts
+   * whose requirement set does not include 1.4.
    */
   supportsRangedReplacement: boolean;
   supportsParagraphResolution: boolean;
@@ -321,14 +325,19 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
     [
       "supportsRangedReplacement",
       async () => {
-        // The same guarded, non-destructive inspection `rangeResolution.ts`
-        // performs at apply time (ADR-0012: a probe reads the object model and
-        // writes nothing). Asking for it here rather than at refusal time is
-        // what lets Troubleshooting say *before* the user presses Apply that
-        // this host cannot write part of a paragraph.
+        // The same guarded, non-destructive question `rangeResolution.ts` asks at
+        // apply time (ADR-0012: a probe reads the host and writes nothing). Asking
+        // it here rather than at refusal time is what lets Troubleshooting say
+        // *before* the user presses Apply that this host cannot write part of a
+        // paragraph.
+        //
+        // Asked of the requirement set, not of `Range.set`. Every desktop build
+        // exposes that method, so a method probe reports a capability the host does
+        // not serve and the refusal then arrives mid-apply instead of before it.
         const result = await runInWordSafe(async (context) => {
-          const range = getProbeRange(context);
-          return range !== null && hasMethod(range, "set");
+          const isSetSupported = context.requirements?.isSetSupported;
+          if (isSetSupported === undefined) return false;
+          return isSetSupported.call(context.requirements, "WordApiDesktop", "1.4");
         });
         return result === true;
       },

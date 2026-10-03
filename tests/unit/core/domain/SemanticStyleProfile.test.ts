@@ -246,12 +246,37 @@ describe("StoredEditorialPolicySchema", () => {
     // V1's rule was "non-default", and `explicitFields` did not exist, so the
     // pins are recomputed rather than carried. A migrated policy governs exactly
     // what it governed before and not one dimension more.
+    //
+    // `tone` is absent deliberately. "formal" names no V2 trait, so it is carried
+    // as a description only, and a pin would replace the learned `tone.primary`
+    // with the schema default — the author would have governed tone without ever
+    // having said which tone.
     expect(stored.explicitFields).toEqual([
-      "tone",
       "formality",
       "sentenceArchitecture",
       "lexicalPreferences",
     ]);
+  });
+
+  it("maps a V1 tone that names a V2 trait onto that trait and pins the dimension", () => {
+    const stored = StoredEditorialPolicySchema.parse({ tone: "forensic" });
+    expect(stored.tone).toEqual({ primary: "forensic", description: "forensic" });
+    expect(stored.explicitFields).toEqual(["tone"]);
+  });
+
+  it("maps a stored V1 field name in explicitFields onto its V2 dimension", () => {
+    // A v13 record can legitimately carry the V1 name `preferredSentenceLength`,
+    // which is not a V2 dimension and would fail the enum outright. The computed
+    // pin is unioned with it, so nothing non-default is lost either way.
+    const stored = StoredEditorialPolicySchema.parse({
+      preferredSentenceLength: 28,
+      formality: 60,
+      explicitFields: ["preferredSentenceLength"],
+    });
+    expect(stored.explicitFields).toEqual(
+      expect.arrayContaining(["sentenceArchitecture", "formality"]),
+    );
+    expect(stored.sentenceArchitecture).toEqual({ targetWords: 28 });
   });
 
   it("drops a rhetorical style V2 has no value for rather than guessing one", () => {

@@ -120,7 +120,14 @@ describe("the production call sites", () => {
 
     (globalThis as { Office?: unknown }).Office = {
       run: async <T>(fn: (context: unknown) => Promise<T>): Promise<T> =>
-        fn({ document: { getSelection: () => selection, id: "doc-1" }, sync: async () => {} }),
+        fn({
+          document: { getSelection: () => selection, id: "doc-1" },
+          // `Range.start` / `Range.end` are WordApiDesktop 1.4, and the capture asks
+          // the requirement set before requesting them. Without this the read is
+          // correctly refused, and the assertion below would be about the wrong call.
+          requirements: { isSetSupported: () => true },
+          sync: async () => {},
+        }),
     };
 
     try {
@@ -159,7 +166,11 @@ describe("the production call sites", () => {
 
     (globalThis as { Office?: unknown }).Office = {
       run: async <T>(fn: (context: unknown) => Promise<T>): Promise<T> =>
-        fn({ document: { getSelection: () => selection }, sync: async () => {} }),
+        fn({
+          document: { getSelection: () => selection },
+          requirements: { isSetSupported: () => true },
+          sync: async () => {},
+        }),
     };
 
     try {

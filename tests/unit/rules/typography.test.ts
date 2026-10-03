@@ -276,17 +276,53 @@ describe("findTypographyIssues", () => {
   });
 
   it("flags decimal and thousands separators against the profile", () => {
+    /*
+     * The fixture carries one violation of each rule, at different offsets.
+     *
+     * The previous version used `1,234.56` and expected *two* findings both at
+     * offset 7 - the decimal rule and the thousands rule both claiming the same
+     * comma. That assertion encoded the ND-1/ND-2 defect: the comma in `1,234`
+     * is a group mark, not a decimal separator, so the decimal rule had no
+     * business reporting it, and two findings over one character is a plan the
+     * planner is entitled to refuse as conflicting.
+     *
+     * `1.234,56` under a dot-decimal, no-group profile inverts both: the dot at 7
+     * is a group mark the profile disallows, and the comma at 11 is a genuine
+     * decimal separator. Two findings, two distinct offsets.
+     */
     const findings = findTypographyIssues({
-      text: "Total 1,234.56",
+      text: "Total 1.234,56",
       rules: { ...defaultRules, decimalSeparator: "dot", thousandsSeparator: "none" },
     });
 
+    /*
+     * Order-independent on purpose. The scanner runs the decimal check before the
+     * thousands check, so the categories arrive as decimal then thousands even
+     * though the offsets are ascending; asserting the sequence would pin an
+     * implementation detail and fail on a harmless reorder. What matters is that
+     * each rule fired once, at its own offset.
+     */
     expect(findings).toHaveLength(2);
-    expect(findings.map((finding) => finding.category)).toEqual([
+    expect(new Set(findings.map((finding) => finding.category))).toEqual(
+      new Set(["typography.decimalSeparator", "typography.thousandsSeparator"]),
+    );
+    expect(findings.map((finding) => finding.range.start).sort((a, b) => a - b)).toEqual([7, 11]);
+  });
+
+  it("does not report a group mark as a decimal separator", () => {
+    /*
+     * ND-1, at the unit that owns the rule. `1,234` is grouped; under a
+     * dot-decimal profile the comma is not a decimal separator and rewriting it
+     * as one would alter a figure.
+     */
+    const findings = findTypographyIssues({
+      text: "Total 1,234",
+      rules: { ...defaultRules, decimalSeparator: "dot", thousandsSeparator: "comma" },
+    });
+
+    expect(findings.map((finding) => finding.category)).not.toContain(
       "typography.decimalSeparator",
-      "typography.thousandsSeparator",
-    ]);
-    expect(findings.map((finding) => finding.range.start)).toEqual([7, 7]);
+    );
   });
 
   it("converts alternate locale separators to the configured punctuation", () => {

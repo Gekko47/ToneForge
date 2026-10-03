@@ -146,6 +146,54 @@ function NumberField(props: {
   );
 }
 
+/**
+ * A multiline list field, committed on blur.
+ *
+ * **The raw draft is what the user sees, not the normalised value.** Committing on
+ * every keystroke round-tripped the text through trim/filter, so a blank line
+ * entered to separate two entries and the space typed at the end of a line both
+ * vanished mid-typing — the caret jumped and the list the user was building
+ * reshaped itself under them. Normalisation happens once, on blur, which is where
+ * the existing trimming, empty-line filtering and item limit apply.
+ *
+ * Draft state and its reset follow `NumberField`, so the two text-entry patterns
+ * in this editor cannot drift.
+ */
+function LinesField(props: {
+  id: string;
+  label: string;
+  rows: number;
+  maxLength?: number;
+  value: readonly string[];
+  limit: number;
+  onChange: (next: string[]) => void;
+}): React.ReactNode {
+  const joined = props.value.join("\n");
+  const [draft, setDraft] = React.useState(joined);
+  React.useEffect(() => setDraft(joined), [joined]);
+  const commit = (): void => {
+    const lines = draft
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .slice(0, props.limit);
+    if (lines.join("\n") === joined) return;
+    props.onChange(lines);
+  };
+  return (
+    <TextField
+      id={props.id}
+      label={props.label}
+      multiline
+      rows={props.rows}
+      maxLength={props.maxLength}
+      value={draft}
+      onChange={(_event, next) => setDraft(next ?? "")}
+      onBlur={commit}
+    />
+  );
+}
+
 /** One collapsible group of controls. */
 function Section(props: {
   title: string;
@@ -400,36 +448,28 @@ export default function SemanticProfileEditor({
           semantic.lexicalPreferences.toneAvoid.length === 1 ? "" : "s"
         }`}
       >
-        <TextField
+        <LinesField
           id="sem-tone-avoid"
           label="Words to avoid for tone (one per line)"
-          multiline
           rows={3}
-          value={semantic.lexicalPreferences.toneAvoid.join("\n")}
-          onChange={(_event, next) =>
+          value={semantic.lexicalPreferences.toneAvoid}
+          limit={100}
+          onChange={(next) =>
             edit((draft) => {
-              draft.lexicalPreferences.toneAvoid = (next ?? "")
-                .split("\n")
-                .map((line) => line.trim())
-                .filter((line) => line.length > 0)
-                .slice(0, 100);
+              draft.lexicalPreferences.toneAvoid = next;
             })
           }
         />
-        <TextField
+        <LinesField
           id="sem-notes"
           label="Notes"
-          multiline
           rows={2}
           maxLength={240}
-          value={semantic.notes.join("\n")}
-          onChange={(_event, next) =>
+          value={semantic.notes}
+          limit={20}
+          onChange={(next) =>
             edit((draft) => {
-              draft.notes = (next ?? "")
-                .split("\n")
-                .map((line) => line.trim())
-                .filter((line) => line.length > 0)
-                .slice(0, 20);
+              draft.notes = next;
             })
           }
         />

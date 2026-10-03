@@ -715,7 +715,7 @@ run. Each procedure is per host: Windows desktop, Mac desktop, Word on the web.
 5. Edit the selected paragraph in Word _after_ the review and _before_ applying.
    Confirm the apply is refused on the live precondition, with the reason stated,
    and that nothing is written.
-6. On a host reporting \`supportsRangedReplacement: false\` (probe it in
+6. On a host reporting `supportsRangedReplacement: false` (probe it in
    Troubleshooting), select part of a paragraph and confirm the refusal names the
    cause and tells you to select the whole paragraph. Then select the whole
    paragraph and confirm the apply works on the same host.
@@ -724,7 +724,7 @@ run. Each procedure is per host: Windows desktop, Mac desktop, Word on the web.
 
 This is the measurement with the least evidence behind it, and the procedure
 exists because the false-positive rate is **unknown**. Take six passages of
-published expert prose \u2014 technical, legal, medical, or a standards document \u2014 and:
+published expert prose — technical, legal, medical, or a standards document — and:
 
 1. For each, record every protected fact by hand: dates, numbers, proper nouns,
    negations, quoted terms.
@@ -732,12 +732,12 @@ published expert prose \u2014 technical, legal, medical, or a standards document
 3. Classify each as a **true positive** (the revision really did change a protected
    fact) or a **false positive** (the check objected to something the model preserved).
 4. Report the counts. A rate above roughly one in ten is a signal the qualifier
-   heuristics need narrowing, not a tuning preference \u2014 say so in the report rather
+   heuristics need narrowing, not a tuning preference — say so in the report rather
    than adjusting the thresholds until the number looks acceptable.
 
 ### 4. The two-page navigation
 
-Covered in full under "Open gate \u2014 the two semantic destinations (P9)" above. The
+Covered in full under "Open gate — the two semantic destinations (P9)" above. The
 one item not repeated there: confirm that the pane's **Back** from Semantic Style
 returns to Semantic Review and not to Deterministic Review, on every host.
 
@@ -755,7 +755,7 @@ omission:
 3. No "3 paragraphs changed since last review" counter. The seam exists; the value
    does not justify it, and it would be the first step toward the continuous review
    the specification forbids.
-4. No telemetry. ADR-0060 removed the toggle; \`TELEMETRY_DISABLED=1\` is the default
+4. No telemetry. ADR-0060 removed the toggle; `TELEMETRY_DISABLED=1` is the default
    and no analytics endpoint is configured.
 
 ## Open gate — live accessibility evidence

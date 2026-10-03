@@ -934,7 +934,11 @@ export function validatePlanBeforeApply(
  * 2. `range.target.structuralPath` — the same claim by path.
  * 3. `findingId` → the finding's node ids, filtered to nodes that exist. Provenance
  *    is still the most specific thing a deterministic change carries, and dropping
- *    it would weaken the deterministic path for no gain.
+ *    it would weaken the deterministic path for no gain. **Filtered to what is
+ *    present**, so when a declared id matches no node the branch falls through to
+ *    the span rather than returning an empty set — an empty result is read as "this
+ *    change covered nothing at all", which skips the span check the fallback exists
+ *    to perform.
  * 4. The span, resolved against the nodes' source ranges — the fallback that makes
  *    the check fire for a change that names nothing at all.
  *
@@ -960,7 +964,8 @@ function resolveTargetNodeIds(
     const finding = findingsById.get(change.findingId);
     const declared = new Set(finding?.nodeIds ?? []);
     if (declared.size > 0) {
-      return new Set(nodes.filter((node) => declared.has(node.nodeId)).map((node) => node.nodeId));
+      const present = nodes.filter((node) => declared.has(node.nodeId)).map((node) => node.nodeId);
+      if (present.length > 0) return new Set(present);
     }
   }
   return new Set(

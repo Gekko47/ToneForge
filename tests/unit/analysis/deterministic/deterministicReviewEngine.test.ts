@@ -634,6 +634,12 @@ describe("the §26 fixture corpus", () => {
   });
 
   it("uses a profile the corpus can actually run", () => {
-    expect(REVIEW_PROFILE.houseStyle.preferredTerminology.program).toBe("programme");
+    // ND-13: this used to assert on `houseStyle.preferredTerminology`, a field
+    // whose rule was filtered out of the registry entirely — so the assertion
+    // passed while the corpus's terminology expectation was being satisfied by a
+    // different field. It now names the field the rule actually reads.
+    const [rule] = REVIEW_PROFILE.language.terminology;
+    expect(rule?.source).toBe("program");
+    expect(rule?.replacement).toBe("programme");
   });
 });

@@ -233,10 +233,25 @@ export const AbbreviationProfileSchema = z.object({
 });
 export type AbbreviationProfile = z.infer<typeof AbbreviationProfileSchema>;
 
-/** Spec §4.2 numbers. */
+/**
+ * Spec §4.2 numbers.
+ *
+ * **No separator fields, deliberately.** `decimalSeparator` and
+ * `thousandsSeparator` used to be declared here *and* in `typography`, and both
+ * rules ran (owner decision D2). Two owners for one behaviour is the defect the
+ * registry audit exists to catch, and it caught it: the two rules reported the
+ * same separator at the same offset, so the planner held two overlapping changes
+ * over one character and was entitled to refuse the whole plan (ND-2).
+ *
+ * They are genuinely different behaviours rather than duplicates — `1.00` is a
+ * decimal, `1,000` is a group — so both survive, and `typography` owns them,
+ * which is where they were always enforced. Declaring them here as well gave a
+ * user two controls for one behaviour with no way to tell which was in force.
+ *
+ * Removing them from the schema rather than leaving them inert matters: an
+ * unread field a user can still change is exactly the failure §11 describes.
+ */
 export const NumberProfileSchema = z.object({
-  decimalSeparator: z.enum(["dot", "comma"]).default("dot"),
-  thousandsSeparator: z.enum(["none", "space", "comma", "period"]).default("none"),
   /** Space before a percent sign, as `50 %` or `50%`. */
   percentageSpacing: z.enum(["space", "tight"]).default("tight"),
   /**
@@ -325,10 +340,24 @@ export const LanguageConventionProfileSchema = z.object({
    *
    * Additive rather than a migration: a record written by the old editor has
    * entries here and none in `terminology`, and both must fire until the editor
-   * writes the new form. T10 removes the duplication from the rule side.
+   * writes the new form.
    */
   legacyPreferredTerminology: z.record(z.string(), z.string()).default({}),
   bannedTerms: z.array(z.string().trim().min(1)).default([]),
+  /**
+   * Terms the house requires, expressed as substitutions.
+   *
+   * Owner decision D1. This was a `requiredTerms` list on the *governance*
+   * profile, where it governed nothing: no rule read it, and it sat beside
+   * protection and scope settings it had nothing to do with.
+   *
+   * It is a wording standard, so it lives here and is enforced by the pipeline.
+   * The shape is a `TerminologyRule` rather than a bare word so the same record
+   * expresses what should be there (`source` absent from the document, written as
+   * `replacement`) — a required *term* with no replacement would be a completeness
+   * check, which is a different rule and not what was asked for.
+   */
+  requiredTerms: z.array(TerminologyRuleSchema).default([]),
   capitalisation: CapitalisationProfileSchema.default({}),
   abbreviations: AbbreviationProfileSchema.default({}),
   numbers: NumberProfileSchema.default({}),
@@ -528,9 +557,28 @@ export const DocumentStructureProfileSchema = z.object({
 });
 export type DocumentStructureProfile = z.infer<typeof DocumentStructureProfileSchema>;
 
+/**
+ * The legacy house-style section, now capitalisation only.
+ *
+ * `preferredTerminology` and `bannedTerms` are **removed** (ND-13). Both were
+ * authored in the House style panel, validated on save and round-tripped through
+ * storage — and neither produced a finding, because the registry filtered both
+ * checks out of `findHouseStyleIssues` in favour of the `language` section's
+ * rules. A field that looked authoritative, persisted, and governed nothing is
+ * the "it saved but ignored my entry" failure exactly.
+ *
+ * `findTerminologyIssues` is the single terminology engine. It is strictly more
+ * capable than the flat record these fields held: a `TerminologyRule` carries
+ * `wholeWord`, `caseSensitive`, `severity` and a section/style scope, where a
+ * `Record<string, string>` could express a term and its replacement and nothing
+ * else.
+ *
+ * Zod strips the retired keys on load, so a record written before this change
+ * still parses and its stale values are discarded rather than honoured. Safe
+ * here because there are no users to migrate; it would not be safe if a stored
+ * term were ever load-bearing.
+ */
 export const HouseStyleSchema = z.object({
-  preferredTerminology: z.record(z.string(), z.string()).default({}),
-  bannedTerms: z.array(z.string()).default([]),
   capitalization: z
     .object({
       sentenceCase: z.boolean().default(true),

@@ -1,11 +1,28 @@
+/**
+ * The house-style rule, after ND-13.
+ *
+ * This module used to check preferred terminology and banned terms as well as
+ * capitalisation. The registry filtered both terminology checks out of its
+ * result — `language/terminology` and `language/banned` already reported the same
+ * things from the normative `language` section — so the two House style fields a
+ * user could edit produced nothing at all. They looked authoritative, validated
+ * on save, round-tripped through storage, and governed nothing.
+ *
+ * `findTerminologyIssues` in `language.ts` is the single terminology engine now,
+ * and it is strictly more capable: a `TerminologyRule` carries `wholeWord`,
+ * `caseSensitive`, `severity` and a scope, where a `Record<string, string>` could
+ * express a term and its replacement and nothing else. Its behaviour is asserted
+ * in `language.test.ts` and `requiredTerms.test.ts`.
+ *
+ * What is left here is capitalisation, and it is tested properly.
+ */
+
 import { describe, expect, it } from "vitest";
 import type { Finding } from "../../../src/core/domain/Finding";
 import type { HouseStyle } from "../../../src/core/domain/StyleProfile";
 import { findHouseStyleIssues } from "../../../src/rules/houseStyle";
 
 const defaultHouseStyle: HouseStyle = {
-  preferredTerminology: {},
-  bannedTerms: [],
   capitalization: {
     sentenceCase: true,
     titleCaseWords: [],
@@ -32,132 +49,13 @@ describe("findHouseStyleIssues", () => {
     expect(findHouseStyleIssues({ text: "", rules: defaultHouseStyle })).toEqual([]);
   });
 
-  it("returns no findings when terminology, banned terms, and title-case words are empty", () => {
+  it("returns no findings when the capitalisation settings are at their quiet defaults", () => {
     const findings = findHouseStyleIssues({
-      text: "This sentence follows the default house style.",
-      rules: defaultHouseStyle,
+      text: "the Value and test",
+      rules: quietHouseStyle,
     });
 
     expect(findings).toEqual([]);
-  });
-
-  it("finds preferred terminology case-insensitively with exact offsets and evidence", () => {
-    const text = "Use CUSTOMER_ID and customer_id consistently.";
-    const findings = findHouseStyleIssues({
-      text,
-      rules: {
-        ...quietHouseStyle,
-        preferredTerminology: { customer_id: "customer identifier" },
-      },
-    });
-
-    expect(findings).toHaveLength(2);
-    findings.forEach(expectDeterministicFinding);
-    expect(findings.map((finding) => finding.category)).toEqual([
-      "houseStyle.terminology",
-      "houseStyle.terminology",
-    ]);
-    expect(findings[0]).toMatchObject({
-      range: { start: 4, end: 15, unit: "character" },
-      evidence: "CUSTOMER_ID",
-      message: "Use “customer identifier” instead of “customer_id”",
-      severity: "warning",
-    });
-    expect(findings[1]).toMatchObject({
-      range: { start: 20, end: 31, unit: "character" },
-      evidence: "customer_id",
-    });
-  });
-
-  it("selects the longest overlapping preferred terminology candidate", () => {
-    const findings = findHouseStyleIssues({
-      text: "The artificial intelligence platform is ready.",
-      rules: {
-        ...quietHouseStyle,
-        preferredTerminology: {
-          ai: "AI",
-          artificial: "synthetic",
-          "artificial intelligence": "machine intelligence",
-        },
-      },
-    });
-
-    expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({
-      category: "houseStyle.terminology",
-      range: { start: 4, end: 27, unit: "character" },
-      evidence: "artificial intelligence",
-      message: "Use “machine intelligence” instead of “artificial intelligence”",
-    });
-  });
-
-  it("orders non-overlapping preferred terminology findings by text position", () => {
-    const findings = findHouseStyleIssues({
-      text: "beta then alpha",
-      rules: {
-        ...quietHouseStyle,
-        preferredTerminology: {
-          alpha: "first",
-          beta: "second",
-        },
-      },
-    });
-
-    expect(findings.map((finding) => finding.range.start)).toEqual([0, 10]);
-    expect(findings.map((finding) => finding.evidence)).toEqual(["beta", "alpha"]);
-  });
-
-  it("finds banned terms at boundaries and deduplicates duplicate configured terms", () => {
-    const text = "color, COLOR and colorful.";
-    const findings = findHouseStyleIssues({
-      text,
-      rules: {
-        ...quietHouseStyle,
-        bannedTerms: ["color", "  color  ", "COLOR"],
-      },
-    });
-
-    expect(findings).toHaveLength(2);
-    expect(findings.map((finding) => finding.category)).toEqual([
-      "houseStyle.bannedTerm",
-      "houseStyle.bannedTerm",
-    ]);
-    expect(findings.map((finding) => finding.range)).toEqual([
-      { start: 0, end: 5, unit: "character" },
-      { start: 7, end: 12, unit: "character" },
-    ]);
-    expect(findings.map((finding) => finding.evidence)).toEqual(["color", "COLOR"]);
-    expect(findings.every((finding) => finding.severity === "error")).toBe(true);
-  });
-
-  it("does not flag banned terms inside larger words", () => {
-    const findings = findHouseStyleIssues({
-      text: "colorful and discolor are allowed here",
-      rules: {
-        ...quietHouseStyle,
-        bannedTerms: ["color"],
-      },
-    });
-
-    expect(findings).toEqual([]);
-  });
-
-  it("supports multi-word banned terms and punctuation boundaries", () => {
-    const text = "Use open source tools; open-source is different.";
-    const findings = findHouseStyleIssues({
-      text,
-      rules: {
-        ...quietHouseStyle,
-        bannedTerms: ["open source"],
-      },
-    });
-
-    expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({
-      range: { start: 4, end: 15, unit: "character" },
-      evidence: "open source",
-      message: "Remove banned term “open source”",
-    });
   });
 
   it("flags lowercase sentence starts, including after punctuation", () => {
@@ -180,6 +78,7 @@ describe("findHouseStyleIssues", () => {
       "Start the sentence with uppercase “A”",
       "Start the sentence with uppercase “T”",
     ]);
+    findings.forEach(expectDeterministicFinding);
   });
 
   it("skips punctuation and numbers when finding the first sentence character", () => {
@@ -198,10 +97,7 @@ describe("findHouseStyleIssues", () => {
   it("does not flag sentence starts when sentence-case checking is disabled", () => {
     const findings = findHouseStyleIssues({
       text: "lowercase start. another lowercase start.",
-      rules: {
-        ...defaultHouseStyle,
-        capitalization: { sentenceCase: false, titleCaseWords: [] },
-      },
+      rules: quietHouseStyle,
     });
 
     expect(findings).toEqual([]);
@@ -280,35 +176,63 @@ describe("findHouseStyleIssues", () => {
   });
 
   it("reports exact JavaScript character offsets for Unicode text", () => {
-    const text = "🙂 café color";
     const findings = findHouseStyleIssues({
-      text,
+      text: "🙂 café test",
       rules: {
         ...quietHouseStyle,
-        preferredTerminology: { café: "cafe" },
+        capitalization: { sentenceCase: false, titleCaseWords: ["test"] },
       },
     });
 
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({
-      range: { start: 3, end: 7, unit: "character" },
-      evidence: "café",
+      // Offset 8, not 7: `🙂 café ` is two UTF-16 units for the emoji plus four
+      // for `café` plus two spaces, and JS string indexing counts the surrogate
+      // pair as two. This is the offset contract the planner's ranges depend on.
+      range: { start: 8, end: 9, unit: "character" },
+      evidence: "t",
     });
   });
 
-  it("handles case folding for Unicode terminology", () => {
+  it("handles case folding for Unicode title-case words", () => {
     const findings = findHouseStyleIssues({
-      text: "CAFÉ is a café",
+      text: "CAFÉ and café",
       rules: {
         ...quietHouseStyle,
-        preferredTerminology: { café: "cafe" },
+        capitalization: { sentenceCase: false, titleCaseWords: ["café"] },
       },
     });
 
-    expect(findings.map((finding) => finding.range)).toEqual([
-      { start: 0, end: 4, unit: "character" },
-      { start: 10, end: 14, unit: "character" },
-    ]);
-    expect(findings.map((finding) => finding.evidence)).toEqual(["CAFÉ", "café"]);
+    // `CAFÉ` opens correctly so only the trailing `café` is a finding: the check
+    // is "does this word start with the house casing", not "is this word equal
+    // to the configured one".
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      range: { start: 9, end: 10, unit: "character" },
+      evidence: "c",
+    });
+  });
+});
+
+describe("terminology has left the house-style rule (ND-13)", () => {
+  it("reports nothing for text that only a terminology rule could have flagged", () => {
+    /*
+     * This is the regression guard for the whole defect.
+     *
+     * `color` is the word the retired `preferredTerminology: { color: "colour" }`
+     * check reported, and `utilise` is what the retired `bannedTerms` check
+     * reported. Both are still exactly the words the *live* `language` engine
+     * reports on — see `language.test.ts` — but nothing here may report them.
+     *
+     * Before the fix these two calls returned findings; a test that only counted
+     * categories would have caught it, but the assertion is on the text because
+     * the text is what a user would have typed and then seen nothing happen to.
+     */
+    const findings = findHouseStyleIssues({
+      text: "The color is wrong. We could utilise it.",
+      rules: quietHouseStyle,
+    });
+
+    expect(findings).toEqual([]);
   });
 });

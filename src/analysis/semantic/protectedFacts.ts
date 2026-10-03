@@ -292,7 +292,10 @@ function extractDurations(text: string, claims: Claim[]): ProtectedFact[] {
   return claimFacts(
     "duration",
     text,
-    new RegExp(`\\b(\\d+(?:\\.\\d+)?)\\s*(?:${UNIT_PATTERN})`, "gi"),
+    // The unit is captured, not merely matched: `normaliseQuantity` keys on it, so
+    // without the group `3 days` and `3 weeks` would share one identity and a
+    // model that changed the unit would pass the duration check.
+    new RegExp(`\\b(\\d+(?:\\.\\d+)?)\\s*(${UNIT_PATTERN})`, "gi"),
     (match) => ({
       value: normaliseQuantity(match[1] ?? "", match[2] ?? ""),
       certain: true,

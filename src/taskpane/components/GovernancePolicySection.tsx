@@ -18,12 +18,6 @@ import {
   type ScopePolicy,
 } from "../../core/domain/GovernanceProfile";
 import { updateGovernancePolicy } from "../../core/state/persistence";
-import {
-  formatTermList,
-  formatTerminology,
-  parseTermList,
-  parseTerminology,
-} from "../settings/terminologyText";
 
 /**
  * Authoring for the normative half of the policy contract.
@@ -242,11 +236,21 @@ interface RuleDraft {
   autoFix: boolean;
 }
 
+/**
+ * What this page edits.
+ *
+ * No terminology. Preferred terms, banned terms and required terms were removed
+ * from the governance profile: this page governs *protection and editability* —
+ * what may be scanned, what may be changed, what must be left alone — while house
+ * wording is a deterministic-review standard authored on the style profile.
+ *
+ * They are not merely moved off this page. Two of the three were read by nothing
+ * here or anywhere else, so a user could fill them in and watch nothing happen;
+ * the third governed wording from a record whose stated job was safety. The
+ * deterministic editor now owns all three.
+ */
 interface PolicyDraft {
   rules: RuleDraft[];
-  preferredTerms: string;
-  bannedTerms: string;
-  requiredTerms: string;
   protection: ProtectionPolicy;
   scope: ScopePolicy;
 }
@@ -264,9 +268,6 @@ function ruleToDraft(rule: GovernanceRule): RuleDraft {
 function toDraft(policy: GovernanceProfile): PolicyDraft {
   return {
     rules: policy.rules.map(ruleToDraft),
-    preferredTerms: formatTerminology(policy.terminology.preferredTerms),
-    bannedTerms: formatTermList(policy.terminology.bannedTerms),
-    requiredTerms: formatTermList(policy.terminology.requiredTerms),
     protection: policy.protection,
     scope: policy.scope,
   };
@@ -280,9 +281,6 @@ function toDraft(policy: GovernanceProfile): PolicyDraft {
  * able to state directly rather than assemble from twelve checkboxes.
  */
 export function policyProblem(draft: PolicyDraft): string | null {
-  const parsed = parseTerminology(draft.preferredTerms);
-  if (parsed.error !== null) return parsed.error;
-
   const excluded = SCOPE_FLAGS.filter((flag) => !draft.scope[flag.key]);
   if (excluded.length === SCOPE_FLAGS.length) {
     return (
@@ -394,7 +392,6 @@ export default function GovernancePolicySection({
       setError(issue);
       return;
     }
-    const parsed = parseTerminology(draft.preferredTerms);
     try {
       const next = updateGovernancePolicy(policy.id, {
         ...policy,
@@ -408,12 +405,6 @@ export default function GovernancePolicySection({
           protectedBehavior: "flag" as const,
           remediation: "",
         })),
-        terminology: {
-          ...policy.terminology,
-          preferredTerms: parsed.values,
-          bannedTerms: parseTermList(draft.bannedTerms),
-          requiredTerms: parseTermList(draft.requiredTerms),
-        },
         protection: draft.protection,
         scope: draft.scope,
       });
@@ -497,33 +488,18 @@ export default function GovernancePolicySection({
         </DefaultButton>
       </section>
 
-      <section aria-labelledby="policy-terminology-heading">
-        <h3 id="policy-terminology-heading">Terminology</h3>
-        <TextField
-          label="Preferred terms"
-          description='One per line, as "term: replacement".'
-          multiline
-          rows={4}
-          value={draft.preferredTerms}
-          onChange={(_event, value) => patch({ preferredTerms: value ?? "" })}
-        />
-        <TextField
-          label="Banned terms"
-          description="One per line. Flagged, never rewritten."
-          multiline
-          rows={3}
-          value={draft.bannedTerms}
-          onChange={(_event, value) => patch({ bannedTerms: value ?? "" })}
-        />
-        <TextField
-          label="Required terms"
-          description="One per line."
-          multiline
-          rows={3}
-          value={draft.requiredTerms}
-          onChange={(_event, value) => patch({ requiredTerms: value ?? "" })}
-        />
-      </section>
+      {/*
+        No terminology section.
+
+        Preferred terms, banned terms and required terms were here and are gone.
+        They are house *wording*, not protection: this page governs what may be
+        scanned, what may be changed and what must be left alone, and all three of
+        those settings edited the words ToneForge would enforce.
+
+        Two of the three were also read by nothing at all, so the controls could be
+        filled in and nothing would happen. They are authored on the deterministic
+        style profile now, where the rules that consume them live.
+      */}
 
       <section aria-labelledby="policy-protection-heading">
         <h3 id="policy-protection-heading">Protection</h3>

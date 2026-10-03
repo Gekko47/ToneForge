@@ -549,6 +549,32 @@ export function migrateSemanticStyleFromV1(input: unknown): SemanticStyleProfile
 }
 
 /**
+ * The V1 editorial field names and the V2 dimensions that now hold them.
+ *
+ * Exported because two readers need it and one table is the only way they agree:
+ * `v1EditorialPins` computes pins from the V1 *field names*, and the editorial
+ * read path has to translate a stored `explicitFields` entry — a v13 record may
+ * legitimately carry the V1 name `preferredSentenceLength`, which is not a V2
+ * dimension and would fail the enum outright.
+ *
+ * `vocabularyRegister` and `readingGradeTarget` are absent on purpose: V2 has no
+ * dimension for either, so a policy that set them governs nothing. That is
+ * surfaced by the migration test rather than hidden, because a silent loss here is
+ * exactly the D2/R1 regression in a different form.
+ */
+export const V1_EDITORIAL_FIELD_DIMENSIONS: ReadonlyMap<string, SemanticDimension> = new Map<
+  string,
+  SemanticDimension
+>([
+  ["tone", "tone"],
+  ["voice", "voice"],
+  ["formality", "formality"],
+  ["preferredSentenceLength", "sentenceArchitecture"],
+  ["rhetoricalStyle", "rhetoricalStyle"],
+  ["avoidWords", "lexicalPreferences"],
+]);
+
+/**
  * The V2 dimensions a v13 store's editorial policy was actually governing.
  *
  * The V1 rule was "a normative value wins when the author set it, or when it
@@ -556,11 +582,6 @@ export function migrateSemanticStyleFromV1(input: unknown): SemanticStyleProfile
  * v12 — so a v13 record's pins are *computed* here rather than carried. A
  * migrated policy therefore governs exactly what it governed before and not one
  * dimension more.
- *
- * `vocabularyRegister` and `readingGradeTarget` are absent from the mapping on
- * purpose: V2 has no dimension for either, so a policy that set them governs
- * nothing. That is surfaced by the migration test rather than hidden, because a
- * silent loss here is exactly the D2/R1 regression in a different form.
  */
 export function v1EditorialPins(input: unknown): string[] {
   const raw = z.record(z.string(), z.unknown()).safeParse(input ?? {});
@@ -569,16 +590,7 @@ export function v1EditorialPins(input: unknown): string[] {
   const defaults: Record<string, unknown> = LegacySemanticProfileV1Schema.parse({});
   const pins: string[] = [];
 
-  const mapping: ReadonlyArray<readonly [string, SemanticDimension]> = [
-    ["tone", "tone"],
-    ["voice", "voice"],
-    ["formality", "formality"],
-    ["preferredSentenceLength", "sentenceArchitecture"],
-    ["rhetoricalStyle", "rhetoricalStyle"],
-    ["avoidWords", "lexicalPreferences"],
-  ];
-
-  mapping.forEach(([v1Field, dimension]) => {
+  V1_EDITORIAL_FIELD_DIMENSIONS.forEach((dimension, v1Field) => {
     const value = stored[v1Field];
     if (value === undefined) return;
     if (JSON.stringify(value) !== JSON.stringify(defaults[v1Field])) pins.push(dimension);

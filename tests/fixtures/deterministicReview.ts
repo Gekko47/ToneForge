@@ -87,9 +87,33 @@ export const REVIEW_PROFILE: StyleProfile = StyleProfileSchema.parse({
     thousandsSeparator: "space",
     ellipsis: "ellipsis",
   },
+  /*
+   * The corpus term is `language.terminology`, not `houseStyle`.
+   *
+   * It used to be `houseStyle.preferredTerminology`, and the corpus still ran —
+   * but for a reason that hid ND-13 completely. The `language/terminology` rule
+   * reads `language.legacyPreferredTerminology` alongside `language.terminology`,
+   * so a profile could satisfy the engine through the legacy map while the field
+   * under test was the inert one. Nothing in the corpus could tell the difference
+   * between a term that worked and a term that had quietly stopped working.
+   *
+   * The rule and the fixture now name the same field, which is what makes this
+   * fixture an acceptance test again rather than a decoration.
+   */
+  language: {
+    terminology: [
+      {
+        id: "term-1",
+        source: "program",
+        replacement: "programme",
+        caseSensitive: false,
+        wholeWord: true,
+        severity: "advisory",
+        scope: {},
+      },
+    ],
+  },
   houseStyle: {
-    preferredTerminology: { program: "programme" },
-    bannedTerms: [],
     capitalization: { sentenceCase: true, titleCaseWords: [] },
     spellingVariant: "en-GB",
   },
