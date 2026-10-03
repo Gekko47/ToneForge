@@ -177,7 +177,6 @@ describe("GovernanceProfileSchema", () => {
       semantic: {},
       typography: {
         emDash: "em",
-        emDashSpacing: "spaced",
         enDashSpacing: "spaced",
         doubleQuotes: "curly",
         singleQuotes: "curly",
@@ -221,7 +220,6 @@ describe("GovernanceProfileSchema", () => {
       semantic: {},
       typography: {
         emDash: "em",
-        emDashSpacing: "spaced",
         enDashSpacing: "spaced",
         doubleQuotes: "curly",
         singleQuotes: "curly",
@@ -290,7 +288,6 @@ describe("createGovernanceProfile", () => {
       semantic: {},
       typography: {
         emDash: "em",
-        emDashSpacing: "spaced",
         enDashSpacing: "spaced",
         doubleQuotes: "curly",
         singleQuotes: "curly",
@@ -324,7 +321,6 @@ describe("createGovernanceProfile", () => {
       semantic: {},
       typography: {
         emDash: "em",
-        emDashSpacing: "spaced",
         enDashSpacing: "spaced",
         doubleQuotes: "curly",
         singleQuotes: "curly",

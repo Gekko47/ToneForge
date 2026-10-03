@@ -344,7 +344,6 @@ describe("ProfileEditor", () => {
       },
       typography: sampleTypography({
         emDash: "hyphen",
-        emDashSpacing: "tight",
         enDashSpacing: "tight",
         doubleQuotes: "straight",
         singleQuotes: "straight",

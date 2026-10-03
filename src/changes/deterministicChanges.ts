@@ -56,7 +56,6 @@ import { approvalPolicyForFinding } from "./approvalPolicy";
  */
 export const DETERMINISTIC_CORRECTABLE_CATEGORIES: ReadonlySet<string> = new Set([
   "typography.emDash",
-  "typography.emDashSpacing",
   "typography.enDashSpacing",
   "typography.doubleQuotes",
   "typography.singleQuotes",
@@ -339,14 +338,17 @@ function quotedReplacement(message: string): string | null {
 function typographyReplacement(finding: Finding): string | null {
   const { category, message } = finding;
   switch (category) {
+    /*
+     * `typography.emDash` has two replacements and a message that says which is
+     * wanted — the message is the rule's only statement of the direction, and the
+     * finding's `expected` is not populated for a typography substitution. It once
+     * had a third branch reading "plain space", which rewrote a dash to a space
+     * and deleted the author's punctuation. That value is gone from the schema, so
+     * the branch is gone too: an unrecognised message now plans nothing rather than
+     * guessing a replacement.
+     */
     case "typography.emDash":
-      if (/double hyphen \(--\) instead/i.test(message)) return "--";
-      if (/plain space/i.test(message)) return " ";
-      return EM_DASH;
-    case "typography.emDashSpacing":
-      if (/tight/i.test(message)) return EM_DASH;
-      if (/spaced/i.test(message)) return ` ${EM_DASH} `;
-      return null;
+      return /double hyphen \(--\) instead/i.test(message) ? "--" : EM_DASH;
     case "typography.enDashSpacing":
       if (/tight/i.test(message)) return EN_DASH;
       if (/spaced/i.test(message)) return ` ${EN_DASH} `;
@@ -415,7 +417,6 @@ export function planDeterministicChange(finding: Finding): Change[] {
 
   switch (finding.category) {
     case "typography.emDash":
-    case "typography.emDashSpacing":
     case "typography.enDashSpacing":
     case "typography.doubleQuotes":
     case "typography.singleQuotes":

@@ -97,9 +97,6 @@ describe("planChanges", () => {
   it.each([
     ["typography.emDash", "Use em dash (—) instead of double hyphen (--)", "—"],
     ["typography.emDash", "Use double hyphen (--) instead of em dash (—)", "--"],
-    ["typography.emDash", "Use a plain space instead of em dash (—) or double hyphen (--)", " "],
-    ["typography.emDashSpacing", "Em dash should be tight (no surrounding spaces): use —", "—"],
-    ["typography.emDashSpacing", "Em dash should be spaced (surrounded by spaces): use —", " — "],
     ["typography.enDashSpacing", "En dash should be tight (no surrounding spaces): use –", "–"],
     ["typography.enDashSpacing", "En dash should be spaced (surrounded by spaces): use –", " – "],
     [

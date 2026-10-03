@@ -4046,3 +4046,92 @@ end: 1192`, so that guard returned nine lines **above** the caret branch and the
   `src/taskpane/settings/terminologyText.ts` (`TermNouns`);
   `tests/unit/rules/preferredExpanded.test.ts`;
   `tests/unit/taskpane/components/DeterministicStyleSections.test.tsx`.
+
+## ADR-0113 — The em dash has two representations and no spacing setting
+
+- **Status**: Accepted
+- **Date**: 2026-10-03
+- **Owner decision**: D3
+
+### Context
+
+`TypographyRulesSchema` carried two dash settings that turned out to be one
+setting and one hazard.
+
+`emDash` was `z.enum(["em", "hyphen", "space"])`. The `"space"` member made
+`checkEmDash` report **every** dash — em or double hyphen — under
+`category: "typography.emDash"`, with the message `Use a plain space instead of
+em dash (—) or double hyphen (--)`. `typographyReplacement` then answered that
+message with `" "`. The result was a correctable finding whose correction deletes
+a punctuation mark the author put there, and it was reachable from the _Em dash_
+dropdown itself, not from a control that looked like it was about spacing.
+
+`emDashSpacing` was `z.enum(["spaced", "tight"])`. Its check reported the dash
+together with a character it did not own: `range` covered only the dash, while
+`evidence` and the `precondition` covered `text.slice(start - 1, end + 1)` — the
+dash plus one character on each side. `typographyReplacement` answered `tight`
+with the dash alone and `spaced` with `" — "`, so accepting the correction under
+`tight` rewrote a range whose precondition did not match the text it was
+replacing, and accepting one under `spaced` removed two spaces that were not
+themselves reported as findings.
+
+Neither setting could be justified on its own terms. Whether a dash _takes
+surrounding spaces_ is a question about the author's spacing, not about how the
+dash is _encoded_; and no correction the product can build should ever reduce a
+punctuation mark to whitespace.
+
+### Decision
+
+1. `emDash` is `z.enum(["em", "hyphen"])`. The `"space"` member is removed from
+   the schema, so no profile — authored fresh or loaded from storage — can ask
+   for it.
+2. `emDashSpacing` is removed: from `TypographyRulesSchema`, from
+   `PROFILE_FIELD_PATHS`, from `DASH_CATEGORIES` and the rule's `emits` /
+   `profilePaths`, from `DETERMINISTIC_CORRECTABLE_CATEGORIES` and the planner's
+   `case` list, from `typographyReplacement`, from `ProfileFormValues` /
+   `profileToValues` / `buildCandidate` and its dropdown, and from the
+   `diffProfiles` field table in `src/style/versioning.ts`.
+3. `typography.enDashSpacing` is retained. It is a separate setting, it is not
+   implicated in either defect, and removing it would be an unrelated withdrawal.
+4. `checkEmDash` is now two symmetric branches: whichever representation the
+   house did _not_ pick is the one deviation, and each finding's range is exactly
+   the mark it names. A document carrying both an em dash and a double hyphen
+   under `emDash: "em"` yields one finding, for the double hyphen.
+5. No data migration is written. Per the product-owner direction there are no
+   users, so no stored profile can hold either value. `loadState` still falls back
+   to defaults on a parse failure (ADR-0010); this ADR adds no code path to rely
+   on that.
+
+### Consequences
+
+- **A correction can no longer delete punctuation.** There is no authored
+  profile for which `planDeterministicChange` returns a change whose replacement
+  is `" "` for a dash, because no schema value can produce that finding.
+- **The audit's §16 hazard is closed at the source.** Removing only the spacing
+  setting would have left `"space"` reachable from the Em dash dropdown. Both
+  halves had to go; the schema is where the hazard was, so that is where it was
+  removed.
+- **The planner's `typography.emDash` case is now two-valued.**
+  `typographyReplacement` reads `/double hyphen \(--\) instead/i` and returns
+  `"--"` or the em dash; an unrecognised message gets the em dash rather than a
+  guess about a third form. The rule only ever emits those two messages.
+- **A profile authored with `"space"` would fail to parse** rather than being
+  silently reinterpreted. With no users this cannot happen; if users are
+  introduced later, a migration step must map `"space"` to `"em"` before the
+  storage key is bumped (ADR-0015).
+- **The em dash is no longer checked for spacing, so a house that cared about
+  `— word —` cannot express it.** That is the intended direction: the check was
+  unsafe to correct, and a report-only variant would be the way to restore it.
+
+### Evidence
+
+`src/core/domain/StyleProfile.ts` (`TypographyRulesSchema`);
+`src/rules/typography.ts` (`checkEmDash`, `CATEGORY_PROFILE_PATHS`);
+`src/analysis/deterministic/ruleRegistry.ts` (`DASH_CATEGORIES`,
+`PROFILE_FIELD_PATHS`, `typography/dashes`);
+`src/changes/deterministicChanges.ts` (`typographyReplacement`,
+`DETERMINISTIC_CORRECTABLE_CATEGORIES`, `planDeterministicChange`);
+`src/taskpane/components/ProfileEditor.tsx` (`ProfileFormValues`, the Em dash
+dropdown); `src/style/versioning.ts` (`diffProfiles` field table);
+`tests/unit/rules/typography.test.ts`;
+`tests/unit/changes/planner.test.ts`.

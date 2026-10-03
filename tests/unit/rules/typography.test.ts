@@ -54,57 +54,67 @@ describe("findTypographyIssues", () => {
     });
   });
 
-  it("flags em dash and double hyphen when space is preferred", () => {
+  /*
+   * Owner decision D3. The em dash has two representations and the schema no
+   * longer offers a plain space; and there is no spacing setting for it at all.
+   * The three tests below are the regression record for both halves of that.
+   */
+  it("no longer offers a plain space as an em dash representation", () => {
+    // A space is a replacement that deletes the author's punctuation. Removing it
+    // from the enum is what removes the hazard; the rule can no longer be asked
+    // for it by any profile, legacy or new.
+    expect(TypographyRulesSchema.safeParse({ emDash: "space" }).success).toBe(false);
+    expect(TypographyRulesSchema.parse({}).emDash).toBe("em");
+  });
+
+  it("reports only the double hyphen when the em dash is preferred", () => {
+    // Whichever representation the house did not pick is the one deviation, so a
+    // document carrying both is reported once for the double hyphen only.
     const findings = findTypographyIssues({
       text: "First—dash -- second",
-      rules: { ...defaultRules, emDash: "space" },
-    });
-
-    expect(findings).toHaveLength(2);
-    expect(findings.map((f) => f.category)).toEqual(["typography.emDash", "typography.emDash"]);
-    expect(findings[0]?.range).toEqual({ start: 5, end: 6, unit: "character" });
-    expect(findings[1]?.range).toEqual({ start: 11, end: 13, unit: "character" });
-  });
-
-  it("flags spaced em dash when tight spacing is preferred", () => {
-    const findings = findTypographyIssues({
-      text: "word — word",
-      rules: { ...defaultRules, emDashSpacing: "tight" },
-    });
-
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.category).toBe("typography.emDashSpacing");
-    expect(findings[0]?.range).toEqual({
-      start: 5,
-      end: 6,
-      unit: "character",
-    });
-    expect(findings[0]?.message).toContain("tight");
-  });
-
-  it("flags tight em dash when spaced spacing is preferred", () => {
-    const findings = findTypographyIssues({
-      text: "word—word",
       rules: defaultRules,
     });
 
     expect(findings).toHaveLength(1);
-    expect(findings[0]?.category).toBe("typography.emDashSpacing");
-    expect(findings[0]?.range).toEqual({
-      start: 4,
-      end: 5,
-      unit: "character",
-    });
-    expect(findings[0]?.message).toContain("spaced");
+    expect(findings[0]?.category).toBe("typography.emDash");
+    expect(findings[0]?.range).toEqual({ start: 11, end: 13, unit: "character" });
+    expect(findings[0]?.evidence).toBe("--");
   });
 
-  it("does not flag em dash at text boundaries for spacing", () => {
-    const findings = findTypographyIssues({
-      text: "—word",
-      rules: defaultRules,
+  it("says nothing about how an em dash is spaced", () => {
+    // Both of these used to raise typography.emDashSpacing under the default
+    // profile. They do not now, and neither spelling of the dash is a finding.
+    ["word — word", "word—word", "—word", "word —"].forEach((text) => {
+      expect(findTypographyIssues({ text, rules: defaultRules })).toEqual([]);
     });
+  });
 
-    expect(findings).toHaveLength(0);
+  it("reports the em dash wherever it sits when double hyphen is preferred", () => {
+    const rules = { ...defaultRules, emDash: "hyphen" } satisfies TypographyRules;
+
+    ["word—word", "word — word", "—word"].forEach((text) => {
+      const findings = findTypographyIssues({ text, rules });
+
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.category).toBe("typography.emDash");
+      expect(findings[0]?.range.start).toBe(text.indexOf(String.fromCharCode(0x2014)));
+      expect(findings[0]?.range.end).toBe(text.indexOf(String.fromCharCode(0x2014)) + 1);
+    });
+  });
+
+  it("emits no spacing category at all, because no such field exists", () => {
+    const categories = new Set(
+      findTypographyIssues({ text: "a — b -- c – d", rules: defaultRules }).map(
+        (finding) => finding.category,
+      ),
+    );
+
+    expect(categories.has("typography.emDashSpacing")).toBe(false);
+
+    // Read off the parsed value rather than off the type: the point is that the
+    // key is absent from the shape, which a typed access could not express.
+    const parsed: Readonly<Record<string, unknown>> = TypographyRulesSchema.parse({});
+    expect("emDashSpacing" in parsed).toBe(false);
   });
 
   it("flags spaced en dash when tight spacing is preferred", () => {

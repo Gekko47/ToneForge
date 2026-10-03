@@ -48,7 +48,6 @@ export interface TypographyCheckOptions {
  */
 const CATEGORY_PROFILE_PATHS: Readonly<Record<string, string>> = {
   "typography.emDash": "typography.emDash",
-  "typography.emDashSpacing": "typography.emDashSpacing",
   "typography.enDashSpacing": "typography.enDashSpacing",
   "typography.doubleQuotes": "typography.doubleQuotes",
   "typography.singleQuotes": "typography.singleQuotes",
@@ -159,6 +158,27 @@ function isBetweenWordChars(text: string, start: number, end: number): boolean {
   return before.length > 0 && after.length > 0 && /\w/.test(before) && /\w/.test(after);
 }
 
+/**
+ * How this house represents a dash.
+ *
+ * **Two representations, not three (owner decision D3).** `emDash` was
+ * `["em", "hyphen", "space"]`, and `"space"` made the rule report *every* dash —
+ * em or double hyphen — with a replacement of `" "`. That is a correction which
+ * deletes a punctuation mark the author put there, and it was reachable from the
+ * Em dash dropdown itself, which is why removing the spacing setting alone would
+ * not have removed the hazard. The value is gone from the schema.
+ *
+ * **And no spacing check.** `emDashSpacing` is gone. Whether a dash takes
+ * surrounding spaces is a question about the author's spacing, not about how the
+ * dash is represented; enforcing it reported the dash together with a space it did
+ * not own, over a range wider than the mark, and the planner would rewrite a
+ * neighbour on its way to fixing the dash. `enDashSpacing` is a separate setting,
+ * is not implicated, and is retained.
+ *
+ * The two branches are symmetric: whichever representation the house did not pick
+ * is the one deviation. Each finding covers exactly the mark it names, so a
+ * correction cannot reach past the punctuation it is about.
+ */
 function checkEmDash(text: string, rules: TypographyRules): Finding[] {
   const findings: Finding[] = [];
 
@@ -175,67 +195,20 @@ function checkEmDash(text: string, rules: TypographyRules): Finding[] {
       );
     });
 
-    const emDashMatches = findMatches(text, new RegExp(EM_DASH, "g"));
-    emDashMatches.forEach((m) => {
-      const before = m.start > 0 ? (text[m.start - 1] ?? "") : "";
-      const after = m.end < text.length ? (text[m.end] ?? "") : "";
-      const hasSpaceBefore = before.length > 0 && /\s/.test(before);
-      const hasSpaceAfter = after.length > 0 && /\s/.test(after);
-
-      if (rules.emDashSpacing === "tight" && hasSpaceBefore && hasSpaceAfter) {
-        findings.push(
-          makeFinding({
-            category: "typography.emDashSpacing",
-            range: { start: m.start, end: m.end, unit: "character" },
-            message: `Em dash should be tight (no surrounding spaces): use ${EM_DASH}`,
-            severity: "warning",
-            evidence: text.slice(m.start - 1, m.end + 1),
-          }),
-        );
-      } else if (
-        rules.emDashSpacing === "spaced" &&
-        before.length > 0 &&
-        after.length > 0 &&
-        !hasSpaceBefore &&
-        !hasSpaceAfter
-      ) {
-        findings.push(
-          makeFinding({
-            category: "typography.emDashSpacing",
-            range: { start: m.start, end: m.end, unit: "character" },
-            message: `Em dash should be spaced (surrounded by spaces): use ${EM_DASH}`,
-            severity: "warning",
-            evidence: text.slice(m.start - 1, m.end + 1),
-          }),
-        );
-      }
-    });
-  } else if (rules.emDash === "hyphen") {
-    findMatches(text, new RegExp(EM_DASH, "g")).forEach((m) => {
-      findings.push(
-        makeFinding({
-          category: "typography.emDash",
-          range: { start: m.start, end: m.end, unit: "character" },
-          message: `Use double hyphen (--) instead of em dash (${EM_DASH})`,
-          severity: "warning",
-          evidence: text.slice(m.start, m.end),
-        }),
-      );
-    });
-  } else {
-    // emDash === "space": both em dash and double hyphen are deviations.
-    findMatches(text, new RegExp(`--|${EM_DASH}`, "g")).forEach((m) => {
-      findings.push(
-        makeFinding({
-          category: "typography.emDash",
-          range: { start: m.start, end: m.end, unit: "character" },
-          message: `Use a plain space instead of em dash (${EM_DASH}) or double hyphen (--)`,
-          severity: "warning",
-          evidence: text.slice(m.start, m.end),
-        }),
-      );
-    });
+    return findings;
   }
+
+  findMatches(text, new RegExp(EM_DASH, "g")).forEach((m) => {
+    findings.push(
+      makeFinding({
+        category: "typography.emDash",
+        range: { start: m.start, end: m.end, unit: "character" },
+        message: `Use double hyphen (--) instead of em dash (${EM_DASH})`,
+        severity: "warning",
+        evidence: text.slice(m.start, m.end),
+      }),
+    );
+  });
 
   return findings;
 }

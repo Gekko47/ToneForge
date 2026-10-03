@@ -47,7 +47,6 @@ import type { WordCapabilities } from "../../word/capabilityProbe";
 interface ProfileFormValues {
   name: string;
   emDash: TypographyRules["emDash"];
-  emDashSpacing: TypographyRules["emDashSpacing"];
   enDashSpacing: TypographyRules["enDashSpacing"];
   doubleQuotes: TypographyRules["doubleQuotes"];
   singleQuotes: TypographyRules["singleQuotes"];
@@ -132,7 +131,6 @@ function profileToValues(profile: StyleProfile): ProfileFormValues {
   return {
     name: profile.name,
     emDash: profile.typography.emDash,
-    emDashSpacing: profile.typography.emDashSpacing,
     enDashSpacing: profile.typography.enDashSpacing,
     doubleQuotes: profile.typography.doubleQuotes,
     singleQuotes: profile.typography.singleQuotes,
@@ -213,7 +211,6 @@ function buildCandidate(values: ProfileFormValues, baseProfile: StyleProfile): S
     typography: {
       ...baseProfile.typography,
       emDash: values.emDash,
-      emDashSpacing: values.emDashSpacing,
       enDashSpacing: values.enDashSpacing,
       doubleQuotes: values.doubleQuotes,
       singleQuotes: values.singleQuotes,
@@ -696,27 +693,22 @@ export default function ProfileEditor({
           Typography
         </h3>
         <div style={gridStyle}>
+          {/*
+           * Two representations and no third (owner decision D3). The "Space"
+           * option offered a rule that reported every dash with a replacement of
+           * a plain space, which deleted the author's punctuation; it is gone
+           * with the schema value. The "Em dash spacing" dropdown that used to
+           * sit beside this one went with its field, for the reasons recorded in
+           * `TypographyRulesSchema`. The en dash dropdown below keeps its spacing
+           * control: that setting is separate and is not implicated.
+           */}
           <Dropdown
             label="Em dash"
             selectedKey={values.emDash}
-            options={[
-              option("em", "Em dash (—)"),
-              option("hyphen", "Double hyphen (-- )"),
-              option("space", "Space"),
-            ]}
+            options={[option("em", "Em dash (—)"), option("hyphen", "Double hyphen (-- )")]}
             onChange={(_event, optionValue) => {
               const nextValue = dropdownValue(optionValue);
               if (nextValue) patch({ emDash: nextValue as ProfileFormValues["emDash"] });
-            }}
-          />
-          <Dropdown
-            label="Em dash spacing"
-            selectedKey={values.emDashSpacing}
-            options={[option("spaced", "Spaced"), option("tight", "Tight")]}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue)
-                patch({ emDashSpacing: nextValue as ProfileFormValues["emDashSpacing"] });
             }}
           />
           <Dropdown

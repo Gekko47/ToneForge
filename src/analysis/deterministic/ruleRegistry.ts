@@ -42,12 +42,15 @@ import {
 import { findFormattingIssues } from "../../formatting/analyzer";
 import type { Finding } from "../../core/domain/Finding";
 
-/** The categories `typography/dashes` is responsible for. */
-const DASH_CATEGORIES = [
-  "typography.emDash",
-  "typography.emDashSpacing",
-  "typography.enDashSpacing",
-] as const;
+/*
+ * The categories `typography/dashes` is responsible for.
+ *
+ * `typography.emDashSpacing` was removed under owner decision D3, and the
+ * `"space"` representation with it. The list is now short enough to be a literal,
+ * but it stays a named constant because the rule's `emits` and its category filter
+ * must agree exactly; the registry's own audit asserts that they do.
+ */
+const DASH_CATEGORIES = ["typography.emDash", "typography.enDashSpacing"] as const;
 
 /** The categories `typography/quotes` is responsible for. */
 const QUOTE_CATEGORIES = [
@@ -166,10 +169,10 @@ export interface DeterministicRule {
    * Every finding category the rule can emit, `category` included.
    *
    * Needed because one rule often produces several closely related categories
-   * (`typography/dashes` emits emDash, emDashSpacing and enDashSpacing). The
-   * engine filters a shared body function's output by this list, which is what
-   * lets every rule wrap the same underlying scanner while remaining separately
-   * auditable. Defaults to `[category]` when a rule emits one.
+   * (`typography/dashes` emits emDash and enDashSpacing). The engine filters a
+   * shared body function's output by this list, which is what lets every rule
+   * wrap the same underlying scanner while remaining separately auditable.
+   * Defaults to `[category]` when a rule emits one.
    */
   emits?: readonly string[];
   /**
@@ -284,7 +287,6 @@ export const PROFILE_FIELD_PATHS: readonly string[] = [
 
   // Typography (spec §5).
   "typography.emDash",
-  "typography.emDashSpacing",
   "typography.enDashSpacing",
   "typography.doubleQuotes",
   "typography.singleQuotes",
@@ -340,8 +342,8 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "typography",
     scope: "text",
     category: "typography.emDash",
-    emits: ["typography.emDash", "typography.emDashSpacing", "typography.enDashSpacing"],
-    profilePaths: ["typography.emDash", "typography.emDashSpacing", "typography.enDashSpacing"],
+    emits: [...DASH_CATEGORIES],
+    profilePaths: [...DASH_CATEGORIES],
     correctable: true,
     analyze: (ruleContext) => typography(ruleContext, DASH_CATEGORIES),
   },

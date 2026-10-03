@@ -1044,3 +1044,83 @@ Two further categories were added while wiring them:
 `language.number.negative`.
 
 Next: the Phase 2 remainder, then Phase 4.
+
+### Phase 4a — D3, the em dash (owner decision, implemented)
+
+**What the audit claimed, and what was true.** §16 describes a hazard where a
+profile setting could make a correction delete a meaningful punctuation mark. I
+verified both halves before touching anything:
+
+- `emDash` really was `["em", "hyphen", "space"]`, and `"space"` really did make
+  `checkEmDash` report every dash — em _and_ double hyphen — under
+  `typography.emDash` with the message `Use a plain space instead of em dash (—)
+or double hyphen (--)`. `typographyReplacement` matched `/plain space/i` and
+  returned `" "`. So the correction did delete the author's dash. Confirmed.
+- `emDashSpacing` really did report the dash together with a character it did not
+  own: `range` was the dash alone, while `evidence` and the `text` precondition
+  were `text.slice(start - 1, end + 1)`. `typographyReplacement` answered `tight`
+  with the dash alone and `spaced` with `" — "`. So accepting a `tight`
+  correction targeted a range whose precondition did not match, and accepting a
+  `spaced` one removed two spaces that were never findings of their own.
+  Confirmed.
+
+**One thing the plan did not say.** D3 as written removes the spacing setting and
+claims the §16 hazard goes "since `"space"` was reachable only through the
+spacing control". That is not what the code does: `"space"` was a member of the
+**Em dash** dropdown, and it was the _representation_ choice, not the spacing
+choice, that produced the deleting correction. Removing `emDashSpacing` alone
+would have left the hazard fully reachable from the control a user would
+reasonably read as "which dash do I use". I removed both, and recorded the
+correction to the plan's reasoning in ADR-0113 rather than quietly widening the
+scope.
+
+**What changed**
+
+- `TypographyRulesSchema`: `emDash` is now `["em", "hyphen"]`; `emDashSpacing`
+  is gone. The comment block on the field states both reasons.
+- `checkEmDash` is two symmetric branches — whichever representation the house did
+  not pick is the deviation — and each finding's range is exactly the mark it
+  names. A document carrying both spellings under `emDash: "em"` now yields one
+  finding, not two.
+- `CATEGORY_PROFILE_PATHS`, `DASH_CATEGORIES`, `PROFILE_FIELD_PATHS`, the
+  `typography/dashes` rule's `emits` and `profilePaths`,
+  `DETERMINISTIC_CORRECTABLE_CATEGORIES`, the planner's `case` list, and the
+  `typographyReplacement` switch all lost the category.
+- `ProfileFormValues`, `profileToValues`, `buildCandidate` and the Em dash
+  dropdown lost the field; the dropdown's `Space` option is gone and the En dash
+  spacing dropdown is untouched.
+- `diffProfiles` no longer lists "Em dash spacing" as a diffable field.
+- `typographyReplacement`'s `typography.emDash` case is now two-valued; it no
+  longer has a branch that answers `" "`.
+
+**Retained deliberately:** `typography.emDash` (orthogonal — how the dash is
+encoded) and `typography.enDashSpacing` (a separate setting, not implicated).
+
+**Tests**
+
+- Four tests in `tests/unit/rules/typography.test.ts` that asserted the old
+  behaviour were replaced by five that pin the new contract: `"space"` fails
+  `safeParse`; only the double hyphen is reported under `emDash: "em"`; four
+  spellings of a spaced/tight/boundary em dash produce _no_ finding under the
+  default profile; the em dash is reported at its own offset under
+  `emDash: "hyphen"` wherever it sits; and the parsed profile shape has no
+  `emDashSpacing` key at all.
+- The three `typography.emDash` / `typography.emDashSpacing` rows came out of the
+  `it.each` table in `tests/unit/changes/planner.test.ts`, because those
+  categories no longer exist.
+- `emDashSpacing` came out of the profile literals in
+  `tests/fixtures/deterministicReview.ts`,
+  `tests/unit/core/domain/GovernanceProfile.test.ts` and
+  `tests/unit/taskpane/components/ProfileEditor.test.tsx`. Zod strips unknown
+  keys, so these would have kept passing; they were carrying a field that no
+  longer exists.
+
+**A migration was not written, on purpose.** The standing product-owner
+constraint is that there are no users, so no stored profile can hold `"space"` or
+`emDashSpacing`. If users are ever introduced, a migration must map `"space"` to
+`"em"` before the storage key is bumped — ADR-0113 says so at the point where
+someone would look for it.
+
+**Verification at this point:** typecheck clean, lint 0 warnings, **2580 tests /
+185 files passing**. The count is two below Phase 3's 2582 because four spacing
+tests became five and three planner rows were removed.

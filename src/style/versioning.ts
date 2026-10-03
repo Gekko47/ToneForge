@@ -125,7 +125,6 @@ const diffFields: readonly { label: string; path: readonly string[] }[] = [
   { label: "Conclusion style", path: ["semantic", "conclusionStyle"] },
   { label: "Lexical preferences", path: ["semantic", "lexicalPreferences"] },
   { label: "Em dash", path: ["typography", "emDash"] },
-  { label: "Em dash spacing", path: ["typography", "emDashSpacing"] },
   { label: "En dash spacing", path: ["typography", "enDashSpacing"] },
   { label: "Double quotes", path: ["typography", "doubleQuotes"] },
   { label: "Single quotes", path: ["typography", "singleQuotes"] },

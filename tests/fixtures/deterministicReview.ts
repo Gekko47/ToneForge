@@ -78,7 +78,6 @@ export const REVIEW_PROFILE: StyleProfile = StyleProfileSchema.parse({
   semantic: {},
   typography: {
     emDash: "em",
-    emDashSpacing: "spaced",
     enDashSpacing: "spaced",
     doubleQuotes: "curly",
     singleQuotes: "curly",

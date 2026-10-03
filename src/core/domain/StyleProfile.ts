@@ -40,12 +40,21 @@ export function formatRevision(revision: Revision): string {
 }
 
 export const TypographyRulesSchema = z.object({
-  // How an em dash is represented. "em" is the Unicode U+2014 character,
-  // "hyphen" is a double hyphen "--", and "space" is a plain space. The
-  // companion `emDashSpacing` field controls whether the dash is surrounded
-  // by spaces, which is orthogonal to how the dash itself is encoded.
-  emDash: z.enum(["em", "hyphen", "space"]).default("em"),
-  emDashSpacing: z.enum(["spaced", "tight"]).default("spaced"),
+  /*
+   * How an em dash is represented. "em" is the Unicode U+2014 character and
+   * "hyphen" is a double hyphen "--". Two representations, and no third.
+   *
+   * The enum once also carried `"space"`, which made the rule report every dash —
+   * em or double hyphen — with a replacement of a plain space: a correction that
+   * deletes a punctuation mark the author put there. It is gone for the same
+   * reason, and with it `emDashSpacing` (owner decision D3): whether a dash takes
+   * surrounding spaces is a question about the author's spacing rather than about
+   * how the dash is encoded, enforcing it reported the dash together with a space
+   * it did not own over a range wider than the mark, and the planner would rewrite
+   * a neighbour on its way to fixing the dash. `enDashSpacing` is a separate
+   * setting, is not implicated, and is retained.
+   */
+  emDash: z.enum(["em", "hyphen"]).default("em"),
   enDashSpacing: z.enum(["spaced", "tight"]).default("spaced"),
   doubleQuotes: z.enum(["curly", "straight"]).default("curly"),
   singleQuotes: z.enum(["curly", "straight"]).default("curly"),
