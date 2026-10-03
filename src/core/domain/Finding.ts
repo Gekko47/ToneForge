@@ -22,11 +22,27 @@ export type FindingKind = z.infer<typeof FindingKindSchema>;
 export const SeveritySchema = z.enum(["info", "warning", "error"]);
 export type Severity = z.infer<typeof SeveritySchema>;
 
+/*
+ * What the two numbers on a finding's `range` count.
+ *
+ * `table`, `header` and `footer` were added because `section` was doing three
+ * jobs. `sectionRange(table.index)` produced a finding that said, in the task
+ * pane's own words, "Location: 2–3 (section)" on a table — and
+ * `ChangeTargetSchema` would have turned that into a section target had the
+ * finding ever been planned. Naming the structure removes the ambiguity rather
+ * than leaving it for a reader to guess at.
+ *
+ * These are *units of counting*, which is why they are here and not on the
+ * target: `start` and `end` are the count in the named unit. `FindingTarget`
+ * below says what the finding is about, which is a different question.
+ */
 export const RangeSchema = z
   .object({
     start: z.number().int().nonnegative(),
     end: z.number().int().nonnegative(),
-    unit: z.enum(["character", "paragraph", "section"]).default("character"),
+    unit: z
+      .enum(["character", "paragraph", "section", "table", "header", "footer"])
+      .default("character"),
   })
   .refine((r) => r.start <= r.end, {
     message: "Range.start must be <= Range.end",
@@ -34,6 +50,70 @@ export const RangeSchema = z
   });
 
 export type Range = z.infer<typeof RangeSchema>;
+
+/**
+ * What a finding is about, structurally.
+ *
+ * **`range` alone could not answer this.** A table finding and a page-setup
+ * finding both carried `{ start: index, end: index + 1, unit: "section" }`, and a
+ * header finding carried its *section's* index under the same three numbers. A
+ * consumer that wanted to take the user to the thing could not, because nothing
+ * distinguished them. This is the discriminated union that does.
+ *
+ * It mirrors `ChangeTargetSchema` in `Change.ts` rather than being a second
+ * dialect: same `kind`-keyed shape, same optional `nodeId` / `structuralPath`
+ * spelling, so a target can be read by anything that already reads a change
+ * target. `header` and `footer` carry `sectionIndex` because that is the fact
+ * the analyzer had to re-derive from a `sourcePath` regex and the one a reader
+ * needs in order to find the right section.
+ */
+export const FindingTargetSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("text"),
+    start: z.number().int().nonnegative(),
+    end: z.number().int().nonnegative(),
+  }),
+  z.object({
+    kind: z.literal("paragraph"),
+    index: z.number().int().nonnegative(),
+    nodeId: z.string().trim().min(1).optional(),
+    structuralPath: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    /** A list is addressed by the paragraph that carries the list item. */
+    kind: z.literal("list"),
+    paragraphIndex: z.number().int().nonnegative(),
+    nodeId: z.string().trim().min(1).optional(),
+    structuralPath: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("table"),
+    index: z.number().int().nonnegative(),
+    nodeId: z.string().trim().min(1).optional(),
+    structuralPath: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("header"),
+    sectionIndex: z.number().int().nonnegative(),
+    index: z.number().int().nonnegative(),
+    nodeId: z.string().trim().min(1).optional(),
+    structuralPath: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("footer"),
+    sectionIndex: z.number().int().nonnegative(),
+    index: z.number().int().nonnegative(),
+    nodeId: z.string().trim().min(1).optional(),
+    structuralPath: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("section"),
+    index: z.number().int().nonnegative(),
+    nodeId: z.string().trim().min(1).optional(),
+    structuralPath: z.string().trim().min(1).optional(),
+  }),
+]);
+export type FindingTarget = z.infer<typeof FindingTargetSchema>;
 
 export const FindingSourceSchema = z.enum(["deterministic", "ai", "profile", "user"]);
 export type FindingSource = z.infer<typeof FindingSourceSchema>;
@@ -129,6 +209,15 @@ export const FindingSchema = z.object({
   kind: FindingKindSchema,
   category: z.string().trim().min(1),
   range: RangeSchema,
+  /**
+   * What the finding is about, structurally.
+   *
+   * Optional because most findings are about text and `range` already says so.
+   * Required on the structural ones — a table, header, footer, section or list
+   * finding — because `range` counts in a unit that does not say which thing of
+   * that kind, and `Go to item` has to be able to resolve it.
+   */
+  target: FindingTargetSchema.optional(),
   message: z.string().trim().min(1),
   severity: SeveritySchema,
   evidence: z.string().trim().default(""),

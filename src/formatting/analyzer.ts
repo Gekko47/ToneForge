@@ -24,7 +24,7 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
-import type { Finding, Range, Severity } from "../core/domain/Finding";
+import type { Finding, FindingTarget, Range, Severity } from "../core/domain/Finding";
 import type {
   CharacterStandard,
   DocumentFormattingProfile,
@@ -266,6 +266,16 @@ function makeFinding(params: {
   severity: Severity;
   evidence: string;
   paragraph?: FormattingParagraph;
+  /**
+   * What the finding is about, structurally.
+   *
+   * Set by every structural check. A paragraph finding derives it from the
+   * paragraph it was handed, so a caller cannot attach a paragraph finding to
+   * one paragraph and point at another; a table, header, footer or section
+   * finding passes its own because `range` alone says which unit is being
+   * counted and not which thing.
+   */
+  target?: FindingTarget;
   profilePath: string;
   /**
    * Read-only at the call site, copied on the way into the finding.
@@ -298,11 +308,14 @@ function makeFinding(params: {
   safeBatchKey?: string;
 }): Finding {
   const precondition = params.paragraph ? paragraphPrecondition(params.paragraph) : undefined;
+  const target =
+    params.target ?? (params.paragraph ? paragraphTarget(params.paragraph) : undefined);
   return {
     id: uuidv4(),
     kind: "formatting",
     category: params.category,
     range: params.range,
+    ...(target === undefined ? {} : { target }),
     message: params.message,
     severity: params.severity,
     evidence: params.evidence,
@@ -363,8 +376,88 @@ function paragraphRange(paragraph: FormattingParagraph): Range {
   return { start: paragraph.index, end: paragraph.index + 1, unit: "paragraph" };
 }
 
+function paragraphTarget(paragraph: FormattingParagraph): FindingTarget {
+  return {
+    kind: "paragraph",
+    index: paragraph.index,
+    ...(paragraph.nodeId === undefined ? {} : { nodeId: paragraph.nodeId }),
+    ...(paragraph.sourcePath === undefined ? {} : { structuralPath: paragraph.sourcePath }),
+  };
+}
+
 function sectionRange(index: number): Range {
   return { start: index, end: index + 1, unit: "section" };
+}
+
+function sectionTarget(section: {
+  index: number;
+  nodeId?: string | undefined;
+  sourcePath?: string | undefined;
+}): FindingTarget {
+  return {
+    kind: "section",
+    index: section.index,
+    ...(section.nodeId === undefined ? {} : { nodeId: section.nodeId }),
+    ...(section.sourcePath === undefined ? {} : { structuralPath: section.sourcePath }),
+  };
+}
+
+/*
+ * A table's own range and target.
+ *
+ * This used to be `sectionRange(table.index)`, which produced a finding whose
+ * range said `unit: "section"` about a table. The task pane printed that to the
+ * user verbatim, and `toChangeRange` would have translated it into a section
+ * change target had the finding ever been planned. A table is now counted in
+ * tables.
+ */
+function tableRange(table: { index: number }): Range {
+  return { start: table.index, end: table.index + 1, unit: "table" };
+}
+
+function tableTarget(table: {
+  index: number;
+  nodeId?: string | undefined;
+  sourcePath?: string | undefined;
+}): FindingTarget {
+  return {
+    kind: "table",
+    index: table.index,
+    ...(table.nodeId === undefined ? {} : { nodeId: table.nodeId }),
+    ...(table.sourcePath === undefined ? {} : { structuralPath: table.sourcePath }),
+  };
+}
+
+/*
+ * A header or footer is counted among headers or footers and addressed by the
+ * slot's own index, which is what a reader needs to find it. `sectionIndex` is
+ * carried on the target rather than the range because the range's two numbers
+ * have exactly one meaning - the slot - and adding a third fact to them would
+ * make the unit a lie again.
+ */
+function headerFooterRange(
+  headerFooter: { index: number },
+  kind: NonNullable<HeaderFooterSnapshot["kind"]>,
+): Range {
+  return { start: headerFooter.index, end: headerFooter.index + 1, unit: kind };
+}
+
+function headerFooterTarget(
+  headerFooter: {
+    index: number;
+    nodeId?: string | undefined;
+    sourcePath?: string | undefined;
+  },
+  kind: NonNullable<HeaderFooterSnapshot["kind"]>,
+  sectionIndex: number,
+): FindingTarget {
+  return {
+    kind,
+    sectionIndex,
+    index: headerFooter.index,
+    ...(headerFooter.nodeId === undefined ? {} : { nodeId: headerFooter.nodeId }),
+    ...(headerFooter.sourcePath === undefined ? {} : { structuralPath: headerFooter.sourcePath }),
+  };
 }
 
 /** A style-identity deviation, reported against the standard that wanted it. */
@@ -727,7 +820,8 @@ function checkTableFormatting(
       findings.push(
         makeFinding({
           category: "formatting.tableStyle",
-          range: sectionRange(table.index),
+          range: tableRange(table),
+          target: tableTarget(table),
           message: `Table carries "${styleName}" but the profile expects "${standard.styleName}"`,
           severity: "warning",
           evidence: tableText.slice(0, 40),
@@ -755,7 +849,8 @@ function checkTableFormatting(
       findings.push(
         makeFinding({
           category: "formatting.tableStyle",
-          range: sectionRange(table.index),
+          range: tableRange(table),
+          target: tableTarget(table),
           message: `Table header row is ${String(table.headerRow)} but the profile expects ${String(standard.headerRow)}`,
           severity: "warning",
           evidence: tableText.slice(0, 40),
@@ -780,7 +875,8 @@ function checkTableFormatting(
       findings.push(
         makeFinding({
           category: "formatting.tableStyle",
-          range: sectionRange(table.index),
+          range: tableRange(table),
+          target: tableTarget(table),
           message: `Table has ${table.headerRowCount} header rows but the profile expects ${standard.headerRowCount}`,
           severity: "warning",
           evidence: tableText.slice(0, 40),
@@ -805,7 +901,8 @@ function checkTableFormatting(
       findings.push(
         makeFinding({
           category: "formatting.tableStyle",
-          range: sectionRange(table.index),
+          range: tableRange(table),
+          target: tableTarget(table),
           message: `Table cells carry "${table.cellStyleName}" but the profile expects "${standard.cellStyleName}"`,
           severity: "warning",
           evidence: tableText.slice(0, 40),
@@ -866,6 +963,10 @@ function checkHeaderFooterFormatting(
     if (headerFooter.required !== true) return [];
 
     const sectionIndex = headerFooterSectionIndex(headerFooter);
+    // The schema's own default, so a caller that omits `kind` is treated as a
+    // header rather than as a slot of no kind — the same resolution the
+    // presence grouping below makes, and for the same reason.
+    const kind = headerFooter.kind ?? "header";
     const sectionFindings: Finding[] = [];
     const headerFooterText = headerFooter.text ?? "";
     const styleName = (headerFooter.styleName ?? "").trim();
@@ -877,7 +978,8 @@ function checkHeaderFooterFormatting(
       sectionFindings.push(
         makeFinding({
           category: "formatting.headerFooter",
-          range: sectionRange(sectionIndex),
+          range: headerFooterRange(headerFooter, kind),
+          target: headerFooterTarget(headerFooter, kind, sectionIndex),
           message: `${headerFooter.kind} carries "${styleName}" but the profile expects "${standard.styleName}"`,
           severity: "warning",
           evidence: headerFooterText.slice(0, 40),
@@ -904,7 +1006,8 @@ function checkHeaderFooterFormatting(
           sectionFindings.push(
             makeFinding({
               category: "formatting.headerFooter",
-              range: sectionRange(sectionIndex),
+              range: headerFooterRange(headerFooter, kind),
+              target: headerFooterTarget(headerFooter, kind, sectionIndex),
               message: `${headerFooter.kind} ${property} is ${String(actual)} but the profile expects ${String(expected)}`,
               severity: "warning",
               evidence: headerFooterText.slice(0, 40),
@@ -961,7 +1064,8 @@ function checkHeaderFooterFormatting(
     findings.push(
       makeFinding({
         category: "formatting.headerFooter",
-        range: sectionRange(entry.sectionIndex),
+        range: { start: entry.sectionIndex, end: entry.sectionIndex + 1, unit: entry.kind },
+        target: { kind: entry.kind, sectionIndex: entry.sectionIndex, index: entry.sectionIndex },
         message: `${entry.kind} is ${entry.present ? "present" : "absent"} but the profile expects it to be ${standard.required ? "present" : "absent"}`,
         severity: "warning",
         evidence: "",
@@ -1005,6 +1109,7 @@ function checkPageSetup(
         makeFinding({
           category: "formatting.pageSetup",
           range: sectionRange(section.index),
+          target: sectionTarget(section),
           message: `Page orientation is ${section.orientation} but the profile expects ${expectedOrientation}`,
           severity: "warning",
           evidence: sectionText.slice(0, 40),
@@ -1033,6 +1138,7 @@ function checkPageSetup(
             makeFinding({
               category: "formatting.pageSetup",
               range: sectionRange(section.index),
+              target: sectionTarget(section),
               message: `Page margin ${edge} is ${String(actual)} but the profile expects ${String(expected)}`,
               severity: "warning",
               evidence: sectionText.slice(0, 40),
@@ -1060,6 +1166,7 @@ function checkPageSetup(
         makeFinding({
           category: "formatting.pageSetup",
           range: sectionRange(section.index),
+          target: sectionTarget(section),
           message: `Page width is ${section.width} but the profile expects ${standard.width}`,
           severity: "warning",
           evidence: sectionText.slice(0, 40),
@@ -1085,6 +1192,7 @@ function checkPageSetup(
         makeFinding({
           category: "formatting.pageSetup",
           range: sectionRange(section.index),
+          target: sectionTarget(section),
           message: `Page height is ${section.height} but the profile expects ${standard.height}`,
           severity: "warning",
           evidence: sectionText.slice(0, 40),

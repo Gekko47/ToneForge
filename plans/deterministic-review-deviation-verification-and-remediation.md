@@ -1183,3 +1183,55 @@ the safe direction; asserted rather than assumed.
 
 **Verification at this point:** typecheck clean, lint 0 warnings, **2605 tests /
 186 files passing**.
+
+### Phase 4c — Items 16 and 17, structural targets
+
+**What the audit claimed, and what was true.** Both items confirmed. One helper,
+`sectionRange(index)`, built the range for table findings, header findings and
+page-setup findings alike, so a table styling deviation carried
+`{ start: tableIndex, end: tableIndex + 1, unit: "section" }` and a header
+deviation carried its _section's_ index under the same three numbers.
+`FindingDetail` printed that verbatim, so the product told a user "Location: 2–3
+(section)" about a table.
+
+**The part the audit did not spell out.** `toChangeRange` — in both
+`src/changes/planner.ts` and `src/changes/deterministicChanges.ts` — maps
+`range.unit === "section"` to a `ChangeTargetSchema` section target. So had any
+of these findings been planned, the plan would have addressed a section. They are
+all `correctable: false` and never were, which is why no wrong mutation ever
+happened; this was a false statement about a target, not a wrong write. Recorded
+so the severity is not overstated.
+
+**What changed**
+
+- `RangeSchema.unit` gains `table`, `header` and `footer`. A range's unit is what
+  its two numbers count; the count was wrong, so the unit was fixed.
+- `FindingTargetSchema` is a `kind`-keyed discriminated union with `text`,
+  `paragraph`, `list`, `table`, `header`, `footer` and `section`, mirroring
+  `ChangeTargetSchema` in shape and field spelling rather than inventing a second
+  dialect. `header` and `footer` carry `sectionIndex`, which is the fact a reader
+  needs and which the analyzer had to re-derive from a `sourcePath` regex.
+- `FindingSchema` gains an optional `target`. `makeFinding` derives the paragraph
+  target from the paragraph it was handed, so a paragraph finding cannot point at
+  a different paragraph; the table, header, footer and section checks pass their
+  own.
+- `src/taskpane/findingLocation.ts` (new) renders the location in words —
+  "Table 3", "Header 6 in section 2", "Characters 11–14" — preferring the target
+  and falling back to the range for a text finding. `FindingDetail` uses it.
+  This is the user-visible half of the two items; the card redesign itself is
+  Phase 5 UX-3 and is not attempted here.
+- `markDirtyNodes` treats any non-character range as a whole-document change.
+  The original three-branch form fell through silently for the three new units,
+  which would have meant a structural edit marking nothing dirty and leaving
+  stale findings on screen as a clean document.
+
+**Tests.** `tests/unit/taskpane/findingLocation.test.ts` (new, 16 tests) covers
+the wording, the 1-based count, the target-beats-range preference, the schema's
+seven kinds and the fact that a header or footer must declare its section.
+`tests/unit/formatting/analyzer.test.ts` gains three cases: a table finding's
+range and target, a header's, and a footer's with a section index recovered from
+its `sourcePath`. `tests/unit/analysis/incrementalCoordinator.test.ts` gains one
+per new unit, asserting all nodes come back rather than none.
+
+**Verification at this point:** typecheck clean, lint 0 warnings, **2623 tests /
+187 files passing**.

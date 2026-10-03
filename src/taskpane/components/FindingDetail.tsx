@@ -27,6 +27,7 @@
 import React, { useState } from "react";
 import type { Finding } from "../../core/domain/Finding";
 import { goToFinding } from "../findingNavigation";
+import { describeFindingLocation } from "../findingLocation";
 import { approvalControls } from "../approvalControls";
 import EvidenceSplit from "./EvidenceSplit";
 
@@ -203,10 +204,17 @@ export default function FindingDetail({
         </>
       )}
 
+      {/*
+       * The location is described, not printed as raw numbers. A table finding
+       * used to read "Location: 2–3 (section)", because three structures shared
+       * one `sectionRange` helper; `describeFindingLocation` prefers the
+       * finding's own target and falls back to the range only for a text
+       * finding, which is the one thing the range alone does describe.
+       */}
       <footer className="tf-finding-location">
         {locationNote ?? (
           <>
-            Location: {finding.range.start}–{finding.range.end} ({finding.range.unit})
+            Location: {describeFindingLocation(finding)}
             {finding.nodeIds.length > 0 && ` · Node: ${finding.nodeIds[0]}`}
           </>
         )}

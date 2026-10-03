@@ -76,6 +76,20 @@ describe("markDirtyNodes", () => {
     expect(result).toHaveLength(2);
   });
 
+  /*
+   * `Range.unit` gained `table`, `header` and `footer` when structural findings
+   * stopped claiming to be sections. The original three-branch form fell through
+   * silently for anything else, which would mean a structural edit marks nothing
+   * dirty and the stale findings survive as if the document were clean.
+   */
+  (["table", "header", "footer"] as const).forEach((unit) => {
+    it(`returns every nodeId for a ${unit}-level change rather than none`, () => {
+      const nodes = [makeNode("abc123", "hello"), makeNode("def456", "world")];
+      const range: Range = { start: 0, end: 1, unit };
+      expect(markDirtyNodes(range, nodes)).toEqual(["abc123", "def456"]);
+    });
+  });
+
   it("handles empty nodes array", () => {
     expect(markDirtyNodes({ start: 0, end: 5, unit: "character" }, [])).toEqual([]);
   });

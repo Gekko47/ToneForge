@@ -16,6 +16,19 @@ import { logger } from "../shared/utils/logger";
 export function markDirtyNodes(changedRange: Range, nodes: DocumentNode[]): string[] {
   const dirtyIds: string[] = [];
 
+  /*
+   * Anything that is not a character range is treated as a whole-document
+   * change.
+   *
+   * The original three-branch form fell through silently for any other unit,
+   * and `Range.unit` now also admits `table`, `header` and `footer`. Silently
+   * marking nothing means a document edited through a structural change keeps
+   * every stale finding on screen and reports the document as clean — the
+   * opposite failure from a conservative rescan, and the more expensive one.
+   * Over-marking costs a rescan; under-marking costs a false clean.
+   */
+  const characterOnly = changedRange.unit === "character";
+
   // Compute cumulative character offsets to map changedRange onto nodes.
   let cumulativeOffset = 0;
 
@@ -25,18 +38,13 @@ export function markDirtyNodes(changedRange: Range, nodes: DocumentNode[]): stri
     const nodeEnd = cumulativeOffset + nodeText.length;
     cumulativeOffset = nodeEnd;
 
-    if (changedRange.unit === "character") {
+    if (characterOnly) {
       if (changedRange.start < nodeEnd && changedRange.end > nodeStart) {
         dirtyIds.push(node.nodeId);
       }
-    } else if (changedRange.unit === "paragraph") {
-      // Paragraph-level change affects the node by index.
-      // nodeId is used as a proxy; we match by position.
-      // Since we cannot reliably map paragraph index to nodeId here,
-      // we mark all nodes as dirty for paragraph-level changes.
-      dirtyIds.push(node.nodeId);
-    } else if (changedRange.unit === "section") {
-      // Section-level change affects the entire document.
+    } else {
+      // Paragraph, section, table, header, footer: this pass cannot map any of
+      // them onto a node, so every node is a candidate for re-examination.
       dirtyIds.push(node.nodeId);
     }
   }

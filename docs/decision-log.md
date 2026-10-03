@@ -4228,3 +4228,97 @@ and the four compare toggles);
 `tests/unit/formatting/structuralStandards.test.ts` (new);
 `tests/unit/formatting/analyzer.test.ts`;
 `tests/unit/analysis/deterministic/deterministicReviewEngine.test.ts`.
+
+## ADR-0115 — A finding names the structure it is about
+
+- **Status**: Accepted
+- **Date**: 2026-10-03
+- **Plan items**: Phase 4, items 16 and 17
+
+### Context
+
+`checkTableFormatting`, `checkHeaderFooterFormatting` and `checkPageSetup` all
+built their finding ranges with one helper:
+
+```ts
+function sectionRange(index: number): Range {
+  return { start: index, end: index + 1, unit: "section" };
+}
+```
+
+So a table styling deviation produced `{ start: tableIndex, end: tableIndex + 1,
+unit: "section" }`, a header styling deviation produced the same shape from the
+_section's_ index, and only a page-setup deviation was telling the truth. Three
+structures, one unit name.
+
+That was not cosmetic. `FindingDetail` printed
+`Location: {start}–{end} ({unit})` verbatim, so a user was shown "Location: 2–3
+(section)" on a table. And `toChangeRange` in both the planner and the
+deterministic change builder maps `range.unit === "section"` to a
+`ChangeTargetSchema` section target — so had any of these findings ever been
+planned, the plan would have addressed a section. They are all
+`correctable: false` and never were, which is why nothing wrote to the wrong
+place; the mislabel was still a false statement the product made about itself.
+
+`Range` also had no way to say _which_ header, or which table, as distinct from
+_how many_ of them. A consumer that wanted to take a reviewer to the thing could
+not.
+
+### Decision
+
+1. **`RangeSchema.unit` gains `table`, `header` and `footer`.** A range's unit
+   is what its two numbers count, so the fix is to make the count honest.
+   `section` retains exactly its own meaning.
+2. **`FindingTargetSchema` is added**, a `kind`-keyed discriminated union with
+   `text`, `paragraph`, `list`, `table`, `header`, `footer` and `section`. It
+   mirrors `ChangeTargetSchema` in `Change.ts` deliberately — same shape, same
+   optional `nodeId` / `structuralPath` spelling — rather than introducing a
+   second dialect for the same question.
+3. **`header` and `footer` targets carry `sectionIndex`.** That is the fact the
+   analyzer had to re-derive from a `sourcePath` regex and the one a reader needs
+   to find the right section; a range carries exactly one meaning, so the second
+   fact belongs on the target.
+4. **`makeFinding` derives a paragraph target from the paragraph it was handed**,
+   so a paragraph finding cannot point at a different paragraph than the one it
+   was raised for. Structural checks pass their own target explicitly.
+5. **`src/taskpane/findingLocation.ts` renders the location in words**
+   ("Table 3", "Header 6 in section 2", "Characters 11–14"), preferring the
+   target and falling back to the range only for a text finding. `FindingDetail`
+   uses it. This is the user-visible half of items 16 and 17; the wider card
+   redesign is Phase 5 UX-3 and is not attempted here.
+6. **`markDirtyNodes` treats any non-character range as a whole-document
+   change.** The original three-branch form fell through silently for the three
+   new units, which would have meant a structural edit marking nothing dirty and
+   leaving stale findings on screen as if the document were clean.
+
+### Consequences
+
+- **A table finding no longer claims to be about a section.** It counts in
+  tables, and its target carries the table's own `nodeId` and `structuralPath`,
+  so `Go to item` has something resolvable to work from.
+- **A header finding names the header and its section.** The section index is no
+  longer recoverable only by re-parsing a `sourcePath` string downstream.
+- **`Range` is wider, so every consumer of `range.unit` had to be considered.**
+  `toChangeRange` treats an unrecognised unit as characters, which is the safe
+  fallback for a `Change` (no structural change is ever planned from these
+  findings). `markDirtyNodes` now over-marks rather than under-marks.
+  `pendingChangeCards.describeRange` reads `ChangeRange`, whose own unit enum is
+  unchanged, so a change can never carry a structural unit.
+- **The location string is 1-based.** A reader counts tables from one; "Table 0"
+  reads as a broken tool. `describeFindingLocation` is a separate pure module so
+  the wording is testable without rendering, and so the count-from-one decision is
+  in one place.
+- **`target` is optional on `FindingSchema`.** Most findings are about text and
+  the range already says so; requiring a target on every finding would add noise
+  to the common case for no gain.
+
+### Evidence
+
+`src/core/domain/Finding.ts` (`RangeSchema`, `FindingTargetSchema`,
+`FindingSchema.target`); `src/formatting/analyzer.ts` (`tableRange`,
+`headerFooterRange`, `sectionTarget`, `paragraphTarget`, `makeFinding`);
+`src/analysis/incrementalCoordinator.ts` (`markDirtyNodes`);
+`src/taskpane/findingLocation.ts` (new); `src/taskpane/components/FindingDetail.tsx`;
+`tests/unit/taskpane/findingLocation.test.ts` (new);
+`tests/unit/formatting/analyzer.test.ts`;
+`tests/unit/analysis/incrementalCoordinator.test.ts`.

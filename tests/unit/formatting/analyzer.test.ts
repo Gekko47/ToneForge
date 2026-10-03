@@ -653,6 +653,28 @@ describe("findFormattingIssues", () => {
         expect(finding?.message).toMatch(/"Table Grid" but the profile expects "Table Normal"/);
       });
 
+      /*
+       * `sectionRange(table.index)` gave a table finding a range of
+       * `{ start: tableIndex, end: tableIndex + 1, unit: "section" }`, which the
+       * task pane printed verbatim as "Location: 0–1 (section)". A table is now
+       * counted in tables and names itself in the target.
+       */
+      it("counts a table in tables and says which table it is", () => {
+        const findings = runStructural({ tables: [table()] }, { profile: tableProfile() });
+        const finding = findings.find(
+          (f) => f.deterministic?.profilePath === "formatting.tables.styleName",
+        );
+        expect(finding?.range).toEqual({ start: 0, end: 1, unit: "table" });
+        // The fixture's own node id and structural path travel with the target,
+        // which is what makes `Go to item` resolvable without a lookup.
+        expect(finding?.target).toMatchObject({
+          kind: "table",
+          index: 0,
+          nodeId: table().nodeId,
+          structuralPath: table().sourcePath,
+        });
+      });
+
       it("says nothing about a table when the profile configures no table standard", () => {
         // A profile that has not looked at tables has not decided they are wrong.
         const findings = runStructural({ tables: [table()] });
@@ -727,6 +749,44 @@ describe("findFormattingIssues", () => {
           (f) => f.deterministic?.profilePath === "formatting.headersFooters.styleName",
         );
         expect(finding?.message).toMatch(/header carries "Normal"/);
+      });
+
+      /*
+       * A header finding used to carry the *section's* index under a section's
+       * unit, which told a reader nothing about which header. It now counts the
+       * slot among headers and names both the slot and its section.
+       */
+      it("counts a header among headers and names its section", () => {
+        const findings = runStructural(
+          { headersFooters: [headerFooter({ styleName: "Normal", index: 4 })] },
+          { profile: headerProfile() },
+        );
+        const finding = findings.find(
+          (f) => f.deterministic?.profilePath === "formatting.headersFooters.styleName",
+        );
+        expect(finding?.range).toEqual({ start: 4, end: 5, unit: "header" });
+        expect(finding?.target).toMatchObject({ kind: "header", index: 4, sectionIndex: 0 });
+      });
+
+      it("counts a footer among footers and names its section", () => {
+        const findings = runStructural(
+          {
+            headersFooters: [
+              headerFooter({
+                kind: "footer",
+                index: 2,
+                styleName: "Normal",
+                sourcePath: "body/section/3/footer/2",
+              }),
+            ],
+          },
+          { profile: headerProfile() },
+        );
+        const finding = findings.find(
+          (f) => f.deterministic?.profilePath === "formatting.headersFooters.styleName",
+        );
+        expect(finding?.range).toEqual({ start: 2, end: 3, unit: "footer" });
+        expect(finding?.target).toMatchObject({ kind: "footer", index: 2, sectionIndex: 3 });
       });
 
       it("reports a missing header when the profile requires one", () => {
