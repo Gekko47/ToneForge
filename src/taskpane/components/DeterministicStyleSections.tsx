@@ -50,6 +50,11 @@ import {
 } from "../../core/domain/StyleProfile";
 import type { WordCapabilities } from "../../word/capabilityProbe";
 import {
+  familiesNotEnabled,
+  standardIsRequested,
+  STRUCTURAL_STANDARD_LABELS,
+} from "../../formatting/structuralStandards";
+import {
   formatTermList,
   formatTerminology,
   parseTermList,
@@ -781,39 +786,18 @@ export default function DeterministicStyleSections({
    * host nobody has made is worse than no claim, so an unprobed host produces an
    * empty list and the section carries no marking at all.
    */
-  const uncheckedStandards = (() => {
-    if (capabilities === null) return [];
-    const entries: { label: string; reason: string }[] = [];
-    if (!capabilities.supportsListLevel) {
-      entries.push({
-        label: "List level",
-        reason:
-          "this Word version does not serve a list item's level, so a level set here is stored but never compared. The list style is still compared.",
-      });
-    }
-    if (!capabilities.supportsTables) {
-      entries.push({
-        label: "Tables",
-        reason:
-          "this Word version cannot read table properties, so a table standard set here is stored but not compared.",
-      });
-    }
-    if (!capabilities.supportsHeadersFooters) {
-      entries.push({
-        label: "Headers and footers",
-        reason:
-          "this Word version cannot read headers and footers, so a header standard set here is stored but not compared.",
-      });
-    }
-    if (!capabilities.supportsSections) {
-      entries.push({
-        label: "Page setup",
-        reason:
-          "this Word version cannot read section page setup, so margins and orientation set here are stored but not compared.",
-      });
-    }
-    return entries;
-  })();
+  /*
+   * Derived, never authored. The list of standards this host cannot read comes
+   * from the same `structuralStandards` derivation the analyzer gates on, so the
+   * note under the section and the check that actually runs cannot disagree — a
+   * second list of capability flags in this file was the drift risk. `null`
+   * capabilities means the probe has not answered, which is a third state and
+   * marks nothing rather than marking everything.
+   */
+  const uncheckedStandards = familiesNotEnabled(capabilities).map((family) => ({
+    label: STRUCTURAL_STANDARD_LABELS[family].label,
+    reason: STRUCTURAL_STANDARD_LABELS[family].reason,
+  }));
 
   return (
     <div aria-label="Deterministic style sections">
@@ -1301,8 +1285,8 @@ export default function DeterministicStyleSections({
           />
           <CompareToggle
             what="lists"
-            checked={lists?.supported === true}
-            onChange={(next) => patchLists({ supported: next })}
+            checked={standardIsRequested(lists)}
+            onChange={(next) => patchLists({ requested: next })}
           />
         </fieldset>
 
@@ -1337,8 +1321,8 @@ export default function DeterministicStyleSections({
           />
           <CompareToggle
             what="tables"
-            checked={tables?.supported === true}
-            onChange={(next) => patchTables({ supported: next })}
+            checked={standardIsRequested(tables)}
+            onChange={(next) => patchTables({ requested: next })}
           />
         </fieldset>
 
@@ -1361,8 +1345,8 @@ export default function DeterministicStyleSections({
           </label>
           <CompareToggle
             what="headers and footers"
-            checked={headersFooters?.supported === true}
-            onChange={(next) => patchHeadersFooters({ supported: next })}
+            checked={standardIsRequested(headersFooters)}
+            onChange={(next) => patchHeadersFooters({ requested: next })}
           />
         </fieldset>
 
@@ -1397,8 +1381,8 @@ export default function DeterministicStyleSections({
           ))}
           <CompareToggle
             what="page setup"
-            checked={page?.supported === true}
-            onChange={(next) => patchPage({ supported: next })}
+            checked={standardIsRequested(page)}
+            onChange={(next) => patchPage({ requested: next })}
           />
         </fieldset>
       </ProfileSection>

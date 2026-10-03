@@ -193,7 +193,7 @@ describe("DeterministicStyleSections", () => {
    * `formatting.page` were declared in the profile schema, read by the analyzer,
    * and wired to registered rules — so the §11 audit reported all four as
    * covered. But nothing in the pane could set them, so at runtime they were
-   * always at their schema defaults: `supported: false`, no style name. The
+   * always at their schema defaults: `requested: false`, no style name. The
    * table, header/footer and page-setup checks could never produce a finding no
    * matter what a user did. The registry audit cannot see this, because it only
    * checks that a rule reads the field — not that the field is reachable.
@@ -253,13 +253,13 @@ describe("DeterministicStyleSections", () => {
     expect(last.formatting.lists?.level).toBe(1);
     /*
      * The switch is what makes the check reachable. The analyzer returns nothing
-     * unless `supported` is true, so a standard a user set but never switched on
+     * unless `requested` is true, so a standard a user set but never asked for
      * would be a setting that changes nothing — the defect the §11 audit exists
      * to catch, reintroduced through the editor.
      */
     fireEvent.click(screen.getByLabelText("Compare lists against the document"));
     const enabled = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
-    expect(enabled.formatting.lists?.supported).toBe(true);
+    expect(enabled.formatting.lists?.requested).toBe(true);
   });
 
   it("writes a table standard, so a table check is reachable at all", () => {

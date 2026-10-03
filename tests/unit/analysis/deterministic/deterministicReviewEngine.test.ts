@@ -300,9 +300,9 @@ describe("runDeterministicReview", () => {
       ...REVIEW_PROFILE,
       formatting: {
         ...REVIEW_PROFILE.formatting,
-        tables: { styleName: "Table Normal", supported: true, headerRow: true, headerRowCount: 2 },
-        page: { orientation: "landscape", supported: true },
-        headersFooters: { styleName: "Header", required: true, supported: true },
+        tables: { styleName: "Table Normal", requested: true, headerRow: true, headerRowCount: 2 },
+        page: { orientation: "landscape", requested: true },
+        headersFooters: { styleName: "Header", required: true, requested: true },
       },
     });
 
@@ -337,7 +337,7 @@ describe("runDeterministicReview", () => {
    * structural standards were declared in the profile schema, read by the
    * analyzer, and wired to registered rules — so the §11 audit reported all four
    * as covered — while no control anywhere in the pane could set them. At
-   * runtime they sat at their schema defaults, `supported: false` with no style
+   * runtime they sat at their schema defaults, `requested: false` with no style
    * name, and the table, header/footer and page-setup checks could never produce
    * a finding no matter what a user did.
    *
@@ -346,7 +346,7 @@ describe("runDeterministicReview", () => {
    * this" to "this produces a finding", so both halves could be individually
    * green while the product did nothing. So this test drives the engine with
    * exactly the shape `DeterministicStyleSections` writes — same keys, same
-   * `supported: true`, same optional fields — and asserts the findings appear.
+   * `requested: true`, same optional fields — and asserts the findings appear.
    */
   describe("the structural standards are reachable from the profile editor", () => {
     const TEXT = "A table, a header, and a list.";
@@ -357,15 +357,15 @@ describe("runDeterministicReview", () => {
         styleName: "Table Normal",
         headerRow: true,
         headerRowCount: 2,
-        supported: true,
+        requested: true,
       },
-      headersFooters: { styleName: "Header", required: true, supported: true },
+      headersFooters: { styleName: "Header", required: true, requested: true },
       page: {
         orientation: "landscape" as const,
         margins: { top: 72 },
-        supported: true,
+        requested: true,
       },
-      lists: { styleName: "List Number", level: 0, supported: true },
+      lists: { styleName: "List Number", level: 0, requested: true },
     };
 
     type StructuralKey = keyof typeof EDITOR_WRITTEN_FORMATTING;
@@ -446,7 +446,7 @@ describe("runDeterministicReview", () => {
     });
 
     /*
-     * `supported: false` is the analyzer's deliberate floor: a profile parsed
+     * `requested: false` is the analyzer's deliberate floor: a profile parsed
      * from a record written before these fields existed must not start firing
      * findings nobody chose. It is also why the editor carries an explicit
      * switch rather than setting it implicitly — and it is why a standard that
@@ -455,7 +455,7 @@ describe("runDeterministicReview", () => {
      */
     it("produces nothing while the standard is stored but not switched on", async () => {
       const report = await reportFor({
-        tables: { styleName: "Table Normal", headerRow: true, supported: false },
+        tables: { styleName: "Table Normal", headerRow: true, requested: false },
       });
       expect(report.findings.some((finding) => finding.category === "formatting.tableStyle")).toBe(
         false,

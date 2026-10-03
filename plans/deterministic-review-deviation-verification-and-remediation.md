@@ -1124,3 +1124,62 @@ someone would look for it.
 **Verification at this point:** typecheck clean, lint 0 warnings, **2580 tests /
 185 files passing**. The count is two below Phase 3's 2582 because four spacing
 tests became five and three planner rows were removed.
+
+### Phase 4b — Item 15, `supported` becomes `requested`, and `enabled` is derived
+
+**What the audit claimed, and what was true.** §10 P1 says a user-controlled
+`supported` flag asserts a property of the Word host that only the host can
+settle. Verified in full: `ListFormattingStandardSchema`,
+`TableFormattingStandardSchema`, `HeaderFooterStandardSchema` and
+`PageStandardSchema` each carried `supported: z.boolean().default(false)`, the
+profile editor exposed a toggle for each, and the analyzer gated on
+`standard.supported && capabilities.supportsTables`. The flag added no
+capability — it sat _in front of_ the capability gate, not instead of it — but it
+made the profile schema assert something about the host, and a reader of the
+schema had no way to tell which half of the conjunction was derived. Confirmed.
+
+**One thing worth stating plainly, because it cuts the other way.** The old gate
+was not _unsafe_: `supportsTables !== true` still had to hold, so a user could
+not make a check run on a host that could not read it. This was a truthfulness
+and ownership defect, not a false-compliance one. That is why it is filed as a
+rename plus a single derivation rather than as a behavioural fix, and why the
+analyzer's behaviour is unchanged for every input.
+
+**What changed**
+
+- `src/formatting/structuralStandards.ts` (new): `STRUCTURAL_STANDARD_FAMILIES`,
+  `STRUCTURAL_STANDARD_CAPABILITY`, `standardIsRequested`, `standardIsEnabled`,
+  `standardIsChecked`, `STRUCTURAL_STANDARD_LABELS`, `familiesNotEnabled`. The
+  capability shape is declared structurally so `FormattingCapabilities` and
+  `WordCapabilities` both satisfy it and neither module has to import the other
+  — the deterministic boundary is unchanged.
+- The four schemas now carry `requested`, still defaulting to `false`.
+  `HeaderFooterStandardSchema.required` is untouched: "a header must exist" is a
+  house decision.
+- The four analyzer gates call `standardIsChecked`. The `standard === undefined`
+  test is stated separately from the capability test so TypeScript still narrows —
+  a missing standard and an unchecked one both return early, but only the second
+  is a claim about the host.
+- `DeterministicStyleSections` derives `uncheckedStandards` from
+  `familiesNotEnabled(capabilities)` and reads its toggle state through
+  `standardIsRequested`. Its own four-branch capability list and its own four
+  reason strings are gone; they live beside the capability map now.
+
+**Tests.** `tests/unit/formatting/structuralStandards.test.ts` (new, 25 tests)
+covers the parts that the rename alone would not have proven: that authoring
+`requested: true` on a host that reads nothing still checks nothing; that a
+capable host still checks nothing nobody asked for; that an absent capability is
+`false` rather than an assumed yes; that each family maps to the capability that
+actually governs it; that `null` capabilities mark nothing; and, per schema, that
+a legacy `supported: true` is stripped rather than honoured. In
+`analyzer.test.ts` and `deterministicReviewEngine.test.ts` the profile literals
+now say `requested`, and one test's locals were renamed from `unsupported` /
+`supported` to `notAsked` / `asked` — the old names described a house decision in
+the vocabulary of a host fact, which is the defect.
+
+**No migration.** Standing constraint: there are no users. A stored `supported`
+key is stripped by Zod and the standard arrives not-requested and silent, which is
+the safe direction; asserted rather than assumed.
+
+**Verification at this point:** typecheck clean, lint 0 warnings, **2605 tests /
+186 files passing**.

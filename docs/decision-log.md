@@ -4135,3 +4135,96 @@ punctuation mark to whitespace.
 dropdown); `src/style/versioning.ts` (`diffProfiles` field table);
 `tests/unit/rules/typography.test.ts`;
 `tests/unit/changes/planner.test.ts`.
+
+## ADR-0114 — A profile says what the house asked for; the host says what it can read
+
+- **Status**: Accepted
+- **Date**: 2026-10-03
+- **Plan item**: Phase 4, item 15
+
+### Context
+
+`ListFormattingStandardSchema`, `TableFormattingStandardSchema`,
+`HeaderFooterStandardSchema` and `PageStandardSchema` each carried a
+`supported: z.boolean().default(false)`. A user set it from the profile editor,
+and the analyzer gated on it _and_ on a probed capability:
+
+```ts
+if (!standard || !standard.supported || capabilities.supportsTables !== true) return [];
+```
+
+Two facts were being mixed under one name.
+
+1. **The flag asserted something about the host that no user can know.** Ticking
+   "check tables" read as "this Word can read tables". It cannot: the capability
+   probe answers that, and the probe's answer is right beside the flag. The flag
+   added no capability and removed the need to look at one.
+2. **It duplicated the gate.** The conjunction was already `user flag AND
+capability`, so the same question — can this host read tables? — had two
+   answers in two places, and the user-editable one was the one a reader of the
+   profile schema would take as authoritative.
+
+The name also inverted the direction of responsibility in the editor. A house
+deciding "we do check table styles" is stating its own standard; a house
+asserting "this Word supports tables" is stating a fact about somebody else's
+software. `DeterministicStyleSections` had already derived the honest version of
+the second half, per-section, from the probed capabilities — so the product
+already contained the right answer and simply also exposed a wrong one as an
+editable field.
+
+### Decision
+
+1. The four profile schemas carry **`requested`**, not `supported`. It is the
+   house's decision, it keeps the `false` default (a record written before the
+   field existed must not start firing a check nobody asked for), and it is
+   renamed rather than aliased so no reader can mistake it for a host fact.
+2. The derived half lives in one pure module, `src/formatting/structuralStandards.ts`:
+   `standardIsRequested`, `standardIsEnabled`, `standardIsChecked`,
+   `familiesNotEnabled`, plus the `STRUCTURAL_STANDARD_CAPABILITY` map and the
+   reader-facing `STRUCTURAL_STANDARD_LABELS`.
+3. The analyzer gates on `standardIsChecked(family, standard, capabilities)`.
+4. `DeterministicStyleSections` derives its per-standard "not read here" note
+   from `familiesNotEnabled(capabilities)` instead of carrying its own list of
+   capability flags and its own copy of the four reason strings.
+5. `HeaderFooterStandardSchema.required` is unchanged. "A header must exist" is a
+   statement about the house, not about Word.
+6. No migration is written. Per the standing product-owner constraint there are
+   no users. A stored `supported: true` is stripped by Zod and the standard
+   arrives not-requested and silent — the safe direction, and asserted by test
+   rather than assumed.
+
+### Consequences
+
+- **A profile can no longer assert anything about a Word host.** Setting
+  `requested: true` on every structural standard on a host that serves nothing
+  produces no findings, and the test file proves it for all four families.
+- **The editor's note and the analyzer's gate can no longer drift.** They read
+  one derivation. The four reason strings moved with the map, so renaming a
+  capability is a single edit.
+- **`supportsTables` and friends remain optional and are read as `false` when
+  absent.** A host that never claimed a capability is not a host that supports
+  it; the probe already defaults every Office.js-dependent family to `false` for
+  this reason, and the derivation now matches it.
+- **The label vocabulary is now pinned by a test.** "Tables" is what the toggle
+  says and what the note says; a future edit that makes one "Table formatting"
+  fails rather than shipping two names for one thing.
+- **`src/formatting` gains a module but takes no new import.** The capability
+  shape is declared structurally, so `FormattingCapabilities` and
+  `WordCapabilities` both satisfy it without either module importing the other.
+  The deterministic boundary (no imports from `analysis` or `word`) is intact.
+- **`unwiredProfilePaths()` is unaffected.** `PROFILE_FIELD_PATHS` names the four
+  sections as whole objects, so a field rename inside one does not change the
+  registry's declared paths.
+
+### Evidence
+
+`src/formatting/structuralStandards.ts` (new);
+`src/core/domain/StyleProfile.ts` (`ListFormattingStandardSchema`,
+`TableFormattingStandardSchema`, `HeaderFooterStandardSchema`,
+`PageStandardSchema`); `src/formatting/analyzer.ts` (`checkListFormatting`,
+`checkTableFormatting`, `checkHeaderFooterFormatting`, `checkPageSetup`);
+`src/taskpane/components/DeterministicStyleSections.tsx` (`uncheckedStandards`
+and the four compare toggles);
+`tests/unit/formatting/structuralStandards.test.ts` (new);
+`tests/unit/formatting/analyzer.test.ts`;
+`tests/unit/analysis/deterministic/deterministicReviewEngine.test.ts`.

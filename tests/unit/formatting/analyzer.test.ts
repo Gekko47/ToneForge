@@ -319,24 +319,29 @@ describe("findFormattingIssues", () => {
       expect(listStyle[0]?.deterministic?.profilePath).toBe("formatting.lists.styleName");
     });
 
-    it("compares the list level only when the profile says the check is supported", () => {
+    /*
+     * The two halves, named for what they are. `notAsked` and `asked` used to be
+     * `unsupported` and `supported`, which was the old flag's whole problem: a
+     * house decision was being described in the vocabulary of a host fact.
+     */
+    it("compares the list level only when the house has asked for the check", () => {
       const paragraphs = [{ ...paragraph(0, "An item"), styleName: "List Bullet", listLevel: 2 }];
 
-      const unsupported = run(paragraphs, {
+      const notAsked = run(paragraphs, {
         profile: profile({
           bodyStyle: { styleName: "Normal" },
-          lists: { level: 0, supported: false },
+          lists: { level: 0, requested: false },
         }),
       });
-      expect(categories(unsupported)).not.toContain("formatting.listLevel");
+      expect(categories(notAsked)).not.toContain("formatting.listLevel");
 
-      const supported = run(paragraphs, {
+      const asked = run(paragraphs, {
         profile: profile({
           bodyStyle: { styleName: "Normal" },
-          lists: { level: 0, supported: true },
+          lists: { level: 0, requested: true },
         }),
       });
-      const level = supported.filter((f) => f.category === "formatting.listLevel");
+      const level = asked.filter((f) => f.category === "formatting.listLevel");
       expect(level).toHaveLength(1);
       expect(level[0]?.deterministic?.profilePath).toBe("formatting.lists.level");
     });
@@ -347,7 +352,7 @@ describe("findFormattingIssues", () => {
         {
           profile: profile({
             bodyStyle: { styleName: "Normal" },
-            lists: { level: 0, supported: true },
+            lists: { level: 0, requested: true },
           }),
           capabilities: NO_CAPABILITIES,
         },
@@ -429,7 +434,7 @@ describe("findFormattingIssues", () => {
         {
           profile: profile({
             bodyStyle: { styleName: "Normal" },
-            lists: { styleName: "List Paragraph", supported: true },
+            lists: { styleName: "List Paragraph", requested: true },
           }),
         },
       );
@@ -444,7 +449,7 @@ describe("findFormattingIssues", () => {
       const findings = run([{ ...paragraph(0, "One"), styleName: "List Bullet" }], {
         profile: profile({
           bodyStyle: { styleName: "Normal" },
-          lists: { styleName: "List Paragraph", supported: true },
+          lists: { styleName: "List Paragraph", requested: true },
         }),
       });
       const style = findings.find((f) => f.category === "formatting.listStyle");
@@ -460,7 +465,7 @@ describe("findFormattingIssues", () => {
         {
           profile: profile({
             bodyStyle: { styleName: "Normal" },
-            lists: { level: 0, supported: true },
+            lists: { level: 0, requested: true },
           }),
         },
       );
@@ -478,7 +483,7 @@ describe("findFormattingIssues", () => {
       const findings = run([{ ...paragraph(0, "One"), styleName: "List Bullet", listLevel: 2 }], {
         profile: profile({
           bodyStyle: { styleName: "Normal" },
-          lists: { level: 0, supported: true },
+          lists: { level: 0, requested: true },
         }),
       });
       const level = findings.find((f) => f.category === "formatting.listLevel");
@@ -636,7 +641,7 @@ describe("findFormattingIssues", () => {
     });
 
     const tableProfile = () =>
-      profile({ tables: { styleName: "Table Normal", headerRowCount: 2, supported: true } });
+      profile({ tables: { styleName: "Table Normal", headerRowCount: 2, requested: true } });
 
     describe("tables (spec §10.5)", () => {
       it("reports a table style the profile did not name", () => {
@@ -711,7 +716,7 @@ describe("findFormattingIssues", () => {
 
     describe("headers and footers (spec §8.4)", () => {
       const headerProfile = () =>
-        profile({ headersFooters: { styleName: "Header", required: true, supported: true } });
+        profile({ headersFooters: { styleName: "Header", required: true, requested: true } });
 
       it("reports a header carrying a style the profile did not name", () => {
         const findings = runStructural(
@@ -743,7 +748,7 @@ describe("findFormattingIssues", () => {
           { headersFooters: [headerFooter({ font: { name: "Arial", size: 9 } })] },
           {
             profile: profile({
-              headersFooters: { font: { name: "Calibri", size: 9 }, supported: true },
+              headersFooters: { font: { name: "Calibri", size: 9 }, requested: true },
             }),
           },
         );
@@ -773,7 +778,7 @@ describe("findFormattingIssues", () => {
     });
 
     describe("page setup (spec §8.5)", () => {
-      const pageProfile = () => profile({ page: { orientation: "landscape", supported: true } });
+      const pageProfile = () => profile({ page: { orientation: "landscape", requested: true } });
 
       it("reports an orientation the profile did not ask for", () => {
         const findings = runStructural({ sections: [section()] }, { profile: pageProfile() });
@@ -807,7 +812,7 @@ describe("findFormattingIssues", () => {
       it("compares each margin edge separately, so a group is one remedy", () => {
         const findings = runStructural(
           { sections: [section({ margins: { top: 72, bottom: 36, left: 72, right: 72 } })] },
-          { profile: profile({ page: { margins: { bottom: 72 }, supported: true } }) },
+          { profile: profile({ page: { margins: { bottom: 72 }, requested: true } }) },
         );
         const marginFindings = findings.filter(
           (f) => f.deterministic?.profilePath === "formatting.page.margins.bottom",

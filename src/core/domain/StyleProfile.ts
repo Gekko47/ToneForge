@@ -516,14 +516,36 @@ export const ParagraphStyleStandardSchema = z.object({
 });
 export type ParagraphStyleStandard = z.infer<typeof ParagraphStyleStandardSchema>;
 
+/*
+ * Spec §6 lists, tables, headers/footers and page setup.
+ *
+ * **Why every one of these says `requested` and not `supported`.** Each of these
+ * four standards carried a `supported: z.boolean()` a user set from the editor,
+ * named after a property of the *host* — whether this Word install can read
+ * tables — but authored by a *person*, who cannot know that and did not mean to
+ * assert it. The analyzer already gated on the probed capability right beside
+ * it, so the same question had two answers and only one was derived from
+ * anything. The flag is now `requested`: the house's decision, kept apart from
+ * the derived fact that this host can read the structure at all
+ * (`structuralStandards.ts`). A standard is compared only when both hold.
+ *
+ * `required` on the header/footer standard is unaffected and stays: a header
+ * must exist is a statement about the house, not about Word.
+ */
+
 /** Spec §6 lists. */
 export const ListFormattingStandardSchema = z.object({
   /** The Word style a list paragraph should carry, e.g. `List Paragraph`. */
   styleName: z.string().trim().min(1).optional(),
   /** The level a list item of this depth should carry. */
   level: z.number().int().min(0).max(8).optional(),
-  /** Whether list level is a property this review can verify at all. */
-  supported: z.boolean().default(false),
+  /**
+   * Whether the house asked for list levels to be compared.
+   *
+   * `false` by default on purpose: a profile parsed from a record written before
+   * this field existed must not start firing a check nobody asked for.
+   */
+  requested: z.boolean().default(false),
 });
 export type ListFormattingStandard = z.infer<typeof ListFormattingStandardSchema>;
 
@@ -544,14 +566,8 @@ export const TableFormattingStandardSchema = z.object({
   cellStyleName: z.string().trim().min(1).optional(),
   /** How many leading rows are header rows. */
   headerRowCount: z.number().int().min(0).max(10).optional(),
-  /**
-   * Whether table properties are readable in this host.
-   *
-   * The analyzer reads this before comparing anything, so a profile that
-   * configures a table standard on a host without table support reports a
-   * coverage limitation rather than a clean table.
-   */
-  supported: z.boolean().default(false),
+  /** Whether the house asked for table properties to be compared. */
+  requested: z.boolean().default(false),
 });
 export type TableFormattingStandard = z.infer<typeof TableFormattingStandardSchema>;
 
@@ -559,9 +575,10 @@ export type TableFormattingStandard = z.infer<typeof TableFormattingStandardSche
 export const HeaderFooterStandardSchema = z.object({
   styleName: z.string().trim().min(1).optional(),
   font: CharacterStandardSchema.optional(),
-  /** Whether a header or footer is required to exist. */
+  /** Whether a header or footer is required to exist. A house decision. */
   required: z.boolean().default(false),
-  supported: z.boolean().default(false),
+  /** Whether the house asked for headers and footers to be compared. */
+  requested: z.boolean().default(false),
 });
 export type HeaderFooterStandard = z.infer<typeof HeaderFooterStandardSchema>;
 
@@ -580,7 +597,8 @@ export const PageStandardSchema = z.object({
   /** Page width and height in twips, as Word measures them. */
   width: z.number().int().positive().max(31680).optional(),
   height: z.number().int().positive().max(31680).optional(),
-  supported: z.boolean().default(false),
+  /** Whether the house asked for page setup to be compared. */
+  requested: z.boolean().default(false),
 });
 export type PageStandard = z.infer<typeof PageStandardSchema>;
 

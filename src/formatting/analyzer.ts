@@ -38,6 +38,7 @@ import type {
   HeaderFooterSnapshot,
 } from "./formattingSnapshot";
 import { lookupWordStyle, HEADING_STYLE_NAMES } from "./wordStyles";
+import { standardIsChecked } from "./structuralStandards";
 
 /**
  * The host capabilities the formatting comparisons depend on.
@@ -673,9 +674,8 @@ function checkListFormatting(
     }
 
     if (
-      capabilities.supportsListLevel &&
-      lists?.supported === true &&
-      lists.level !== undefined &&
+      standardIsChecked("lists", lists, capabilities) &&
+      lists?.level !== undefined &&
       level !== lists.level
     ) {
       findings.push(
@@ -710,7 +710,10 @@ function checkTableFormatting(
 ): Finding[] {
   const standard = profile.tables;
   const tables = snapshot.tables ?? [];
-  if (!standard || !standard.supported || capabilities.supportsTables !== true) return [];
+  // `standard === undefined` is stated separately so TypeScript narrows it: a
+  // missing standard and an unchecked one both return early, but only the second
+  // is a claim about the host.
+  if (standard === undefined || !standardIsChecked("tables", standard, capabilities)) return [];
 
   return tables.flatMap((table) => {
     const findings: Finding[] = [];
@@ -846,7 +849,9 @@ function checkHeaderFooterFormatting(
 ): Finding[] {
   const standard = profile.headersFooters;
   const headersFooters = snapshot.headersFooters ?? [];
-  if (!standard || !standard.supported || capabilities.supportsHeadersFooters !== true) return [];
+  if (standard === undefined || !standardIsChecked("headersFooters", standard, capabilities)) {
+    return [];
+  }
 
   const findings = headersFooters.flatMap((headerFooter) => {
     /*
@@ -989,7 +994,7 @@ function checkPageSetup(
 ): Finding[] {
   const standard = profile.page;
   const sections = snapshot.sections ?? [];
-  if (!standard || !standard.supported || capabilities.supportsSections !== true) return [];
+  if (standard === undefined || !standardIsChecked("page", standard, capabilities)) return [];
 
   return sections.flatMap((section) => {
     const findings: Finding[] = [];
