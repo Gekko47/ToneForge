@@ -4553,3 +4553,75 @@ The category was also the last of its kind: its two siblings from the same rule 
 `src/core/domain/GovernanceProfile.ts` (`GOVERNANCE_RULE_SOURCES`);
 `src/taskpane/components/GovernancePolicySection.tsx`;
 `tests/unit/analysis/deterministic/taxonomyConvergence.test.ts` (new, 14 tests).
+
+## ADR-0119 — A group is decided only by the run that produced its findings
+
+### Context
+
+The engine has always grouped equivalent occurrences and put a batch-safety
+verdict on each group (`safeBatchApproval`, `batchRefusalReason`). Nothing read
+either: the whole `batchApproval` module was unreachable (ND-7) and
+`DetermisticReviewReport.groups` was computed and dropped (ND-9).
+
+The audit's instruction was "render `report.groups` in the Dashboard". Taken
+literally that is wrong, and following it would have produced a broken feature
+that looked finished.
+
+The Dashboard's findings list reads the **observer's** scan. The only `groups`
+the Dashboard could have reached without a new field belonged to the **preview**
+run — a different `runDeterministicReview` call with its own acquisition and its
+own rule pass, which issues separate uuids for the same problem. The two runs
+therefore never share an occurrence id. Joining them by id would report every
+occurrence as missing and refuse every group for the wrong reason.
+
+That is not a hypothetical. It is the same class of defect the review gate and
+the reviewed-only projection were both repaired for earlier: two places assuming
+a finding id means the same thing across runs.
+
+### Decision
+
+`DocumentObserverStatus` carries `groups` from **its own** `runDeterministicReview`
+call, replaced on every accepted scan alongside `findings`. Since both come out of
+one call, `group.occurrenceIds` addresses `status.findings` exactly.
+
+A new pure module, `taskpane/findingGroups`, joins those groups to the findings
+the pane is actually showing, under three rules:
+
+- **A finding is never dropped.** A group that cannot be fully resolved is
+  rendered with a `missing` count and its surviving occurrences, and a group that
+  resolves to nothing is reported as stale. Filtering the list to what a group
+  names — the obvious implementation — silently deletes a real finding because a
+  bookkeeping field moved out of step.
+- **A group of one renders as a plain occurrence.** Keyed on the _declared_ size,
+  not the resolved one, so a group of two with one missing keeps the warning it
+  carries.
+- **Units are ordered by document position.** The findings toolbar steps an index
+  into this list; ordering by group would make "Finding 3 of 12" land somewhere
+  else while the counts stayed unchanged.
+
+The Dashboard's new `approveGroupAll`/`skipGroupAll` hand the group to
+`batchApproval`, which stays the only implementation of the all-or-nothing rule,
+and record nothing when it refuses. Occurrence identity is read through
+`reviewIdentity`, not a local derivation — this codebase has already shipped two
+defects from a second, near-identical identity key.
+
+`FindingGroupCard` renders the engine's verdict rather than re-deriving it:
+"Approve all" is **disabled carrying `batchRefusalReason`**, never hidden, and
+nothing is approved without a press (D6).
+
+### Consequences
+
+- ND-7 and ND-9 are closed. The batch module is reachable and `groups` is read.
+- The pane cannot approve text it is not showing: a group whose ids do not resolve
+  refuses in `batchApproval`, and the header states how many are unaccounted for.
+- Two runs' reports still exist and still differ; the pane now reads one of them
+  consistently rather than mixing them.
+- The host gate is untouched. Nothing here has been exercised in Word.
+
+### Evidence
+
+`src/word/documentObserver.ts`; `src/taskpane/findingGroups.ts`;
+`src/taskpane/components/FindingGroupCard.tsx`;
+`src/taskpane/components/FindingsList.tsx`; `src/taskpane/pages/Dashboard.tsx`;
+`tests/unit/taskpane/findingGroups.test.ts` (15);
+`tests/unit/taskpane/components/findingGroupCard.test.tsx` (12).

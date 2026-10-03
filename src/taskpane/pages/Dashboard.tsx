@@ -23,6 +23,7 @@ import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPane
 import ReviewWithoutProfile from "./ReviewWithoutProfile";
 import FindingsList from "../components/FindingsList";
 import FindingsToolbar from "../components/FindingsToolbar";
+import { approveGroup, skipGroup } from "../batchApproval";
 import CoverageBanner, { scopeLabel } from "../components/CoverageBanner";
 import ApplyResultBlock from "../components/ApplyResultBlock";
 import StaleBanner from "../components/StaleBanner";
@@ -35,6 +36,7 @@ import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
 import { decidePreview, isFullScan } from "../autoPreview";
 import { reviewFinding, reviewedPlan } from "../reviewGate";
 import { approvedIdentities, unapprovableReason } from "../approvalControls";
+import type { DeterministicFindingGroup } from "../../analysis/deterministic/contracts";
 import {
   clearReviewDecision,
   ensureReviewSession,
@@ -1281,6 +1283,96 @@ function DashboardWithProfile({
     announcement.announce("Decision undone.");
   }
 
+  /**
+   * Approve every occurrence in a group, or none of them (spec §13, §15).
+   *
+   * **The all-or-nothing rule is not reimplemented here.** `approveGroup` decides
+   * it, and it is handed the *preview* plan and the preview run's own findings —
+   * the same pairing `reviewOne` uses, because a change names its finding by a
+   * uuid from the run that planned it. Handing it the observer's findings would
+   * match nothing and refuse every group for the wrong reason.
+   *
+   * The group's occurrences are the observer's, because that is the run whose
+   * findings the user is looking at. That is why the observer carries its groups:
+   * a group joined across runs would have every occurrence "missing", and
+   * `undecidedOccurrences` refuses exactly that.
+   *
+   * A refusal records nothing. That is the module's whole design and the reason it
+   * exists rather than a loop over `reviewFinding`: a group where some can be
+   * approved and some cannot is refused whole, so the button has one predictable
+   * outcome rather than a partial success depending on data the user cannot see.
+   */
+  function approveGroupAll(group: DeterministicFindingGroup): void {
+    const outcome = approveGroup({
+      group,
+      findings,
+      plan: previewPlanRef.current,
+      planFindings: previewFindingsRef.current,
+      alreadyDecided: new Set([...reviewedKeys, ...skippedKeys]),
+      decidedAt: new Date().toISOString(),
+    });
+    if (outcome.kind === "refused") {
+      setReviewNote(outcome.message);
+      announcement.announce(outcome.message);
+      return;
+    }
+    /*
+     * Persisted after the verdict, not before.
+     *
+     * The module returns the decisions to record; it deliberately does not write.
+     * Recording first would leave approvals in the store for a group the change
+     * checks then refused — Pending Changes would show occurrences the user never
+     * successfully approved.
+     */
+    try {
+      outcome.decisions.forEach((entry) => saveReviewDecision(entry));
+      setExpiredDecisionCount(0);
+    } catch (error: unknown) {
+      setReviewNote(
+        `That decision could not be recorded: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    setReviewNote(outcome.message);
+    announcement.announce(outcome.message);
+    setPendingOpen(true);
+  }
+
+  /**
+   * Decline every occurrence in a group, for the same all-or-nothing reason.
+   *
+   * Needs no plan: declining is not consenting, and twenty banned terms left in
+   * the document carry no risk. A group the engine refused to *approve* as a batch
+   * can still be declined as one, which is why this does not consult
+   * `safeBatchApproval`.
+   */
+  function skipGroupAll(group: DeterministicFindingGroup): void {
+    const outcome = skipGroup({
+      group,
+      findings,
+      plan: previewPlanRef.current,
+      planFindings: previewFindingsRef.current,
+      alreadyDecided: new Set([...reviewedKeys, ...skippedKeys]),
+      decidedAt: new Date().toISOString(),
+    });
+    if (outcome.kind === "refused") {
+      setReviewNote(outcome.message);
+      announcement.announce(outcome.message);
+      return;
+    }
+    try {
+      outcome.decisions.forEach((entry) => saveReviewDecision(entry));
+      setExpiredDecisionCount(0);
+    } catch (error: unknown) {
+      setReviewNote(
+        `That decision could not be recorded: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    setReviewNote(outcome.message);
+    announcement.announce(outcome.message);
+  }
+
   function rescanNow(): void {
     previewedDocHashRef.current = null;
     setReformatResult(null);
@@ -1674,6 +1766,18 @@ function DashboardWithProfile({
               <FindingsList
                 id={FINDINGS_LIST_ID}
                 findings={findings}
+                /*
+                 * This run's own groups, not the preview report's.
+                 *
+                 * The list is the observer's findings (see above), and the two runs
+                 * issue separate uuids, so the preview's `occurrenceIds` name
+                 * occurrences that are not in this list. The observer carries the
+                 * groups from the same `runDeterministicReview` call that produced
+                 * these findings, so they address it exactly.
+                 */
+                groups={status?.groups ?? []}
+                onApproveAll={approveGroupAll}
+                onSkipAll={skipGroupAll}
                 selectedIndex={workflow.planReview.selectedFindingIndex}
                 reviewedKeys={reviewedKeys}
                 skippedKeys={skippedKeys}

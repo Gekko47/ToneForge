@@ -16,7 +16,10 @@ import { acquireAnalysisContext } from "./analysisAcquisition";
 import type { AnalysisCapabilities } from "../analysis/analysisContext";
 import type { GovernanceProfile } from "../core/domain/GovernanceProfile";
 import { type CoverageReport } from "../core/domain/DocumentSnapshot";
-import type { DeterministicCoverage } from "../analysis/deterministic/contracts";
+import type {
+  DeterministicCoverage,
+  DeterministicFindingGroup,
+} from "../analysis/deterministic/contracts";
 import { type StyleProfile } from "../core/domain/StyleProfile";
 import { type Finding } from "../core/domain/Finding";
 import type { ReviewSessionIdentity } from "../core/domain/ReviewSession";
@@ -51,6 +54,17 @@ export interface DocumentObserverStatus {
    */
   hostUnavailable: boolean;
   findings: Finding[];
+  /**
+   * The occurrence groups this same run produced, for the batch controls.
+   *
+   * From *this* run, not from the preview's report. The two runs issue separate
+   * uuids for the same problem, so a group joined to the other run's findings
+   * names occurrences that do not exist in the list beside it — the same
+   * id-to-id join the review gate already had to be repaired for. Since these
+   * findings and these groups come out of one `runDeterministicReview` call,
+   * `group.occurrenceIds` addresses `findings` exactly.
+   */
+  groups: DeterministicFindingGroup[];
   /**
    * The shared coverage report, for the diagnostics the coverage banner and
    * the Troubleshooting panel read.
@@ -94,6 +108,7 @@ interface ObserverState {
   supersededRuns: number;
   phase: DocumentScanPhase;
   findings: Finding[];
+  groups: DeterministicFindingGroup[];
   lastScan: string | null;
   dirtyCount: number;
   stale: boolean;
@@ -195,6 +210,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     supersededRuns: 0,
     phase: "notStarted",
     findings: [],
+    groups: [],
     lastScan: null,
     dirtyCount: 0,
     stale: false,
@@ -295,6 +311,16 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
           : {}),
       });
       state.findings = report.findings;
+      /*
+       * Groups travel with the findings they were computed from.
+       *
+       * The engine already builds them; dropping them here is what left the whole
+       * batch-approval module unreachable (ND-7) and `report.groups` read by
+       * nothing (ND-9). Holding a group from a *previous* run would be worse than
+       * holding none — its occurrence ids would name text that has moved — so this
+       * is replaced on every accepted scan alongside the findings themselves.
+       */
+      state.groups = report.groups;
       state.coverage = coverage;
       state.deterministicCoverage = report.coverage;
       state.reviewSessionIdentity = {
@@ -370,6 +396,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
               ? false
               : state.stale,
         findings: state.findings,
+        groups: state.groups,
         coverage: state.coverage,
         deterministicCoverage: state.deterministicCoverage,
         reviewSessionIdentity: state.reviewSessionIdentity,

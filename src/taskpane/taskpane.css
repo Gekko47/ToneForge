@@ -98,6 +98,32 @@ body {
   box-shadow: inset 3px 0 0 var(--tf-accent);
 }
 
+/* An occurrence group (spec §13, §15). Indented from its siblings rather than boxed,
+   so a group reads as a set of the findings around it instead of a separate thing.
+   The 12px is the same as the card's own padding, which is what makes a group's
+   occurrences line up under the header that names them. */
+.tf-finding-group {
+  margin-bottom: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--tf-border);
+}
+
+.tf-finding-group-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+/* The header's own controls read as a row, not as the space-between pair the
+   per-card action row uses — there is nothing to push apart here. */
+.tf-finding-group .tf-finding-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
 .tf-finding-card-header,
 .tf-finding-actions {
   display: flex;

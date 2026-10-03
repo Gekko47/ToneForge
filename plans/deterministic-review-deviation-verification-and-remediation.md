@@ -1407,3 +1407,67 @@ same field.
 - Phase 5 (review UX), Phase 6 (editor) and Phase 7 (gate and evidence).
 - `npm run verify` has not been run since Phase 4a; coverage, build, manifest and
   package checks are Phase 7 work.
+
+### Phase 5a — Occurrence groups reach the pane (ND-9, ND-7, UX-2, D6)
+
+#### The audit's instruction was not implementable as written
+
+ND-9 says "render `report.groups` in the Dashboard". The only `groups` the
+Dashboard could reach belonged to the **preview** run, while its findings list
+renders the **observer's** scan. Those are two `runDeterministicReview` calls with
+separate acquisitions, and they issue separate uuids for the same problem — so
+every `occurrenceIds` entry would fail to resolve and every group would refuse.
+
+This is the third time this codebase has been bitten by the same shape. The review
+gate was repaired for it, then `reviewedPlan`. I did not add a fourth.
+
+#### What was done instead
+
+The observer now carries `groups` from **its own** report, replaced on every
+accepted scan beside `findings`, so the ids address the list exactly.
+
+`taskpane/findingGroups.ts` is the pure join, and it holds the rule that matters:
+**a finding is never dropped**. A group that cannot fully resolve renders with a
+`missing` count and its surviving occurrences; a group resolving to nothing is
+reported stale rather than allowed to delete real findings. The obvious
+implementation — filter the list to what a group names — would silently remove a
+finding from the user's document because a bookkeeping field went out of step.
+
+`FindingGroupCard` renders the engine's verdict rather than re-deriving it.
+"Approve all" is **disabled carrying `batchRefusalReason`**, never hidden, per
+ADR-0069. `approveGroupAll`/`skipGroupAll` hand the group to `batchApproval`,
+which stays the only implementation of the all-or-nothing rule, and record nothing
+when it refuses.
+
+#### Two bugs the tests caught, both in code I had just written
+
+1. **`missing` counted the wrong thing.** I subtracted `members.length` from
+   `fresh.length`, which measures occurrences another group won — and reported
+   those as "missing from the document". Text that is very much present was being
+   described as absent. It now subtracts resolved ids from the _declared_ size.
+
+2. **A group of two with one missing collapsed to a plain card.** The single-render
+   rule tested how many members resolved. A group that declared two occurrences
+   and showed one has something to say — one could not be shown and cannot be
+   approved — and the collapse hid exactly that. It now tests the declared size.
+
+#### A fixture worth recording
+
+`Finding.id` is a uuid and the group schema validates `occurrenceIds` as uuids, so
+readable fixture ids fail the schema before any behaviour is reached. My first
+three attempts each failed differently: a lookup table that threw on the tenth
+label, a derived format that produced a 32-character string, and a table whose
+leading segment ran to nine characters past the tenth entry. The version that
+works `padStart`s both segments. Every failure surfaced as `Invalid uuid` at a
+path pointing at nothing in the test file.
+
+#### Verification
+
+`npx tsc --noEmit` clean. `npm run lint` 0 warnings. **2681 tests / 191 files
+passing**, up from 2654 / 189. New: `findingGroups.test.ts` (15),
+`findingGroupCard.test.tsx` (12).
+
+#### Still open in Phase 5
+
+UX-1 (manual-correction state), UX-3a (card variants), UX-3 (slim card), and the
+coverage verdict states. The host gate is untouched — none of this has run in Word.
