@@ -4625,3 +4625,69 @@ nothing is approved without a press (D6).
 `src/taskpane/components/FindingsList.tsx`; `src/taskpane/pages/Dashboard.tsx`;
 `tests/unit/taskpane/findingGroups.test.ts` (15);
 `tests/unit/taskpane/components/findingGroupCard.test.tsx` (12).
+
+## ADR-0120 — The compliance verdict needs the findings, not just the coverage
+
+### Context
+
+The audit (§17) noted that three verdicts rendered and that "Compliant within
+checked scope" was not expressible. It recorded this as a vocabulary gap. Reading
+the code, it was a correctness gap wearing a vocabulary costume.
+
+`CoverageBanner` derived its verdict from `DeterministicCoverage.complete` alone
+and printed `Complete` when it was true. `complete` means "every scope the author
+requested was examined". It says nothing about whether anything was found — the
+coverage record does not carry findings at all.
+
+So a run that examined every requested scope and produced two hundred open
+findings printed `Complete`, and the word a reader takes from `Complete` is
+"nothing to do". That is precisely the false-compliance claim the coverage model
+exists to prevent (ADR-0066), reached by the one route the model was not guarding:
+not by lying about coverage, but by reporting coverage and letting it be read as
+compliance.
+
+### Decision
+
+A pure module, `taskpane/coverageVerdict`, derives four verdicts from the
+coverage **and** the open-finding count:
+
+- `unknown` — only the shared report arrived. It has no
+  requested-versus-examined list, so no claim is available at all.
+- `incomplete` — something the author made mandatory was not examined.
+- `compliant` — everything requested was examined and nothing is open.
+- `findings-open` — everything requested was examined, and there is work to do.
+
+The compliant label is the full phrase **"Compliant within checked scope"**, not a
+bare "Compliant". A document checked only for body text says nothing about the
+tables it never looked at, and the qualifier is the difference between a bounded
+claim and an over-claim.
+
+`CoverageBanner` takes `openFindings` as a prop and the Dashboard passes
+`openSummary.total` — the same ignore-filtered number the findings header prints,
+so the banner and the list cannot disagree about what is left to do.
+
+The verdict's detail sentence moved into the same module, replacing a hand-written
+`Unknown` explanation that left the other three branches with none. Every branch
+now names its own limit.
+
+### Consequences
+
+- A clean, fully-examined document and a fully-examined document with open work
+  now read differently. That is the whole point.
+- `incomplete` takes precedence over `findings-open`. A missing mandatory scope
+  is the more important fact, and leading with a count would bury the reason the
+  run cannot speak for the document.
+- Three existing tests asserted the literal string `Coverage Complete`. Their
+  claims were kept and the wording updated; one of them — "a host limitation is
+  not a blocker" — is now asserted as _not_ `Incomplete` rather than as a
+  particular positive label, which is what it was actually protecting.
+- The pane still cannot claim more than it checked, and now says so in the
+  verdict itself rather than only in the collapsed detail.
+
+### Evidence
+
+`src/taskpane/coverageVerdict.ts`; `src/taskpane/components/CoverageBanner.tsx`;
+`src/taskpane/pages/Dashboard.tsx`;
+`tests/unit/taskpane/coverageVerdict.test.ts` (15);
+`tests/unit/taskpane/components/CoverageBanner.test.tsx`;
+`tests/unit/taskpane/components/findingsListIntegrity.test.tsx`.

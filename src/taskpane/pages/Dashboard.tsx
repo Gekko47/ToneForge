@@ -1890,6 +1890,14 @@ function DashboardWithProfile({
           <CoverageBanner
             coverage={status?.coverage ?? null}
             deterministicCoverage={status?.deterministicCoverage ?? null}
+            /*
+             * The open count, so the verdict can be a compliance claim rather
+             * than only a coverage claim. `openSummary.total` is the same number
+             * the findings header prints — filtered for ignores, recomputed from
+             * the visible list — so the banner and the list cannot disagree about
+             * what is left to do.
+             */
+            openFindings={openSummary.total}
             open={coverageIncomplete || coverageOpen}
             onToggle={() => setCoverageOpen((open) => !open)}
             onRescan={() => {

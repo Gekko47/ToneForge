@@ -28,6 +28,7 @@ import type {
   DeterministicCoverage,
   ScopeKind,
 } from "../../analysis/deterministic/contracts";
+import { coverageVerdict, verdictDetail, verdictLabel } from "../coverageVerdict";
 
 export interface CoverageBannerProps {
   /** The shared report: per-node counts and acquisition diagnostics. */
@@ -41,6 +42,16 @@ export interface CoverageBannerProps {
    * banner shows the counts and no verdict instead of inferring one.
    */
   deterministicCoverage?: DeterministicCoverage | null;
+  /**
+   * Findings the user has not decided, for the compliance verdict.
+   *
+   * Passed in rather than derived here: the banner is the only surface allowed to
+   * state a compliance claim, and a claim needs the findings as well as the
+   * coverage. `DeterministicCoverage` knows what was examined and nothing about
+   * whether anything was wrong, so a verdict derived from it alone would report a
+   * document with two hundred open findings as `Complete`.
+   */
+  openFindings?: number;
   /** Whether the detail is expanded. */
   open: boolean;
   onToggle: () => void;
@@ -101,6 +112,7 @@ function blockerLine(blocker: CoverageBlocker): string {
 export default function CoverageBanner({
   coverage,
   deterministicCoverage = null,
+  openFindings = 0,
   open,
   onToggle,
   onRescan,
@@ -110,20 +122,16 @@ export default function CoverageBanner({
   }
 
   /*
-   * Three verdicts, not two.
+   * Four verdicts, derived in one pure module (`taskpane/coverageVerdict`).
    *
    * `unknown` is the honest answer when only the shared report arrived: it
-   * carries no requested-versus-examined list, so this component cannot say the
-   * document was fully examined, and saying so from the shared report alone is
-   * the claim the deterministic projection was introduced to make impossible.
+   * carries no requested-versus-examined list, so no compliance claim is available
+   * at all. `compliant` requires complete coverage *and* nothing open — the old
+   * three-verdict form said "Complete" for a run that found two hundred problems.
    */
-  const verdict =
-    deterministicCoverage === null
-      ? "Unknown"
-      : deterministicCoverage.complete
-        ? "Complete"
-        : "Incomplete";
-  const incomplete = verdict === "Incomplete";
+  const verdictInput = { coverage: deterministicCoverage, openFindings };
+  const verdict = coverageVerdict(verdictInput);
+  const incomplete = verdict === "incomplete";
   const blockers = deterministicCoverage?.blockers ?? [];
   /*
    * A scope the host cannot read is already named above, with the only remedy
@@ -150,9 +158,9 @@ export default function CoverageBanner({
         className="tf-collapsible-header"
         onClick={onToggle}
         aria-expanded={open}
-        aria-label={`Coverage ${verdict}`}
+        aria-label={`Coverage ${verdictLabel(verdict)}`}
       >
-        Coverage <span>{verdict}</span>
+        Coverage <span>{verdictLabel(verdict)}</span>
       </button>
       {/*
         The panel keeps its own border and background so the verdict is
@@ -254,12 +262,13 @@ export default function CoverageBanner({
             </p>
           )}
 
-          {verdict === "Unknown" && (
-            <p className="tf-sub">
-              This run reported no deterministic coverage, so no compliance claim can be made either
-              way. Scan the document to get one.
-            </p>
-          )}
+          {/*
+            What the verdict does and does not cover, from the one module that
+            owns it. The previous sentence here was a hand-written "Unknown"
+            explanation, so the four verdicts each carried their own wording and
+            only three of them had one at all.
+          */}
+          <p className="tf-sub">{verdictDetail(verdict, verdictInput)}</p>
           <p className="tf-sub">Technical coverage details are available in Troubleshooting.</p>
         </div>
       )}

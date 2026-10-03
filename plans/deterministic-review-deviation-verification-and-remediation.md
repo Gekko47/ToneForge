@@ -1529,3 +1529,71 @@ up from 2681 / 191. New: `findingDetailVariants.test.tsx` (11).
 
 Coverage verdict states, including "Compliant within checked scope". Then Phase 6.
 The host gate is untouched.
+
+### Phase 5c — The coverage verdict (item 22) — PHASE 5 CLOSED
+
+#### The audit called this a vocabulary gap. It was a correctness gap.
+
+Audit §17: "Three verdicts render today; audit §17 asks for four, and 'Compliant
+within checked scope' is not expressible." That reads like a missing string.
+
+The code derived the verdict from `DeterministicCoverage.complete` alone and
+printed `Complete`. `complete` means "every scope the author requested was
+examined" — it carries no findings at all. So a run that examined everything
+requested and produced two hundred open findings printed `Complete`, and the word
+a reader takes from `Complete` is "nothing to do".
+
+That is the false-compliance claim the coverage model exists to prevent
+(ADR-0066), reached by the one route the model was not guarding: not by lying
+about coverage, but by reporting coverage and letting it be read as compliance.
+
+#### What was done
+
+A pure module, `taskpane/coverageVerdict`, derives four verdicts from coverage
+**and** the open-finding count: `unknown`, `incomplete`, `compliant`,
+`findings-open`. `CoverageBanner` takes `openFindings`; the Dashboard passes
+`openSummary.total`, the same ignore-filtered number the findings header prints,
+so the two cannot disagree.
+
+The label is the full phrase **"Compliant within checked scope"**, not a bare
+"Compliant". A document checked only for body text says nothing about the tables
+it never looked at, and the qualifier is the difference between a bounded claim
+and an over-claim.
+
+`incomplete` deliberately takes precedence over `findings-open`: a missing
+mandatory scope is the more important fact, and leading with a count would bury
+the reason the run cannot speak for the document.
+
+The verdict's detail sentence moved into the same module. It was previously a
+hand-written `Unknown` explanation, which left the other three branches with
+none — every branch now names its own limit.
+
+#### Three tests updated, each keeping its claim
+
+All three asserted the literal `Coverage Complete`. Two were mechanical. The third
+deserves recording: "a host limitation is a limitation, not a blocker" was
+asserted as `getByRole("Coverage Complete")` — i.e. pinned to the exact positive
+label it was not protecting. It is now asserted as _not_ `Incomplete`, which is
+what it was actually about. A test that pins a label it does not care about fails
+on any rename and proves nothing on the day it matters.
+
+#### Verification
+
+`npx tsc --noEmit` clean. `npm run lint` 0 warnings. **2708 tests / 193 files**,
+up from 2692 / 192. New: `coverageVerdict.test.ts` (15).
+
+#### PHASE 5 CLOSED
+
+Every item in the phase is delivered: ND-9, ND-7, UX-1, UX-2, UX-3, UX-3a, D6, and
+the coverage verdict states. The single-occurrence Approve path through
+`reviewGate` is unchanged, as ND-11 recorded it already correct.
+
+#### Still open, and not claimed as done
+
+- **The Word-host gate.** Every item in this phase is repository-side evidence.
+  The host matrix still reports zero fully passing hosts, and `npm run verify`
+  records `word-host-evidence` as `pending` because it is satisfied only by a
+  person in a real Word.
+- **Phase 6** (editor: UX-4, UX-4a) and **Phase 7** (gate and evidence).
+- **`npm run verify`** has not been run since Phase 4a. Coverage, build, manifest
+  and package checks are Phase 7 work.

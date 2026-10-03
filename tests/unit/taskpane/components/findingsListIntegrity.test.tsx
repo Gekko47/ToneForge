@@ -134,7 +134,14 @@ describe("the coverage section", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Coverage Complete/ })).toBeInTheDocument();
+    // The claim is that the verdict stays visible when the detail collapses. The
+    // verdict's wording changed when it was split into compliant-within-checked-
+    // scope and findings-open, so the assertion is that a verdict is present at
+    // all rather than one particular string.
+    expect(screen.getByRole("button", { name: /^Coverage \S/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Coverage (?!Incomplete|Unknown)/ }),
+    ).toBeInTheDocument();
   });
 
   it("shows the detail only when open", () => {

@@ -72,18 +72,48 @@ describe("CoverageBanner", () => {
     expect(screen.getByRole("button", { name: "Coverage Unknown" })).toBeInTheDocument();
   });
 
-  it("says the run was complete, and says what it examined", () => {
+  it("says the run was compliant within its scope, and says what it examined", () => {
+    /*
+     * The label used to be "Complete" for this exact state. "Complete" describes
+     * coverage only, and a reader takes it as "nothing to do" — which is why the
+     * verdict is now split into compliant-within-checked-scope and
+     * findings-open. `openFindings` defaults to 0 here, so this is the compliant
+     * branch.
+     */
     render(
       <CoverageBanner
         coverage={SHARED}
         deterministicCoverage={deterministic()}
+        openFindings={0}
         open
         onToggle={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Coverage Complete" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Coverage Compliant within checked scope" }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/12 paragraphs, 3 headings/)).toBeInTheDocument();
+  });
+
+  /*
+   * The state the old vocabulary had no way to express: every requested scope was
+   * examined, and there is work to do. It read as "Complete" before.
+   */
+  it("does not read as compliant when a complete run has findings open", () => {
+    render(
+      <CoverageBanner
+        coverage={SHARED}
+        deterministicCoverage={deterministic()}
+        openFindings={12}
+        open
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Coverage Checked — findings open" }),
+    ).toBeInTheDocument();
   });
 
   it("counts the structural objects it read, so a zero is a fact not a gap", () => {
@@ -151,7 +181,11 @@ describe("CoverageBanner", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Coverage Complete" })).toBeInTheDocument();
+    // The claim is that a host limitation is not a blocker, so the verdict must
+    // not be `Incomplete`. Asserted as such rather than as a specific positive
+    // label, because the positive label is what this change renamed.
+    expect(screen.getByRole("button", { name: /^Coverage (?!Incomplete)/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Coverage Incomplete/ })).toBeNull();
     expect(screen.getByText(/this Word host cannot read them: tables/)).toBeInTheDocument();
     expect(screen.queryByText(/Apply is unavailable/)).not.toBeInTheDocument();
   });
