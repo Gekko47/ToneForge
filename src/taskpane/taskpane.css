@@ -335,47 +335,43 @@ body {
   margin-top: 12px;
 }
 
-button,
-/*
- * Native controls, and only native controls.
- *
- * Every Fluent component renders a real `<input>`, `<select>` or `<textarea>`
- * underneath, carrying an `ms-` class. An unscoped `input { background-color }`
- * therefore also lands on Fluent's own fields, and a bare-element rule and a
- * class rule resolve on specificity in a way that depends on which declaration
- * a given Fluent version happens to emit — which is the observed symptom:
- * Dropdowns and TextFields on the profile pages rendering light-on-dark while
- * the surrounding surface followed the theme.
- *
- * Fluent is painted by the theme object, which knows the palette. These rules
- * exist only for the controls Fluent does *not* paint, and `:not([class*="ms-"])`
- * is what keeps the two apart. Word's own rendering still has to be confirmed by
- * hand: jsdom cannot compute styles, so no test here can stand in for it.
- */
 /*
  * Native controls, and only the ones we render.
  *
- * This was `:not([class*="ms-"])` — excluding anything whose class contains
- * Fluent's internal prefix. It is replaced because a deny-list keyed on another
- * library's private class naming fails twice over:
+ * This was a deny-list — `input:not([class*="ms-"])` and its two siblings —
+ * excluding anything whose class contains Fluent's internal prefix. It is
+ * replaced because a deny-list keyed on another library's private class naming
+ * fails twice over:
  *
  * 1. `ms-` is not a public contract. It changes between Fluent versions, and a
  *    rename silently *widens* these rules onto every Fluent field in the add-in
  *    — which is the reported symptom: Dropdowns and TextFields on the profile
  *    pages rendering light-on-dark while the surrounding surface followed the
  *    theme.
- * 2. It cannot cover Fluent components whose root is not an `<input>`. A
- *    Dropdown's button, a Switch's internals and a SpinButton's buttons are
- *    never excluded by it, because it only ever asks about three element names.
+ * 2. It never asked about anything but three element names, so it could not
+ *    cover a Fluent component whose root is not an `<input>`. A Dropdown's
+ *    button, a Toggle's internals and a SpinButton's buttons slip straight
+ *    through it.
  *
  * A deny-list is the wrong shape here. The question is not "is this one of ours?"
  * but "is this ours?", and only the author of a control can answer that. So our
- * own controls carry `.tf-native` — see `src/taskpane/nativeField.ts` — and the
- * rules are scoped to it. A Fluent component is then excluded by construction:
- * whatever it renders, and whatever it names its classes.
+ * own controls carry `.tf-native` — see `src/taskpane/nativeField.ts` — and this
+ * rule is scoped to that class and nothing else. A Fluent component is then
+ * excluded by construction: whatever it renders, and whatever it names its
+ * classes.
  *
- * `nativeFieldMarkers.test.tsx` asserts that every native control in the task
- * pane carries the marker, so a new control cannot silently escape these rules.
+ * **The selector list is `.tf-native` alone, and it has to stay that way.** An
+ * earlier version of this rule read `button, .tf-native`, left over from
+ * deleting the three `:not()` selectors out of the middle of a list. It parsed,
+ * it looked right in the file, and every test passed — but it meant this rule
+ * still reached every `<button>` in the add-in, Fluent's included, which is the
+ * same defect under a different selector. `nativeFieldMarkers.test.ts` asserts
+ * the selector list as well as the coverage, so a stray bare element here fails
+ * rather than shipping.
+ *
+ * `nativeFieldMarkers.test.ts` also asserts that every native control in the
+ * task pane carries the marker, so a new control cannot silently escape these
+ * rules.
  *
  * **What this cannot verify.** jsdom computes no styles, so no test here can
  * confirm what Word actually paints. The visual check stays a manual item in
@@ -398,7 +394,26 @@ textarea.tf-native::placeholder {
   opacity: 1;
 }
 
-button {
+/*
+ * Buttons, and only the buttons we render.
+ *
+ * These four rules were bare `button` selectors. That is the same defect the
+ * `.tf-native` rule above had, one element over: Fluent's `DefaultButton`,
+ * `PrimaryButton`, `IconButton` and `Toggle` all render a real `<button>`, so a
+ * bare selector reaches into components this codebase does not own and hands
+ * them a border, a background and a hover colour it had no say in.
+ *
+ * Fluent's own class rules outrank a bare element selector, so these were losing
+ * on specificity rather than by design — and that flips the moment the
+ * stylesheet load order changes, which is not something a theme file should be
+ * quietly depending on.
+ *
+ * The focus rule below stays unscoped on purpose: an outline on `:focus-visible`
+ * is correct on every focusable element in the pane, Fluent's included, and
+ * removing a keyboard focus indicator from a third-party component would be a
+ * regression in its own right.
+ */
+button.tf-native-button {
   border: 1px solid var(--tf-border);
   border-radius: 4px;
   background: var(--tf-surface);
@@ -406,7 +421,7 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
+button.tf-native-button:hover:not(:disabled) {
   border-color: var(--tf-accent);
   color: var(--tf-accent);
 }
@@ -420,7 +435,7 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
-button:disabled {
+button.tf-native-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

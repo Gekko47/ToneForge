@@ -94,10 +94,20 @@ export default function SemanticReviewScope({
       )}
 
       <div className="tf-actions">
-        <button type="button" onClick={onReadSelection} disabled={!readGate.allowed}>
+        <button
+          className="tf-native-button"
+          type="button"
+          onClick={onReadSelection}
+          disabled={!readGate.allowed}
+        >
           Use current selection
         </button>
-        <button type="button" onClick={onReview} disabled={!reviewGate.allowed || reviewing}>
+        <button
+          className="tf-native-button"
+          type="button"
+          onClick={onReview}
+          disabled={!reviewGate.allowed || reviewing}
+        >
           {reviewing ? "Reviewing…" : "Review selection"}
         </button>
       </div>
@@ -121,7 +131,7 @@ export default function SemanticReviewScope({
           {reviewGate.remedy?.destination === "settings" && (
             <>
               {" "}
-              <button type="button" onClick={onOpenSettings}>
+              <button className="tf-native-button" type="button" onClick={onOpenSettings}>
                 {reviewGate.remedy.label}
               </button>
             </>
@@ -129,7 +139,7 @@ export default function SemanticReviewScope({
           {reviewGate.remedy?.destination === "semantic-style" && (
             <>
               {" "}
-              <button type="button" onClick={onOpenSemanticStyle}>
+              <button className="tf-native-button" type="button" onClick={onOpenSemanticStyle}>
                 {reviewGate.remedy.label}
               </button>
             </>

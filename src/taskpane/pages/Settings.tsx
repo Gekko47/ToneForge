@@ -9,7 +9,7 @@ export default function Settings({ onBack }: SettingsProps): React.ReactNode {
   return (
     <div className="tf-card" data-page="settings">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button type="button" onClick={onBack}>
+        <button className="tf-native-button" type="button" onClick={onBack}>
           Back to Deterministic Review
         </button>
       </nav>

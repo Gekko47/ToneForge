@@ -66,6 +66,7 @@ export default function ExportChangesButton({
   return (
     <div className="tf-export">
       <button
+        className="tf-native-button"
         type="button"
         onClick={download}
         disabled={disabled}

@@ -115,7 +115,12 @@ export default function TrackedEditingSettingsSection(): React.ReactNode {
         )}
       </div>
       <div className="tf-settings-actions">
-        <button type="button" onClick={() => void probe()} disabled={busy}>
+        <button
+          className="tf-native-button"
+          type="button"
+          onClick={() => void probe()}
+          disabled={busy}
+        >
           {busy ? "Checking this Word host…" : "Check this Word host"}
         </button>
       </div>

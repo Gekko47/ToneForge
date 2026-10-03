@@ -41,7 +41,7 @@ export default function ConsistencyReviewProgress({
           review of the document.
         </p>
       )}
-      <button type="button" onClick={onCancel}>
+      <button className="tf-native-button" type="button" onClick={onCancel}>
         Cancel review
       </button>
     </section>

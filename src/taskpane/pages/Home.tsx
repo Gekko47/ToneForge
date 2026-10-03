@@ -69,7 +69,7 @@ export default function Home({ onNavigate, setup }: HomeProps): React.ReactNode 
             deterministic check is measured against a style profile. Once one exists, scanning
             starts on its own.
           </p>
-          <button type="button" onClick={() => onNavigate("profile")}>
+          <button className="tf-native-button" type="button" onClick={() => onNavigate("profile")}>
             Create a deterministic style profile
           </button>
           <p className="tf-sub">The editor saves a profile as soon as you press Save profile.</p>
@@ -137,6 +137,7 @@ function SetupRow({
       <p className="tf-sub">{item.blocked ?? "Nothing is blocked by this."}</p>
       {item.ready ? null : (
         <button
+          className="tf-native-button"
           type="button"
           onClick={() => onNavigate(item.destination)}
           aria-describedby={`tf-setup-control-${item.id}`}

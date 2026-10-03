@@ -132,6 +132,7 @@ export default function FindingGroupCard({
           explanation is inside an ARIA attribute is silent for everyone else.
         */}
         <button
+          className="tf-native-button"
           type="button"
           onClick={() => onApproveAll?.(group)}
           disabled={!approve.enabled || onApproveAll === undefined}
@@ -139,12 +140,17 @@ export default function FindingGroupCard({
         >
           {approve.label}
         </button>
-        <button type="button" onClick={() => onSkipAll?.(group)} disabled={onSkipAll === undefined}>
+        <button
+          className="tf-native-button"
+          type="button"
+          onClick={() => onSkipAll?.(group)}
+          disabled={onSkipAll === undefined}
+        >
           Decline all
         </button>
         <button
           type="button"
-          className="tf-collapsible-header"
+          className="tf-native-button tf-collapsible-header"
           onClick={() => setExpanded((open) => !open)}
           aria-expanded={expanded}
           aria-controls={`finding-group-body-${group.id}`}

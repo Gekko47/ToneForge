@@ -4765,3 +4765,72 @@ or a string.
 `src/taskpane/components/DeterministicStyleSections.tsx` (32 controls);
 `tests/unit/taskpane/nativeFieldMarkers.test.ts` (8);
 `tests/unit/taskpane/theme.test.ts`; `docs/manual-verification.md` §4.
+
+## ADR-0122 — Owned-control markers, and the selector-list assertion that keeps them honest
+
+**Status:** Accepted. Supersedes nothing; amends ADR-0121, which was correct in
+its principle and incomplete in its application.
+
+**Context.** ADR-0121 replaced the stylesheet's `:not([class*="ms-"])` deny-list with
+.tf-native, a marker on the controls we render. An independent audit of that work
+(Phase 6a verification, 2026-10-03) found the principle right and the application
+
+incomplete in two ways, neither of which any test could see:
+
+1. **The selector list was never checked.** The edit deleted three
+   `:not([class*="ms-"])` selectors out of the _middle_ of a four-entry list,
+   leaving a dangling `button,` in front of `.tf-native`. The comment-stripped CSS
+   read `button, .tf-native { font: inherit; background-color: ...; color: ... }`.
+   Every test passed, because the assertions were `toContain(".tf-native {")` —
+   and that text really was present. The rule still reached every `<button>` in the
+   add-in, Fluent's `DefaultButton` and `IconButton` included. That is the
+   reported symptom under a different selector.
+
+2. **The same defect existed one element over, and was never addressed.** The four
+   `button` rules were bare element selectors. Fluent v8 (8.125.7, verified
+   installed) renders a real `<button>` for `DefaultButton`, `PrimaryButton`,
+   `IconButton` and `Toggle`, so those rules were reaching into components this
+   codebase does not own. Eighty buttons are rendered in the task pane.
+
+On current Fluent, the bare rules _lose_ on specificity to Fluent's own class-based
+rules, so nothing looked wrong. That is accidental safety, and it inverts the
+moment stylesheet load order changes — the same accidental dependence ADR-0121
+was written to remove.
+
+**Decision.**
+
+- Every control this codebase renders carries a marker it owns:
+  `.tf-native` for fields, `.tf-native-button` for buttons. Separate classes,
+  because a field is a surface with text on it and a button is a control with a
+  border and a hover state; one class for both would force one to be styled as
+  the other.
+- The button rules are scoped to `button.tf-native-button`.
+  `button:focus-visible` stays unscoped deliberately: a keyboard focus outline is
+  correct on every focusable element in the pane, and removing it from a
+  third-party component would be an accessibility regression.
+- `nativeFieldMarkers.test.ts` asserts the **selector list**, not the presence of a
+  fragment. It reads backwards from the opening brace to the nearest preceding
+  `}` or `{`, which is what sees a whole list rather than the nearest fragment.
+- It also asserts that no rule anywhere in the stylesheet paints a bare form
+  element — scoped to rules declaring a colour, so a legitimate
+  `input:focus-visible` outline is not flagged.
+- It asserts every button carries the marker, and that the marker is _additive_: a
+  control's own class (`tf-link-button`, `tf-collapsible-header`) survives beside it.
+
+**Why presence assertions were not enough.** `toContain(".tf-native {")` tests
+that a string appears somewhere in a file. It cannot distinguish a correct rule from a
+correct rule with a stray selector welded to the front of it. This is recorded
+because it is a general trap in stylesheet testing, not a one-off.
+
+**Consequences.**
+
+- Positive: the marker is now the single mechanism, and the failure mode it guards
+  against is asserted in the shape that actually failed.
+- Positive: the eventual Fluent migration (UX-4) removes controls from the marked set;
+  a control it forgets simply stops being styled rather than fighting the theme.
+- Cost: 80 buttons gained a class attribute. This is a one-time mechanical change
+  with a regression test pinning it, and it is the cost of not styling components
+  we do not own.
+- **Still open:** jsdom computes no styles. These tests assert the rule, never the
+  painted result. The visual confirmation remains a manual item in
+  `docs/manual-verification.md`, and no green run closes the Word-host gate.

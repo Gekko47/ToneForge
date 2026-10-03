@@ -810,27 +810,47 @@ claim; the check below is what the lint rule cannot do.
    `src/taskpane/`, with `src/taskpane/fluentTheme.ts` exempt because it
    _defines_ the palette. Run it before looking, so what you are judging is
    rendering and not a literal someone has not committed yet.
-2. **Dropdowns and text fields must not render light-on-dark.** This is the
-   reported defect and **the one no test can settle.**
+2. **Dropdowns, text fields and buttons must not render light-on-dark.** This is
+   the reported defect and **the one no test can settle.**
 
    The history, because it explains what to look at. `taskpane.css` used to
-   style bare `input, select, textarea`. Every Fluent component renders a real
-   `<input>` underneath, so the rule landed on Fluent's own fields as well as on
-   the native ones. It was then scoped with `:not([class*="ms-"])` — a deny-list
-   keyed on Fluent's internal class prefix, which fails twice over: the prefix is
-   not a public contract and changes between versions, and it never covered a
-   Fluent component whose root is not an `<input>` (a Dropdown's button, a
-   Switch's internals, a SpinButton's buttons).
+   style bare `input, select, textarea` **and** bare `button`. Every Fluent
+   component renders a real `<input>` or `<button>` underneath, so those rules
+   landed on Fluent's own controls as well as on the native ones. The field rules
+   were then scoped with `:not([class*="ms-"])` — a deny-list keyed on Fluent's
+   internal class prefix, which fails twice over: the prefix is not a public
+   contract and changes between versions, and it never covered a Fluent
+   component whose root is not an `<input>` (a Dropdown's button, a Switch's
+   internals, a SpinButton's buttons). The button rules were never scoped at all.
 
-   Both are gone. Our own controls now carry `.tf-native` and the rules are
-   scoped to it (`src/taskpane/nativeField.ts`), so a Fluent component is
-   excluded by construction rather than by guessing at its class names.
+   Both are gone. Our own controls now carry `.tf-native` (fields) and
+   `.tf-native-button` (buttons), and every rule is scoped to one of them
+   (`src/taskpane/nativeField.ts`), so a Fluent component is excluded by
+   construction rather than by guessing at its class names.
+
+   **Look at the buttons too, and not only the fields.** A follow-up audit
+   (2026-10-03) found the replacement had itself left a stray `button,` welded to
+   the front of the `.tf-native` rule — the three deny-list selectors were deleted
+   out of the _middle_ of a four-entry list — so the supposedly scoped rule still
+   reached every button in the add-in. It parsed, it read correctly in the file,
+   and every test passed. The same audit found the four bare `button` rules had
+   never been scoped at all. Both are now fixed; on the version audited, Fluent
+   v8.125.7, the bare rules happened to lose on specificity, so **nothing looked
+   wrong** — which is why this item is worth your eyes and not just the tests.
+
+3. Confirm the `:focus-visible` outline still appears on a Fluent control. That
+   rule is deliberately left unscoped: a keyboard focus indicator belongs on every
+   focusable element in the pane, and removing it from a third-party component
+   would be an accessibility regression.
 
    **What the automated test does and does not establish.**
-   `tests/unit/taskpane/nativeFieldMarkers.test.ts` asserts that no unscoped
-   bare-element rule survives, that the scoped rule declares only theme tokens,
-   and that every native control in the task pane carries the marker. That is a
-   statement about the stylesheet, and it is real evidence.
+   `tests/unit/taskpane/nativeFieldMarkers.test.ts` asserts the **selector list**
+   of the scoped rules — not merely that `.tf-native {` appears somewhere, which
+   is why the stray `button,` slipped through — that no rule anywhere paints a bare
+   form element, that the scoped rules declare only theme tokens, and that every
+   native control and button in the task pane carries its marker without losing
+   its own class. That is a statement about the stylesheet, and it is real
+   evidence.
 
    It is **not** evidence about what Word paints. jsdom computes no styles, so a
    `getComputedStyle` check on `.tf-native` returns an empty background
@@ -844,13 +864,13 @@ claim; the check below is what the lint rule cannot do.
    now follow `--tf-surface` directly, and a regression there is invisible to
    every test in this repository.
 
-3. Open the Semantic tab in dark theme. Confirm the section frames follow the
+4. Open the Semantic tab in dark theme. Confirm the section frames follow the
    theme; one of them was a literal `#edebe9`, the light theme's own neutral,
    so its border stayed light while every other surface followed the token.
-4. Confirm focus indicators remain visible in both themes. Focus rings
+5. Confirm focus indicators remain visible in both themes. Focus rings
    deliberately still apply to Fluent's inputs — they are an outline, not a
    palette, and a keyboard focus indicator is not something Fluent should own.
-5. Repeat the whole section in light theme. A rule that only works because the
+6. Repeat the whole section in light theme. A rule that only works because the
    page happens to be light is not a themed rule.
 
 ### 5. Reduced motion

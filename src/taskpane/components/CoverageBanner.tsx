@@ -155,7 +155,7 @@ export default function CoverageBanner({
       */}
       <button
         type="button"
-        className="tf-collapsible-header"
+        className="tf-native-button tf-collapsible-header"
         onClick={onToggle}
         aria-expanded={open}
         aria-label={`Coverage ${verdictLabel(verdict)}`}
@@ -192,7 +192,7 @@ export default function CoverageBanner({
               {canRescan && (
                 <button
                   type="button"
-                  className="tf-coverage-action"
+                  className="tf-native-button tf-coverage-action"
                   onClick={() => onRescan?.(blockedScopes)}
                 >
                   Re-scan to check {listScopes(blockedScopes)}

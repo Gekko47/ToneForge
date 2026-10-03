@@ -37,7 +37,7 @@ export default function ReviewWithoutProfile({
   return (
     <div className="tf-card" data-page="review">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button type="button" onClick={onBack}>
+        <button className="tf-native-button" type="button" onClick={onBack}>
           Back to Home
         </button>
       </nav>
@@ -67,7 +67,7 @@ export default function ReviewWithoutProfile({
       </section>
 
       <div className="tf-actions">
-        <button type="button" onClick={onOpenProfile}>
+        <button className="tf-native-button" type="button" onClick={onOpenProfile}>
           Deterministic Style Profile
         </button>
       </div>

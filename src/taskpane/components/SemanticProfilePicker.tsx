@@ -70,7 +70,11 @@ export default function SemanticProfilePicker({
                    * screen reader user nothing about which one they are on, and
                    * a list of them is not a list they can navigate.
                    */
-                  <button type="button" onClick={() => onSelect(record.id)}>
+                  <button
+                    className="tf-native-button"
+                    type="button"
+                    onClick={() => onSelect(record.id)}
+                  >
                     Use this one<span className="sr-only"> — {record.name}</span>
                   </button>
                 )}
@@ -80,7 +84,11 @@ export default function SemanticProfilePicker({
                   refuses the one action that would leave the user stuck is worse
                   than one that lets them back out.
                 */}
-                <button type="button" onClick={() => onDelete(record.id)}>
+                <button
+                  className="tf-native-button"
+                  type="button"
+                  onClick={() => onDelete(record.id)}
+                >
                   Delete<span className="sr-only"> {record.name}</span>
                 </button>
               </li>
@@ -90,7 +98,7 @@ export default function SemanticProfilePicker({
       )}
 
       <div className="tf-actions">
-        <button type="button" onClick={onCreateEmpty}>
+        <button className="tf-native-button" type="button" onClick={onCreateEmpty}>
           Create empty profile
         </button>
       </div>

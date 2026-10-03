@@ -72,7 +72,7 @@ export default function ApplyResultBlock({
     <section className="tf-collapsible" aria-label="Apply result">
       <button
         type="button"
-        className="tf-collapsible-header"
+        className="tf-native-button tf-collapsible-header"
         onClick={onToggle}
         aria-expanded={open}
         aria-label={`Apply result: ${verdict}`}
@@ -137,7 +137,7 @@ export default function ApplyResultBlock({
                   {" "}
                   <button
                     type="button"
-                    className="tf-coverage-action"
+                    className="tf-native-button tf-coverage-action"
                     onClick={() => onReviewRemaining?.()}
                   >
                     Review the {remainingFindings.summary.total} remaining

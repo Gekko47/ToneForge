@@ -266,7 +266,7 @@ export default function SemanticStyle({
   return (
     <div className="tf-card" data-page="semantic-style">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button type="button" onClick={onBack}>
+        <button className="tf-native-button" type="button" onClick={onBack}>
           Back to Semantic Review
         </button>
       </nav>
@@ -352,7 +352,12 @@ export default function SemanticStyle({
               measured against, so it is a separate press.
             </p>
             <div className="tf-actions">
-              <button type="button" disabled={isActive} onClick={activateDraft}>
+              <button
+                className="tf-native-button"
+                type="button"
+                disabled={isActive}
+                onClick={activateDraft}
+              >
                 {isActive ? "Active" : "Make this active"}
               </button>
             </div>
@@ -394,7 +399,7 @@ export default function SemanticStyle({
             </p>
             <button
               type="button"
-              className="tf-collapsible-header"
+              className="tf-native-button tf-collapsible-header"
               aria-expanded={diagnosticsOpen}
               onClick={() => setDiagnosticsOpen((open) => !open)}
             >

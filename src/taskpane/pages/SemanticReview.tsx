@@ -485,7 +485,7 @@ export default function SemanticReview({
   return (
     <div className="tf-card" data-page="semantic-review">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button type="button" onClick={onBack}>
+        <button className="tf-native-button" type="button" onClick={onBack}>
           Back to Deterministic Review
         </button>
       </nav>
@@ -530,7 +530,7 @@ export default function SemanticReview({
       />
 
       <div className="tf-actions">
-        <button type="button" onClick={onOpenSemanticStyle}>
+        <button className="tf-native-button" type="button" onClick={onOpenSemanticStyle}>
           Semantic Style
         </button>
       </div>
@@ -567,13 +567,19 @@ export default function SemanticReview({
 
               <div className="tf-pending-actions">
                 <button
+                  className="tf-native-button"
                   type="button"
                   disabled={!applyGate.allowed || applying}
                   onClick={() => void applyRevision()}
                 >
                   {applying ? "Applying…" : "Apply revision"}
                 </button>
-                <button type="button" disabled={reviewing || applying} onClick={regenerate}>
+                <button
+                  className="tf-native-button"
+                  type="button"
+                  disabled={reviewing || applying}
+                  onClick={regenerate}
+                >
                   {reviewing ? "Asking again…" : "Regenerate review"}
                 </button>
                 {/*
@@ -584,7 +590,12 @@ export default function SemanticReview({
                   "Regenerate" would leave "do not change this" expressible only by
                   closing the pane.
                 */}
-                <button type="button" disabled={!keepGate.allowed} onClick={keepOriginal}>
+                <button
+                  className="tf-native-button"
+                  type="button"
+                  disabled={!keepGate.allowed}
+                  onClick={keepOriginal}
+                >
                   Keep original
                 </button>
               </div>

@@ -1666,3 +1666,87 @@ up from 2708 / 193.
 UX-4: migrate the editor controls to Fluent, replace the bespoke `ProfileSection`
 frame with `Accordion`, sub-divide Language and Typography, and preserve the
 per-section host-capability marking as a Badge.
+
+### Phase 6a verification — the fix was incomplete, and the tests could not see it
+
+The Phase 6a commit was audited rather than trusted. Two real defects, neither visible
+to any test at the time.
+
+#### The selector list was never checked
+
+`ad4d00c` replaced `input:not([class*="ms-"]), select:not(...), textarea:not(...)` with
+.tf-native. The three deny-list selectors were deleted out of the **middle** of a
+four-entry list, so a dangling `button,` was left welded to the front of the new rule.
+
+Proven by reading the comment-stripped CSS, which is the only way to see it:
+
+```css
+button,
+.tf-native {
+  font: inherit;
+  background-color: ...;
+  color: ...;
+}
+```
+
+The rule still reached every `<button>` in the add-in. Every test passed, because the
+assertions were `toContain(".tf-native {")` — and that text really was present. A presence
+check on a stylesheet proves a fragment appears, not that the rule means what its
+comment says.
+
+Fixed, and `selectorsOf()` now reads the whole list backwards from the opening brace
+to the nearest preceding `}` or `{`. Verified against the pre-fix CSS: it reports
+`["button"]` before the fix and `[]` after.
+
+#### The same defect one element over, never addressed
+
+The four `button` rules were bare element selectors. Fluent v8 (8.125.7, verified
+installed) renders a real `<button>` for `DefaultButton`, `PrimaryButton`, `IconButton` and
+`Toggle`; 80 buttons are rendered in the task pane. So those rules reached into
+components this codebase does not own.
+
+They _lose_ on specificity to Fluent's class-based rules, so nothing looked wrong — the same
+accidental safety ADR-0121 set out to remove. Buttons now carry
+.tf-native-button, and the four rules are scoped to `button.tf-native-button`.
+`button:focus-visible` stays unscoped on purpose: a keyboard focus indicator belongs
+on every focusable element, and stripping it from a third-party component would be an
+accessibility regression.
+
+The marker is **additive** — `tf-link-button` and `tf-collapsible-header` survive beside
+it — and a test asserts exactly that, because a "does every button carry the marker"
+check would pass just as happily on a marker that had eaten the class.
+
+#### Two bugs the tests caught in the fix itself
+
+- `selectorsOf()` first scanned back to the nearest `{` only, which ran through the end of
+  the rule above and reported its **declarations** as selectors. Bounded by `}` as well now.
+- The new button test failed on `TaskPaneHeader`, whose button uses the
+  `nativeButtonProps` helper rather than a literal. The test now accepts either
+  spelling: rejecting the helper would push every future control back to the literal, which
+  is the thing most likely to be misspelled.
+
+#### Stale documentation found
+
+A second comment block survived above the rule, still asserting that
+`:not([class*="ms-"])` "is what keeps the two apart" — a claim the line beneath it
+contradicted. Removed; the surviving comment records both failure modes and why the
+selector list must stay `.tf-native` alone.
+
+#### Verification
+
+typecheck clean; `npm run lint` 0 warnings; **2722 tests / 194 files passing**, run
+twice. One full run showed 2 failures in `tests/unit/shared/office/taskpaneNavigation.test.ts`
+— a file this work does not touch, which passes in isolation and passed on two
+subsequent full runs. Recorded as a pre-existing flake, not papered over.
+
+Two empty junk files (`console.log(r[0]+'`, `console.log(String(dist[k])...`) were
+created at the repo root by cmd.exe reading `>` as redirection in an ad-hoc script, and
+deleted. `git status` shows only intended modifications.
+
+#### Still open in Phase 6
+
+UX-4: migrate the editor controls to Fluent, replace the bespoke `ProfileSection` frame
+with `Accordion`, sub-divide Language and Typography, and preserve the per-section
+host-capability marking as a Badge. Unchanged — and now better founded, because the
+marker work above is what makes that migration safe: a control it forgets to migrate
+simply stops being styled rather than starting to fight the theme.

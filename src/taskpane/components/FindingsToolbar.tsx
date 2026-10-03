@@ -39,6 +39,7 @@ export default function FindingsToolbar({
       {total > 0 && (
         <nav className="tf-finding-actions" aria-label="Finding navigation">
           <button
+            className="tf-native-button"
             type="button"
             onClick={onPrevious}
             aria-label={`Previous finding, at ${current} of ${total}`}
@@ -47,6 +48,7 @@ export default function FindingsToolbar({
             Previous finding
           </button>
           <button
+            className="tf-native-button"
             type="button"
             onClick={onNext}
             aria-label={`Next finding, at ${current} of ${total}`}

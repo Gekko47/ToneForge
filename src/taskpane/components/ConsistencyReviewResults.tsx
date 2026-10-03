@@ -263,6 +263,7 @@ export default function ConsistencyReviewResults({
       {groups.length > 0 && (
         <nav className="tf-finding-actions" aria-label="Consistency issue navigation">
           <button
+            className="tf-native-button"
             type="button"
             onClick={() => step(-1)}
             aria-label={`Previous contradiction, at ${position + 1} of ${groups.length}`}
@@ -270,6 +271,7 @@ export default function ConsistencyReviewResults({
             Previous contradiction
           </button>
           <button
+            className="tf-native-button"
             type="button"
             onClick={() => step(1)}
             aria-label={`Next contradiction, at ${position + 1} of ${groups.length}`}
@@ -320,7 +322,7 @@ export default function ConsistencyReviewResults({
        * beside the list means what it says.
        */}
       <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button type="button" onClick={onDismiss}>
+        <button className="tf-native-button" type="button" onClick={onDismiss}>
           Dismiss
         </button>
       </div>

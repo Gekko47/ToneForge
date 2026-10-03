@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { IconButton } from "@fluentui/react";
+import { nativeButtonProps } from "../nativeField";
 
 export type TaskPaneDestination =
   /** The landing page: the setup checklist. Reachable with no profile at all. */
@@ -192,7 +193,7 @@ export default function TaskPaneHeader({
                 <button
                   key={destination.key}
                   type="button"
-                  className={activePage === destination.key ? "is-active" : undefined}
+                  {...nativeButtonProps(activePage === destination.key ? "is-active" : undefined)}
                   aria-current={activePage === destination.key ? "page" : undefined}
                   onClick={() => navigate(destination.key)}
                 >

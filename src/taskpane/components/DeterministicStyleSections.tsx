@@ -508,7 +508,7 @@ function TerminologyRow({
           <option value="mandatory">Mandatory</option>
         </select>
       </label>
-      <button type="button" className="tf-link-button" onClick={onRemove}>
+      <button type="button" className="tf-native-button tf-link-button" onClick={onRemove}>
         Remove
       </button>
     </fieldset>
@@ -863,7 +863,7 @@ export default function DeterministicStyleSections({
         ))}
         <button
           type="button"
-          className="tf-link-button"
+          className="tf-native-button tf-link-button"
           onClick={() =>
             tryPatchLanguage({
               terminology: [
@@ -934,7 +934,7 @@ export default function DeterministicStyleSections({
         ))}
         <button
           type="button"
-          className="tf-link-button"
+          className="tf-native-button tf-link-button"
           onClick={() =>
             tryPatchLanguage({
               requiredTerms: [
@@ -1173,14 +1173,14 @@ export default function DeterministicStyleSections({
               </label>
               <button
                 type="button"
-                className="tf-link-button"
+                className="tf-native-button tf-link-button"
                 onClick={() => removeDateFormat(index)}
               >
                 Remove
               </button>
             </fieldset>
           ))}
-          <button type="button" className="tf-link-button" onClick={addDateFormat}>
+          <button type="button" className="tf-native-button tf-link-button" onClick={addDateFormat}>
             Add date format
           </button>
           <label className="tf-field tf-field-inline">

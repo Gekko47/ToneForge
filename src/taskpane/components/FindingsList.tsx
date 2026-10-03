@@ -180,7 +180,11 @@ export default function FindingsList({
         })}
       </div>
       {consumed < findings.length && (
-        <button type="button" onClick={() => setVisibleCount((count) => count + pageSize)}>
+        <button
+          className="tf-native-button"
+          type="button"
+          onClick={() => setVisibleCount((count) => count + pageSize)}
+        >
           Show more findings ({findings.length - consumed} remaining)
         </button>
       )}

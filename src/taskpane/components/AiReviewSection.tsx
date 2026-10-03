@@ -114,7 +114,7 @@ export default function AiReviewSection({
       {blocker !== null ? (
         <div role="status" data-testid="ai-review-blocker">
           <p className="tf-debug-warning">{blocker.message}</p>
-          <button type="button" onClick={onOpenSettings}>
+          <button className="tf-native-button" type="button" onClick={onOpenSettings}>
             {blocker.action}
           </button>
         </div>
@@ -128,6 +128,7 @@ export default function AiReviewSection({
 
       {stage === "idle" ? (
         <button
+          className="tf-native-button"
           type="button"
           onClick={onStart}
           disabled={blocker !== null}

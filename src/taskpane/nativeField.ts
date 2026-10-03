@@ -30,13 +30,23 @@
  */
 
 /**
- * The class a ToneForge-rendered native control carries.
+ * The class a ToneForge-rendered native *field* carries.
  *
  * Named `tf-native` rather than `tf-field` because `tf-field` is already on the
  * `<label>` wrappers, and reusing it would put a styling class on two different
  * elements for two different reasons.
  */
 export const NATIVE_FIELD_CLASS = "tf-native";
+
+/**
+ * The class a ToneForge-rendered `<button>` carries.
+ *
+ * Separate from `NATIVE_FIELD_CLASS` because the two sets want different
+ * defaults: a field is a surface with text on it, a button is a control with a
+ * border and a hover state. One class for both would force one of them to be
+ * styled as the other.
+ */
+export const NATIVE_BUTTON_CLASS = "tf-native-button";
 
 /**
  * The props that mark a control as ours.
@@ -46,10 +56,20 @@ export const NATIVE_FIELD_CLASS = "tf-native";
  * that already has a `className` merges both.
  */
 export function nativeFieldProps(className?: string): { className: string } {
-  return {
-    className:
-      className === undefined || className === ""
-        ? NATIVE_FIELD_CLASS
-        : `${NATIVE_FIELD_CLASS} ${className}`,
-  };
+  return { className: withMarker(NATIVE_FIELD_CLASS, className) };
+}
+
+/** The same, for a `<button>`. */
+export function nativeButtonProps(className?: string): { className: string } {
+  return { className: withMarker(NATIVE_BUTTON_CLASS, className) };
+}
+
+/**
+ * Merges the marker with whatever class the element already declares.
+ *
+ * A marker goes *first*, so a control's own styling class keeps the later, equal-
+ * specificity position in the cascade and can still override the shared defaults.
+ */
+function withMarker(marker: string, className: string | undefined): string {
+  return className === undefined || className === "" ? marker : `${marker} ${className}`;
 }

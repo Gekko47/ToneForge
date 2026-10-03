@@ -167,7 +167,12 @@ export default function LearnSemanticStyle({
           onChange={(event) => setPasted(event.target.value)}
           placeholder="Paste a few paragraphs you have written."
         />
-        <button type="button" onClick={learnFromPasted} disabled={pasted.trim() === ""}>
+        <button
+          className="tf-native-button"
+          type="button"
+          onClick={learnFromPasted}
+          disabled={pasted.trim() === ""}
+        >
           Use this text
         </button>
       </div>
@@ -193,7 +198,12 @@ export default function LearnSemanticStyle({
         whole document optional and not the primary route, and learning from it
         sends more of someone's writing than any other route here.
       */}
-      <button type="button" onClick={() => void learnFromDocument()} disabled={busy}>
+      <button
+        className="tf-native-button"
+        type="button"
+        onClick={() => void learnFromDocument()}
+        disabled={busy}
+      >
         Use the current document
       </button>
 
@@ -231,6 +241,7 @@ export default function LearnSemanticStyle({
       )}
 
       <button
+        className="tf-native-button"
         type="button"
         onClick={submit}
         disabled={!gate.allowed || sample === null || needsAcknowledgement || busy}
@@ -244,7 +255,7 @@ export default function LearnSemanticStyle({
           {gate.remedy?.destination === "settings" && (
             <>
               {" "}
-              <button type="button" onClick={onOpenSettings}>
+              <button className="tf-native-button" type="button" onClick={onOpenSettings}>
                 {gate.remedy.label}
               </button>
             </>

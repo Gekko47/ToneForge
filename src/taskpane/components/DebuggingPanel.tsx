@@ -176,7 +176,7 @@ export default function DebuggingPanel({
   return (
     <div className="tf-card" data-page="debugging">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button type="button" onClick={onBack}>
+        <button className="tf-native-button" type="button" onClick={onBack}>
           Back to Deterministic Review
         </button>
       </nav>
@@ -187,10 +187,16 @@ export default function DebuggingPanel({
       </p>
       <section aria-label="Host inspection" className="tf-debug-section">
         <h2>Host inspection</h2>
-        <button type="button" onClick={() => void probeCapabilities()} disabled={busy}>
+        <button
+          className="tf-native-button"
+          type="button"
+          onClick={() => void probeCapabilities()}
+          disabled={busy}
+        >
           {busy ? "Probing capabilities…" : "Probe Word capabilities"}
         </button>
         <button
+          className="tf-native-button"
           type="button"
           onClick={() => {
             setDiagnostics(formatDiagnostics(probeOfficeRuntime()));

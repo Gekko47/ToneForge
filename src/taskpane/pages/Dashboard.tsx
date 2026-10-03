@@ -1716,7 +1716,7 @@ function DashboardWithProfile({
         <section className="tf-collapsible" aria-label="Findings section">
           <button
             type="button"
-            className="tf-collapsible-header"
+            className="tf-native-button tf-collapsible-header"
             onClick={() => setFindingsOpen((open) => !open)}
             aria-expanded={findingsOpen}
           >
@@ -1822,7 +1822,7 @@ function DashboardWithProfile({
       {page === "review" && !findingsOpen && (
         <button
           type="button"
-          className="tf-collapsible-header"
+          className="tf-native-button tf-collapsible-header"
           onClick={() => setFindingsOpen(true)}
           aria-expanded={false}
         >
@@ -1864,7 +1864,11 @@ function DashboardWithProfile({
             >
               {hostReadiness.message}{" "}
               {hostReadiness.verdict === "blocked" && (
-                <button type="button" onClick={() => setPage("settings")}>
+                <button
+                  className="tf-native-button"
+                  type="button"
+                  onClick={() => setPage("settings")}
+                >
                   Open Settings
                 </button>
               )}
@@ -1967,7 +1971,12 @@ function DashboardWithProfile({
             what "all" meant. One Apply, in the section that lists what it will
             do, is the only version a user can read before pressing it.
           */}
-          <button type="button" onClick={rescanNow} disabled={status?.phase === "scanning"}>
+          <button
+            className="tf-native-button"
+            type="button"
+            onClick={rescanNow}
+            disabled={status?.phase === "scanning"}
+          >
             {status?.phase === "scanning" ? "Re-scanningâ€¦" : "Re-scan now"}
           </button>
         </div>
@@ -1975,7 +1984,7 @@ function DashboardWithProfile({
       {page === "review" && !pendingOpen ? (
         <button
           type="button"
-          className="tf-collapsible-header"
+          className="tf-native-button tf-collapsible-header"
           onClick={() => setPendingOpen(true)}
           aria-expanded={false}
         >
@@ -1985,7 +1994,7 @@ function DashboardWithProfile({
         <section className="tf-collapsible" aria-label="Pending changes section">
           <button
             type="button"
-            className="tf-collapsible-header"
+            className="tf-native-button tf-collapsible-header"
             onClick={() => setPendingOpen(false)}
             aria-expanded
           >

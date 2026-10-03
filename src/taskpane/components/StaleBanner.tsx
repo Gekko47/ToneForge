@@ -43,7 +43,7 @@ export default function StaleBanner({
         restate it to be self-explanatory — and two copies of a timestamp that
         disagree after a rescan is worse than one.
       */}
-      <button type="button" onClick={onRescan}>
+      <button className="tf-native-button" type="button" onClick={onRescan}>
         {hostUnavailable ? "Scan again" : "Re-scan now"}
       </button>
     </section>

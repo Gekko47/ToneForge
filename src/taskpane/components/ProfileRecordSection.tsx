@@ -173,6 +173,7 @@ export default function ProfileRecordSection({
                   <span className="tf-published-active">Active version</span>
                 ) : (
                   <button
+                    className="tf-native-button"
                     type="button"
                     onClick={() => handleActivate(entry.revision)}
                     aria-label={`Activate published revision ${entry.revision}`}
@@ -181,6 +182,7 @@ export default function ProfileRecordSection({
                   </button>
                 )}
                 <button
+                  className="tf-native-button"
                   type="button"
                   onClick={() => handleRestore(entry.revision)}
                   aria-label={`Restore published revision ${entry.revision} as a draft`}
@@ -209,7 +211,7 @@ export default function ProfileRecordSection({
         {revisions.length > 0 && (
           <button
             type="button"
-            className="tf-collapsible-header"
+            className="tf-native-button tf-collapsible-header"
             aria-expanded={showAllRevisions}
             onClick={() => setShowAllRevisions((open) => !open)}
           >
@@ -232,6 +234,7 @@ export default function ProfileRecordSection({
                     Revision {entry.revision} · {dateLabel(entry.at)} · {entry.detail}
                   </span>
                   <button
+                    className="tf-native-button"
                     type="button"
                     onClick={() => handleRecall(entry.revision)}
                     disabled={isCurrentDraft}

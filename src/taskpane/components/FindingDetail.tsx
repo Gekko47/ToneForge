@@ -306,6 +306,7 @@ export default function FindingDetail({
 
       <nav className="tf-finding-actions" aria-label="Finding actions">
         <button
+          className="tf-native-button"
           type="button"
           onClick={() => void handleGoToText()}
           disabled={navigationState.status === "working"}
@@ -324,22 +325,23 @@ export default function FindingDetail({
           once a decision is recorded.
         */}
         {onReview && controls.kind === "undecided" && !manualCorrection && (
-          <button type="button" onClick={() => onReview(finding)}>
+          <button className="tf-native-button" type="button" onClick={() => onReview(finding)}>
             Approve
           </button>
         )}
         {onSkip && controls.kind !== "approved" && (
-          <button type="button" onClick={() => onSkip(finding)}>
+          <button className="tf-native-button" type="button" onClick={() => onSkip(finding)}>
             Skip
           </button>
         )}
         {onUndo && controls.kind !== "undecided" && (
-          <button type="button" onClick={() => onUndo(finding)}>
+          <button className="tf-native-button" type="button" onClick={() => onUndo(finding)}>
             Undo decision
           </button>
         )}
         {onIgnore && (
           <button
+            className="tf-native-button"
             type="button"
             onClick={() => onIgnore(finding.id)}
             /*

@@ -212,7 +212,7 @@ export default function PendingChanges({
         <p>{emptyReason ?? "No changes are ready to apply for this document."}</p>
         {onPreview && (
           <div className="tf-pending-footer">
-            <button type="button" onClick={onPreview}>
+            <button className="tf-native-button" type="button" onClick={onPreview}>
               Preview {totalCount} change{totalCount === 1 ? "" : "s"}
             </button>
           </div>
@@ -265,7 +265,7 @@ export default function PendingChanges({
         <div id="pending-apply-readiness" role="status" aria-live="polite" className="tf-sub">
           <p>{applyDisabledReason}</p>
           {onOpenSettings && (
-            <button type="button" onClick={onOpenSettings}>
+            <button className="tf-native-button" type="button" onClick={onOpenSettings}>
               Open Settings
             </button>
           )}
@@ -323,6 +323,7 @@ export default function PendingChanges({
               */}
               {card.canNavigate && card.finding && (
                 <button
+                  className="tf-native-button"
                   type="button"
                   onClick={() => {
                     void handleGoTo(card.finding as Finding);
@@ -332,7 +333,11 @@ export default function PendingChanges({
                 </button>
               )}
               {onRemove && (
-                <button type="button" onClick={() => onRemove(card.changeId)}>
+                <button
+                  className="tf-native-button"
+                  type="button"
+                  onClick={() => onRemove(card.changeId)}
+                >
                   Remove
                 </button>
               )}
@@ -360,6 +365,7 @@ export default function PendingChanges({
         </p>
         <div className="tf-pending-actions">
           <button
+            className="tf-native-button"
             type="button"
             onClick={handleApply}
             disabled={applying || !canApply}
@@ -371,7 +377,12 @@ export default function PendingChanges({
                 ? `Apply ${cards.length} with Track Changes`
                 : "Apply unavailable"}
           </button>
-          <button type="button" onClick={handleReject} disabled={applying}>
+          <button
+            className="tf-native-button"
+            type="button"
+            onClick={handleReject}
+            disabled={applying}
+          >
             Reject all
           </button>
           {/*
