@@ -811,13 +811,39 @@ claim; the check below is what the lint rule cannot do.
    _defines_ the palette. Run it before looking, so what you are judging is
    rendering and not a literal someone has not committed yet.
 2. **Dropdowns and text fields must not render light-on-dark.** This is the
-   reported defect and the one no test can settle. Every Fluent component
-   renders a real `<input>` underneath carrying an `ms-` class, and
-   `taskpane.css` used to style bare `input, select, textarea` — so the rule
-   landed on Fluent's own fields as well as on the native ones. The rules are
-   now scoped with `:not([class*="ms-"])`. Open the Deterministic Style
-   Profile tab in dark theme and confirm every Dropdown and TextField is
-   legible, including the ones inside a collapsed section.
+   reported defect and **the one no test can settle.**
+
+   The history, because it explains what to look at. `taskpane.css` used to
+   style bare `input, select, textarea`. Every Fluent component renders a real
+   `<input>` underneath, so the rule landed on Fluent's own fields as well as on
+   the native ones. It was then scoped with `:not([class*="ms-"])` — a deny-list
+   keyed on Fluent's internal class prefix, which fails twice over: the prefix is
+   not a public contract and changes between versions, and it never covered a
+   Fluent component whose root is not an `<input>` (a Dropdown's button, a
+   Switch's internals, a SpinButton's buttons).
+
+   Both are gone. Our own controls now carry `.tf-native` and the rules are
+   scoped to it (`src/taskpane/nativeField.ts`), so a Fluent component is
+   excluded by construction rather than by guessing at its class names.
+
+   **What the automated test does and does not establish.**
+   `tests/unit/taskpane/nativeFieldMarkers.test.ts` asserts that no unscoped
+   bare-element rule survives, that the scoped rule declares only theme tokens,
+   and that every native control in the task pane carries the marker. That is a
+   statement about the stylesheet, and it is real evidence.
+
+   It is **not** evidence about what Word paints. jsdom computes no styles, so a
+   `getComputedStyle` check on `.tf-native` returns an empty background
+   identically in the light and dark theme — a test written that way passes
+   unconditionally and proves nothing. That is precisely why this step stays
+   here, and why no green run may be reported as closing it.
+
+   Open the Deterministic Style Profile tab in dark theme and confirm every
+   Dropdown and TextField is legible, including the ones inside a collapsed
+   section. Confirm the native fields (`.tf-native`) are equally legible — they
+   now follow `--tf-surface` directly, and a regression there is invisible to
+   every test in this repository.
+
 3. Open the Semantic tab in dark theme. Confirm the section frames follow the
    theme; one of them was a literal `#edebe9`, the light theme's own neutral,
    so its border stayed light while every other surface followed the token.

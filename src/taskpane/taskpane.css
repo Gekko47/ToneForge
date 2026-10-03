@@ -352,20 +352,48 @@ button,
  * is what keeps the two apart. Word's own rendering still has to be confirmed by
  * hand: jsdom cannot compute styles, so no test here can stand in for it.
  */
-input:not([class*="ms-"]),
-select:not([class*="ms-"]),
-textarea:not([class*="ms-"]) {
+/*
+ * Native controls, and only the ones we render.
+ *
+ * This was `:not([class*="ms-"])` — excluding anything whose class contains
+ * Fluent's internal prefix. It is replaced because a deny-list keyed on another
+ * library's private class naming fails twice over:
+ *
+ * 1. `ms-` is not a public contract. It changes between Fluent versions, and a
+ *    rename silently *widens* these rules onto every Fluent field in the add-in
+ *    — which is the reported symptom: Dropdowns and TextFields on the profile
+ *    pages rendering light-on-dark while the surrounding surface followed the
+ *    theme.
+ * 2. It cannot cover Fluent components whose root is not an `<input>`. A
+ *    Dropdown's button, a Switch's internals and a SpinButton's buttons are
+ *    never excluded by it, because it only ever asks about three element names.
+ *
+ * A deny-list is the wrong shape here. The question is not "is this one of ours?"
+ * but "is this ours?", and only the author of a control can answer that. So our
+ * own controls carry `.tf-native` — see `src/taskpane/nativeField.ts` — and the
+ * rules are scoped to it. A Fluent component is then excluded by construction:
+ * whatever it renders, and whatever it names its classes.
+ *
+ * `nativeFieldMarkers.test.tsx` asserts that every native control in the task
+ * pane carries the marker, so a new control cannot silently escape these rules.
+ *
+ * **What this cannot verify.** jsdom computes no styles, so no test here can
+ * confirm what Word actually paints. The visual check stays a manual item in
+ * `docs/manual-verification.md`; the test below asserts the *rule*, not a
+ * computed colour.
+ */
+.tf-native {
   font: inherit;
   background-color: var(--tf-surface);
   color: var(--tf-text);
 }
 
-select:not([class*="ms-"]) {
+select.tf-native {
   color-scheme: inherit;
 }
 
-input:not([class*="ms-"])::placeholder,
-textarea:not([class*="ms-"])::placeholder {
+input.tf-native::placeholder,
+textarea.tf-native::placeholder {
   color: var(--tf-muted);
   opacity: 1;
 }

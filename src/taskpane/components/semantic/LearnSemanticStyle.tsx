@@ -160,6 +160,7 @@ export default function LearnSemanticStyle({
       <div>
         <label htmlFor="tf-learn-pasted">Paste a sample of your writing</label>
         <textarea
+          className="tf-native"
           id="tf-learn-pasted"
           value={pasted}
           rows={5}
@@ -174,6 +175,7 @@ export default function LearnSemanticStyle({
       <div>
         <label htmlFor="tf-learn-file">Or choose a plain-text file</label>
         <input
+          className="tf-native"
           id="tf-learn-file"
           type="file"
           accept={TEXT_FILE_EXTENSION}
@@ -216,6 +218,7 @@ export default function LearnSemanticStyle({
           {needsAcknowledgement && (
             <label htmlFor="tf-learn-acknowledge">
               <input
+                className="tf-native"
                 id="tf-learn-acknowledge"
                 type="checkbox"
                 checked={acknowledged}

@@ -4691,3 +4691,77 @@ now names its own limit.
 `tests/unit/taskpane/coverageVerdict.test.ts` (15);
 `tests/unit/taskpane/components/CoverageBanner.test.tsx`;
 `tests/unit/taskpane/components/findingsListIntegrity.test.tsx`.
+
+## ADR-0121 — A stylesheet scopes by the controls it owns, not by what it excludes
+
+### Context
+
+The reported defect (UX-4a): Dropdowns and TextFields on the profile pages
+rendered light-on-dark while the surface around them followed the theme.
+
+`taskpane.css` styled bare `input, select, textarea`. Every Fluent component
+renders a real `<input>` underneath, so the rule landed on Fluent's own fields as
+well. It was then scoped with `:not([class*="ms-"])` — excluding anything whose
+class contains Fluent's internal prefix.
+
+That second guard fails twice over, and the audit's own diagnosis is correct on
+both counts:
+
+1. **`ms-` is not a public contract.** It changes between Fluent versions, and a
+   rename silently _widens_ the rule back onto every Fluent field — re-creating
+   the original defect with no code change on our side.
+2. **It cannot cover a Fluent component whose root is not an `<input>`.** A
+   Dropdown's button, a Switch's internals and a SpinButton's buttons are never
+   excluded, because the guard only ever asks about three element names.
+
+### Decision
+
+A deny-list is the wrong shape. The question is not "is this one of ours?" but
+"is this ours?", and only the author of a control can answer that. So:
+
+- Our own controls carry `.tf-native` (`src/taskpane/nativeField.ts`).
+- The stylesheet rules are scoped to `.tf-native`.
+
+A Fluent component is then excluded by construction — whatever it renders, and
+whatever it names its classes — rather than by coincidence.
+
+The marker is what makes the eventual Fluent migration (UX-4) safe: migration
+removes controls from this set, and any control it forgets to migrate simply
+stops being styled rather than starting to fight the theme.
+
+### What is enforced, and where
+
+`theme.test.ts` keeps the claim it always had — no bare-element rule may return,
+Fluent's fields are never touched — but asserts it against the _selectors_
+rather than the mechanism, with comments stripped. It previously pinned
+`:not([class*="ms-"])` itself, so replacing the guard with something better
+would have failed the test that was supposed to approve it.
+
+`nativeFieldMarkers.test.ts` covers the half that test cannot: that every native
+control in the task pane carries the marker, and that the rule's content is
+theme-token-only. Between them, a control added without the marker fails, and a
+hard-coded colour in the rule fails.
+
+The marker was applied to 32 controls across three files by a script that parses
+tag boundaries rather than matching attribute lines — a regex that cannot see
+where a tag ends cannot distinguish a control from the `<input` inside a comment
+or a string.
+
+### Consequences
+
+- A Fluent rename can no longer reach our controls, and our rules can no longer
+  reach a Fluent component.
+- A new native control that forgets the marker falls outside the rules: visibly
+  unstyled rather than subtly wrong, and caught by a test.
+- **The visual outcome is still unverified.** jsdom computes no styles, so
+  `getComputedStyle` returns an empty background for a `.tf-native` input in the
+  light and dark theme alike; a test written that way passes unconditionally and
+  proves nothing. The manual check in `docs/manual-verification.md` has been
+  rewritten to say so explicitly, and no green run may be reported as closing it.
+
+### Evidence
+
+`src/taskpane/nativeField.ts`; `src/taskpane/taskpane.css`;
+`src/taskpane/components/DeterministicStyleSections.tsx` (32 controls);
+`tests/unit/taskpane/nativeFieldMarkers.test.ts` (8);
+`tests/unit/taskpane/theme.test.ts`; `docs/manual-verification.md` §4.

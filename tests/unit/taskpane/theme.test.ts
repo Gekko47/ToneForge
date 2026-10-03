@@ -55,18 +55,28 @@ describe("theme tokens", () => {
 });
 
 describe("the native-control rule", () => {
-  it("excludes Fluent's own inputs", () => {
-    /*
-     * Every Fluent component renders a real input, select or textarea carrying
-     * an `ms-` class. An unscoped element rule therefore also applies to
-     * Fluent's fields, and the two declarations then resolve on specificity in
-     * a way that depends on which ones a given Fluent version emits. This is
-     * the most plausible cause of Dropdowns and TextFields rendering
-     * light-on-dark while the surface around them followed the theme.
-     */
-    ["input", "select", "textarea"].forEach((element) => {
-      expect(css).toMatch(new RegExp(`${element}:not\\(\\[class\\*="ms-"\\]\\)`));
-    });
+  /*
+   * These two assertions used to pin the *mechanism* — that the rule carried
+   * `:not([class*="ms-"])` — rather than the claim it protects, which is that
+   * Fluent's fields are never touched by our styling. Pinning the mechanism made
+   * the guard itself fail the day it was replaced by something better, which is
+   * how a real improvement gets reverted to satisfy a test.
+   *
+   * The mechanism is now `.tf-native`, a class we own (UX-4a). The claim is
+   * unchanged and is asserted against the selectors, so the prose explaining the
+   * change cannot satisfy or defeat it.
+   *
+   * `nativeFieldMarkers.test.ts` covers the other half: that every native control
+   * we actually render carries the marker. Between them, a control added without
+   * it fails, and a bare-element rule returning fails.
+   */
+  const selectors = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("excludes Fluent's own inputs by scoping to our marker", () => {
+    expect(selectors).toContain(".tf-native {");
+    // The old deny-list is gone rather than kept alongside: two guards for one
+    // problem is two things to maintain, and the deny-list is the fragile one.
+    expect(selectors).not.toContain("ms-");
   });
 
   it("no longer groups the three elements into one unscoped rule", () => {
@@ -78,8 +88,8 @@ describe("the native-control rule", () => {
      */
     const bareGroup =
       /(?:^|\n)\s*(?:input|select|textarea)\s*,\s*\n\s*(?:input|select|textarea)\s*\{/;
-    expect(css).not.toMatch(bareGroup);
-    expect(css).not.toMatch(/(?:^|\n)\s*input\s*\{/);
+    expect(selectors).not.toMatch(bareGroup);
+    expect(selectors).not.toMatch(/(?:^|\n)\s*input\s*\{/);
   });
 });
 

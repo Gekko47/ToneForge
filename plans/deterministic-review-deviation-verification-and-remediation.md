@@ -1597,3 +1597,72 @@ the coverage verdict states. The single-occurrence Approve path through
 - **Phase 6** (editor: UX-4, UX-4a) and **Phase 7** (gate and evidence).
 - **`npm run verify`** has not been run since Phase 4a. Coverage, build, manifest
   and package checks are Phase 7 work.
+
+### Phase 6a — UX-4a, the theme guard (ADR-0121)
+
+#### The defect the owner reported
+
+Dropdowns and TextFields on the profile pages rendered light-on-dark while the
+surrounding surface followed the theme. The audit diagnosed the cause correctly:
+`taskpane.css` styled bare `input, select, textarea`, and every Fluent component
+renders a real `<input>` underneath, so the rule landed on Fluent's fields too.
+
+The attempted fix was `:not([class*="ms-"])`, and the audit's objection to it is
+right on both counts. `ms-` is not a public contract and changes between Fluent
+versions — a rename silently _widens_ the rule back onto every Fluent field,
+re-creating the defect with no change on our side. And it never excluded a Fluent
+component whose root is not an `<input>`: a Dropdown's button, a Switch's
+internals, a SpinButton's buttons.
+
+#### A deny-list is the wrong shape
+
+The guard asked "is this one of ours?", which no other library's naming can
+answer. Our own controls now carry `.tf-native` and the rules are scoped to it, so
+a Fluent component is excluded by construction — whatever it renders, whatever it
+names its classes.
+
+The marker was applied to 32 controls across three files by a script that parses
+tag boundaries (respecting quotes, braces and JSX expressions) rather than
+matching attribute lines. A regex that cannot see where a tag ends cannot tell a
+control from the `<input` inside a comment or a string.
+
+#### Two tests I had to correct rather than satisfy
+
+**The existing guard test pinned the mechanism, not the claim.**
+`theme.test.ts` asserted that the rule carries `:not([class*="ms-"])` — so
+replacing the guard with something better failed the test that was supposed to
+approve it. That is how a real improvement gets reverted to satisfy a test. It now
+asserts the _claim_ (no bare-element rule; Fluent's fields are never touched)
+against selectors with comments stripped.
+
+**My own new test failed on its own documentation.** The first version asserted
+`not.toContain('ms-"]')` against the raw stylesheet — and the comment explaining
+the change quotes the guard it replaced. The test could not tell a selector from a
+sentence about it. It now strips comments first.
+
+I also removed a duplicated assertion: `nativeFieldMarkers.test.ts` and
+`theme.test.ts` were both asserting the same selector. `theme.test.ts` owns the
+stylesheet rule, beside the other stylesheet guards; the new file owns the
+coverage the rule depends on — that every control carries the marker.
+
+#### What this cannot verify, stated rather than implied
+
+jsdom computes no styles. `getComputedStyle` on a `.tf-native` input returns an
+empty background identically in the light and dark theme, so a test written that
+way passes unconditionally and proves nothing — worse than no test, because it
+reads as evidence.
+
+The manual check in `docs/manual-verification.md` §4 has been rewritten to say
+this explicitly, and to require confirming the `.tf-native` fields too, since a
+regression there is invisible to every test in this repository.
+
+#### Verification
+
+`npx tsc --noEmit` clean. `npm run lint` 0 warnings. **2716 tests / 194 files**,
+up from 2708 / 193.
+
+#### Still open in Phase 6
+
+UX-4: migrate the editor controls to Fluent, replace the bespoke `ProfileSection`
+frame with `Accordion`, sub-divide Language and Typography, and preserve the
+per-section host-capability marking as a Badge.

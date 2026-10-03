@@ -77,6 +77,7 @@ export default function PreservationSummary({
         <div>
           <label htmlFor="tf-semantic-acknowledge">
             <input
+              className="tf-native"
               id="tf-semantic-acknowledge"
               type="checkbox"
               checked={acknowledged}

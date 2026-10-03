@@ -115,7 +115,12 @@ function StyleTextField({
   return (
     <label className="tf-field">
       <span>{label}</span>
-      <input type="text" value={value ?? ""} onChange={(event) => onChange(event.target.value)} />
+      <input
+        className="tf-native"
+        type="text"
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </label>
   );
 }
@@ -138,6 +143,7 @@ function NumberField({
     <label className="tf-field">
       <span>{label}</span>
       <input
+        className="tf-native"
         type="number"
         min={min}
         max={max}
@@ -171,6 +177,7 @@ function CompareToggle({
   return (
     <label className="tf-field tf-field-inline">
       <input
+        className="tf-native"
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
@@ -206,6 +213,7 @@ function LineListField({
     <div className="tf-field">
       <label htmlFor={controlId}>{label}</label>
       <textarea
+        className="tf-native"
         id={controlId}
         aria-describedby={hintId}
         rows={3}
@@ -249,6 +257,7 @@ function PairListField({
     <div className="tf-field">
       <label htmlFor={controlId}>{label}</label>
       <textarea
+        className="tf-native"
         id={controlId}
         aria-describedby={error === null ? hintId : `${hintId} ${errorId}`}
         aria-invalid={error !== null}
@@ -298,6 +307,7 @@ function EnumSelect<T extends string>({
     <div className="tf-field">
       <label htmlFor={controlId}>{label}</label>
       <select
+        className="tf-native"
         id={controlId}
         {...(hint === undefined ? {} : { "aria-describedby": hintId })}
         value={value}
@@ -350,6 +360,7 @@ function OptionalEnumSelect({
     <div className="tf-field">
       <label htmlFor={controlId}>{label}</label>
       <select
+        className="tf-native"
         id={controlId}
         aria-describedby={hintId}
         value={value ?? ""}
@@ -446,13 +457,19 @@ function TerminologyRow({
       <legend>{rule.id}</legend>
       <label className="tf-field">
         <span>Term</span>
-        <input type="text" value={source} onChange={(event) => commitSource(event.target.value)} />
+        <input
+          className="tf-native"
+          type="text"
+          value={source}
+          onChange={(event) => commitSource(event.target.value)}
+        />
         {sourceProblem !== null ? <span className="tf-sub">{sourceProblem}</span> : null}
       </label>
       {withReplacement ? (
         <label className="tf-field">
           <span>Replacement</span>
           <input
+            className="tf-native"
             type="text"
             value={replacement}
             onChange={(event) => commitReplacement(event.target.value)}
@@ -462,6 +479,7 @@ function TerminologyRow({
       ) : null}
       <label className="tf-field tf-field-inline">
         <input
+          className="tf-native"
           type="checkbox"
           checked={rule.wholeWord}
           onChange={(event) => onChange({ ...rule, wholeWord: event.target.checked })}
@@ -470,6 +488,7 @@ function TerminologyRow({
       </label>
       <label className="tf-field tf-field-inline">
         <input
+          className="tf-native"
           type="checkbox"
           checked={rule.caseSensitive}
           onChange={(event) => onChange({ ...rule, caseSensitive: event.target.checked })}
@@ -479,6 +498,7 @@ function TerminologyRow({
       <label className="tf-field">
         <span>Severity</span>
         <select
+          className="tf-native"
           value={rule.severity}
           onChange={(event) =>
             onChange({ ...rule, severity: event.target.value as "mandatory" | "advisory" })
@@ -519,7 +539,7 @@ const HEADING_CASE_OPTIONS: readonly (readonly [HeadingCase, string])[] = [
 /*
  * Encoded as DOM strings rather than as booleans.
  *
- * A `<select>` can only carry strings, so a boolean option list would have to be
+ * A `<select className="tf-native">` can only carry strings, so a boolean option list would have to be
  * cast back at every read. Encoding it once here keeps the cast at the single place
  * where the meaning of "true"/"false" is decided.
  */
@@ -878,6 +898,7 @@ export default function DeterministicStyleSections({
           One per line. Flagged, never rewritten.
         </p>
         <textarea
+          className="tf-native"
           aria-labelledby="tf-banned-terms-heading"
           aria-describedby="tf-banned-terms-hint"
           rows={4}
@@ -935,6 +956,7 @@ export default function DeterministicStyleSections({
 
         <label className="tf-field tf-field-inline">
           <input
+            className="tf-native"
             type="checkbox"
             checked={profile.language.capitalisation.sentenceCase}
             onChange={(event) =>
@@ -960,6 +982,7 @@ export default function DeterministicStyleSections({
         <label className="tf-field">
           <span>Locale</span>
           <select
+            className="tf-native"
             value={profile.language.locale}
             onChange={(event) => tryPatchLanguage({ locale: event.target.value })}
           >
@@ -1064,6 +1087,7 @@ export default function DeterministicStyleSections({
           <div className="tf-field">
             <label htmlFor="tf-number-word-threshold">Spell out numbers up to</label>
             <input
+              className="tf-native"
               id="tf-number-word-threshold"
               aria-describedby="tf-number-word-threshold-hint"
               type="number"
@@ -1106,6 +1130,7 @@ export default function DeterministicStyleSections({
               <div className="tf-field">
                 <label htmlFor={`tf-date-shape-${index}`}>Shape</label>
                 <select
+                  className="tf-native"
                   id={`tf-date-shape-${index}`}
                   aria-describedby={`tf-date-shape-hint-${index}`}
                   value={format.id}
@@ -1125,6 +1150,7 @@ export default function DeterministicStyleSections({
               <div className="tf-field">
                 <label htmlFor={`tf-date-format-${index}`}>Written as</label>
                 <input
+                  className="tf-native"
                   id={`tf-date-format-${index}`}
                   aria-describedby={`tf-date-format-hint-${index}`}
                   type="text"
@@ -1137,6 +1163,7 @@ export default function DeterministicStyleSections({
               </div>
               <label className="tf-field tf-field-inline">
                 <input
+                  className="tf-native"
                   type="radio"
                   name="tf-preferred-date-format"
                   checked={format.preferred}
@@ -1158,6 +1185,7 @@ export default function DeterministicStyleSections({
           </button>
           <label className="tf-field tf-field-inline">
             <input
+              className="tf-native"
               type="checkbox"
               checked={dates.requireUnambiguous}
               onChange={(event) => patchDates({ requireUnambiguous: event.target.checked })}
@@ -1251,6 +1279,7 @@ export default function DeterministicStyleSections({
         <label className="tf-field">
           <span>Body style</span>
           <input
+            className="tf-native"
             type="text"
             value={profile.formatting.bodyStyle.styleName}
             onChange={(event) =>
@@ -1304,6 +1333,7 @@ export default function DeterministicStyleSections({
           />
           <label className="tf-field tf-field-inline">
             <input
+              className="tf-native"
               type="checkbox"
               checked={tables?.headerRow === true}
               onChange={(event) =>
@@ -1335,6 +1365,7 @@ export default function DeterministicStyleSections({
           />
           <label className="tf-field tf-field-inline">
             <input
+              className="tf-native"
               type="checkbox"
               checked={headersFooters?.required === true}
               onChange={(event) =>
@@ -1355,6 +1386,7 @@ export default function DeterministicStyleSections({
           <label className="tf-field">
             <span>Orientation</span>
             <select
+              className="tf-native"
               value={page?.orientation ?? ""}
               onChange={(event) =>
                 patchPage({
@@ -1395,6 +1427,7 @@ export default function DeterministicStyleSections({
       >
         <label className="tf-field tf-field-inline">
           <input
+            className="tf-native"
             type="checkbox"
             checked={profile.structure.reportEmptyHeadings}
             onChange={(event) => patchStructure({ reportEmptyHeadings: event.target.checked })}
@@ -1403,6 +1436,7 @@ export default function DeterministicStyleSections({
         </label>
         <label className="tf-field tf-field-inline">
           <input
+            className="tf-native"
             type="checkbox"
             checked={profile.structure.reportUnknownStyles}
             onChange={(event) => patchStructure({ reportUnknownStyles: event.target.checked })}
@@ -1411,6 +1445,7 @@ export default function DeterministicStyleSections({
         </label>
         <label className="tf-field tf-field-inline">
           <input
+            className="tf-native"
             type="checkbox"
             checked={profile.structure.allowSkippedHeadingLevels}
             onChange={(event) =>
