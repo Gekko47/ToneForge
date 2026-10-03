@@ -4412,3 +4412,70 @@ removed); `src/formatting/analyzer.ts` (`HEADING_HIERARCHY_REASON`,
 `checkHeadingHierarchy`); `src/analysis/deterministic/ruleRegistry.ts`
 (`structure/headingHierarchy`); `tests/unit/changes/planner.test.ts`;
 `tests/unit/formatting/analyzer.test.ts`.
+
+## ADR-0117 — A precondition names every property the rule read
+
+- **Status**: Accepted
+- **Date**: 2026-10-03
+- **Plan item**: Phase 4, item 18
+
+### Context
+
+The paragraph rule compares fourteen properties:
+alignment, line spacing, space after, space before, left indent, right indent,
+first-line indent, keep-with-next, keep-lines-together, page-break-before, list
+level, style name, and the six character properties.
+
+`paragraphPrecondition` built its `expectedFormatting` from nine of them. Line
+spacing, spacing before and after, and all three indents were read by the rule and
+silently absent from the precondition.
+
+`matchesFormatting` compares every key the precondition names and skips keys it
+does not. So a finding raised about `spaceAfter` carried a precondition that could
+not see `spaceAfter`: the plan could be approved, applied, and read back as
+verified while the spacing the finding was about had moved. That is a false
+confirmation of a write that may no longer correspond to the document — the exact
+failure a precondition exists to prevent, produced by a precondition that was
+structurally valid and semantically incomplete.
+
+### Decision
+
+1. `FormattingStateSchema` gains `leftIndent`, `rightIndent` and
+   `firstLineIndent` (nullable numbers) and `keepNext`, `keepLines` and
+   `pageBreakBefore` (nullable booleans). Every field stays optional, so an absent
+   key still means "not known".
+2. `paragraphPrecondition` now names **everything the rule compares that
+   acquisition actually reads**: the three previously-missing spacing and
+   indentation properties join the nine it already carried.
+3. `paragraphPrecondition` **deliberately omits** the three flow controls. They
+   are `null` on every host today — no host reads them — so naming `null` would
+   assert "this paragraph has no keep-with-next", which nobody observed. An absent
+   key says "not known", which `matchesFormatting` skips.
+4. `matchesFormatting` is **not** changed. Treating a `null` expectation as
+   "skip" would weaken the gate for properties that genuinely are read, and a
+   precondition that refuses for a reason it cannot justify is its own defect.
+
+### Consequences
+
+- **A moved indent or spacing now refuses the plan**, with the property named in
+  the reason. This is the behaviour a precondition claims and did not have.
+- **Widening the schema cannot introduce a false refusal**, because the caller
+  only ever writes keys it read. That is why the flow controls are left out rather
+  than written as `null`.
+- **`ExpectedFormatting` widens automatically.** It is `z.infer<typeof
+FormattingStateSchema>` in `preconditions.ts`, so `matchesFormatting` compares
+  the new keys without a second list to keep in step.
+- **A host that starts serving a flow control needs no change here**: the field is
+  on the schema and acquisition already reports `null` for the unread case, so a
+  future `paragraphPrecondition` can name it the day it is real.
+- **This is repository-side evidence only.** Whether the live precondition and
+  readback paths populate these keys from a real Word host is still the
+  human-verified host gate (`docs/manual-verification.md`), and is not closed by
+  this.
+
+### Evidence
+
+`src/core/domain/Change.ts` (`FormattingStateSchema`);
+`src/formatting/analyzer.ts` (`paragraphPrecondition`);
+`src/changes/preconditions.ts` (`ExpectedFormatting`, `matchesFormatting`);
+`tests/unit/formatting/preconditionCoverage.test.ts` (new, 14 tests).

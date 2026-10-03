@@ -349,6 +349,24 @@ function makeFinding(params: {
   };
 }
 
+/**
+ * The state this paragraph must still be in for its finding to be actionable.
+ *
+ * **It names everything the paragraph rule compares that acquisition actually
+ * reads.** It used to name nine of fourteen: line spacing, spacing before and
+ * after, and all three indents were read by the rule and silently absent here. A
+ * precondition that does not mention a property cannot notice that property
+ * changing, which is the whole reason a precondition exists — so a finding about
+ * spacing could be approved, applied, and verified while the spacing it was raised
+ * over had quietly moved underneath it.
+ *
+ * **It deliberately omits the three flow controls.** `keepNext`, `keepLines` and
+ * `pageBreakBefore` are `null` on every host today: no host reads them. Naming
+ * `null` would assert "this paragraph has no keep-with-next", which is a claim
+ * nobody made; leaving the key out says "not known", and `matchesFormatting`
+ * skips an absent key. The fields exist on the schema so a host that does serve
+ * them needs no further change here.
+ */
 function paragraphPrecondition(
   paragraph: FormattingParagraph,
 ): NonNullable<Finding["precondition"]> {
@@ -361,6 +379,12 @@ function paragraphPrecondition(
     expectedFormatting: {
       styleName: paragraph.styleName,
       alignment: paragraph.alignment,
+      lineSpacing: paragraph.lineSpacing,
+      spaceAfter: paragraph.spaceAfter,
+      spaceBefore: paragraph.spaceBefore,
+      leftIndent: paragraph.leftIndent,
+      rightIndent: paragraph.rightIndent,
+      firstLineIndent: paragraph.firstLineIndent,
       listLevel: paragraph.listLevel,
       fontName: paragraph.fontName,
       fontSize: paragraph.fontSize,

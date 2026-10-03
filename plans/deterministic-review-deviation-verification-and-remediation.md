@@ -1290,3 +1290,56 @@ planner.
 
 **Verification at this point:** typecheck clean, lint 0 warnings, **2626 tests /
 187 files passing**.
+
+### Phase 4e — Item 18, a precondition names what the rule read
+
+**What the audit claimed, and what was true.** Confirmed, and broader than the
+item's wording suggests.
+
+`FormattingStateSchema` could name seven of the properties the paragraph rule
+compares, and `paragraphPrecondition` used **nine of fourteen**. Line spacing,
+space before, space after, and all three indents were read by the rule and
+absent from the precondition.
+
+**Why that is a false confirmation, not a gap in tidiness.**
+`matchesFormatting` compares every key the precondition names and skips the ones
+it does not. So a finding raised about `spaceAfter` carried a precondition that
+could not see `spaceAfter`: the plan could be approved, applied, and read back as
+verified while the spacing the finding was about had moved. A precondition that
+refuses is the point of a precondition, and this one could not.
+
+**The half the item did not name, and it mattered.** Three further properties —
+`lineSpacing`, `spaceBefore`, `spaceAfter` — were in exactly the same state. They
+are in the fix because omitting them again would leave the same defect one field
+group over.
+
+**What changed**
+
+- `FormattingStateSchema` gains `leftIndent`, `rightIndent`, `firstLineIndent`
+  (nullable numbers) and `keepNext`, `keepLines`, `pageBreakBefore` (nullable
+  booleans). Every field stays optional, so an absent key still means "not known".
+- `paragraphPrecondition` names **everything the rule compares that acquisition
+  actually reads** — six new keys.
+- It **deliberately omits** the three flow controls. They are `null` on every host
+  today; naming `null` would assert "this paragraph has no keep-with-next", which
+  nobody observed. An absent key says "not known", and `matchesFormatting` skips
+  it. This is why widening the schema cannot introduce a false refusal: the caller
+  only ever writes keys it read.
+- `matchesFormatting` is **not** changed. Treating a `null` expectation as "skip"
+  would weaken the gate for properties that genuinely are read, and a
+  precondition that refuses for a reason it cannot justify is its own defect.
+
+**Tests.** `tests/unit/formatting/preconditionCoverage.test.ts` (new, 14 tests):
+one per newly-named property, one that the always-named properties are still
+there, one that the flow controls are absent, two on the schema's own shape, and
+four driving `matchesChangePrecondition` directly — including the two that used to
+pass silently (a moved `leftIndent`, a moved `spaceAfter`, both now refusing with
+the property named) and one that a flow control the live read never serves does
+_not_ refuse.
+
+**Stated plainly: this is repository-side evidence only.** Whether the live
+precondition and readback paths populate these keys from a real Word host is the
+human-verified gate in `docs/manual-verification.md`, and it remains open.
+
+**Verification at this point:** typecheck clean, lint 0 warnings, **2640 tests /
+188 files passing**.

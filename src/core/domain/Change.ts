@@ -52,12 +52,34 @@ export const TextPreconditionSchema = z.object({
   kind: z.literal("text"),
   expectedText: z.string(),
 });
+/**
+ * The formatting a precondition can name.
+ *
+ * **Why indentation and the flow controls were added.** The paragraph rule
+ * compares ten properties, but this schema could name seven, so a precondition
+ * built from a paragraph silently omitted everything the rule had read. A
+ * precondition that does not mention a property cannot notice it changing, which
+ * is the failure mode a precondition exists to prevent.
+ *
+ * **`null` means "not read", never "zero".** Acquisition returns `null` for every
+ * flow control on every host today, so a caller that names one as `null` has
+ * asserted nothing and must leave it `undefined` rather than pin it. See
+ * `paragraphPrecondition` for where that distinction is applied.
+ */
 export const FormattingStateSchema = z.object({
   styleName: z.string().trim().optional(),
   alignment: z.enum(["left", "center", "right", "justified"]).nullable().optional(),
   lineSpacing: z.number().nullable().optional(),
   spaceAfter: z.number().nullable().optional(),
   spaceBefore: z.number().nullable().optional(),
+  /** Indentation in points. `null` is "not read", which is not the same as 0. */
+  leftIndent: z.number().nullable().optional(),
+  rightIndent: z.number().nullable().optional(),
+  firstLineIndent: z.number().nullable().optional(),
+  /** Word paragraph flow controls. `null` until a host serves them. */
+  keepNext: z.boolean().nullable().optional(),
+  keepLines: z.boolean().nullable().optional(),
+  pageBreakBefore: z.boolean().nullable().optional(),
   listLevel: z.number().int().min(0).max(8).nullable().optional(),
   fontName: z.string().nullable().optional(),
   fontSize: z.number().nullable().optional(),
