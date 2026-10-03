@@ -186,6 +186,8 @@ describe("required terms", () => {
     // absence anchored nowhere. Merging them would lose the distinction between
     // "you wrote this word" and "this document never says this".
     expect(missing(findings)).toHaveLength(1);
-    expect(findings.some((finding) => finding.category === "houseStyle.terminology")).toBe(true);
+    expect(findings.some((finding) => finding.category === "language.terminology.preferred")).toBe(
+      true,
+    );
   });
 });

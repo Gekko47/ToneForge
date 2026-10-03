@@ -65,7 +65,7 @@ export const DETERMINISTIC_CORRECTABLE_CATEGORIES: ReadonlySet<string> = new Set
   "typography.ellipsis",
   "typography.whitespace",
   "typography.punctuation",
-  "houseStyle.terminology",
+  "language.terminology.preferred",
   "houseStyle.capitalization.titleCase",
   "language.capitalisation.sentenceCase",
   "language.capitalisation.properNoun",
@@ -465,7 +465,7 @@ export function planDeterministicChange(finding: Finding): Change[] {
     case "language.bannedTerm":
       return single(deleteChange(finding));
 
-    case "houseStyle.terminology": {
+    case "language.terminology.preferred": {
       /*
        * `expected` first, the message second.
        *

@@ -228,7 +228,7 @@ describe("updateGovernancePolicy", () => {
           id: uuidv4(),
           description: "Terminology is mandatory",
           scope: "houseStyle",
-          source: "houseStyle.terminology",
+          source: "language.terminology.preferred",
           severity: "mandatory",
           autoFix: true,
           protectedBehavior: "flag",

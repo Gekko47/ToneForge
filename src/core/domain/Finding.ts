@@ -143,7 +143,7 @@ export const FindingTransformationSchema = z.discriminatedUnion("kind", [
  * carries `expected` and `actual` as strings, which is all the task pane needs
  * to render "before → after". The profile *path* that produced them is not
  * display: it is what makes a finding explainable ("this is
- * `houseStyle.terminology`, not a spelling rule") and groupable (`occurrence
+ * `language.terminology.preferred`, not a spelling rule") and groupable (`occurrence
  * group key` and `safe batch key` both derive from it). Putting it on the
  * finding as three more scalar fields would let a rule set `expected` without
  * saying which profile field produced it, and a finding that cannot name its
@@ -159,7 +159,7 @@ export const FindingTransformationSchema = z.discriminatedUnion("kind", [
 export const DeterministicFindingMetadataSchema = z.object({
   /**
    * The profile field that produced this finding, e.g.
-   * `houseStyle.terminology.program` or `formatting.headings.2.styleName`.
+   * `language.terminology.preferred.program` or `formatting.headings.2.styleName`.
    *
    * Required rather than defaulted. `min(1)` exists so a rule cannot declare an
    * empty profile path, and a default of `""` beside it is not a fallback at

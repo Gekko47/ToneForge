@@ -141,7 +141,7 @@ describe("GovernanceRuleSchema", () => {
         id: uuidv4(),
         description: "Misspelled category",
         scope: "typography",
-        source: "houseStyle.terminologyy",
+        source: "language.terminology.preferredy",
         severity: "advisory",
       }),
     ).toThrow();
@@ -153,13 +153,13 @@ describe("ruleForSource", () => {
     id: uuidv4(),
     description: "Terminology is mandatory",
     scope: "houseStyle",
-    source: "houseStyle.terminology",
+    source: "language.terminology.preferred",
     severity: "mandatory",
     autoFix: true,
   });
 
   it("binds a rule to its finding category", () => {
-    expect(ruleForSource([rule], "houseStyle.terminology")?.id).toBe(rule.id);
+    expect(ruleForSource([rule], "language.terminology.preferred")?.id).toBe(rule.id);
   });
 
   it("returns null for a category no rule governs", () => {

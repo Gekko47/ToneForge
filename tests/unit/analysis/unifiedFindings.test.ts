@@ -79,7 +79,7 @@ describe("unifyFindings", () => {
     const result = unifyFindings({
       deterministic: [
         finding({
-          category: "houseStyle.terminology",
+          category: "language.terminology.preferred",
           start: 0,
           end: 10,
           message: "a",

@@ -427,7 +427,7 @@ export function withExplicitEditorialFields(
  */
 export const GOVERNANCE_RULE_SOURCES = [
   "typography",
-  "houseStyle.terminology",
+  "language.terminology.preferred",
   "formatting",
   "semantic",
   "protection",

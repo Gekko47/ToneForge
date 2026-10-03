@@ -415,8 +415,15 @@ export function findTerminologyIssues(options: LanguageCheckOptions): Finding[] 
       const banned = replacement === undefined;
       const expected = banned ? "" : matchCasing(found, replacement);
       findings.push(
+        /*
+         * The category used to be `houseStyle.terminology` while the
+         * `profilePath` right below it said `language.terminology.<id>` — the
+         * category contradicted the field that produced it (ND-12). It is now
+         * `language.terminology.preferred`, beside its two siblings
+         * `language.terminology.missing` and `language.bannedTerm`.
+         */
         makeFinding({
-          category: banned ? "language.bannedTerm" : "houseStyle.terminology",
+          category: banned ? "language.bannedTerm" : "language.terminology.preferred",
           ruleId: "language/terminology",
           profilePath: banned ? "language.bannedTerms" : `language.terminology.${rule.id}`,
           range: makeRange(range),

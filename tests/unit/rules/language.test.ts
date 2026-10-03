@@ -45,7 +45,7 @@ describe("findTerminologyIssues", () => {
       }),
     });
 
-    expect(categories(findings)).toEqual(["houseStyle.terminology"]);
+    expect(categories(findings)).toEqual(["language.terminology.preferred"]);
     expect(findings[0]?.expected).toBe("programme");
     expect(findings[0]?.deterministic?.profilePath).toBe("language.terminology.program");
     expect(findings[0]?.deterministic?.correctionAvailable).toBe(true);
@@ -125,7 +125,7 @@ describe("findTerminologyIssues", () => {
       }),
     });
 
-    expect(categories(findings)).toEqual(["houseStyle.terminology"]);
+    expect(categories(findings)).toEqual(["language.terminology.preferred"]);
   });
 
   it("does not treat a non-ASCII letter as a word boundary", () => {
@@ -251,7 +251,7 @@ describe("findTerminologyIssues", () => {
       rules: profile({ legacyPreferredTerminology: { program: "programme" } }),
     });
 
-    expect(categories(findings)).toEqual(["houseStyle.terminology"]);
+    expect(categories(findings)).toEqual(["language.terminology.preferred"]);
   });
 
   it("reports the longest match once when two rules overlap", () => {
@@ -784,7 +784,7 @@ describe("findLanguageIssues", () => {
       rules: profile({
         terminology: [{ id: "p", source: "program", replacement: "programme" }],
       }),
-    }).filter((finding: Finding) => finding.category === "houseStyle.terminology");
+    }).filter((finding: Finding) => finding.category === "language.terminology.preferred");
 
     // Both occurrences want `programme`, so one key covers them. Spec §13's
     // batch approval depends on this being set — and the key has to be *the

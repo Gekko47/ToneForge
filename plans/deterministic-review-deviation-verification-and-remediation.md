@@ -1343,3 +1343,67 @@ human-verified gate in `docs/manual-verification.md`, and it remains open.
 
 **Verification at this point:** typecheck clean, lint 0 warnings, **2640 tests /
 188 files passing**.
+
+### Phase 4f — Item 21, taxonomy convergence (ND-12 closed) — PHASE 4 CLOSED
+
+**What the audit claimed, and what was true.** Confirmed. `findTerminologyIssues`
+emitted `category: "houseStyle.terminology"` on a finding whose own
+`deterministic.profilePath` was `language.terminology.<id>`. Two fields of one
+object answering the same question differently.
+
+**Why it is more than a naming tidy-up.** The category is what the review UI
+groups by, what the planner switches on, what
+`DETERMINISTIC_CORRECTABLE_CATEGORIES` lists, and what a governance rule binds to
+through `ruleForSource`. A category pointing at a section the rule does not read
+files the review under a chapter of the profile that has nothing to do with it, and
+every lookup keyed on the category is a lookup in the wrong place. The category was
+also the last of its kind: its two siblings from the same rule were already
+`language.terminology.missing` and `language.bannedTerm`.
+
+**The half that needed finding, not just renaming.** A governance rule binds by
+finding _category_, so `GOVERNANCE_RULE_SOURCES` had to move too. Renaming the
+category alone would have left every terminology governance rule bound to nothing —
+the same defect pointed the other way, and one that no test of the language rule
+alone would catch. That is now a test.
+
+**What changed**
+
+- The category is `language.terminology.preferred`.
+- `GOVERNANCE_RULE_SOURCES`, the registry's `emits` / `category` / filter, the
+  planner's correctable list and case, and every test literal moved with it: 34
+  occurrences across 17 files, all mechanical, with nothing left pointing at a
+  category no rule emits.
+- `GovernancePolicySection`'s label is now "Preferred terminology". "House
+  terminology" named the section the category used to lie about.
+
+**Tests.** `tests/unit/analysis/deterministic/taxonomyConvergence.test.ts` (new, 14
+tests) asserts the **general** form rather than a string lookup: for every finding
+the terminology scanner produces, the family of its category and the family of its
+profile path are the same. A rule that emits across two families fails it whatever
+the strings are called. It also asserts that every produced finding is claimed by
+exactly one registry rule — the stronger claim, and the one that catches an
+unfiltered category reaching a report with no owner, given that
+`findTerminologyIssues` is shared between two rules.
+
+**No alias, no migration.** A category is not persisted by a schema, and the
+standing constraint is that there are no users. A stored governance profile naming
+the old source would fail `GovernanceProfileSchema.parse`, which `loadState`
+answers with defaults (ADR-0010) — accepted here and recorded, not left implicit.
+
+**Verification at this point:** typecheck clean, lint 0 warnings, **2654 tests /
+189 files passing**.
+
+**Phase 4 is closed.** D3, items 15, 16, 17, 18, 19 and 21 are all implemented and
+recorded. Item 20 — removing `emDash: "space"` as an automatic correction — was
+delivered as part of D3 and is recorded there, since it was the same change on the
+same field.
+
+**Still open and not claimed as done:**
+
+- The Word-host gate. Every change in this phase is repository-side evidence; the
+  host matrix still reports zero fully passing hosts, and `npm run verify` records
+  `word-host-evidence` as `pending` because it is satisfied only by a person in a
+  real Word.
+- Phase 5 (review UX), Phase 6 (editor) and Phase 7 (gate and evidence).
+- `npm run verify` has not been run since Phase 4a; coverage, build, manifest and
+  package checks are Phase 7 work.

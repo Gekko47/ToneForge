@@ -140,7 +140,7 @@ describe("terminology persistence", () => {
     });
 
     const categories = findings.map((finding) => finding.category);
-    expect(categories).toContain("houseStyle.terminology");
+    expect(categories).toContain("language.terminology.preferred");
     expect(categories).toContain("language.bannedTerm");
     expect(categories).toContain("language.terminology.missing");
   });

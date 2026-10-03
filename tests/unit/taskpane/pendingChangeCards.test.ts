@@ -22,7 +22,7 @@ function finding(overrides: Partial<Finding> = {}): Finding {
   return FindingSchema.parse({
     id: uuidv4(),
     kind: "deterministic",
-    category: "houseStyle.terminology",
+    category: "language.terminology.preferred",
     range: { start: 4, end: 10, unit: "character" },
     message: "Use programme instead of program",
     severity: "warning",
@@ -66,7 +66,7 @@ describe("buildPendingChangeCards", () => {
       planWith([change({ findingId: subject.id, risk: "low" })]),
       [subject],
     );
-    expect(cards[0]?.heading).toBe("houseStyle.terminology · low risk");
+    expect(cards[0]?.heading).toBe("language.terminology.preferred · low risk");
   });
 
   it("says the risk is unavailable rather than omitting it", () => {

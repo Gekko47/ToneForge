@@ -108,7 +108,7 @@ function boundedTermPattern(value: string): RegExp {
  * symptom rather than the cause.
  *
  * `occurrenceGroupKey` is the *field plus the correction*, not the field alone.
- * `program → programme` and `colour → color` are both `houseStyle.terminology`,
+ * `program → programme` and `colour → color` are both `language.terminology.preferred`,
  * and grouping them together would offer one `Approve all` for two unrelated
  * substitutions. With the correction in the key they are two groups of one each,
  * which is the honest answer.

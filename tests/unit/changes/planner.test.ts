@@ -172,7 +172,7 @@ describe("planChanges", () => {
   it("maps preferred terminology to a replacement and preserves linkage", () => {
     const plan = planFor([
       finding({
-        category: "houseStyle.terminology",
+        category: "language.terminology.preferred",
         start: 0,
         end: 11,
         message: "Use “cloud native” instead of “cloud-native”",
@@ -527,7 +527,7 @@ describe("planChanges", () => {
   it("handles a large mixed finding list deterministically", () => {
     const findings = Array.from({ length: 250 }, (_, index) =>
       finding({
-        category: index % 2 === 0 ? "typography.whitespace" : "houseStyle.terminology",
+        category: index % 2 === 0 ? "typography.whitespace" : "language.terminology.preferred",
         start: index * 2,
         end: index * 2 + 1,
         message:

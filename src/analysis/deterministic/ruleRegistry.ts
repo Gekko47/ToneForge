@@ -462,8 +462,8 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     id: "language/terminology",
     group: "language",
     scope: "text",
-    category: "houseStyle.terminology",
-    emits: ["houseStyle.terminology", "language.terminology.missing"],
+    category: "language.terminology.preferred",
+    emits: ["language.terminology.preferred", "language.terminology.missing"],
     profilePaths: [
       "language.terminology",
       "language.legacyPreferredTerminology",
@@ -481,7 +481,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     // and a rule that emitted both would report every banned term twice.
     analyze: (ruleContext) =>
       language(ruleContext, findTerminologyIssues, [
-        "houseStyle.terminology",
+        "language.terminology.preferred",
         "language.terminology.missing",
       ]),
   },

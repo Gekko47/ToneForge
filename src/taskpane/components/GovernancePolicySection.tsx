@@ -216,7 +216,7 @@ const MANDATORY_SCOPE_FLAGS: ReadonlyArray<{ scope: MandatoryScope; label: strin
 
 const SOURCE_LABEL: Readonly<Record<(typeof GOVERNANCE_RULE_SOURCES)[number], string>> = {
   typography: "Typography",
-  "houseStyle.terminology": "House terminology",
+  "language.terminology.preferred": "Preferred terminology",
   formatting: "Formatting",
   semantic: "Semantic",
   protection: "Protection",

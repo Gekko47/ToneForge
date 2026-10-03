@@ -21,7 +21,7 @@ function rule(overrides: Partial<GovernanceRule> = {}): GovernanceRule {
     id: uuidv4(),
     description: "House terminology is mandatory",
     scope: "houseStyle",
-    source: "houseStyle.terminology",
+    source: "language.terminology.preferred",
     severity: "mandatory",
     autoFix: true,
     protectedBehavior: "flag",
@@ -35,7 +35,7 @@ function finding(overrides: Partial<Finding> = {}): Finding {
   return FindingSchema.parse({
     id: uuidv4(),
     kind: "deterministic",
-    category: "houseStyle.terminology",
+    category: "language.terminology.preferred",
     // The message shape the planner parses for a quoted replacement. A finding
     // whose message names no replacement produces no change, which would make
     // every rule assertion below pass for the wrong reason.

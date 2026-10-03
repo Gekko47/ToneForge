@@ -4479,3 +4479,77 @@ FormattingStateSchema>` in `preconditions.ts`, so `matchesFormatting` compares
 `src/formatting/analyzer.ts` (`paragraphPrecondition`);
 `src/changes/preconditions.ts` (`ExpectedFormatting`, `matchesFormatting`);
 `tests/unit/formatting/preconditionCoverage.test.ts` (new, 14 tests).
+
+## ADR-0118 — A finding's category names the profile section that produced it
+
+- **Status**: Accepted
+- **Date**: 2026-10-03
+- **Plan item**: Phase 4, item 21 (closes ND-12)
+
+### Context
+
+`findTerminologyIssues` emitted findings under `category:
+"houseStyle.terminology"` while the very same finding carried
+`deterministic.profilePath: "language.terminology.<id>"`. The category said the
+finding came from the house-style section; the profile path said it came from the
+language section. Both were on one object, and they disagreed.
+
+Two fields of one finding answering the same question differently is not a naming
+tidy-up. The category is what the review UI groups by, what the planner switches
+on, what `DETERMINISTIC_CORRECTABLE_CATEGORIES` lists, and what a governance rule
+binds to through `ruleForSource`. The `profilePath` is what makes a finding
+explainable and groupable. A category pointing at a section the rule does not read
+means the review is filed under a chapter of the profile that has nothing to do
+with it, and every lookup keyed on the category is a lookup in the wrong place.
+
+The category was also the last of its kind: its two siblings from the same rule —
+`language.terminology.missing` and `language.bannedTerm` — were already under
+`language.`.
+
+### Decision
+
+1. The category is `language.terminology.preferred`, beside
+   `language.terminology.missing` and `language.bannedTerm`.
+2. `GOVERNANCE_RULE_SOURCES` moves with it. A governance rule binds to a finding
+   _category_; renaming the category without renaming the source would leave every
+   terminology governance rule bound to nothing — the same defect pointed the other
+   way, and one no test of the rule alone would catch.
+3. `GovernancePolicySection`'s label for that source is now "Preferred
+   terminology". "House terminology" named the section the category used to lie
+   about.
+4. No alias and no migration. A category is not persisted by a schema, and the
+   standing constraint is that there are no users. A stored _governance profile_
+   whose rule names the old source would fail `GovernanceProfileSchema.parse`,
+   which `loadState` answers with defaults (ADR-0010) — acceptable here, and
+   recorded rather than left implicit.
+5. A new test asserts the **general** form: for every finding the terminology
+   scanner produces, the family of its category and the family of its profile path
+   are the same. A rule that emits across two families fails it, whatever the
+   strings happen to be called.
+
+### Consequences
+
+- **The category and the profile path now answer one question the same way**, and
+  a test checks it for the findings rather than for the string.
+- **A governance rule can still bind to terminology findings**, proven by a test
+  that writes a rule against the renamed source and resolves it.
+- **`ruleByCategory("houseStyle.terminology")` now returns `undefined`**, asserted
+  explicitly so the old name cannot creep back in unnoticed.
+- **The rename touched 34 occurrences across 17 files**, all mechanical. The
+  registry, planner, fixtures and tests were updated together; nothing was left
+  pointing at a category no rule emits.
+- **`findTerminologyIssues` is shared** by `language/terminology` and
+  `language/bannedTerm`, each filtering to the categories it owns. The new test
+  therefore asserts that every produced finding is claimed by exactly one registry
+  rule, rather than by one named rule — which is the stronger claim and the one
+  that catches an unfiltered category reaching a report with no owner.
+
+### Evidence
+
+`src/rules/language.ts` (`findTerminologyIssues`);
+`src/analysis/deterministic/ruleRegistry.ts` (`language/terminology`);
+`src/changes/deterministicChanges.ts`
+(`DETERMINISTIC_CORRECTABLE_CATEGORIES`, `planDeterministicChange`);
+`src/core/domain/GovernanceProfile.ts` (`GOVERNANCE_RULE_SOURCES`);
+`src/taskpane/components/GovernancePolicySection.tsx`;
+`tests/unit/analysis/deterministic/taxonomyConvergence.test.ts` (new, 14 tests).

@@ -179,8 +179,8 @@ export const DETERMINISTIC_REVIEW_FIXTURES: readonly DeterministicFixture[] = [
       "A configured house substitution fires once per occurrence, reports the configured replacement, and is correctable.",
     text: "The recovery program was late. The program review found the cause.",
     profile: REVIEW_PROFILE,
-    expectedCategories: ["houseStyle.terminology"],
-    correctableCategories: ["houseStyle.terminology"],
+    expectedCategories: ["language.terminology.preferred"],
+    correctableCategories: ["language.terminology.preferred"],
   },
   {
     name: "em dash convention",
@@ -275,7 +275,7 @@ export const DETERMINISTIC_REVIEW_FIXTURES: readonly DeterministicFixture[] = [
     profile: REVIEW_PROFILE,
     expectedCategories: [],
     absentCategories: {
-      "houseStyle.terminology":
+      "language.terminology.preferred":
         "The only occurrence of the configured term is inside a protected quoted span, so reporting it would offer to rewrite a quotation.",
     },
     protectedText: "the recovery program was late",
@@ -316,7 +316,7 @@ export const DETERMINISTIC_REVIEW_FIXTURES: readonly DeterministicFixture[] = [
       "A review built under one profile revision cannot be carried into a plan built under another; the session fingerprint changes and the approvals are invalidated.",
     text: "The recovery program was late.",
     profile: REVIEW_PROFILE,
-    expectedCategories: ["houseStyle.terminology"],
+    expectedCategories: ["language.terminology.preferred"],
   },
   {
     name: "document edit between preview and apply",
@@ -324,8 +324,8 @@ export const DETERMINISTIC_REVIEW_FIXTURES: readonly DeterministicFixture[] = [
       "A plan is refused when the document changed after the preview, whatever the user's approvals said.",
     text: "The recovery program was late.",
     profile: REVIEW_PROFILE,
-    expectedCategories: ["houseStyle.terminology"],
-    correctableCategories: ["houseStyle.terminology"],
+    expectedCategories: ["language.terminology.preferred"],
+    correctableCategories: ["language.terminology.preferred"],
   },
 ];
 
