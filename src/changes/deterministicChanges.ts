@@ -71,12 +71,27 @@ export const DETERMINISTIC_CORRECTABLE_CATEGORIES: ReadonlySet<string> = new Set
   "language.capitalisation.sentenceCase",
   "language.capitalisation.properNoun",
   "language.capitalisation.prohibited",
+  /*
+   * `headingCase` is listed because *some* of its findings are correctable — an
+   * upper-case house gets a letter to raise, a title-case house gets a letter to
+   * cap. The sentence-case findings carry `correctionAvailable: false` and offer
+   * no correction, so the entry records a category the planner can sometimes act
+   * on rather than a claim that it always can.
+   */
+  "language.capitalisation.headingCase",
   "language.abbreviation.prohibited",
   "language.abbreviation.firstUse",
+  "language.abbreviation.preferredExpanded",
   // No `language.number.decimalSeparator`: that check moved to the typography
   // rule (D2), which owns both separators. Keeping the case here would have been a
   // planner branch no finding can reach.
   "language.number.percentageSpacing",
+  /*
+   * `(5)` and `-5` are the same number written two ways, so both directions are
+   * correctable — unlike a range rewritten as `5 to 10`, which changes the
+   * author's register.
+   */
+  "language.number.negative",
   "language.number.range",
   "language.currency.spacing",
   "language.unit.spacing",
@@ -106,6 +121,13 @@ export const DETERMINISTIC_REPORTED_ONLY_CATEGORIES: ReadonlySet<string> = new S
   "language.date.format",
   "language.number.spelling",
   "language.currency.representation",
+  /*
+   * How large an amount is written. Abbreviating `4,200,000` as `4.2m` does not
+   * restate the figure — it replaces it with a rounded one — and expanding `4.2m`
+   * needs the tool to decide which magnitude the author meant. Either correction
+   * would be ToneForge choosing the author's figure for them.
+   */
+  "language.currency.magnitude",
   /*
    * A required term that is absent. There is no text to rewrite, so any correction
    * would be the tool writing the author's prose; the finding says what the house
@@ -418,10 +440,13 @@ export function planDeterministicChange(finding: Finding): Change[] {
     case "language.capitalisation.sentenceCase":
     case "language.capitalisation.properNoun":
     case "language.capitalisation.prohibited":
+    case "language.capitalisation.headingCase":
     case "language.abbreviation.prohibited":
     case "language.abbreviation.firstUse":
+    case "language.abbreviation.preferredExpanded":
     case "language.number.percentageSpacing":
     case "language.number.range":
+    case "language.number.negative":
     case "language.currency.spacing":
     case "language.unit.spacing":
     case "language.unit.capitalisation":

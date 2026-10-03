@@ -692,3 +692,355 @@ Verification: `lint` 0 warnings, `typecheck` clean, **2455 tests / 179 files**.
   asserted wrong offsets; the surviving Unicode cases now assert what the rule means
   — a title-case check tests the word's _first_ casing, and JS counts a surrogate
   pair as two units.
+
+### Phase 3a — D4 (units symbols) and D5 (locale), COMPLETE
+
+Verification: `lint` 0 warnings, `typecheck` clean, **2493 tests / 181 files**.
+ADR-0111 records the shared principle.
+
+**D4 — `units.symbols` reads its keys.** The record is named-unit → preferred symbol
+(`kilogram` → `kg`). Only the _values_ were read, forming the word list the spacing
+check matched; the keys existed solely to word a casing message. A document writing
+"5 kilogram" against a house saying "5 kg" produced no finding. New
+`language.unit.preferredSymbol` category, correctable on the grounds that a name and
+its symbol denote the same quantity, with a `safeBatchKey` so one "Approve all" can
+never span two different corrections. Guards: a name that is its own symbol
+contributes nothing; multi-word names match whole; a symbol written in the wrong case
+is the capitalisation check's alone, so the two never overlap.
+
+**D5 — `locale` is enforced.** It was a free string nothing read, listed in
+`METADATA_ONLY_PROFILE_PATHS`, presented as an editable text box. It now supplies the
+default numeric date shape when no preferred format is declared, and is a closed enum
+so a typo cannot parse cleanly and match nothing. `METADATA_ONLY_PROFILE_PATHS` is
+now **empty** — an empty list is a claim that every profile field is read, and it is
+checkable.
+
+The prerequisite nobody had noticed: `describeDateShape` could not tell `dmy` from
+`mdy` — both were just `"numeric"` — so a locale supplying an `id` could never match.
+It now returns `dmy` when the first field exceeds 12, `mdy` when the second does, and
+`numeric` when both readings are valid. That boundary is what keeps the locale honest:
+it silences the unambiguous wrong-order case and leaves `05/03/2026` to the existing
+`requireUnambiguous` refusal, because resolving an ambiguous date by convention would
+be the tool deciding which day the author meant.
+
+**A behaviour change, recorded rather than shipped quietly.** A profile with no
+declared date format now reports day-first dates under the default `en-US`, where it
+previously reported nothing. Two existing tests encoded the old contract — "no
+preference declared is not a preference for the shape already there" — and were
+rewritten with the old reasoning preserved in a comment, because the sentence was
+correct while `locale` governed nothing and is no longer.
+
+The registry guard caught the last omission: `unwiredProfilePaths()` failed until
+`language.locale` was added to a rule's `profilePaths`, even though `findDateIssues`
+already read it. A field counts as wired only when a rule with a body _claims_ it —
+stricter than "something reads it", and correctly so.
+
+Three of my own test bugs here, recorded because each pointed at a real ambiguity:
+reading `safeBatchKey` off the finding root rather than `finding.deterministic`;
+asserting `metre → m` was a case-only difference when it is a genuine rendering
+preference; and choosing a text for the precedence test that the _declared_ format
+correctly rejected.
+
+### Phase 3b — `preferredExpanded` and the missing language editors, COMPLETE
+
+#### What the next Phase 3 item uncovered
+
+`language.abbreviations.preferredExpanded` was declared "long form → the short
+form to use in running text", listed in `PROFILE_FIELD_PATHS`, and named in
+`language/abbreviations`'s `profilePaths`. The registry therefore reported it as
+wired. `findAbbreviationIssues` read `approved`, `requireFirstUseExpansion` and
+`prohibitedVariants` and never this one — the same defect class as ND-13, under a
+different field name.
+
+Implementing it required answering a prior question: _where does a user set it?_
+**Nowhere.** The same turned out to be true of every other language subsection:
+
+- **Abbreviations** — all four fields (`approved`, `preferredExpanded`,
+  `requireFirstUseExpansion`, `prohibitedVariants`) had no control.
+- **Numbers** — `percentageSpacing`, `numberWordThreshold`, `negativeNumber`,
+  `rangeStyle`: no control.
+- **Dates** — `formats` and `requireUnambiguous`: no control.
+- **Currency** — all five fields: no control.
+- **Units** — `valueSpacing`, `capitalisation`, `symbols`: no control.
+
+The section carried a sentence saying these were "set in the House style panel".
+It was false in four directions, and the House style panel holds terminology,
+banned terms, title-case words and one sentence-case toggle.
+
+**This is a distinct defect from everything else in this audit, and the
+distinction matters.** `unwiredProfilePaths()` cannot see it. The guard reads
+`profilePaths` — a declaration by the rule about what it reads — and it has no
+view of the editor. So "a rule reads a field" and "a user can set a field" are
+indistinguishable to it. D4 and D5 made `units.symbols` and `language.locale`
+_readable_ in the previous step; had they shipped without these editors, they
+would have been enforced in the registry and still unreachable in the product.
+
+Recorded as ADR-0112.
+
+#### What was done
+
+- **`language.abbreviation.preferredExpanded` implemented.** A long form written
+  where the house prefers the short one, correctable (the two forms denote the
+  same thing), with a `safeBatchKey` because every occurrence wants the same edit.
+- **Read together with `requireFirstUseExpansion`.** A house may legitimately want
+  the long form once and the short form after. A long form preceding the first
+  short form is the expansion the profile demanded; reporting it would ask the
+  user to delete what the other rule just told them to add. Where a form is also
+  in `prohibitedVariants`, the prohibited rule wins the claim — two owners for one
+  character is ND-2.
+- **`DATE_SHAPE_IDS` / `DATE_SHAPE_LABELS` moved into the domain** and shared by
+  the rule and the editor, so an author cannot type a shape id no rule will match.
+  `unrecognised` is not authorable. `describeShape` now derives its names from
+  the same table rather than keeping a private copy.
+- **Every language field has a control**, in grouped fieldsets: Capitalisation,
+  Abbreviations, Numbers, Dates, Currency, Units.
+- **A tri-state control for the tri-state settings.** `requireFirstUseExpansion`
+  offers `Not set / Required / Not required`. "Not set" removes the key rather
+  than writing `undefined`.
+- **Exactly one date format may be `preferred`.** The rule takes the first, so two
+  would make the answer depend on array order the user never sees.
+- **Blank means "never", not zero,** for `numberWordThreshold`.
+- **The false sentence is gone**, replaced by one that is true of every control.
+- **`parseTerminology` takes the vocabulary it reports in** (`TermNouns`), so an
+  abbreviation field says `Preferred short form line 1 must use "long form: short
+form"`. Default wording is unchanged.
+
+#### Two accessibility defects fixed along the way
+
+- **The banned-terms textarea had no accessible name at all.** A heading above it
+  is a visual grouping, not a label. Now wired with `aria-labelledby`.
+- **Every new field folds its hint into the accessible name.** Controls now use
+  `htmlFor`/`id` with the hint in `aria-describedby`, so the name is the label
+  and the hint is a description.
+
+#### A test that was not testing what it said
+
+Making the two accessible names exact surfaced a `ProfileEditor` test that matched
+the banned-terms control by prefix _and_ by display value. Both the deterministic
+section and the House style form write `language.bannedTerms` (ADR-0110) and both
+held "utilize", so the matcher resolved to whichever the DOM listed last — the
+test was editing one control and asserting on another. Rewritten to name the
+control exactly.
+
+The same reasoning rewrote the "three vocabularies" assertion: it counted
+`<textarea>` elements page-wide, and had begun asserting about the newly-added
+language editors rather than about the vocabularies it was written for.
+
+#### Verification
+
+- `npm run typecheck` — clean.
+- `npm run lint` — 0 warnings.
+- `npm test` — **2525 tests / 182 files passing** (was 2493 / 181).
+
+New tests: `tests/unit/rules/preferredExpanded.test.ts` (17).
+Extended: `tests/unit/taskpane/components/DeterministicStyleSections.test.tsx`
+(+16, including a `describe` block asserting every language convention has a
+control that writes the field the rule reads).
+
+#### Still open in Phase 3
+
+`language.capitalisation.headingCase` remains the one declared-and-unread field:
+`language/capitalisation` still names it in `profilePaths` and
+`findCapitalisationIssues` does not read it. It is the remaining false claim of
+the ND-3 family, and it is **not** given a control here — a dropdown for a
+setting nothing reads is the defect this log has spent four phases removing.
+
+### Phase 3c — `headingCase`, the last false claim of ND-3, COMPLETE
+
+#### The defect
+
+`language.capitalisation.headingCase` was declared in the schema, listed in
+`PROFILE_FIELD_PATHS`, and named in `language/capitalisation`'s `profilePaths` —
+and read by nothing. The registry reported it as wired. This is the same failure
+mode as ND-13 (`houseStyle` terminology) and as `preferredExpanded`, and it is
+the third and last instance of it in the language profile.
+
+It was **not** given a control in Phase 3b, on purpose: a dropdown for a setting
+nothing reads is exactly the defect this log has spent four phases removing. The
+rule had to exist first.
+
+#### What was done
+
+- **`checkHeadingCase` implemented** in `src/rules/language.ts`. A heading is a
+  paragraph whose style name matches `^(heading|title|subtitle)\b`, reconstructed
+  from `styleByStart` as the gaps between consecutive paragraph keys — the same
+  reconstruction `styleAt` already relies on.
+- **Three conventions, three correction stories.** `upper` raises every lower-case
+  letter; `title` caps significant words; `sentence` reports capitalised words
+  past the first. The first two are correctable — raising or capping one letter
+  inside a word cannot change which word it is — and the third is not, because
+  lower-casing a word the profile has not listed as a proper noun may destroy one.
+- **Acronyms are never reported.** Flagging `IBM` in a heading would make the rule
+  cry wolf on every document that names a product, and a rule users stop reading is
+  worse than no rule.
+- **Minor words, proper nouns and the word after a colon are excused.** A house can
+  overrule the minor-word list by listing the word in `properNouns`, which is
+  checked first. Exactly one word after a colon is excused — excursing the rest
+  would let a heading in any case at all hide behind one colon.
+- **The category registered and made correctable**, and the editor gained the
+  tri-state dropdown.
+- **`language/capitalisation`'s `profilePaths` comment rewritten** to say what it
+  used to be: a claim the rule made about a field it never read.
+
+#### A limitation stated rather than discovered
+
+The style-name match is English. A localized Word reports `Überschrift 1` where an
+English one says `Heading 1`, so **the rule is silent on a non-English host**. That
+is the safe direction — a heading-case check that cannot tell a heading from a body
+paragraph must not guess — and it is stated in the code and in the editor's own
+hint, so a German user learns it from the product rather than from a bug report.
+
+#### Verification
+
+- `npm run typecheck` — clean.
+- `npm run lint` — 0 warnings.
+- `npm test` — **2554 tests / 183 files passing** (was 2525 / 182).
+
+New tests: `tests/unit/rules/headingCase.test.ts` (29), covering the unset state,
+body paragraphs, an absent style map, each of the three conventions, per-occurrence
+offsets, style recognition, absolute offsets across paragraphs, and the two
+end-to-end registrations.
+
+#### Four of the seven Phase 3 items are now closed
+
+- `abbreviations.preferredExpanded` — done (Phase 3b)
+- `capitalisation.headingCase` — done (this phase)
+- Every language field reachable from a control — done (Phase 3b, ADR-0112)
+
+Still open: currency separators and `magnitude`, and `numbers.negativeNumber`.
+
+### Phase 3d — `currency.magnitude`, and a course correction, COMPLETE
+
+#### What was attempted, and why it was withdrawn
+
+The plan item read "implement currency thousands/decimal separators; classify
+magnitude as metadata-only". The first half was implemented, and it was wrong.
+
+`typography` already owns both separators **document-wide** — that is owner
+decision D2, and it was made precisely because the number profile's copies of
+those two fields produced two findings at one offset and a planner entitled to
+refuse the whole plan. Adding a _currency-scoped_ owner for the same characters
+reproduces ND-2 exactly: the comma in `£1,000` reported once by `typography` and
+once by the currency rule, two changes over one offset.
+
+A second owner for a character is not a new feature. It is the same defect this
+whole audit exists to remove, so the change was withdrawn rather than shipped:
+
+- **`currency.thousandsSeparator` and `currency.decimalSeparator` are removed from
+  the schema**, for the reason `NumberProfileSchema` has none, and the comment
+  says so.
+- **The two editor controls are removed**, with a comment pointing at Typography.
+- **The rule keeps no separator check.** The code comment records that the absence
+  is deliberate, so a later reader does not "fix" it back.
+
+What the plan item got right is its second half. `magnitude` was the genuinely
+inert field, and it is now read.
+
+#### `currency.magnitude` implemented
+
+- An amount is a digit run written immediately after a currency symbol or one of
+  the ten codes, allowing the gap the spacing rule also measures. A figure with no
+  marker before it is not a currency amount, so `4,200,000` in prose and `5 metre`
+  never reach the check.
+- **`full` house + abbreviated amount** → reported. **Abbreviating house + an
+  amount of four digits or more** → reported.
+- **Report-only, and that is the design.** Abbreviating `4,200,000` as `4.2m`
+  replaces the figure with a rounded one; expanding `4.2m` needs the tool to
+  decide which magnitude the author meant. Listed in
+  `DETERMINISTIC_REPORTED_ONLY_CATEGORIES`, which the registry's own gate requires
+  for any category a `correctable` rule emits.
+- A three-digit amount is left alone even under an abbreviating house: `£900` is
+  not a large amount, and deciding what "large" means is the house's call.
+
+#### One bug the tests caught, worth recording
+
+The first implementation rejected any run that did not end in a digit, to avoid
+treating a sentence's full stop as part of an amount. But the run pattern
+_deliberately_ includes `.` and `,` because they appear inside an amount — so
+`£4,200,000.` ended in a full stop and the **entire rule was silent on every
+amount at the end of a sentence**. Trailing separators are now trimmed instead of
+rejecting the run. A guard that is right in principle and wrong in practice is
+worse than no guard, and only a test with a trailing full stop would have found it.
+
+#### Verification
+
+- `npm run typecheck` — clean.
+- `npm run lint` — 0 warnings.
+- `npm test` — **2568 tests / 184 files passing** (was 2554 / 183).
+
+New tests: `tests/unit/rules/currencyMagnitude.test.ts` (13).
+Changed: the currency editor test now asserts the two controls are _absent_, with
+the ND-2 reason attached, so nobody re-adds them.
+
+#### Phase 3 status
+
+- `abbreviations.preferredExpanded` — done (Phase 3b)
+- `capitalisation.headingCase` — done (Phase 3c)
+- `currency.magnitude` — done (this phase); currency separators removed as a
+  duplicate owner rather than implemented
+- Every language field reachable from a control — done (Phase 3b, ADR-0112)
+
+Still open: `numbers.negativeNumber`.
+
+### Phase 3e — `numbers.negativeNumber`, COMPLETE — Phase 3 closed
+
+#### The last declared-but-unread field in the language profile
+
+`negativeNumber` is "how a negative number is written": `minus` or `parenthesis`.
+Declared in the schema, listed in `PROFILE_FIELD_PATHS`, named in
+`typography/numbers`'s `profilePaths` — and read by nothing. The fifth and last
+instance of the defect class this log has spent four phases removing.
+
+Implemented, with both directions correctable: `(5)` and `-5` are the same number
+written two ways, and neither correction changes the value or the author's prose.
+That is what distinguishes it from the range rule's `to` form, which changes
+register and is therefore reported only.
+
+#### Two boundaries the tests forced, both in the safe direction
+
+**A hyphen that continues a word is not a negative.** The first pattern excluded
+only digit-flanked hyphens, so `clause AB-12` was reported as `-12`. The sign must
+now not be preceded by a letter, digit, slash or hyphen — the three cases where a
+hyphen continues a word or a run rather than starting one.
+
+**A single digit in parentheses is never reported.** The first implementation
+reported `(5)` and exempted `(1)`, which are the same shape. There is nothing in
+the text to tell them apart, so the rule now exempts _all_ single-digit
+parenthesised numbers and reports `(12)`, `(1.5)` and `(4,200)`. That means a
+genuine `(5)` is not reported — an under-report rather than a wrong correction,
+and one stated boundary instead of two contradictory ones.
+
+The Unicode minus (`U+2212`) is accepted alongside the ASCII hyphen, because a
+document pasted from a typesetter will carry it and the rule should not be silent
+on that document.
+
+#### Verification
+
+- `npm run typecheck` — clean.
+- `npm run lint` — 0 warnings.
+- `npm test` — **2582 tests / 185 files passing** (was 2568 / 184).
+
+New tests: `tests/unit/rules/negativeNumber.test.ts` (14).
+
+#### Phase 3 is closed
+
+Every field in `language` is now read by a rule with a body, reachable from a
+control, and classified as correctable or report-only. The five inert fields this
+audit found in the language profile:
+
+- `houseStyle.preferredTerminology` / `bannedTerms` — removed; the terminology
+  merge (Phase 1b)
+- `units.symbols` keys — a preferred rendering map (ADR-0111)
+- `language.locale` — the default date shape (ADR-0111)
+- `abbreviations.preferredExpanded` — enforced, read with the first-use rule (3b)
+- `capitalisation.headingCase` — enforced (3c)
+- `currency.magnitude` — enforced (3d); the currency separators were **removed**
+  as a duplicate owner rather than implemented
+- `numbers.negativeNumber` — enforced (this phase)
+
+Two further categories were added while wiring them:
+`language.unit.preferredSymbol`, `language.abbreviation.preferredExpanded`,
+`language.capitalisation.headingCase`, `language.currency.magnitude`,
+`language.number.negative`.
+
+Next: the Phase 2 remainder, then Phase 4.

@@ -211,24 +211,21 @@ export interface DeterministicRule {
 
 /**
  * Profile fields that are recorded but drive no check.
- *
  * Spec §5: "Do not add UI settings that no rule reads." A field listed here is
- * an explicit, reviewed exception rather than an oversight — `locale` is the
- * case, kept because a future house-specific rule needs it and removing it
- * would discard a stored value for no gain. The list is the reason the audit
- * can insist every field is either wired *or* excused.
+ * an explicit, reviewed exception rather than an oversight. The list is the
+ * reason the audit can insist every field is either wired *or* excused.
  *
- * The three `formatting` entries are a different kind of exception from
- * `locale`, and the distinction matters. A rule *is* declared for each of them
- * (`formatting/tables`, `formatting/page`, `formatting/headersFooters`), but
- * each is declared with no `analyze` and `correctable: false`: the setting is
- * reachable from the profile and no check consumes it yet. `unwiredProfilePaths`
- * therefore counts only rules that can run, which is what makes these three
- * appear — and listing them here is the honest record that the gap is known
- * rather than the result of an audit that cannot see a missing body. T19 and
- * T20 attach the bodies and these entries come out.
+ * **Empty as of D5.** `language.locale` was the only entry, and it was there
+ * because no rule read it — the setting was an editable text box that changed
+ * nothing. It now supplies the default numeric date shape in `findDateIssues`,
+ * so it is a live input like any other and the exception no longer applies.
+ *
+ * Keeping this list is still worth it. A field with no rule and no excuse is
+ * exactly the ND-13 class of defect, and this is where such a field has to be
+ * *declared* rather than quietly tolerated: an empty list is a claim that every
+ * profile field is read by something, and it is checkable.
  */
-export const METADATA_ONLY_PROFILE_PATHS: readonly string[] = ["language.locale"];
+export const METADATA_ONLY_PROFILE_PATHS: readonly string[] = [];
 
 /**
  * Every field a deterministic profile exposes, as dotted paths.
@@ -264,8 +261,6 @@ export const PROFILE_FIELD_PATHS: readonly string[] = [
   "language.dates.requireUnambiguous",
   "language.currency.representation",
   "language.currency.symbolSpacing",
-  "language.currency.thousandsSeparator",
-  "language.currency.decimalSeparator",
   "language.currency.magnitude",
   "language.units.valueSpacing",
   "language.units.capitalisation",
@@ -404,6 +399,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.number.percentageSpacing",
       "language.number.range",
       "language.number.spelling",
+      "language.number.negative",
     ],
     profilePaths: [
       "typography.decimalSeparator",
@@ -425,6 +421,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
         "language.number.percentageSpacing",
         "language.number.spelling",
         "language.number.range",
+        "language.number.negative",
       ]),
     ],
   },
@@ -541,11 +538,19 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.capitalisation.sentenceCase",
       "language.capitalisation.properNoun",
       "language.capitalisation.prohibited",
+      "language.capitalisation.headingCase",
     ],
     profilePaths: [
       "language.capitalisation.sentenceCase",
       "language.capitalisation.properNouns",
       "language.capitalisation.prohibitedCapitalised",
+      /*
+       * This declaration used to be a false claim. `headingCase` was named here
+       * while `findCapitalisationIssues` never read it, which is why the §11 audit
+       * reported every field as wired and why this rule could not be caught: the
+       * guard counts a field as covered when a rule with a body *claims* it, and a
+       * claim is not a read. It is now genuinely read, by `checkHeadingCase`.
+       */
       "language.capitalisation.headingCase",
     ],
     correctable: true,
@@ -554,6 +559,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
         "language.capitalisation.sentenceCase",
         "language.capitalisation.properNoun",
         "language.capitalisation.prohibited",
+        "language.capitalisation.headingCase",
       ]),
   },
   {
@@ -565,6 +571,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.abbreviation",
       "language.abbreviation.prohibited",
       "language.abbreviation.firstUse",
+      "language.abbreviation.preferredExpanded",
     ],
     profilePaths: [
       "language.abbreviations.approved",
@@ -577,6 +584,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       language(ruleContext, findAbbreviationIssues, [
         "language.abbreviation.prohibited",
         "language.abbreviation.firstUse",
+        "language.abbreviation.preferredExpanded",
       ]),
   },
   {
@@ -585,9 +593,24 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "text",
     category: "language.date",
     emits: ["language.date", "language.date.ambiguous", "language.date.format"],
-    profilePaths: ["language.dates.formats", "language.dates.requireUnambiguous"],
+    /*
+     * `language.locale` is declared here (D5), and the declaration was not
+     * optional bookkeeping — `unwiredProfilePaths()` failed until it was added.
+     *
+     * That failure is the guard working. `findDateIssues` already consulted the
+     * locale, so the field was *read*; but the registry counts a field as wired
+     * only when a rule with a body claims it in `profilePaths`. Leaving the
+     * declaration off would have meant the audit reported the locale as unwired
+     * and the list above would have had to re-excuse it — re-establishing exactly
+     * the "reviewed exception" that D5 exists to end.
+     */
+    profilePaths: [
+      "language.dates.formats",
+      "language.dates.requireUnambiguous",
+      "language.locale",
+    ],
     // Reported, never corrected: converting between date shapes means deciding
-    // which field is the day, and `31/05/2026` is exactly the case where
+    // which field is the day, and `05/03/2026` is exactly the case where
     // guessing is worst. The rule points at it; the user resolves it.
     correctable: false,
     analyze: (ruleContext) =>
@@ -598,12 +621,15 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "language",
     scope: "text",
     category: "language.currency",
-    emits: ["language.currency", "language.currency.representation", "language.currency.spacing"],
+    emits: [
+      "language.currency",
+      "language.currency.representation",
+      "language.currency.spacing",
+      "language.currency.magnitude",
+    ],
     profilePaths: [
       "language.currency.representation",
       "language.currency.symbolSpacing",
-      "language.currency.thousandsSeparator",
-      "language.currency.decimalSeparator",
       "language.currency.magnitude",
     ],
     correctable: true,
@@ -611,6 +637,8 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       language(ruleContext, findCurrencyIssues, [
         "language.currency.representation",
         "language.currency.spacing",
+        "language.currency.separator",
+        "language.currency.magnitude",
       ]),
   },
   {

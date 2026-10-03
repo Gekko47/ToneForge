@@ -27,7 +27,13 @@
 
 import { v4 as uuidv4 } from "uuid";
 import type { Finding, Range, Severity } from "../core/domain/Finding";
-import type { LanguageConventionProfile, TerminologyRule } from "../core/domain/StyleProfile";
+import type {
+  CapitalisationProfile,
+  DateShapeId,
+  LanguageConventionProfile,
+  TerminologyRule,
+} from "../core/domain/StyleProfile";
+import { DATE_SHAPE_LABELS, LOCALE_DATE_SHAPES } from "../core/domain/StyleProfile";
 
 /** A heading, used to resolve a rule scoped to one section. */
 export interface SectionMark {
@@ -451,6 +457,207 @@ export function findTerminologyIssues(options: LanguageCheckOptions): Finding[] 
 }
 
 /**
+ * The paragraph style names that mark a paragraph as a heading.
+ *
+ * Matched on the name because that is all the reader gives us, and a localized
+ * Word reports "Überschrift 1" where an English one says "Heading 1". The
+ * consequence is that this rule is **silent on a non-English host**, which is the
+ * safe direction: a heading-case check that cannot tell a heading from a body
+ * paragraph must not guess. Stated here rather than discovered by a German user
+ * reporting that ToneForge finds nothing.
+ */
+const HEADING_STYLE = /^(heading|title|subtitle)\b/iu;
+
+/**
+ * The words left lower case inside a title-case heading.
+ *
+ * The usual English rule, and a house can overrule it by listing a word in
+ * `properNouns` — which is checked first, so a house that capitalises "The" in
+ * "The Sun Report" wins over this list.
+ */
+const TITLE_CASE_MINOR_WORDS: ReadonlySet<string> = new Set([
+  "a",
+  "an",
+  "and",
+  "as",
+  "at",
+  "but",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "nor",
+  "of",
+  "off",
+  "on",
+  "onto",
+  "or",
+  "over",
+  "per",
+  "so",
+  "the",
+  "to",
+  "up",
+  "via",
+  "with",
+  "yet",
+]);
+
+/**
+ * Every paragraph the reader has told us is a heading, as a span.
+ *
+ * `styleByStart` is keyed by paragraph start, so the paragraphs are the gaps
+ * between consecutive keys — the same reconstruction `styleAt` relies on when it
+ * resolves an arbitrary offset. An absent or empty map names no paragraph, and
+ * the honest answer to "which paragraphs are headings" on such a scan is none.
+ */
+function headingParagraphs(
+  text: string,
+  styleByStart: ReadonlyMap<number, string> | undefined,
+): MatchRange[] {
+  if (styleByStart === undefined || styleByStart.size === 0) return [];
+  const starts = [...styleByStart.keys()].sort((left, right) => left - right);
+  const heads: MatchRange[] = [];
+  starts.forEach((start, index) => {
+    const style = styleByStart.get(start);
+    if (style === undefined || !HEADING_STYLE.test(style.trim())) return;
+    const next = starts[index + 1];
+    const end = next === undefined ? text.length : next;
+    if (end > start) heads.push({ start, end });
+  });
+  return heads;
+}
+
+/**
+ * `capitalisation.headingCase` — the convention this house writes headings in.
+ *
+ * This field was declared in the schema, named in `language/capitalisation`'s
+ * `profilePaths`, and read by nothing. The registry therefore reported it as
+ * wired, which is the same defect class as ND-13 under a third field name.
+ *
+ * **What each convention reports.**
+ *
+ * - `upper` — every lower-case letter in the heading. Correctable: upper-casing
+ *   one letter inside a word cannot change which word it is.
+ * - `title` — a word that should open with a capital and does not. Correctable
+ *   for the same reason. The *reverse* — a capitalised word that should be a
+ *   lower-case "of" — is deliberately **not** corrected: lower-casing a word the
+ *   profile has not listed as a proper noun may destroy one.
+ * - `sentence` — a word capitalised where only the first should be. Reported
+ *   with no correction, for the same reason, and with all-upper-case words
+ *   skipped: an acronym in a heading is not a capitalisation error, and flagging
+ *   one would make the rule cry wolf on every document that names a product.
+ */
+function checkHeadingCase(
+  text: string,
+  rules: CapitalisationProfile,
+  styleByStart: ReadonlyMap<number, string> | undefined,
+): Finding[] {
+  // `undefined` means the house has not chosen a heading convention, which is a
+  // different answer from "sentence case" — and is the reason the field is
+  // optional rather than defaulting.
+  const wanted = rules.headingCase;
+  if (wanted === undefined) return [];
+
+  const findings: Finding[] = [];
+  const properNouns = new Set(rules.properNouns.map((noun) => noun.trim().toLowerCase()));
+
+  const headingFinding = (
+    offset: number,
+    character: string,
+    expected: string,
+    correctionAvailable: boolean,
+    message: string,
+  ): void => {
+    findings.push(
+      makeFinding({
+        category: "language.capitalisation.headingCase",
+        ruleId: "language/capitalisation",
+        profilePath: "language.capitalisation.headingCase",
+        range: { start: offset, end: offset + character.length, unit: "character" },
+        message,
+        severity: "warning",
+        actual: character,
+        expected,
+        correctionAvailable,
+        // No batch key: each finding wants a different correction, and a key is a
+        // claim that every occurrence under it wants the same edit.
+      }),
+    );
+  };
+
+  headingParagraphs(text, styleByStart).forEach((paragraph) => {
+    const raw = text.slice(paragraph.start, paragraph.end);
+    const body = raw.trim();
+    if (body.length === 0) return;
+    const bodyStart = paragraph.start + (raw.length - raw.trimStart().length);
+
+    if (wanted === "upper") {
+      // Walked with a running code-unit cursor rather than `indexOf`, because a
+      // heading may contain the same letter twice and `indexOf` would report both
+      // occurrences at the first one's offset.
+      let cursor = bodyStart;
+      for (const character of body) {
+        if (character === character.toLowerCase() && character !== character.toUpperCase()) {
+          headingFinding(
+            cursor,
+            character,
+            character.toUpperCase(),
+            true,
+            "A heading is written in upper case in this house",
+          );
+        }
+        cursor += character.length;
+      }
+      return;
+    }
+
+    let colonAt = body.indexOf(":");
+    for (const match of body.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)) {
+      const word = match[0];
+      const at = match.index ?? 0;
+      const lower = word.toLowerCase();
+      const first = word[0];
+      if (first === undefined) continue;
+      // A word is capitalised after a colon in every title-case style in use, and
+      // a subtitle introduced by one is not an error.
+      const afterColon = colonAt !== -1 && colonAt < at;
+      if (afterColon) colonAt = -1;
+      const isFirstWord = at === 0;
+      const isAcronym = word === word.toUpperCase();
+      const isLower = first === first.toLowerCase() && first !== first.toUpperCase();
+
+      if (wanted === "title" && isLower) {
+        if (isFirstWord || afterColon || properNouns.has(lower)) continue;
+        if (TITLE_CASE_MINOR_WORDS.has(lower)) continue;
+        headingFinding(
+          bodyStart + at,
+          first,
+          first.toUpperCase(),
+          true,
+          "A heading is written in title case in this house",
+        );
+        continue;
+      }
+
+      if (wanted === "sentence" && !isLower && !isAcronym) {
+        if (isFirstWord || afterColon || properNouns.has(lower)) continue;
+        headingFinding(
+          bodyStart + at,
+          first,
+          "",
+          false,
+          "A heading is written in sentence case, so only its first word is capitalised",
+        );
+      }
+    }
+  });
+
+  return findings;
+}
+
+/**
  * Spec §4.2 capitalisation.
  *
  * Three checks with three different failure modes, reported separately rather
@@ -461,10 +668,12 @@ export function findTerminologyIssues(options: LanguageCheckOptions): Finding[] 
  * wrong for another.
  */
 export function findCapitalisationIssues(options: LanguageCheckOptions): Finding[] {
-  const { text, rules } = options;
+  const { text, rules, styleByStart } = options;
   if (text.length === 0) return [];
-  const findings: Finding[] = [];
   const capitalisation = rules.capitalisation;
+  // First, because a heading that is not in the house's case is the deviation a
+  // reader notices before anything else on the page.
+  const findings: Finding[] = checkHeadingCase(text, capitalisation, styleByStart);
 
   capitalisation.properNouns.forEach((noun) => {
     const term = noun.trim();
@@ -581,8 +790,9 @@ export function findCapitalisationIssues(options: LanguageCheckOptions): Finding
  * Spec §4.2 abbreviations.
  *
  * Checked in the order a copy-editor would make them: a prohibited form is a
- * hard error, and a first-use expansion requirement is a structural
- * observation about the document rather than a deviation at a span.
+ * hard error, a first-use expansion requirement is a structural observation
+ * about the document rather than a deviation at a span, and a long form written
+ * where the house prefers the short one is an ordinary span-local substitution.
  */
 export function findAbbreviationIssues(options: LanguageCheckOptions): Finding[] {
   const { text, rules } = options;
@@ -590,12 +800,26 @@ export function findAbbreviationIssues(options: LanguageCheckOptions): Finding[]
   const findings: Finding[] = [];
   const abbreviations = rules.abbreviations;
 
+  /*
+   * Spans the prohibited check has already claimed.
+   *
+   * A profile can put the same form in `prohibitedVariants` and name a
+   * `preferredExpanded` replacement for it. Both checks would then want to write
+   * over one range, which is ND-2 — two owners for one character, and the
+   * planner is entitled to refuse the whole plan over it. The prohibited rule
+   * wins the claim: it is the stricter of the two, it is the one that says the
+   * form may not appear at all, and it carries the `approved` replacement that
+   * the user is more likely to accept.
+   */
+  const prohibitedSpans: MatchRange[] = [];
+
   abbreviations.prohibitedVariants.forEach((variant) => {
     const term = variant.trim();
     if (term.length === 0) return;
     findMatches(text, termPattern(term, true, false)).forEach((range) => {
       const found = text.slice(range.start, range.end);
       const approved = abbreviations.approved[found] ?? abbreviations.approved[term];
+      prohibitedSpans.push(range);
       findings.push(
         makeFinding({
           category: "language.abbreviation.prohibited",
@@ -644,6 +868,65 @@ export function findAbbreviationIssues(options: LanguageCheckOptions): Finding[]
       );
     });
   }
+
+  /*
+   * A house can hold both of these at once.
+   *
+   * `approved` says which short form is permitted; `preferredExpanded` says which
+   * rendering the running text should actually use. Reporting the long form
+   * everywhere would then contradict the first-use rule immediately above, which
+   * *requires* the long form to appear before the first short one. Two rules
+   * disagreeing about the same sentence is exactly what this whole audit is about,
+   * so they are read together rather than independently.
+   *
+   * **Where the long form stops being licensed.** When the profile asks for the
+   * expansion on first use, a long form that precedes the first short form is the
+   * expansion the profile demanded, and reporting it would ask the user to delete
+   * the very thing the other rule just told them to add. Everything after that
+   * point is an ordinary deviation. When the profile does *not* ask for the
+   * expansion there is no licensed long form at all, and every occurrence counts.
+   *
+   * **A boundary, stated rather than hidden.** The rule is conservative in the gap
+   * the schema cannot express: two long forms before the first short one are both
+   * excused, though the profile licenses only one. Excusing them is the safe error
+   * — it under-reports, and under-reporting never rewrites prose the author wrote.
+   */
+  const requiresExpansion = abbreviations.requireFirstUseExpansion === true;
+
+  Object.entries(abbreviations.preferredExpanded).forEach(([longForm, shortForm]) => {
+    const source = longForm.trim();
+    const replacement = shortForm.trim();
+    if (source.length === 0 || replacement.length === 0) return;
+    // A profile that maps a form to itself has expressed no preference, and
+    // reporting it would offer a no-op correction the user could only decline.
+    if (source.toLowerCase() === replacement.toLowerCase()) return;
+
+    const licensedUpTo = requiresExpansion
+      ? (findMatches(text, termPattern(replacement, true, false))[0]?.end ?? -1)
+      : -1;
+
+    findMatches(text, termPattern(source, true, false)).forEach((range) => {
+      if (range.start < licensedUpTo) return;
+      const alreadyClaimed = prohibitedSpans.some(
+        (claimed) => range.start < claimed.end && claimed.start < range.end,
+      );
+      if (alreadyClaimed) return;
+      findings.push(
+        makeFinding({
+          category: "language.abbreviation.preferredExpanded",
+          ruleId: "language/abbreviations",
+          profilePath: `language.abbreviations.preferredExpanded.${source}`,
+          range: makeRange(range),
+          message: `“${source}” is written long where this house prefers “${replacement}”`,
+          severity: "warning",
+          actual: text.slice(range.start, range.end),
+          expected: replacement,
+          correctionAvailable: true,
+          safeBatchKey: `abbrevPreferred:${source}`,
+        }),
+      );
+    });
+  });
 
   return findings.sort((left, right) => left.range.start - right.range.start);
 }
@@ -850,24 +1133,116 @@ export function findNumberIssues(options: LanguageCheckOptions): Finding[] {
     );
   });
 
+  /*
+   * How a negative number is written.
+   *
+   * Both directions are correctable, unlike the range rule's "to" form: `(5)` and
+   * `-5` are the same number written two ways, and neither correction changes the
+   * author's prose or the value.
+   *
+   * **What counts as a parenthesised negative.** A figure of two or more digits, or
+   * one carrying a decimal separator. A *single* digit in parentheses is left
+   * alone, because `(1)` and `(5)` are indistinguishable and `(1)` is far more
+   * often a numbered reference. That means a genuine `(5)` is not reported — an
+   * under-report rather than a wrong correction, which is the direction this audit
+   * has taken everywhere else. Two digits and up is the threshold, and it is one
+   * boundary rather than two contradictory ones.
+   *
+   * **What counts as a minus.** The sign must not be preceded by a letter, digit,
+   * slash or hyphen, so the hyphens in `2026-05-31`, in `AB-12` and in a
+   * telephone number are not read as negatives — they continue a word or a run,
+   * they do not start one.
+   */
+  if (numbers.negativeNumber === "parenthesis") {
+    [...text.matchAll(/(?<![\p{L}\d/-])[-−](\d[\d.,]*)(?![\d/-])/gu)].forEach((match) => {
+      const start = match.index;
+      if (start === undefined) return;
+      findings.push(
+        makeFinding({
+          category: "language.number.negative",
+          ruleId: "language/numbers",
+          profilePath: "language.numbers.negativeNumber",
+          range: { start, end: start + match[0].length, unit: "character" },
+          message: "This style writes a negative number in parentheses",
+          severity: "warning",
+          actual: match[0],
+          expected: `(${match[1]})`,
+          correctionAvailable: true,
+          safeBatchKey: "negativeParenthesis",
+        }),
+      );
+    });
+  } else {
+    // `\d{2,}` or a lone digit followed by a decimal point — `(1.5)` is a figure
+    // whatever its size; `(1)` is a reference, and `(5)` is not distinguishable
+    // from one.
+    [...text.matchAll(/\((\d{2,}(?:[.,]\d+)?|\d+[.,]\d+)\)/gu)].forEach((match) => {
+      const start = match.index;
+      if (start === undefined) return;
+      findings.push(
+        makeFinding({
+          category: "language.number.negative",
+          ruleId: "language/numbers",
+          profilePath: "language.numbers.negativeNumber",
+          range: { start, end: start + match[0].length, unit: "character" },
+          message: "This style writes a negative number with a minus sign",
+          severity: "warning",
+          actual: match[0],
+          expected: `-${match[1]}`,
+          correctionAvailable: true,
+          safeBatchKey: "negativeMinus",
+        }),
+      );
+    });
+  }
+
   return findings.sort((left, right) => left.range.start - right.range.start);
 }
 
-/** Name the shape a written date has. */
+/**
+ * Name the shape a written date has.
+ *
+ * **`dmy` and `mdy` are separated here, and this is what makes the locale
+ * enforceable.** Both describe `05/03/2026`, and the tool cannot tell which day
+ * the author meant — but it *can* tell which order the house wrote the fields in
+ * when the first field exceeds 12. `25/12/2026` has no valid month-first reading, so
+ * it is day-first by construction; `05/03/2026` could be either, and stays
+ * `numeric`.
+ *
+ * So the locale's default is not applied by guessing at the ambiguous case. It
+ * silences the *unambiguous* wrong-order case, and leaves the ambiguous one to the
+ * existing `requireUnambiguous` refusal. A locale that tried to resolve `05/03/2026`
+ * by convention would be the tool deciding what day a date names — precisely what
+ * the rule's own comment says it must not do.
+ */
 function describeDateShape(found: string): string {
   if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/u.test(found)) return "year-first";
   if (/^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}$/u.test(found)) return "day-month-year";
-  if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/u.test(found)) return "numeric";
+  const numeric = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/u.exec(found);
+  if (numeric) {
+    const first = Number(numeric[1]);
+    const second = Number(numeric[2]);
+    // A first field above 12 cannot be a month, so the order is day-first.
+    if (first > 12) return "dmy";
+    // A second field above 12 cannot be a day, so the order is month-first.
+    if (second > 12) return "mdy";
+    // Both fields are valid as either. Reporting a shape here would be a guess.
+    return "numeric";
+  }
   return "unrecognised";
 }
 
+/**
+ * Name a shape for a message.
+ *
+ * `DATE_SHAPE_LABELS` is the same table the date editor offers, so the sentence a
+ * finding is reported with and the choice a user makes in the editor come from one
+ * list. An id outside it — `unrecognised`, or a profile written before this table
+ * existed — is echoed rather than dropped, because silently naming it "numerically"
+ * would misdescribe what the rule actually found.
+ */
 function describeShape(id: string): string {
-  const named: Record<string, string> = {
-    "year-first": "year first (2026-05-31)",
-    "day-month-year": "day first with the month named (31 May 2026)",
-    numeric: "numerically (31/05/2026)",
-  };
-  return named[id] ?? id;
+  return DATE_SHAPE_LABELS[id as DateShapeId] ?? id;
 }
 
 /**
@@ -882,11 +1257,27 @@ export function findDateIssues(options: LanguageCheckOptions): Finding[] {
   if (text.length === 0) return [];
   const findings: Finding[] = [];
   const dates = rules.dates;
-  const preferred = dates.formats.find((format) => format.preferred);
+  const declared = dates.formats.find((format) => format.preferred);
 
-  // No preference declared is not a preference for whatever shape is already
-  // there, so with no preferred format the rule is silent.
-  if (preferred === undefined) return findings;
+  /*
+   * The locale's default shape, and only as a fallback (D5).
+   *
+   * An explicit `preferred` format always wins — a house that writes `31/05/2026`
+   * under an `en-GB` default has made its own choice, and overruling it with the
+   * locale beside it would be the tool deciding the house's conventions for it.
+   *
+   * With no declared preference the locale supplies one. That is the change that
+   * makes `locale` enforced rather than decorative: before this, selecting a
+   * locale changed nothing at all, because `requireUnambiguous` alone cannot tell
+   * a month-first date from a day-first one — only the *preferred shape* can.
+   *
+   * The reported `profilePath` is the one that actually produced the
+   * comparison, so a finding says which setting the user should change to
+   * silence it.
+   */
+  const fallback = LOCALE_DATE_SHAPES[rules.locale];
+  const preferred = declared ?? { id: fallback.id, format: fallback.format, preferred: true };
+  const preferredPath = declared ? "language.dates.formats" : "language.locale";
 
   const dateLike =
     /\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b|\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b|\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b/gu;
@@ -922,7 +1313,7 @@ export function findDateIssues(options: LanguageCheckOptions): Finding[] {
       makeFinding({
         category: "language.date.format",
         ruleId: "language/dates",
-        profilePath: "language.dates.formats",
+        profilePath: preferredPath,
         range: { start, end: start + found.length, unit: "character" },
         message: `Dates in this style are written ${describeShape(preferred.id)}`,
         severity: "warning",
@@ -1005,7 +1396,109 @@ export function findCurrencyIssues(options: LanguageCheckOptions): Finding[] {
     );
   });
 
+  /*
+   * Magnitude.
+   *
+   * **There is deliberately no separator check here.** `typography` owns both
+   * separators document-wide (owner decision D2), and adding a second currency-
+   * scoped owner for the same characters would be ND-2 all over again: two rules
+   * writing over one offset, and a planner entitled to refuse the whole plan. The
+   * currency profile's own separator fields are removed for the same reason the
+   * number profile's were — one owner, one setting.
+   *
+   * Reported, never corrected.
+   *
+   * Abbreviating `4,200,000` as `4.2m` does not restate the figure — it replaces it
+   * with a rounded one. And expanding `4.2m` needs the tool to decide which magnitude
+   * the author meant, which is the guess the currency rule exists not to make. The
+   * finding names the convention and stops.
+   */
+  const markerBefore = new RegExp(`[$£€¥]|(?:${CURRENCY_CODES})$`, "u");
+
+  currencyAmounts(text, markerBefore).forEach(({ run, runStart, suffix }) => {
+    const digits = run.replace(/\D/gu, "").length;
+    const abbreviated = suffix !== undefined;
+    if (currency.magnitude === "full" && abbreviated) {
+      findings.push(
+        makeFinding({
+          category: "language.currency.magnitude",
+          ruleId: "language/currency",
+          profilePath: "language.currency.magnitude",
+          range: { start: runStart, end: runStart + run.length, unit: "character" },
+          message: "This style writes amounts in full, not abbreviated",
+          severity: "warning",
+          actual: run,
+          expected: "",
+          correctionAvailable: false,
+        }),
+      );
+      return;
+    }
+    if (currency.magnitude !== "full" && digits >= 4) {
+      findings.push(
+        makeFinding({
+          category: "language.currency.magnitude",
+          ruleId: "language/currency",
+          profilePath: "language.currency.magnitude",
+          range: { start: runStart, end: runStart + run.length, unit: "character" },
+          message: `This style abbreviates amounts of ${currency.magnitude}`,
+          severity: "warning",
+          actual: run,
+          expected: "",
+          correctionAvailable: false,
+        }),
+      );
+    }
+  });
+
   return findings.sort((left, right) => left.range.start - right.range.start);
+}
+
+/** One amount run, the offset it starts at, and any magnitude suffix after it. */
+interface CurrencyAmount {
+  readonly run: string;
+  readonly runStart: number;
+  readonly suffix: string | undefined;
+}
+
+/** The currency markers this rule recognises, symbol or code. */
+const CURRENCY_CODES = "USD|EUR|GBP|JPY|AUD|CAD|CHF|SEK|NOK|DKK";
+
+/**
+ * Every digit run written immediately after a currency marker.
+ *
+ * The marker may be separated from the amount by the gap the spacing rule also
+ * measures. A run with no marker before it is not a currency amount, so
+ * `10 items` and `2026-05-31` never reach the checks below — the same reason the
+ * unit rule builds its marker list from the profile rather than from a shape.
+ */
+function currencyAmounts(text: string, marker: RegExp): CurrencyAmount[] {
+  const amounts: CurrencyAmount[] = [];
+  const markerSource = marker.source;
+  [...text.matchAll(/\d[\d.,\u00a0\u202f ]*/gu)].forEach((match) => {
+    /*
+     * Trailing separators and spaces are trimmed rather than the run rejected.
+     * The pattern deliberately runs through `.` and `,` because they appear
+     * *inside* an amount, which means it also swallows the full stop that ends the
+     * sentence — and rejecting `£4,200,000.` because it ends in a full stop is
+     * exactly how the whole rule ends up silent.
+     */
+    const run = match[0].replace(/[.,\u00a0\u202f ]+$/u, "");
+    if (run.length === 0 || !/\d$/u.test(run)) return;
+    const runStart = match.index ?? 0;
+    let markerEnd = runStart;
+    while (markerEnd > 0 && /[ \t\u00a0\u202f]/.test(text[markerEnd - 1] ?? "")) markerEnd -= 1;
+    const before = text.slice(0, markerEnd);
+    if (!new RegExp(`(?:${markerSource})$`, "u").test(before)) return;
+    amounts.push({
+      run,
+      runStart,
+      suffix: /^[ \t\u00a0\u202f]?(?:bn|million|millions|thousand|thousands|[kmb])(?![A-Za-z])/iu
+        .exec(text.slice(runStart + run.length))?.[0]
+        .trim(),
+    });
+  });
+  return amounts;
 }
 
 /**

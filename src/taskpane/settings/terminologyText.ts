@@ -12,6 +12,31 @@ export interface TerminologyParse {
   error: string | null;
 }
 
+/**
+ * The words an error message uses for the two halves of a `left: right` line.
+ *
+ * Defaulted to the terminology wording so every existing message is byte-for-byte
+ * unchanged. It is named for the fields where the halves are not a "term" and a
+ * "replacement": an abbreviation line is a short form and a long form, and telling
+ * a user their approved abbreviation is malformed because they did not write
+ * "term: replacement" describes the terminology editor, not theirs.
+ */
+export interface TermNouns {
+  /** The field as the user knows it, e.g. "Approved abbreviation". */
+  readonly subject: string;
+  /** What precedes the colon. */
+  readonly left: string;
+  /** What follows the colon. */
+  readonly right: string;
+}
+
+/** The wording the terminology editors report errors in. */
+export const TERMINOLOGY_NOUNS: TermNouns = {
+  subject: "Terminology",
+  left: "term",
+  right: "replacement",
+};
+
 /** Render a preferred-term map back into the editable line format. */
 export function formatTerminology(values: Record<string, string>): string {
   return Object.entries(values)
@@ -24,7 +49,10 @@ export function formatTermList(terms: readonly string[]): string {
   return terms.join("\n");
 }
 
-export function parseTerminology(value: string): TerminologyParse {
+export function parseTerminology(
+  value: string,
+  nouns: TermNouns = TERMINOLOGY_NOUNS,
+): TerminologyParse {
   const values: Record<string, string> = {};
   const lines = value.split(/\r?\n/u);
   for (const [index, rawLine] of lines.entries()) {
@@ -36,7 +64,7 @@ export function parseTerminology(value: string): TerminologyParse {
     if (separatorIndex <= 0) {
       return {
         values,
-        error: `Terminology line ${index + 1} must use "term: replacement".`,
+        error: `${nouns.subject} line ${index + 1} must use "${nouns.left}: ${nouns.right}".`,
       };
     }
     const term = line.slice(0, separatorIndex).trim();
@@ -44,13 +72,13 @@ export function parseTerminology(value: string): TerminologyParse {
     if (term.length === 0 || replacement.length === 0) {
       return {
         values,
-        error: `Terminology line ${index + 1} needs both a term and a replacement.`,
+        error: `${nouns.subject} line ${index + 1} needs both a ${nouns.left} and a ${nouns.right}.`,
       };
     }
     if (Object.prototype.hasOwnProperty.call(values, term)) {
       return {
         values,
-        error: `Terminology term "${term}" is listed more than once.`,
+        error: `${nouns.subject} "${term}" is listed more than once.`,
       };
     }
     values[term] = replacement;

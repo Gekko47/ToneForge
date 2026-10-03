@@ -366,12 +366,23 @@ describe("DeterministicStyleSections", () => {
     expect(screen.getByRole("heading", { name: "Preferred terminology" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Banned terms" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Required terms" })).toBeInTheDocument();
-    // One multi-line control: the banned list, which is genuinely a flat list.
-    // Preferred and required terms are rule objects and get a row each, because
-    // a line format cannot express wholeWord/caseSensitive/severity. Queried by
-    // tag rather than role, because `textbox` also matches every single-line
-    // `<input>` the formatting section renders.
-    expect(document.querySelectorAll("textarea")).toHaveLength(1);
+    /*
+     * Of the three vocabularies only the banned list is a multi-line control: it
+     * is genuinely a flat list. Preferred and required terms are rule objects and
+     * get a row each, because a line format cannot express
+     * wholeWord/caseSensitive/severity. The section is therefore not three
+     * identical textareas.
+     *
+     * Stated per control rather than as a page-wide `<textarea>` count. The page
+     * grew other textareas when the language conventions got their editors, and a
+     * bare count would then be asserting something about *those* instead — which is
+     * how a test silently stops testing the thing it was written for.
+     */
+    expect(screen.getByLabelText("Banned terms").tagName).toBe("TEXTAREA");
+    expect(
+      screen.queryByRole("textbox", { name: /Preferred terminology/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /Required terms/ })).not.toBeInTheDocument();
   });
 
   it("writes a preferred-term edit through to language.terminology", () => {
@@ -433,5 +444,229 @@ describe("DeterministicStyleSections", () => {
 
     const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
     expect(last.structure.reportEmptyHeadings).toBe(false);
+  });
+
+  /*
+   * The language conventions that had no control at all.
+   *
+   * Abbreviations, numbers, dates, currency and units were all declared in the
+   * schema, read by registered rules, and named in a rule's `profilePaths` — so the
+   * registry reported every one of them as wired. Nothing in the product could
+   * *write* them, which the registry cannot see: it can see that a rule reads a
+   * field, never that a control writes one. In the running product they all sat at
+   * their schema defaults and no rule in those subsections could fire.
+   *
+   * These tests are therefore about reachability, not appearance. Each one drives
+   * a control and asserts the field the rule reads actually changed.
+   */
+  describe("every language convention has a control that writes it", () => {
+    const lastProfile = (onChange: ReturnType<typeof vi.fn>): DeterministicStyleProfile =>
+      onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+
+    it("writes the approved abbreviation list", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText(/Approved abbreviations/), {
+        target: { value: "e.g.: for example" },
+      });
+
+      expect(lastProfile(onChange).language.abbreviations.approved).toEqual({
+        "e.g.": "for example",
+      });
+    });
+
+    it("writes the preferred short form, which the rule now reads", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText(/Preferred short form/), {
+        target: { value: "for example: e.g." },
+      });
+
+      expect(lastProfile(onChange).language.abbreviations.preferredExpanded).toEqual({
+        "for example": "e.g.",
+      });
+    });
+
+    it("reports a malformed abbreviation line in the field's own vocabulary", () => {
+      renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText(/Preferred short form/), {
+        target: { value: "for example" },
+      });
+
+      // Not "Terminology line 1" — this field is not a terminology field, and
+      // telling a user their approved abbreviation must use "term: replacement"
+      // describes a different editor than the one they are looking at.
+      expect(
+        screen.getByText('Preferred short form line 1 must use "long form: short form".'),
+      ).toBeInTheDocument();
+    });
+
+    it("offers three states for the expansion requirement, not two", () => {
+      renderSections(CAPABLE);
+      const select = screen.getByLabelText("Expansion on first use") as HTMLSelectElement;
+
+      // A checkbox cannot say "the house has not decided", and collapsing three
+      // states into two is how an unanswered question reads as a yes.
+      expect([...select.options].map((option) => option.value)).toEqual(["", "true", "false"]);
+    });
+
+    it("stores the expansion requirement as false, not as absent", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText("Expansion on first use"), {
+        target: { value: "false" },
+      });
+
+      // "Not required" is a decision. Writing `undefined` instead would record it
+      // as "not configured", which is the answer the schema exists to distinguish.
+      expect(lastProfile(onChange).language.abbreviations).toHaveProperty(
+        "requireFirstUseExpansion",
+        false,
+      );
+    });
+
+    it("writes the banned variant list", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText(/Forms that must never appear/), {
+        target: { value: "etc.\nNB" },
+      });
+
+      expect(lastProfile(onChange).language.abbreviations.prohibitedVariants).toEqual([
+        "etc.",
+        "NB",
+      ]);
+    });
+
+    it("writes the proper-noun and prohibited-capital lists", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText(/Proper nouns/), {
+        target: { value: "ToneForge" },
+      });
+      expect(lastProfile(onChange).language.capitalisation.properNouns).toEqual(["ToneForge"]);
+
+      fireEvent.change(screen.getByLabelText(/must never be capitalised/), {
+        target: { value: "programme" },
+      });
+      expect(lastProfile(onChange).language.capitalisation.prohibitedCapitalised).toEqual([
+        "programme",
+      ]);
+    });
+
+    it("writes the number conventions", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText(/Percent sign/), { target: { value: "space" } });
+      expect(lastProfile(onChange).language.numbers.percentageSpacing).toBe("space");
+
+      fireEvent.change(screen.getByLabelText(/Negative numbers/), {
+        target: { value: "parenthesis" },
+      });
+      expect(lastProfile(onChange).language.numbers.negativeNumber).toBe("parenthesis");
+
+      fireEvent.change(screen.getByLabelText("Ranges"), { target: { value: "to" } });
+      expect(lastProfile(onChange).language.numbers.rangeStyle).toBe("to");
+    });
+
+    it("treats a cleared number threshold as never, not as zero", () => {
+      const seeded = DeterministicStyleProfileSchema.parse({
+        formatting: { bodyStyle: { styleName: "Normal" } },
+        language: { numbers: { numberWordThreshold: 10 } },
+      });
+      const { onChange } = renderSections(CAPABLE, seeded);
+      fireEvent.change(screen.getByLabelText(/Spell out numbers up to/), {
+        target: { value: "" },
+      });
+
+      // `0` would be "spell out every number", a rule the profile never chose.
+      expect(lastProfile(onChange).language.numbers.numberWordThreshold).toBeNull();
+    });
+
+    it("adds a date format seeded from the locale, and makes the first one preferred", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.click(screen.getByRole("button", { name: "Add date format" }));
+
+      const formats = lastProfile(onChange).language.dates.formats;
+      expect(formats).toEqual([{ id: "mdy", format: "M/D/YYYY", preferred: true }]);
+    });
+
+    it("offers only the shapes the rule can recognise", () => {
+      renderSections(CAPABLE);
+      fireEvent.click(screen.getByRole("button", { name: "Add date format" }));
+
+      const shape = screen.getByLabelText("Shape") as HTMLSelectElement;
+      expect([...shape.options].map((option) => option.value)).toEqual([
+        "year-first",
+        "day-month-year",
+        "dmy",
+        "mdy",
+        "numeric",
+      ]);
+      // "unrecognised" is what the rule says when it could not read a shape. A
+      // profile must not be able to prefer it.
+      expect([...shape.options].map((option) => option.value)).not.toContain("unrecognised");
+    });
+
+    it("keeps exactly one date format preferred", () => {
+      const seeded = DeterministicStyleProfileSchema.parse({
+        formatting: { bodyStyle: { styleName: "Normal" } },
+        language: {
+          dates: {
+            formats: [
+              { id: "dmy", format: "DD/MM/YYYY", preferred: true },
+              { id: "mdy", format: "M/D/YYYY", preferred: false },
+            ],
+          },
+        },
+      });
+      const { onChange } = renderSections(CAPABLE, seeded);
+      const preferred = screen.getAllByLabelText(
+        "This is the shape new dates should be written in",
+      );
+      fireEvent.click(preferred[1] as HTMLElement);
+
+      // The rule takes the *first* preferred format, so two of them is an answer
+      // that depends on the order of an array the user never sees ordered.
+      expect(
+        lastProfile(onChange).language.dates.formats.map((format) => format.preferred),
+      ).toEqual([false, true]);
+    });
+
+    it("writes the currency conventions that this profile owns", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText(/Amounts are written with/), {
+        target: { value: "code" },
+      });
+      expect(lastProfile(onChange).language.currency.representation).toBe("code");
+
+      fireEvent.change(screen.getByLabelText(/How large amounts are written/), {
+        target: { value: "millions" },
+      });
+      expect(lastProfile(onChange).language.currency.magnitude).toBe("millions");
+    });
+
+    it("offers no currency separator control, because typography owns both", () => {
+      renderSections(CAPABLE);
+      /*
+       * A second control for the same characters is the two-owners defect ND-2
+       * describes. `typography` reports the comma in `£1,000` document-wide; a
+       * currency-scoped owner reporting the same comma would put two changes over
+       * one offset and let the planner refuse the whole plan.
+       */
+      expect(screen.queryByLabelText("Thousands separator")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Decimal separator")).not.toBeInTheDocument();
+    });
+
+    it("writes the unit conventions, including the preferred symbol D4 added", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText(/Preferred symbol/), {
+        target: { value: "kilogram: kg" },
+      });
+
+      expect(lastProfile(onChange).language.units.symbols).toEqual({ kilogram: "kg" });
+    });
+
+    it("no longer points a user at a panel that does not hold these fields", () => {
+      renderSections(CAPABLE);
+      // The old sentence claimed the number, date, currency and unit conventions
+      // were "set in the House style panel". They are set here, and a sentence that
+      // sends a user looking in the wrong place is a claim the product cannot keep.
+      expect(screen.queryByText(/are set in the House style panel/)).not.toBeInTheDocument();
+    });
   });
 });

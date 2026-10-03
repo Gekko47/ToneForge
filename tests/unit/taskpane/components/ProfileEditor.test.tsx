@@ -191,7 +191,17 @@ describe("ProfileEditor", () => {
   it("validates edits, previews the diff, and saves through updateDraft", async () => {
     const user = userEvent.setup();
     const { container } = render(<ProfileEditor />);
-    const bannedInput = inputByValue(container, "utilize");
+    /*
+     * Named exactly, not by a prefix, and not by value.
+     *
+     * Two controls write `language.bannedTerms` — "Banned terms" in the
+     * deterministic section and "Banned terms (one per line)" in the compact House
+     * style view of the same record — and both hold "utilize". A prefix matcher and
+     * a display-value matcher each resolved to whichever the DOM happened to list
+     * last, so this test was asserting on one control while editing whichever came
+     * after it. Exact name says which one it means.
+     */
+    const bannedInput = within(container).getByRole("textbox", { name: "Banned terms" });
 
     await user.clear(bannedInput);
     await user.type(bannedInput, "leverage");
@@ -200,9 +210,7 @@ describe("ProfileEditor", () => {
     expect(screen.getByText("Unsaved profile changes")).toBeInTheDocument();
     // The banned-terms box is a multiline field, so the edit is asserted on its
     // value rather than on rendered text.
-    expect(
-      within(container).getByRole("textbox", { name: (name) => name.startsWith("Banned terms") }),
-    ).toHaveValue("leverage");
+    expect(bannedInput).toHaveValue("leverage");
 
     await user.click(lastByRole("button", { name: "Save profile" }));
 

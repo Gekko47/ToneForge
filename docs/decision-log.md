@@ -3888,3 +3888,161 @@ end: 1192`, so that guard returned nine lines **above** the caret branch and the
   `tests/unit/core/state/terminologyPersistence.test.ts`,
   `tests/unit/rules/requiredTerms.test.ts`,
   `tests/unit/core/domain/GovernanceProfile.test.ts`.
+
+## ADR-0111: A profile setting is either enforced or absent — there is no third state
+
+- Amends: ADR-0091 (a standard the user cannot set is not wired, and the §11 audit
+  cannot see it)
+- Status: Accepted (2026-10-03)
+- **Context**: three separate fields looked authoritative, were editable, and
+  governed nothing. `units.symbols`'s _keys_ were read only to word a casing
+  message, so a house saying `kilogram → kg` got no finding for a document writing
+  "5 kilogram". `language.locale` was a free-text box labelled "recorded, not
+  enforced" and was excused in `METADATA_ONLY_PROFILE_PATHS`. And the term map behind
+  `houseStyle.preferredTerminology` (ND-13) validated and persisted without ever
+  reaching a report.
+
+  The excuse list is what makes this an ADR rather than three fixes. It worked as
+  intended — it stopped the audit flagging a deliberate omission — and in doing so it
+  **laundered three settings into looking deliberate**. A reviewer reading
+  `METADATA_ONLY_PROFILE_PATHS` would conclude someone had considered the field and
+  decided; in each case nobody had.
+
+- **Decision**: a profile field is either read by a rule with a body, or it does not
+  exist. There is no list of excused-but-unwired settings.
+  - **`METADATA_ONLY_PROFILE_PATHS` is now empty**, and stays in the codebase
+    because an empty list is a _claim_ — every field is read — and is checkable.
+  - **`language.locale` supplies the default numeric date shape** when the profile
+    declares no preferred format of its own. An explicit format always wins, so a
+    house writing `31/05/2026` under an `en-GB` locale keeps its own convention.
+    It is a closed enum, because a free string accepts a typo that parses cleanly and
+    then matches nothing.
+  - **`describeDateShape` now separates `dmy` from `mdy`** when the first field
+    exceeds 12, and returns `numeric` when both readings are valid. This is the
+    boundary that keeps the locale honest: it silences the _unambiguous_ wrong-order
+    case and leaves the ambiguous one to the existing `requireUnambiguous` refusal. A
+    locale that resolved `05/03/2026` by convention would be the tool deciding which
+    day a date names.
+  - **`units.symbols` reads its keys.** A named unit written where the house prefers
+    its symbol is now a `language.unit.preferredSymbol` finding — a named
+    substitution, correctable because a name and its symbol denote the same
+    quantity. That is a stronger claim than the spacing rule beside it makes, and the
+    difference is deliberate: swapping `kilogram` for `kg` restates a measurement,
+    whereas inserting a space changes the written form.
+- **Consequences**:
+  - **A behaviour change a user can see.** A profile with no declared date format now
+    reports day-first dates under the default `en-US`, where it previously reported
+    nothing. That is the point — the silence is what made the setting decorative —
+    but it is a behaviour change and is recorded as one rather than shipped quietly.
+  - **The registry guard caught the omission.** `unwiredProfilePaths()` failed until
+    `language.locale` was added to a rule's `profilePaths`, even though
+    `findDateIssues` already read it. A field counts as wired only when a rule with a
+    body _claims_ it, which is stricter than "something reads it" and is the right
+    strictness: it stops a real reader excusing itself by accident.
+  - **The locale is still not a spelling dictionary.** It drives one convention
+    because that is the one where a wrong guess would misreport a date. Inferring
+    spelling from it would reintroduce the US/UK variant table spec §4.3 removed,
+    which existed only to duplicate Word's spellchecker.
+- **Evidence**: `src/core/domain/StyleProfile.ts` (`LOCALE_OPTIONS`,
+  `LOCALE_DATE_SHAPES`, `LocaleSchema`); `src/rules/language.ts`
+  (`describeDateShape`, `findDateIssues`, `findUnitIssues`);
+  `src/analysis/deterministic/ruleRegistry.ts`
+  (`METADATA_ONLY_PROFILE_PATHS`, `language/dates`); `unwiredProfilePaths()`;
+  `tests/unit/rules/localeEnforcement.test.ts`,
+  `tests/unit/rules/unitPreferredSymbol.test.ts`.
+
+## ADR-0112: A rule may read only a field a control can write
+
+- Amends: ADR-0111 (a field is either read by a rule or it does not exist), and
+  ADR-0091 (the §11 audit cannot see an unreachable setting)
+- Status: Accepted (2026-10-03)
+- **Context**: implementing `language.abbreviations.preferredExpanded` required
+  asking where a user sets it. The answer was nowhere.
+
+  Abbreviations, numbers, dates, currency and units were all declared in the
+  profile schema, read by registered rules, and named in a rule's `profilePaths`.
+  `unwiredProfilePaths()` therefore reported every one of them as covered, and the
+  §11 audit reported none of them as a defect. But **no control anywhere in the
+  product could write them**. The House style panel holds terminology, banned
+  terms, title-case words and one sentence-case toggle; a sentence in the Language
+  section pointed users at it for the rest. In the running product every one of
+  those subsections sat at its schema defaults, and no rule in them could fire —
+  including the units-symbol and locale behaviour ADR-0111 had just added.
+
+  The registry audit is structurally blind to this. It reads `profilePaths`, which
+  is a declaration by the rule about what it reads. It has no view of the editor at
+  all, so "a rule reads a field" is indistinguishable from "a user can set a
+  field".
+
+- **Decision**: the two halves are joined at the editor, and the claim is tested.
+
+  - **Every field the language rules read now has a control** in the Language
+    section: the proper-noun, prohibited-capitalisation and heading-case settings;
+    the four abbreviation vocabularies; the four number conventions; the date
+    format list and the ambiguity switch; the five currency conventions; and the
+    three unit conventions including `units.symbols`.
+  - **`headingCase` is enforced rather than merely declared.** It was named in
+    `language/capitalisation`'s `profilePaths` while nothing read it — the last
+    false claim of the ND-3 family, missed by the registry for the same reason it
+    missed `preferredExpanded`. A heading is identified by its paragraph style, and
+    the three conventions are correctable to different degrees: `upper` and `title`
+    raise or cap one letter inside a word and are correctable; `sentence` is
+    reported without a correction, because lower-casing a word the profile has not
+    listed as a proper noun may destroy one. Acronyms are never reported — flagging
+    `IBM` in a heading would make the rule cry wolf on every document that names a
+    product. The rule is silent on a non-English Word, where the style is named
+    "Überschrift" rather than "Heading"; that is stated in the code rather than left
+    for a user to discover.
+  - **`preferredExpanded` is enforced.** A long form written where the house prefers
+    the short one is a `language.abbreviation.preferredExpanded` finding. It is read
+    _together with_ `requireFirstUseExpansion`, because a house may legitimately
+    want the long form once and the short form after: a long form preceding the
+    first short form is the expansion the profile demanded, and reporting it would
+    ask the user to delete what the other rule just told them to add. Where a form
+    is also in `prohibitedVariants`, the prohibited rule wins the claim — two owners
+    for one character is ND-2, and the stricter of the two is the one to keep.
+  - **The tri-state settings get a tri-state control.** `requireFirstUseExpansion`
+    is `optional()` because "the house has not said" differs from "the house said
+    no", and a dropdown over `Not set / Required / Not required` is the only control
+    that can say it. "Not set" _removes_ the key rather than writing `undefined`,
+    because `exactOptionalPropertyTypes` treats the two as different values.
+  - **The date shape is a closed vocabulary.** `DATE_SHAPE_IDS` and
+    `DATE_SHAPE_LABELS` are shared by the rule and the editor, so an author cannot
+    type an id no rule will match. `unrecognised` is not authorable: it is what the
+    rule says when it could not read a shape, and a profile must not be able to
+    prefer it. Exactly one date format may be `preferred`, because the rule takes
+    the first — two would make the answer depend on the order of an array the user
+    never sees ordered.
+  - **The sentence that pointed at the wrong panel is gone**, replaced by one that
+    says where each convention is set and is true of every control on the page.
+
+- **Consequences**:
+  - **A defect the registry cannot catch is now caught by the component tests.**
+    `tests/unit/taskpane/components/DeterministicStyleSections.test.tsx` drives
+    each control and asserts the field the rule reads changed. A rule added without
+    a control is still possible — the registry will not object — and that gap is
+    recorded here rather than claimed closed.
+  - **A second editor of one record is now visible and deliberate.** "Banned terms"
+    in this section and "Banned terms (one per line)" in the House style form both
+    write `language.bannedTerms` (ADR-0110). Making the two accessible names exact
+    surfaced a `ProfileEditor` test that had been matching both by prefix and by
+    display value, and asserting on whichever the DOM happened to list last.
+  - **The banned-terms control had no accessible name at all.** A heading above it
+    is a visual grouping, not a label. It is now wired with `aria-labelledby`, and
+    every field in the section names its hint through `aria-describedby` rather
+    than folding the hint into the accessible name.
+  - **The shared line parser now takes the vocabulary it reports in.**
+    `parseTerminology` accepts a `TermNouns` argument, so an abbreviation field
+    says `Preferred short form line 1 must use "long form: short form"` instead of
+    telling a user their approved abbreviation must use `term: replacement`. The
+    default wording is unchanged, so every existing message is byte-for-byte the
+    same.
+
+- **Evidence**: `src/rules/language.ts` (`findAbbreviationIssues`,
+  `describeShape`); `src/analysis/deterministic/ruleRegistry.ts`
+  (`language/abbreviations`); `src/changes/deterministicChanges.ts`;
+  `src/core/domain/StyleProfile.ts` (`DATE_SHAPE_IDS`, `DATE_SHAPE_LABELS`);
+  `src/taskpane/components/DeterministicStyleSections.tsx`;
+  `src/taskpane/settings/terminologyText.ts` (`TermNouns`);
+  `tests/unit/rules/preferredExpanded.test.ts`;
+  `tests/unit/taskpane/components/DeterministicStyleSections.test.tsx`.

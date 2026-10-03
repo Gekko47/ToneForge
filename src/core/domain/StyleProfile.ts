@@ -300,14 +300,21 @@ export const DateProfileSchema = z.object({
 });
 export type DateProfile = z.infer<typeof DateProfileSchema>;
 
-/** Spec §4.2 currency. */
+/**
+ * Spec §4.2 currency.
+ *
+ * **No separator fields, for the same reason `NumberProfileSchema` has none.**
+ * `typography` owns the decimal and thousands separators document-wide (owner
+ * decision D2), and those two rules were the whole of ND-2: two findings at one
+ * offset and a planner entitled to refuse the plan. A currency-scoped second owner
+ * would have reproduced it exactly — the same comma in `£1,000` reported twice,
+ * once under each profile's own setting. One owner, one setting.
+ */
 export const CurrencyProfileSchema = z.object({
   /** `symbol` writes `£100`; `code` writes `GBP 100`. */
   representation: z.enum(["symbol", "code"]).default("symbol"),
   /** Space between the symbol or code and the amount. */
   symbolSpacing: z.enum(["space", "tight"]).default("tight"),
-  thousandsSeparator: z.enum(["none", "space", "comma", "period"]).default("none"),
-  decimalSeparator: z.enum(["dot", "comma"]).default("dot"),
   /** How large amounts are abbreviated: `4.2m` versus `4,200,000`. */
   magnitude: z.enum(["full", "thousands", "millions"]).default("full"),
 });
@@ -323,6 +330,67 @@ export const UnitProfileSchema = z.object({
   symbols: z.record(z.string().trim().min(1), z.string().trim().min(1)).default({}),
 });
 export type UnitProfile = z.infer<typeof UnitProfileSchema>;
+
+/**
+ * The locales the house-standard editor offers (D5).
+ *
+ * A closed set for two reasons. The editor can only offer a dropdown over a
+ * known list, and — the reason that matters — a free string accepts a typo that
+ * parses cleanly and then matches no rule, which is the ND-13 failure wearing a
+ * different hat: a field that looks configured and governs nothing.
+ *
+ * Deliberately short. Each entry carries only the *default numeric date shape*,
+ * which is the one convention where the day/month order genuinely differs and a
+ * wrong guess would misreport a date. Everything else about a locale — spelling,
+ * punctuation, currency placement — is a house decision, and inferring it here
+ * would re-introduce the variant table spec §4.3 removed.
+ */
+export const LOCALE_OPTIONS = ["en-US", "en-GB", "en-AU", "en-CA", "en-IE", "en-NZ"] as const;
+export const LocaleSchema = z.enum(LOCALE_OPTIONS);
+export type Locale = z.infer<typeof LocaleSchema>;
+
+/**
+ * The numeric date shape each locale defaults to, and the human sentence for it.
+ *
+ * Month-first for the US, day-first everywhere else in this set — which is the
+ * whole reason the locale has to be *enforced* rather than decorative. The
+ * `DateFormat.id` values are the shapes `describeDateShape` recognises, so the
+ * default is expressible in the same vocabulary an author would use by hand.
+ */
+export const LOCALE_DATE_SHAPES: Readonly<Record<Locale, { id: string; format: string }>> = {
+  "en-US": { id: "mdy", format: "M/D/YYYY" },
+  "en-GB": { id: "dmy", format: "DD/MM/YYYY" },
+  "en-AU": { id: "dmy", format: "DD/MM/YYYY" },
+  "en-CA": { id: "mdy", format: "M/D/YYYY" },
+  "en-IE": { id: "dmy", format: "DD/MM/YYYY" },
+  "en-NZ": { id: "dmy", format: "DD/MM/YYYY" },
+};
+
+/**
+ * The date shapes the deterministic rule recognises.
+ *
+ * Shared with the editor, because the editor has to offer exactly the vocabulary
+ * the rule compares against. A free-text shape id would accept `DD/MM/YYYY`
+ * cleanly and then match nothing at all — the ND-13 failure with a date in it.
+ *
+ * `unrecognised` is deliberately *not* in this set. It is what the rule reports
+ * when it could not read a shape, and a profile claiming to prefer a shape the
+ * tool cannot recognise would be a standard no document could ever meet.
+ */
+export const DATE_SHAPE_IDS = ["year-first", "day-month-year", "dmy", "mdy", "numeric"] as const;
+export type DateShapeId = (typeof DATE_SHAPE_IDS)[number];
+
+/**
+ * How each shape is named to a user. The examples are the point — "dmy" and
+ * "mdy" mean nothing until you have seen `31/05/2026` and `05/31/2026` side by side.
+ */
+export const DATE_SHAPE_LABELS: Readonly<Record<DateShapeId, string>> = {
+  "year-first": "year first (2026-05-31)",
+  "day-month-year": "day first with the month named (31 May 2026)",
+  dmy: "day first (31/05/2026)",
+  mdy: "month first (05/31/2026)",
+  numeric: "numerically (31/05/2026)",
+};
 
 /**
  * Spec §4.2 language conventions: everything about the words themselves.
@@ -365,15 +433,28 @@ export const LanguageConventionProfileSchema = z.object({
   currency: CurrencyProfileSchema.default({}),
   units: UnitProfileSchema.default({}),
   /**
-   * The locale used only as metadata for the above.
+   * The locale the house writes in (D5).
    *
-   * Not a spelling dictionary. Spec §4.3 removes the generic US/UK variant
-   * table precisely because it duplicated Word's spellchecker, and a locale
-   * that drove one would reintroduce the same duplication through a different
-   * door. Nothing reads this field today; it is recorded so a future
-   * house-specific rule has it available.
+   * **Enforced, not metadata.** It was a free string nothing read, listed in
+   * `METADATA_ONLY_PROFILE_PATHS` so the registry recorded the omission as
+   * deliberate while the editor presented it as an editable text box. A setting a
+   * user can change and observe no consequence from is the same failure as ND-13:
+   * it looks authoritative and governs nothing.
+   *
+   * **A closed set**, so the editor can offer a dropdown and a typo cannot
+   * produce a locale that silently does nothing.
+   *
+   * **What it does *not* drive.** Not a spelling dictionary: spec §4.3 removes
+   * the generic US/UK variant table precisely because it duplicated Word's
+   * spellchecker, and a locale driving one would reintroduce the same
+   * duplication through a different door.
+   *
+   * **What it does drive.** The *default* numeric date shape, applied only where
+   * the profile has declared no preferred format of its own. An explicit setting
+   * always wins, so a house writing `31/05/2026` under an `en-GB` default keeps
+   * its own convention rather than being overruled by the locale beside it.
    */
-  locale: z.string().trim().min(1).default("en-US"),
+  locale: LocaleSchema.default("en-US"),
 });
 export type LanguageConventionProfile = z.infer<typeof LanguageConventionProfileSchema>;
 

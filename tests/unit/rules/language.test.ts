@@ -571,18 +571,42 @@ describe("findDateIssues", () => {
     dates: { formats: [{ id: "year-first", format: "%Y-%m-%d", preferred: true }] },
   });
 
-  it("says nothing when the profile declares no preferred format", () => {
+  it("falls back to the locale when the profile declares no preferred format", () => {
+    /*
+     * **This contract changed under D5, deliberately.** It used to read "No
+     * preference declared is not a preference for the shape already there", and
+     * return nothing. That was correct while `locale` governed nothing — with no
+     * declared shape and no enforced default, silence *was* the honest answer.
+     *
+     * It is no longer correct, because a profile now always carries an enforced
+     * default (`en-US` unless the author chose otherwise). A house that has
+     * selected `en-US` and written `31/05/2026` has made a mistake, and reporting
+     * it is the whole point of D5. Silence here would make the locale decorative
+     * again for every profile that never opened the date panel.
+     */
     const findings = findDateIssues({
       text: "It happened on 31/05/2026.",
       rules: profile({ dates: { formats: [] } }),
     });
 
-    // No preference declared is not a preference for the shape already there.
-    expect(findings).toEqual([]);
+    // Day-first under the default month-first locale.
+    expect(categories(findings)).toEqual(["language.date.format"]);
+    // The finding names the setting that produced the comparison, so the user is
+    // sent to the locale rather than to a date panel holding no opinion.
+    expect(findings[0]?.deterministic?.profilePath).toBe("language.locale");
   });
 
   it("reports a numerically ambiguous date and offers no rewrite", () => {
-    const findings = findDateIssues({ text: "It happened on 31/05/2026.", rules: dateProfile });
+    /*
+     * `05/03/2026` is valid as both 5 March and 5 May, so it is `numeric` and the
+     * existing `requireUnambiguous` refusal applies. The locale does **not** resolve
+     * it — doing so would be the tool deciding which day the author meant.
+     *
+     * The text changed from `31/05/2026` for the same reason: that one is
+     * decidable now, so it is a format finding rather than an ambiguity one. The
+     * case this test exists for is the genuinely undecidable one.
+     */
+    const findings = findDateIssues({ text: "It happened on 05/03/2026.", rules: dateProfile });
 
     expect(categories(findings)).toEqual(["language.date.ambiguous"]);
     // Converting the shape means deciding which field is the day, and this is
