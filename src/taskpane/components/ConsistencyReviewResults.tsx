@@ -119,6 +119,10 @@ function ConflictCard({
     >
       <FindingDetail
         finding={finding}
+        // The Consistency surface keeps the full header: risk and the review
+        // context are the information here, not noise, which is why this is a
+        // variant rather than two components (UX-3a).
+        variant="consistency"
         evidence={{
           left: lead.evidence.left,
           right: lead.evidence.right,

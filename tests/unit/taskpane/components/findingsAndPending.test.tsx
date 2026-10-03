@@ -76,9 +76,11 @@ describe("FindingsList selection", () => {
     expect(screen.getAllByRole("button", { name: "Undo decision" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(2);
     // The card names the decision rather than a generic "Reviewed", which
-    // covered queued, declined, and unapprovable alike. It sits inside the
-    // meta line, so this matches a substring rather than a whole element.
-    expect(screen.getByText(/Risk: .*Approved/)).toBeInTheDocument();
+    // covered queued, declined, and unapprovable alike. UX-3 moved `Risk:` off
+    // this line into the collapsed detail region, so the assertion is on the
+    // decision word itself rather than on the surrounding header format — the
+    // claim is that the decision is named, not that it sits beside `Risk:`.
+    expect(screen.getByText(/Warning · Approved/)).toBeInTheDocument();
   });
 
   it("decides only the reviewed finding, not every finding sharing its rule", () => {

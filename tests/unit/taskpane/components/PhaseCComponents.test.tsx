@@ -86,7 +86,12 @@ function plan(): ChangePlan {
  */
 describe("Phase C task-pane components", () => {
   it("labels deterministic and AI findings by review context", () => {
-    render(
+    // UX-3 moved source and review context off the deterministic summary line
+    // and into a collapsed detail region, because on that surface they are
+    // constant — this is exactly the case the plan called out. The claim under
+    // test is that a reader can still tell which run produced a finding, so it
+    // is asserted against the detail region rather than the header.
+    const { container } = render(
       <FindingsList
         findings={[
           finding(),
@@ -95,8 +100,10 @@ describe("Phase C task-pane components", () => {
       />,
     );
 
-    expect(screen.getByText(/Document scan/)).toBeInTheDocument();
-    expect(screen.getByText(/Current AI review/)).toBeInTheDocument();
+    const regions = container.querySelectorAll(".tf-finding-detail-region");
+    expect(regions).toHaveLength(2);
+    expect(regions[0]?.textContent).toContain("Document scan");
+    expect(regions[1]?.textContent).toContain("Current AI review");
   });
 
   it("exposes navigation, approve, skip and ignore as separate actions", async () => {
@@ -131,10 +138,16 @@ describe("Phase C task-pane components", () => {
     expect(screen.queryByRole("button", { name: /Apply/ })).not.toBeInTheDocument();
   });
 
-  it("offers Approve with a stated reason when no correction exists", () => {
-    // Spec §14.7. A finding the planner cannot correct still needs a decision,
-    // so Skip is offered; Approve is disabled and says why, rather than being
-    // offered and quietly doing nothing.
+  it("states that manual correction is required, and omits Approve, when no correction exists", () => {
+    // Spec §14.7. A finding the planner cannot correct still needs a decision, so
+    // Skip is offered.
+    //
+    // UX-1 changed the *mechanism*, not the claim. Approve used to render here
+    // disabled with the reason beside it, which left the reader unable to tell
+    // "ToneForge will fix this" from "you must fix this yourself" — both cards
+    // had the same action row, one of them merely greyed out. Approve is now
+    // omitted outright, the reason is stated in words, and Go to text stays
+    // because navigation is exactly what a manual correction needs.
     const item = finding({
       deterministic: {
         profilePath: "formatting.bodyStyle.alignment",
@@ -142,7 +155,7 @@ describe("Phase C task-pane components", () => {
         correctionReason: "A property override is corrected by applying the configured Word style.",
       },
     });
-    render(
+    const { container } = render(
       <FindingCard
         finding={item}
         onReview={vi.fn()}
@@ -151,8 +164,17 @@ describe("Phase C task-pane components", () => {
         approveRefusal={"A property override is corrected by applying the configured Word style."}
       />,
     );
-    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
     expect(screen.getByRole("button", { name: "Skip" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Go to text" })).toBeEnabled();
+    // Read the region rather than matching across the <strong>/text split: the
+    // heading and the reason are separate nodes, so a whole-element text matcher
+    // sees only one of them.
+    const manual = container.querySelector(".tf-finding-manual");
+    expect(manual?.textContent).toContain("Manual correction required.");
+    expect(manual?.textContent).toContain(
+      "A property override is corrected by applying the configured Word style.",
+    );
   });
 
   it("leaves the working state and reports a failure when navigation rejects", async () => {

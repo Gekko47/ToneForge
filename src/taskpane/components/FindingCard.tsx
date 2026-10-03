@@ -79,6 +79,11 @@ export default function FindingCard({
     >
       <FindingDetail
         finding={finding}
+        // The card is the Deterministic Review surface, so it names its own
+        // density. Passing it rather than letting `FindingDetail` infer it from
+        // `finding.source` is what keeps a surface that knows its context from
+        // rendering the other's card.
+        variant="deterministic"
         onReview={onReview}
         onIgnore={onIgnore}
         onSkip={onSkip}

@@ -1471,3 +1471,61 @@ passing**, up from 2654 / 189. New: `findingGroups.test.ts` (15),
 
 UX-1 (manual-correction state), UX-3a (card variants), UX-3 (slim card), and the
 coverage verdict states. The host gate is untouched — none of this has run in Word.
+
+### Phase 5b — One shell, two densities (UX-3a, UX-3, UX-1)
+
+#### UX-1 was a real behaviour change, not a restatement
+
+The audit noted that navigation already existed for every finding, and asked for a
+distinct **Manual correction required** state. What it called "with Approve merely
+disabled" was a genuine misstatement: a table or heading finding rendered with the
+same action row as a correctable one, its Approve greyed out. The reader could not
+tell "ToneForge will fix this" from "you must fix this yourself" — both cards had
+the same controls, one of them merely inert.
+
+Approve is now **omitted** on such a finding, the reason is stated in words, Go to
+text stays (navigation is exactly what a manual correction needs), and Skip stays
+(declining is always a real decision).
+
+This broke a test that had asserted the old mechanism. The test's _claim_ — a
+finding the planner cannot correct still needs a decision, and Approve must not
+lead anywhere — survives intact; only "disabled" became "absent". I changed the
+assertion rather than the behaviour, and kept the original reason text in the
+comment so the change is visible.
+
+#### UX-3a — one shell, two densities, not two components
+
+The owner was right that a single slim card discards what the Consistency Review
+needs. Splitting `FindingDetail` into two components would have recreated the
+drift it was extracted to prevent, so `variant` selects density on one structure.
+
+`variant` is a **required** prop, not a defaulted one. A default is an accident
+waiting to happen: a new surface would inherit `deterministic` by omission and
+render the wrong card. Both call sites now name their own.
+
+It is also passed by the caller and never inferred from `finding.source`. Inference
+would make the density a function of a data field, which is precisely how a
+surface that knows its own context ends up rendering the other's card.
+
+#### UX-3 — moved, not deleted
+
+Source, "Document scan", `Risk:` and the described location leave the deterministic
+summary line for a collapsed `<details>` region. A test asserts they are _still
+there_ — deleting them would have satisfied the same assertion with less work and
+thrown away what the card used to carry.
+
+Actual and Expected render as one `before → after`. The arrow is `aria-hidden`
+with a visually-hidden "should be" in its place, because " -- → — " read aloud is a
+dash, not a direction. The pair renders **only when both halves exist**: a finding
+with an `expected` and no `actual` is not a substitution, and "→ (nothing)" would
+claim a before-state that does not exist.
+
+#### Verification
+
+`npx tsc --noEmit` clean. `npm run lint` 0 warnings. **2692 tests / 192 files**,
+up from 2681 / 191. New: `findingDetailVariants.test.tsx` (11).
+
+#### Still open in Phase 5
+
+Coverage verdict states, including "Compliant within checked scope". Then Phase 6.
+The host gate is untouched.

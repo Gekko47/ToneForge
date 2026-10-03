@@ -137,6 +137,45 @@ body {
   flex-wrap: wrap;
 }
 
+/* The collapsed detail region on the deterministic card (UX-3).
+   Source, risk and the described location are *moved* here, not dropped — a
+   reader who wants them opens one control. `summary` is styled rather than left
+   as the platform marker so it reads as a control beside the card's own actions
+   instead of as another finding. */
+.tf-finding-detail-region {
+  margin: 6px 0;
+  font-size: 0.85rem;
+  color: var(--tf-text-muted, inherit);
+}
+
+.tf-finding-detail-region > summary {
+  cursor: pointer;
+  color: var(--tf-accent);
+}
+
+.tf-finding-detail-region > p {
+  margin: 2px 0;
+}
+
+/* Actual -> Expected on one line. The arrow is decorative, so it is hidden from
+   assistive technology and the direction is stated in a visually-hidden word —
+   " - " alone reads as a dash, not as "becomes". */
+.tf-finding-actual {
+  text-decoration: line-through;
+}
+
+.tf-finding-expected {
+  font-weight: 600;
+}
+
+/* UX-1: a deviation the engine found and will not write for you. */
+.tf-finding-manual {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--tf-accent);
+  font-size: 0.9rem;
+}
+
 .tf-finding-category {
   font-size: 0.9rem;
 }
