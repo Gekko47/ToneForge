@@ -23,10 +23,7 @@
 import type { DeterministicRuleContext, DeterministicPlanContext } from "./contracts";
 import type { DeterministicFinding } from "./contracts";
 import type { Change } from "../../core/domain/Change";
-import {
-  deterministicProfileOf,
-  type DeterministicStyleProfile,
-} from "../../core/domain/StyleProfile";
+import { deterministicProfileOf } from "../../core/domain/StyleProfile";
 import { findTypographyIssues } from "../../rules/typography";
 import { findHouseStyleIssues } from "../../rules/houseStyle";
 import {
@@ -895,9 +892,15 @@ export function registrySummary(): readonly {
   }));
 }
 
-/** Read the four deterministic sections off a full profile. */
-export function profileOf(profile: DeterministicStyleProfile): DeterministicStyleProfile {
-  return profile;
-}
-
+/*
+ * `profileOf` is deleted. It was exported, documented as "read the four
+ * deterministic sections off a full profile", and did nothing but return its
+ * argument — the real implementation is `deterministicProfileOf` in
+ * `core/domain`, re-exported below. The name was the misleading part: a caller
+ * reading the doc comment would reasonably believe a projection happened.
+ *
+ * It had no callers, and an exported identity function is worse than no export,
+ * because it invites one and the caller cannot tell from the signature that
+ * nothing was projected.
+ */
 export { deterministicProfileOf };

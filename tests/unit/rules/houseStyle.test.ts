@@ -40,6 +40,14 @@ const defaultHouseStyle: HouseStyle = {
   spellingVariant: "en-US",
 };
 
+/**
+ * The neutral profile: nothing configured, so nothing reported.
+ *
+ * Was a distinct object with `sentenceCase: false`, which existed to switch the
+ * deleted check off. With the field gone the two constants were the same value,
+ * and an alias of `defaultHouseStyle` under a second name is a reader's cue that
+ * they differ. One name now.
+ */
 const quietHouseStyle: HouseStyle = defaultHouseStyle;
 
 /**
