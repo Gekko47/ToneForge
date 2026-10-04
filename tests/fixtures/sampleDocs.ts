@@ -110,7 +110,11 @@ export const SAMPLE_PROFILE = {
   houseStyle: {
     preferredTerminology: {},
     bannedTerms: [],
-    capitalization: { sentenceCase: true, titleCaseWords: [] },
+    // `sentenceCase` was removed with its rule and toggle (ADR-0125). Zod strips
+    // the unknown key, so leaving it here would have been harmless and misleading:
+    // a fixture that names a field the product does not have is a fixture that
+    // reads as if it does.
+    capitalization: { titleCaseWords: [] },
     spellingVariant: "en-US",
   },
   createdAt: "2026-01-01T00:00:00.000Z",

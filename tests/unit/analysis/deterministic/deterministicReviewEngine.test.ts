@@ -597,14 +597,64 @@ describe("groupFindings", () => {
 });
 
 describe("the §26 fixture corpus", () => {
-  it("declares one fixture per case the specification names", () => {
-    expect(DETERMINISTIC_REVIEW_FIXTURES).toHaveLength(11);
-    expect(DETERMINISTIC_REVIEW_FIXTURES.map((fixture) => fixture.name)).toContain(
-      "house terminology program to programme",
+  /*
+   * Eleven from §26, plus four added by the profile-page audit.
+   *
+   * The count was the assertion and it has been split rather than raised, because
+   * "eleven" and "eleven plus what the audit added" are different claims. A bare
+   * larger number would let a fixture be deleted and another invented to keep the
+   * total, which is the shape a coverage loss takes when nothing names the loss.
+   */
+  const SPEC_CASES = 11;
+
+  it("declares one fixture per case the specification names, and names them", () => {
+    const names = DETERMINISTIC_REVIEW_FIXTURES.map((fixture) => fixture.name);
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "house terminology program to programme",
+        "em dash convention",
+        "heading 2 style",
+        "body paragraph spacing",
+        "list level mismatch",
+        "mixed direct formatting",
+        "protected quotation",
+        "table formatting",
+        "unsupported scope",
+        "profile revision between scan and apply",
+        "document edit between preview and apply",
+      ]),
     );
-    expect(DETERMINISTIC_REVIEW_FIXTURES.map((fixture) => fixture.name)).toContain(
-      "unsupported scope",
+    expect(new Set(names).size).toBe(names.length);
+    expect(DETERMINISTIC_REVIEW_FIXTURES.length).toBeGreaterThan(SPEC_CASES);
+  });
+
+  it("covers the typography fields that had no control until the audit found them", () => {
+    /*
+     * Eight typography fields were read by a rule and reachable from no UI. The
+     * corpus could not see that, because the missing thing is the thing it does
+     * not name. These cases name the whitespace convention explicitly, and the
+     * `slashSpacing` case pins the *absence* of a finding when the house has
+     * stated no opinion — which is the more dangerous half to leave untested.
+     */
+    const names = DETERMINISTIC_REVIEW_FIXTURES.map((fixture) => fixture.name);
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "a tab is a deviation",
+        "runs of spaces are a deviation",
+        "solidus spacing is a house convention",
+        "heading case is the language section's decision",
+      ]),
     );
+  });
+
+  it("names no fixture against the sentence-case category that was deleted", () => {
+    // ADR-0125. A fixture that expected it would fail; a rule that emitted it
+    // again would fail. Either way the deletion is asserted rather than assumed.
+    DETERMINISTIC_REVIEW_FIXTURES.forEach((fixture) => {
+      expect(fixture.expectedCategories).not.toContain("houseStyle.capitalization.sentenceCase");
+    });
   });
 
   it("gives every fixture an intent and at least one expectation", () => {

@@ -249,7 +249,6 @@ not converted into unsupported Word formatting commands.
 | `typography.ellipsis`                      | `findTypographyIssues`                                          | `replaceText`                                  |
 | `houseStyle.preferredTerminology`          | `findHouseStyleIssues`                                          | `replaceText`                                  |
 | `houseStyle.bannedTerms`                   | `findHouseStyleIssues`                                          | `deleteRange`                                  |
-| `houseStyle.capitalization.sentenceCase`   | `findHouseStyleIssues`                                          | `replaceText`                                  |
 | `houseStyle.capitalization.titleCaseWords` | `findHouseStyleIssues`                                          | `replaceText`                                  |
 | `houseStyle.spellingVariant`               | `findHouseStyleIssues`                                          | `replaceText`                                  |
 | `measured.*`                               | `computeMeasuredProfile` and read-only Profile UI               | No mutation without an explicit normative rule |

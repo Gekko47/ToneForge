@@ -113,7 +113,14 @@ export const REVIEW_PROFILE: StyleProfile = StyleProfileSchema.parse({
     ],
   },
   houseStyle: {
-    capitalization: { sentenceCase: true, titleCaseWords: [] },
+    /*
+     * `capitalization.sentenceCase` was removed with its rule and its toggle
+     * (ADR-0125). This corpus still declared it, and **nothing failed** — Zod
+     * strips an unknown key, so a stale field in a fixture is silently dropped
+     * and the fixture keeps working. That is worth recording here: a removed
+     * field does not announce itself, it just stops being read.
+     */
+    capitalization: { titleCaseWords: [] },
     spellingVariant: "en-GB",
   },
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -326,6 +333,58 @@ export const DETERMINISTIC_REVIEW_FIXTURES: readonly DeterministicFixture[] = [
     profile: REVIEW_PROFILE,
     expectedCategories: ["language.terminology.preferred"],
     correctableCategories: ["language.terminology.preferred"],
+  },
+
+  /*
+   * The cases below were added after the profile-page audit, and each one exists
+   * because a field was found with **no control and no test**: a setting that
+   * could be authored but never reached the pane, or reached the pane and did
+   * nothing. A corpus that only proves the eleven original cases cannot see
+   * either, because the missing thing is precisely the thing it does not name.
+   */
+  {
+    name: "a tab is a deviation",
+    intent:
+      "`typography.flagTabs` defaults on, so a tab is reported. Both tabs and runs of spaces report under `typography.whitespace` — one category, two profile paths — because a user correcting whitespace does not need to know which setting produced it.",
+    text: "A column\there in the text.",
+    profile: REVIEW_PROFILE,
+    expectedCategories: ["typography.whitespace"],
+    correctableCategories: ["typography.whitespace"],
+  },
+  {
+    name: "runs of spaces are a deviation",
+    intent:
+      "`typography.normaliseWhitespace` defaults on, so a doubled space is reported under the same category a tab is.",
+    text: "A sentence  with a doubled space.",
+    profile: REVIEW_PROFILE,
+    expectedCategories: ["typography.whitespace"],
+    correctableCategories: ["typography.whitespace"],
+  },
+  {
+    name: "solidus spacing is a house convention",
+    intent:
+      "`typography.slashSpacing` is declared but defaults to `none`, meaning no opinion: the rule does not run until a house states one.",
+    text: "Terms and/or conditions apply.",
+    profile: REVIEW_PROFILE,
+    expectedCategories: [],
+    absentCategories: {
+      "typography.punctuation":
+        "`none` is the absence of a convention, not a convention of no spaces, and `typography.punctuation` is the category the solidus rule reports under. A default that meant 'tight' would report text no house had expressed an opinion about.",
+    },
+  },
+  {
+    name: "heading case is the language section's decision",
+    intent:
+      "Sentence case in a heading is `language.capitalisation.headingCase`'s job, and it runs only once a house has chosen a convention.",
+    text: "Recovery Details For The Committee",
+    profile: REVIEW_PROFILE,
+    expectedCategories: [],
+    absentCategories: {
+      "language.capitalisation.headingCase":
+        "`headingCase` is optional and unset here. 'Optional' is the honest shape: the house has not said what case its headings use, so there is no deviation to report and no sentence to call wrong.",
+      "houseStyle.capitalization.sentenceCase":
+        "The field and its rule were deleted (ADR-0125). Nothing may report under this path, and the corpus states the absence so a resurrection would fail here rather than pass unnoticed.",
+    },
   },
 ];
 

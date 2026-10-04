@@ -138,7 +138,14 @@ const diffFields: readonly { label: string; path: readonly string[] }[] = [
   // in the changelog.
   { label: "Preferred terminology", path: ["language", "terminology"] },
   { label: "Banned terms", path: ["language", "bannedTerms"] },
-  { label: "Sentence case", path: ["houseStyle", "capitalization", "sentenceCase"] },
+  /*
+   * `houseStyle.capitalization.sentenceCase` was removed here in ADR-0125, and it
+   * was the more important of the two changes. A label list is not a declaration:
+   * a path left in it produces no error, and the diff engine would go on
+   * reporting "Sentence case: true to false" for a field that no longer exists.
+   * A user reading that would conclude the product changed a setting it cannot
+   * show them.
+   */
   { label: "Title-case words", path: ["houseStyle", "capitalization", "titleCaseWords"] },
   /*
    * The spelling variant is the one house-style field deliberately *not* wired

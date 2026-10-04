@@ -17,12 +17,18 @@ bounded spelling-variant dictionary. The engine is pure and returns the same
     wins on overlap).
   - Banned-term detection with Unicode-aware word boundaries and error
     severity.
-  - Sentence-case checking (first cased character of each sentence must be
-    uppercase when `capitalization.sentenceCase` is enabled).
-  - Title-case word checking (configured words must start with an uppercase
-    cased character).
-  - Spelling variants for `en-US`, `en-GB`, and `au` from a small data table
-    (see `SPELLING_VARIANT_TABLE`).
+
+> **Superseded in part (ADR-0125).** Sentence-case checking and
+> `capitalization.sentenceCase` were removed: the field's findings were filtered
+> out by the registry, so the toggle produced nothing a user could observe, and
+> scoped to headings it would have collided with
+> `language.capitalisation.headingCase`, which already enforces sentence case
+> there. Title-case word checking is unaffected.
+
+- Title-case word checking (configured words must start with an uppercase
+  cased character).
+- Spelling variants for `en-US`, `en-GB`, and `au` from a small data table
+  (see `SPELLING_VARIANT_TABLE`).
 - Reuses `src/core/domain/Finding` (`kind: "deterministic"`, `confidence: 1`,
   character offsets with inclusive `start` and exclusive `end`).
 - Reuses `src/shared/utils/text.ts` (`splitSentences`).
@@ -39,7 +45,6 @@ schema changes were made.
 | ------------------------------- | ---------------------------- | ------------------------------------------------------------------------- |
 | `preferredTerminology`          | `Record<string, string>`     | Term → preferred replacement. Empty keys/values are ignored.              |
 | `bannedTerms`                   | `string[]`                   | Terms flagged with `error` severity. Whitespace-only entries are ignored. |
-| `capitalization.sentenceCase`   | `boolean`                    | When `true`, a lowercase first cased character in a sentence is flagged.  |
 | `capitalization.titleCaseWords` | `string[]`                   | Words that must start with an uppercase cased character.                  |
 | `spellingVariant`               | `"en-US" \| "en-GB" \| "au"` | Selects the preferred spelling column in `SPELLING_VARIANT_TABLE`.        |
 

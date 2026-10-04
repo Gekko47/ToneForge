@@ -178,11 +178,18 @@ describe("shouldFullRescan", () => {
   });
 
   it("returns true for houseStyle capitalization findings", () => {
+    /*
+     * Was `houseStyle.capitalization.sentenceCase`, which no rule emits since
+     * ADR-0125 deleted it. The category is a free string on `Finding`, so the
+     * stale name kept the test passing — it was asserting about a category the
+     * product can no longer produce. `titleCase` is the sibling that remains,
+     * and it exercises the same branch of `shouldFullRescan`.
+     */
     const findings: Finding[] = [
       {
         id: uuidv4(),
         kind: "deterministic",
-        category: "houseStyle.capitalization.sentenceCase",
+        category: "houseStyle.capitalization.titleCase",
         range: { start: 0, end: 5, unit: "character" },
         message: "Test",
         severity: "error",
