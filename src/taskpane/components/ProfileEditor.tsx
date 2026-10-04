@@ -300,9 +300,14 @@ function sameEditableSnapshot(left: StyleProfile, right: StyleProfile): boolean 
   return diffProfiles(left, right).changedCount === 0;
 }
 
-function option(key: string, text: string): IDropdownOption {
-  return { key, text };
-}
+/*
+ * `option` is gone.
+ *
+ * It existed to build the `IDropdownOption` list for the Typography panel, which
+ * moved into `DeterministicStyleSections` — there, a closed set is rendered by
+ * `EnumSelect` as plain `[value, label]` pairs and needs no Fluent option object.
+ * The House style panel's `TextField`s and `Toggle` never used it.
+ */
 
 export interface ProfileEditorProps {
   /** Called after a save so the page can refresh its own record state. */
@@ -687,105 +692,6 @@ export default function ProfileEditor({
         capabilities={capabilities}
         onChange={(next) => patchDeterministicSections(next)}
       />
-
-      <section aria-labelledby="typography-heading" style={sectionStyle}>
-        <h3 id="typography-heading" style={sectionHeadingStyle}>
-          Typography
-        </h3>
-        <div style={gridStyle}>
-          {/*
-           * Two representations and no third (owner decision D3). The "Space"
-           * option offered a rule that reported every dash with a replacement of
-           * a plain space, which deleted the author's punctuation; it is gone
-           * with the schema value. The "Em dash spacing" dropdown that used to
-           * sit beside this one went with its field, for the reasons recorded in
-           * `TypographyRulesSchema`. The en dash dropdown below keeps its spacing
-           * control: that setting is separate and is not implicated.
-           */}
-          <Dropdown
-            label="Em dash"
-            selectedKey={values.emDash}
-            options={[option("em", "Em dash (—)"), option("hyphen", "Double hyphen (-- )")]}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue) patch({ emDash: nextValue as ProfileFormValues["emDash"] });
-            }}
-          />
-          <Dropdown
-            label="En dash spacing"
-            selectedKey={values.enDashSpacing}
-            options={[option("spaced", "Spaced"), option("tight", "Tight")]}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue)
-                patch({ enDashSpacing: nextValue as ProfileFormValues["enDashSpacing"] });
-            }}
-          />
-          <Dropdown
-            label="Double quotes"
-            selectedKey={values.doubleQuotes}
-            options={[option("curly", "Curly"), option("straight", "Straight")]}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue)
-                patch({ doubleQuotes: nextValue as ProfileFormValues["doubleQuotes"] });
-            }}
-          />
-          <Dropdown
-            label="Single quotes"
-            selectedKey={values.singleQuotes}
-            options={[option("curly", "Curly"), option("straight", "Straight")]}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue)
-                patch({ singleQuotes: nextValue as ProfileFormValues["singleQuotes"] });
-            }}
-          />
-          <Dropdown
-            label="Apostrophes"
-            selectedKey={values.apostrophes}
-            options={[option("curly", "Curly"), option("straight", "Straight")]}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue) patch({ apostrophes: nextValue as ProfileFormValues["apostrophes"] });
-            }}
-          />
-          <Dropdown
-            label="Decimal separator"
-            selectedKey={values.decimalSeparator}
-            options={[option("dot", "Dot"), option("comma", "Comma")]}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue)
-                patch({ decimalSeparator: nextValue as ProfileFormValues["decimalSeparator"] });
-            }}
-          />
-          <Dropdown
-            label="Thousands separator"
-            selectedKey={values.thousandsSeparator}
-            options={[option("none", "None"), option("space", "Space"), option("comma", "Comma")]}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue)
-                patch({ thousandsSeparator: nextValue as ProfileFormValues["thousandsSeparator"] });
-            }}
-          />
-          <Dropdown
-            label="Ellipsis"
-            selectedKey={values.ellipsis}
-            options={[
-              option("ellipsis", "Single character (… )"),
-              option("three-dots", "Three dots (... )"),
-              option("spaced-dots", "Spaced dots (. . .)"),
-            ]}
-            onChange={(_event, optionValue) => {
-              const nextValue = dropdownValue(optionValue);
-              if (nextValue) patch({ ellipsis: nextValue as ProfileFormValues["ellipsis"] });
-            }}
-          />
-        </div>
-      </section>
-
       <section aria-labelledby="house-style-heading" style={sectionStyle}>
         <h3 id="house-style-heading" style={sectionHeadingStyle}>
           House style

@@ -102,7 +102,21 @@ function sectionFrames(container: HTMLElement): HTMLDetailsElement[] {
   return [...container.querySelectorAll<HTMLDetailsElement>("details.tf-profile-section")];
 }
 
-/** The collapsible groups nested inside a section. */
+/**
+ * The collapsible groups nested inside ONE section.
+ *
+ * Taken per section rather than per page on purpose. Typography carries four
+ * groups of its own, so a page-wide list would fail the day Typography was
+ * divided -- which says nothing about Language and would leave the Language
+ * shape untested.
+ */
+function subSectionsOf(section: Element | undefined): HTMLDetailsElement[] {
+  return [
+    ...(section?.querySelectorAll<HTMLDetailsElement>("details.tf-profile-subsection") ?? []),
+  ];
+}
+
+/** Every collapsible group on the page, whichever section owns it. */
 function subSections(container: HTMLElement): HTMLDetailsElement[] {
   return [...container.querySelectorAll<HTMLDetailsElement>("details.tf-profile-subsection")];
 }
@@ -124,7 +138,7 @@ describe("the Language section sub-division (UX-4)", () => {
   it("divides Language into one collapsible group per convention", () => {
     const { container } = renderSections(CAPABLE);
     expect(
-      subSections(container).map(
+      subSectionsOf(sectionFrames(container)[0]).map(
         (group) => group.querySelector(".tf-profile-subsection-title")?.textContent,
       ),
     ).toEqual([
@@ -149,7 +163,7 @@ describe("the Language section sub-division (UX-4)", () => {
     // Every group open would be the flat list this exists to replace. One open
     // group is the compromise: seven readable titles, with the likeliest showing.
     const { container } = renderSections(CAPABLE);
-    const open = subSections(container).filter((group) => group.open);
+    const open = subSectionsOf(sectionFrames(container)[0]).filter((group) => group.open);
     expect(open).toHaveLength(1);
     expect(open[0]?.querySelector(".tf-profile-subsection-title")?.textContent).toBe("Terminology");
   });
@@ -162,11 +176,12 @@ describe("the Language section sub-division (UX-4)", () => {
      * the one holding the control they came to change.
      */
     const { container } = renderSections(CAPABLE);
-    const numbers = groupTitled(container, "Numbers");
+    const language = sectionFrames(container)[0] as HTMLElement;
+    const numbers = groupTitled(language, "Numbers");
     expect(numbers).toBeDefined();
     expect(within(numbers as HTMLElement).getByText("Percent sign")).toBeInTheDocument();
     expect(
-      within(groupTitled(container, "Dates") as HTMLElement).queryByText("Percent sign"),
+      within(groupTitled(language, "Dates") as HTMLElement).queryByText("Percent sign"),
     ).toBeNull();
   });
 
@@ -748,7 +763,28 @@ describe("DeterministicStyleSections", () => {
       expect(lastProfile(onChange).language.currency.magnitude).toBe("millions");
     });
 
-    it("offers no currency separator control, because typography owns both", () => {
+    it("puts the separators in Typography, not in Language, because typography owns both", () => {
+      /*
+       * Rewritten rather than deleted. It used to assert the separators were
+       * *nowhere on the page*, which was true while the controls lived in a
+       * separate panel and the section below was a summary. They are now here,
+       * under Typography — so the claim that still matters is that Language does
+       * not also offer them. Asserting absence everywhere would have quietly
+       * forbidden the fix; asserting absence in one section pins the ownership.
+       */
+      const { container } = renderSections(CAPABLE);
+      expect(
+        within(sectionFrames(container)[0] as HTMLElement).queryByLabelText("Decimal separator"),
+      ).toBeNull();
+      expect(
+        within(sectionFrames(container)[0] as HTMLElement).queryByLabelText("Thousands separator"),
+      ).toBeNull();
+      // And they are reachable, under Typography.
+      expect(screen.getByLabelText("Decimal separator")).toBeInTheDocument();
+      expect(screen.getByLabelText("Thousands separator")).toBeInTheDocument();
+    });
+
+    it("no longer claims the separators have no control anywhere", () => {
       renderSections(CAPABLE);
       /*
        * A second control for the same characters is the two-owners defect ND-2
@@ -756,8 +792,7 @@ describe("DeterministicStyleSections", () => {
        * currency-scoped owner reporting the same comma would put two changes over
        * one offset and let the planner refuse the whole plan.
        */
-      expect(screen.queryByLabelText("Thousands separator")).not.toBeInTheDocument();
-      expect(screen.queryByLabelText("Decimal separator")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Title-case words (one per line)")).not.toBeInTheDocument();
     });
 
     it("writes the unit conventions, including the preferred symbol D4 added", () => {

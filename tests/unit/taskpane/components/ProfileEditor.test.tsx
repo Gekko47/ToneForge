@@ -445,31 +445,43 @@ describe("ProfileEditor", () => {
     expect(mocks.setActiveProfile).not.toHaveBeenCalled();
   });
 
-  it("renders a visible caret icon on the deterministic dropdowns", () => {
-    const { container } = render(<ProfileEditor />);
+  it("no longer offers a second editor for the typography settings", () => {
     /*
-     * These are Fluent `Dropdown`s, not the `ComboBox`es this test used to
-     * cover. A ComboBox puts a caret *button* beside the input; a Dropdown puts
-     * the caret `<i>` *inside* the combobox element alongside the title, and
-     * that element is itself the `role="combobox"` node. So there is no ancestor
-     * walk and no button to find — querying the combobox directly is correct.
+     * Replaces a test that asserted a Fluent caret icon on the Typography
+     * `Dropdown`s this component used to render. Those moved into
+     * `DeterministicStyleSections`, which is now the single owner (D-1).
      *
-     * Names are prefix-matched because Fluent builds the accessible name from
-     * the label plus the selected option ("Double quotes Curly"), and "Em dash"
-     * would additionally match "Em dash spacing", which throws on two matches.
+     * The caret is the browser's on a native `<select>`, so there is nothing
+     * left to assert about it here. What does matter — and what this now pins —
+     * is that each setting is editable from exactly one place, which is the
+     * two-owners defect the move was made to close.
+     *
+     * Note the count, not the presence: `ProfileEditor` *renders*
+     * `DeterministicStyleSections`, so these labels are still in the tree. What
+     * must not be true is a second copy sitting beside them — asserting absence
+     * of the label would have tested the wrong thing and passed for the wrong
+     * reason.
      */
-    // The spelling-variant dropdown is gone with its rule (spec §4.3), so the
-    // list is the dropdowns that still exist.
-    ["Double quotes", "Apostrophes"].forEach((label) => {
-      const field = within(container).getByRole("combobox", {
-        name: (name) => name.startsWith(label),
-      });
-      const caret = field.querySelector("i.ms-Dropdown-caretDown");
-      expect(caret).toBeTruthy();
-      expect(caret?.getAttribute("data-icon-name")).toBe("ChevronDown");
-      // Decorative: the combobox announces its own value, so the caret must not
-      // be an extra node a screen reader reads out.
-      expect(caret?.getAttribute("aria-hidden")).toBe("true");
+    const { container } = render(<ProfileEditor />);
+    ["Em dash", "Double quotes", "Thousands separator"].forEach((label) => {
+      expect(screen.getAllByLabelText(label)).toHaveLength(1);
     });
+    // And the panel that used to hold them is gone entirely.
+    expect(container.querySelector('[aria-labelledby="typography-heading"]')).toBeNull();
   });
+
+  /*
+   * Removed rather than skipped.
+   *
+   * It asserted that a Fluent `Dropdown` renders a visible `ChevronDown` caret
+   * that is `aria-hidden`, because the combobox announces its own value and the
+   * caret must not be read out as a second node. That knowledge applies to every
+   * Fluent dropdown in the add-in, so it is recorded here rather than lost with
+   * the dropdowns.
+   *
+   * It could not stay as a test: this component renders no Fluent dropdowns now.
+   * A `Dropdown`'s caret is an `<i class="ms-Dropdown-caretDown">` *inside* the
+   * combobox element, not a sibling button, so there is no ancestor walk to find.
+   * A test of it belongs beside a Fluent dropdown that still exists.
+   */
 });

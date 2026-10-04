@@ -38,6 +38,7 @@ import {
   NumberProfileSchema,
   PageStandardSchema,
   TableFormattingStandardSchema,
+  TypographyRulesSchema,
   UnitProfileSchema,
   type AbbreviationProfile,
   type CapitalisationProfile,
@@ -609,14 +610,25 @@ export default function DeterministicStyleSections({
       ),
     );
   /*
-   * No `patchTypography`, and that is deliberate.
+   * `patchTypography` used not to exist, and the comment explaining why is worth
+   * keeping in its new form.
    *
-   * Every typography setting already has a named control in the Typography
-   * panel above, each one bound to the exact dropdown the rule reads. A second
-   * editor for the same section would give the user two places to change one
-   * setting, and the section here exists to summarise and to hold what has no
-   * control yet — not to duplicate what does.
+   * It read: every typography setting already has a named control in the
+   * Typography panel, so a second editor here would give the user two places to
+   * change one setting. That reasoning was right and is now spent — the panel is
+   * the thing that moves here, so this section becomes the single owner (D-1).
+   * The constraint it described is the reason this section has controls at all.
+   *
+   * It commits through the schema rather than writing the raw object, for the
+   * same reason every other patcher below does: a value that does not parse must
+   * never reach the profile. Typography has no half-typed free text, so a plain
+   * `parse` (not `safeParse`) is enough — there is no keystroke to survive.
    */
+  const patchTypography = (values: Record<string, unknown>): void =>
+    onChange(
+      set(profile, "typography", TypographyRulesSchema.parse({ ...profile.typography, ...values })),
+    );
+
   /*
    * A commit that is allowed to fail.
    *
@@ -671,6 +683,17 @@ export default function DeterministicStyleSections({
   const units = profile.language.units;
   const patchUnits = (values: Record<string, unknown>): void =>
     patchLanguage({ units: UnitProfileSchema.parse({ ...units, ...values }) });
+
+  /*
+   * Read once, like every other subsection above.
+   *
+   * Not merely a shorthand: the eight controls below each commit through
+   * `patchTypography`, which parses the *whole* rules object. Reading
+   * `profile.typography.x` inline at each site would be correct today and wrong
+   * the moment two controls could commit in the same render — and the mismatch
+   * would surface as one dropdown silently reverting the other's change.
+   */
+  const typography = profile.typography;
 
   /*
    * The settings whose third state is "the house has not said".
@@ -1323,10 +1346,120 @@ export default function DeterministicStyleSections({
         summary="Dashes, quotes, ellipses, and the whitespace and spacing conventions this house prints in."
         supported={capabilities === null ? null : true}
       >
-        <p className="tf-sub">
-          The individual dash, quote and ellipsis controls are in the Typography panel above; this
-          section is the normative summary the rules read.
-        </p>
+        {/*
+         * The controls that used to live in a second panel further down the page.
+         *
+         * They were there and not here because this section was written as a
+         * summary — a Typography heading whose entire body pointed at another
+         * panel to say where its own settings were. That is D-1: two headings,
+         * one meaning, and a reader left to work out which owns the setting.
+         * Bringing them here makes this section the single owner, which is the
+         * same principle Phase 2 applied to the schema and Stage B to terminology.
+         *
+         * `EnumSelect`, not the Fluent `Dropdown` the old panel used. Every other
+         * dropdown on this page is an `EnumSelect`, so using Fluent here would
+         * make Typography the one section that looks different — the exact
+         * complaint that started this. Migrating the page to Fluent is a separate
+         * pass that has to move *everything* at once for the same reason.
+         */}
+        <ProfileSubsection id="typography-dashes" title="Dashes">
+          <EnumSelect
+            label="Em dash"
+            value={typography.emDash}
+            options={[
+              ["em", "Em dash (—)"],
+              ["hyphen", "Double hyphen (-- )"],
+            ]}
+            onChange={(next) => patchTypography({ emDash: next })}
+          />
+          <EnumSelect
+            label="En dash spacing"
+            hint="Whether an en dash takes a space on either side."
+            value={typography.enDashSpacing}
+            options={[
+              ["spaced", "Spaced"],
+              ["tight", "Tight"],
+            ]}
+            onChange={(next) => patchTypography({ enDashSpacing: next })}
+          />
+        </ProfileSubsection>
+
+        <ProfileSubsection id="typography-quotes" title="Quotes" defaultOpen>
+          <EnumSelect
+            label="Double quotes"
+            value={typography.doubleQuotes}
+            options={[
+              ["curly", "Curly"],
+              ["straight", "Straight"],
+            ]}
+            onChange={(next) => patchTypography({ doubleQuotes: next })}
+          />
+          <EnumSelect
+            label="Single quotes"
+            value={typography.singleQuotes}
+            options={[
+              ["curly", "Curly"],
+              ["straight", "Straight"],
+            ]}
+            onChange={(next) => patchTypography({ singleQuotes: next })}
+          />
+          <EnumSelect
+            label="Apostrophes"
+            value={typography.apostrophes}
+            options={[
+              ["curly", "Curly"],
+              ["straight", "Straight"],
+            ]}
+            onChange={(next) => patchTypography({ apostrophes: next })}
+          />
+        </ProfileSubsection>
+
+        <ProfileSubsection id="typography-ellipsis" title="Ellipsis">
+          <EnumSelect
+            label="Ellipsis"
+            value={typography.ellipsis}
+            options={[
+              ["ellipsis", "Single character (…)"],
+              ["three-dots", "Three dots (...)"],
+              ["spaced-dots", "Spaced dots (. . .)"],
+            ]}
+            onChange={(next) => patchTypography({ ellipsis: next })}
+          />
+        </ProfileSubsection>
+
+        {/*
+         * The decimal and thousands separators belong here, not under
+         * Language → Numbers. They are declared only in `typography`, and the
+         * language numbers schema deliberately carries no separator fields —
+         * moving them the other way is the two-owners defect D2 was opened for,
+         * and it is why this group is named for what it holds rather than
+         * dropped into the section that looks similar.
+         */}
+        <ProfileSubsection
+          id="typography-separators"
+          title="Numbers and separators"
+          summary="How figures are grouped and where the decimal mark goes."
+        >
+          <EnumSelect
+            label="Decimal separator"
+            value={typography.decimalSeparator}
+            options={[
+              ["dot", "Dot"],
+              ["comma", "Comma"],
+            ]}
+            onChange={(next) => patchTypography({ decimalSeparator: next })}
+          />
+          <EnumSelect
+            label="Thousands separator"
+            value={typography.thousandsSeparator}
+            options={[
+              ["none", "None"],
+              ["space", "Space"],
+              ["comma", "Comma"],
+            ]}
+            onChange={(next) => patchTypography({ thousandsSeparator: next })}
+          />
+        </ProfileSubsection>
       </ProfileSection>
 
       <ProfileSection
