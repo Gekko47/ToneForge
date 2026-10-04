@@ -101,15 +101,30 @@ Profile page
 **Typography moves into `DeterministicStyleSections`**, which already owns the
 collapsible frame and the host-capability marking. D-1 dies by construction.
 
-**House style dissolves** (D-b):
+**House style: two controls deleted, two kept and relabelled** (owner decision
+2026-10-04). The plan originally sent title-case words and sentence case to
+Language → Capitalisation. That was wrong, and the registry says so:
 
-| Control               | Disposition                                         |
-| --------------------- | --------------------------------------------------- |
-| Preferred terminology | Deleted — duplicate owner (D-2)                     |
-| Banned terms          | Deleted — duplicate owner (D-2)                     |
-| Title-case words      | → Language → Capitalisation                         |
-| Sentence case         | → Language → Capitalisation                         |
-| Spelling variant      | Stays absent — no rule reads it (existing decision) |
+| Field                                      | Read by                             | Status |
+| ------------------------------------------ | ----------------------------------- | ------ |
+| `houseStyle.capitalization.sentenceCase`   | `houseStyle.ts` `checkSentenceCase` | live   |
+| `language.capitalisation.sentenceCase`     | `language.ts` `findCapitalisation…` | live   |
+| `houseStyle.capitalization.titleCaseWords` | `houseStyle.ts`                     | live   |
+
+Two different behaviours sharing a name. Filing them under Language would have
+misfiled them and implied a shared behaviour that does not exist.
+
+| Control               | Disposition                                |
+| --------------------- | ------------------------------------------ |
+| Preferred terminology | Deleted — duplicate owner (D-2)            |
+| Banned terms          | Deleted — duplicate owner (D-2)            |
+| Title-case words      | Kept; panel renamed                        |
+| Sentence case         | Kept; the label names the rule it drives   |
+| Spelling variant      | Stays absent — no rule reads it (existing) |
+
+The panel is now **Capital case defaults**, with a line stating these are
+separate from Language's. The hazard was never which file they lived in — it was
+two toggles reading almost identically.
 
 > **Ownership verified (D2).** `decimalSeparator` and `thousandsSeparator` are
 > declared **only** in `typography`

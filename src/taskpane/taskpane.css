@@ -440,6 +440,54 @@ button.tf-native-button:disabled {
   opacity: 0.55;
 }
 
+/*
+ * The profile editor's own layout, moved out of JavaScript (S6).
+ *
+ * These four rules replace `sectionStyle`, `sectionHeadingStyle`, `gridStyle` and
+ * `buttonStyle` in `ProfileEditor`. The heading carried `fontSize: 20`, a value
+ * on no ramp and used nowhere else — and the lint guard could not see it,
+ * because the guard bans colour literals and a font size is not a colour.
+ *
+ * Declared here so the type ramp (S7) can reach them: a heading size fixed in a
+ * `React.CSSProperties` object cannot be moved onto Microsoft's 21/17/14/12
+ * steps without editing every component that holds one.
+ */
+.tf-editor-panel {
+  border: 1px solid var(--tf-border);
+  border-radius: 4px;
+  margin-bottom: 20px;
+  padding: 16px;
+}
+
+.tf-editor-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.tf-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tf-editor-actions-spaced {
+  margin-top: 12px;
+}
+
+.tf-editor-action {
+  margin-top: 16px;
+}
+
+.tf-editor-note {
+  margin-top: 12px;
+}
+
+.tf-editor-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
 .tf-title {
   font-size: 14px;
   font-weight: 600;

@@ -292,12 +292,27 @@ describe("ProfileEditor", () => {
   });
 
   it("shows a terminology parse error instead of crashing", async () => {
+    /*
+     * Re-pointed rather than deleted, because the guarantee is still owed by the
+     * product: a malformed line must be reported, not thrown. The textarea this
+     * used to drive was the duplicate House style editor; the one remaining
+     * textarea for this format is the bulk-add (ADR-0123), so that is where the
+     * promise is kept now.
+     *
+     * `container.querySelector` opens the disclosure the way a user would — a
+     * closed `<details>` hides its contents from the accessibility tree, so the
+     * box cannot be reached any other way.
+     */
     const user = userEvent.setup();
     const { container } = render(<ProfileEditor />);
-    const terminologyInput = within(container).getByRole("textbox", {
-      name: (name) => name.startsWith("Preferred terminology"),
-    });
+    const details = container.querySelector<HTMLDetailsElement>("details.tf-bulk-add");
+    expect(details).not.toBeNull();
+    if (details === null) throw new Error("the bulk-add disclosure did not render");
+    details.open = true;
 
+    const terminologyInput = within(details).getByRole("textbox", {
+      name: /Paste terms/,
+    });
     await user.clear(terminologyInput);
     await user.type(terminologyInput, "no colon here");
 

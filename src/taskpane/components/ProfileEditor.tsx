@@ -85,36 +85,21 @@ interface ProfileValidation {
 // The `term: replacement` parser lives in `settings/terminologyText` so the
 // governance policy editor cannot ship a second, subtly different one.
 
-/**
- * Section frame.
+/*
+ * The four layout objects that used to live here are gone (S6).
  *
- * The border was a literal `#edebe9` — the light theme's own neutral, pasted
- * in — so this editor's frames stayed that one colour in the dark theme while
- * every other surface followed the token. `var(--tf-border)` is the same
- * declaration the stylesheet already uses, resolved per theme by the class on
- * the document element.
+ * `sectionStyle` and `sectionHeadingStyle` were the D-5 defect in miniature: an
+ * inline `fontSize: 20` that no theme token could reach, no stylesheet rule could
+ * override on load order, and the lint guard did not catch — it bans colour
+ * literals, and a font size is not a colour. The border had already been fixed
+ * once, from a pasted `#edebe9` to `var(--tf-border)`, and the fix only reached
+ * that one declaration because the other three lived in JavaScript where the
+ * stylesheet could not see them.
+ *
+ * They are now `.tf-editor-panel`, `.tf-editor-grid` and `.tf-editor-actions` in
+ * `taskpane.css`, so the type ramp (S7) can reach them and a theme can re-skin
+ * them without a component change.
  */
-const sectionStyle: React.CSSProperties = {
-  border: "1px solid var(--tf-border)",
-  borderRadius: 4,
-  marginBottom: 20,
-  padding: 16,
-};
-
-const sectionHeadingStyle: React.CSSProperties = {
-  fontSize: 20,
-  margin: "0 0 12px",
-};
-
-const gridStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 12,
-  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-};
-
-const buttonStyle: React.CSSProperties = {
-  marginTop: 16,
-};
 
 function dropdownValue(option: IDropdownOption | undefined): string | null {
   return option && typeof option.key === "string" ? option.key : null;
@@ -587,7 +572,7 @@ export default function ProfileEditor({
 
       {renderMessageBar()}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+      <div className="tf-editor-actions tf-editor-actions-spaced">
         <Dropdown
           label="Saved profiles"
           selectedKey={baseProfile.id}
@@ -627,15 +612,15 @@ export default function ProfileEditor({
         disclosure: the sentence carries the state, the list carries the
         history, and the field above carries the number.
       */}
-      <p className="tf-sub" style={{ marginTop: 12 }}>
+      <p className="tf-sub tf-editor-note">
         {hasHistory
           ? `${historyCount} revision(s) recorded. Saving assigns the next revision.`
           : "No revisions yet — save to record the first revision."}
       </p>
       {hasHistory && (
-        <details style={{ marginTop: 12 }}>
+        <details className="tf-editor-note">
           <summary className="tf-sub">Revision history</summary>
-          <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+          <ul className="tf-editor-list">
             {history.map((snapshot, index) => (
               <li key={`${snapshot.id}-${snapshot.updatedAt}-${index}`}>
                 {formatRevision(snapshot.revision)} —{" "}
@@ -664,7 +649,7 @@ export default function ProfileEditor({
         tone, voice, vocabulary or metrics. This note says so, because a
         section that disappeared with no explanation reads as data loss.
       */}
-      <p className="tf-sub" style={{ marginTop: 12 }}>
+      <p className="tf-sub tf-editor-note">
         {baseProfile.sourceSampleIds.length === 0
           ? "No source samples are linked to this profile."
           : `${baseProfile.sourceSampleIds.length} source sample(s) linked.`}{" "}
@@ -692,27 +677,36 @@ export default function ProfileEditor({
         capabilities={capabilities}
         onChange={(next) => patchDeterministicSections(next)}
       />
-      <section aria-labelledby="house-style-heading" style={sectionStyle}>
-        <h3 id="house-style-heading" style={sectionHeadingStyle}>
-          House style
-        </h3>
-        <div style={gridStyle}>
-          <TextField
-            label="Preferred terminology (one “term: replacement” per line)"
-            multiline
-            rows={5}
-            value={values.preferredTerminology}
-            errorMessage={fieldErrors["language.terminology"] ?? ""}
-            onChange={(_event, value) => patch({ preferredTerminology: value ?? "" })}
-          />
-          <TextField
-            label="Banned terms (one per line)"
-            multiline
-            rows={4}
-            value={values.bannedTerms}
-            errorMessage={fieldErrors["language.bannedTerms"] ?? ""}
-            onChange={(_event, value) => patch({ bannedTerms: value ?? "" })}
-          />
+      {/*
+       * What is left here, and why so little (D-2, S3/S4).
+       *
+       * This panel used to hold four controls. Two of them — preferred
+       * terminology and banned terms — were a *second* editor for fields the
+       * Language section already owned, in a lossy format: a line can express a
+       * substitution and none of `severity`, `caseSensitive`, `wholeWord` or
+       * `scope`. That is the two-owners defect, and it is why the terminology
+       * editor was replaced by a bulk paste that produces real rows (ADR-0123).
+       *
+       * The two that remain are genuinely different behaviours from the
+       * similarly-named ones under Language:
+       *
+       *   houseStyle.capitalization.sentenceCase  -> houseStyle.ts `checkSentenceCase`
+       *   language.capitalisation.sentenceCase    -> language.ts  `findCapitalisationIssues`
+       *
+       * Both are live and both are registered, so neither control can be deleted.
+       * They were left in place deliberately (owner decision) rather than merged,
+       * because merging them would change which rules fire — a product change,
+       * not a tidy-up. What was fixed is the *labelling*: two toggles reading
+       * almost the same were the real hazard, and the one below now says which
+       * rule it belongs to.
+       */}
+      <section aria-labelledby="house-style-heading" className="tf-editor-panel">
+        <h3 id="house-style-heading">Capital case defaults</h3>
+        <p className="tf-sub">
+          Two house-style capitalisation rules. They are separate from the capitalisation settings
+          under Language, which are checked by different rules.
+        </p>
+        <div className="tf-editor-grid">
           <TextField
             label="Title-case words (one per line)"
             multiline
@@ -731,10 +725,10 @@ export default function ProfileEditor({
            * before the rule was removed is not silently reset on save.
            */}
           <Toggle
-            label="Use sentence case by default"
+            label="House-style rule: flag a sentence that does not open with a capital letter"
             checked={values.capitalizationSentenceCase}
-            onText="Sentence case on"
-            offText="Sentence case off"
+            onText="Checked"
+            offText="Not checked"
             onChange={(_event, value) => patch({ capitalizationSentenceCase: value ?? false })}
           />
         </div>
@@ -742,20 +736,20 @@ export default function ProfileEditor({
 
       <VersionDiff savedProfile={savedProfile} currentProfile={validation.profile} />
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      <div className="tf-editor-actions">
         <PrimaryButton
           text="Save profile"
           onClick={save}
           disabled={!derivedDirty}
-          style={buttonStyle}
+          className="tf-editor-action"
         />
         <DefaultButton
           text="Reset changes"
           onClick={reset}
           disabled={!derivedDirty}
-          style={buttonStyle}
+          className="tf-editor-action"
         />
-        <DefaultButton text="New profile" onClick={createNewProfile} style={buttonStyle} />
+        <DefaultButton text="New profile" onClick={createNewProfile} className="tf-editor-action" />
       </div>
     </div>
   );
