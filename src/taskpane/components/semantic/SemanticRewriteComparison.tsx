@@ -34,11 +34,13 @@ export default function SemanticRewriteComparison({
       )}
       <div className="tf-evidence-split">
         <div>
-          <h3 className="tf-sub">Yours</h3>
+          {/* No `tf-sub` on either: these are headings, and a body class
+              rendered them at body size. */}
+          <h3>Yours</h3>
           <p>{original}</p>
         </div>
         <div>
-          <h3 className="tf-sub">Proposed</h3>
+          <h3>Proposed</h3>
           <p>{revised}</p>
         </div>
       </div>

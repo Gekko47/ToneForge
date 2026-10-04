@@ -61,9 +61,9 @@ export default function Home({ onNavigate, setup }: HomeProps): React.ReactNode 
 
       {setup.blocksScanning ? (
         <section aria-labelledby="home-scanning-heading" className="tf-readiness">
-          <h2 id="home-scanning-heading" className="tf-sub">
-            While there is no deterministic style profile
-          </h2>
+          {/* No `tf-sub`: a body class on a heading renders it as body text.
+              The element ramp gives it the section size it is actually for. */}
+          <h2 id="home-scanning-heading">While there is no deterministic style profile</h2>
           <p>
             This document is not scanned and no correction can be applied, because every
             deterministic check is measured against a style profile. Once one exists, scanning
@@ -88,9 +88,7 @@ export default function Home({ onNavigate, setup }: HomeProps): React.ReactNode 
       */}
       {setup.complete ? (
         <section aria-labelledby="home-done-heading">
-          <h2 id="home-done-heading" className="tf-sub">
-            Nothing is outstanding
-          </h2>
+          <h2 id="home-done-heading">Nothing is outstanding</h2>
           <p>
             Deterministic review is on the Deterministic Review tab, semantic review is on Semantic
             Review, and the style it uses is on Semantic Style. All are one click away in the

@@ -137,7 +137,9 @@ export default function FindingsList({
 
   return (
     <section aria-label="Findings list">
-      <h3 className="tf-sub">{findings.length} finding(s)</h3>
+      {/* No `tf-sub`: that is a body class, and a count is not body copy.
+          The element ramp gives this the subhead size it is being. */}
+      <h3>{findings.length} finding(s)</h3>
       <div id={id} role="listbox" aria-label="Findings" aria-orientation="vertical">
         {shown.map(({ unit, start }) => {
           if (unit.kind === "group") {

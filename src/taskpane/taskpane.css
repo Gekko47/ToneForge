@@ -14,6 +14,40 @@
   --tf-success: #0b6a0b;
 }
 
+/*
+ * The type ramp (S7/S9).
+ *
+ * Six sizes, straight from Microsoft's table for Office add-ins, expressed in px
+ * so they cannot drift with a root font size. Declared once, outside the theme
+ * blocks on purpose: these are the *shape* of the interface, not its colour, and
+ * a theme that re-declared them could make a heading a different size in dark
+ * mode from the same heading in light.
+ *
+ *   Title     21px  Segoe Light   page title
+ *   Subtitle  17px  Semibold      section
+ *   Body      14px  Regular       body and controls
+ *   Caption   12px  Regular       hints and secondary text
+ *   Annotation 11px Regular       fieldset legends and badges
+ *
+ * Spacing is on the 4px grid Office uses, so a pane's padding is a multiple of
+ * the same unit the type is measured in.
+ */
+:root,
+.tf-theme-light {
+  --tf-font-title: 21px;
+  --tf-font-subtitle: 17px;
+  --tf-font-body: 14px;
+  --tf-font-caption: 12px;
+  --tf-font-annotation: 11px;
+
+  --tf-space-1: 4px;
+  --tf-space-2: 8px;
+  --tf-space-3: 12px;
+  --tf-space-4: 16px;
+  --tf-space-5: 20px;
+  --tf-margin-page: 20px;
+}
+
 /* `color-scheme` lets the user agent render its own widgets — select popups,
    checkboxes, scrollbars, the text-field caret — against the active theme
    instead of the light default. */
@@ -488,10 +522,50 @@ button.tf-native-button:disabled {
   padding-left: 20px;
 }
 
+/*
+ * The heading ramp (S7).
+ *
+ * **Why four element rules and not four classes.** Roughly twenty-five `<h2>`s
+ * in this pane carry no class at all, so they were rendering at the user agent's
+ * default — about 24px, with the UA's own margins — beside a 14px "h1" and a
+ * 20px inline "h3". That is the whole inconsistency, and adding classes to
+ * twenty-five files would have left the next bare `<h2>` to fall back again.
+ *
+ * One rule per level means a bare heading can no longer fall back, and a heading
+ * that *does* carry a class only has to override the size, not restate weight and
+ * margin.
+ *
+ * Weights are 400 rather than Microsoft's Segoe Semilight. Semilight reads as
+ * under-weight beside a semibold subhead at this width; the *sizes* are
+ * Microsoft's, unchanged.
+ */
+h1,
 .tf-title {
-  font-size: 14px;
+  font-size: var(--tf-font-title);
   font-weight: 600;
-  margin: 0 0 8px 0;
+  line-height: 1.2;
+  margin: 0 0 var(--tf-space-3);
+}
+
+h2 {
+  font-size: var(--tf-font-subtitle);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: var(--tf-space-5) 0 var(--tf-space-2);
+}
+
+h3 {
+  font-size: var(--tf-font-body);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: var(--tf-space-3) 0 var(--tf-space-1);
+}
+
+h4 {
+  font-size: var(--tf-font-caption);
+  font-weight: 600;
+  line-height: 1.4;
+  margin: var(--tf-space-2) 0 var(--tf-space-1);
 }
 
 .tf-button {
