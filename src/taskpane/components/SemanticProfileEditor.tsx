@@ -204,7 +204,7 @@ function Section(props: {
     <details className="tf-collapsible">
       <summary className="tf-sub">{props.title}</summary>
       <p className="tf-sub">{props.summary}</p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>{props.children}</div>
+      <div className="tf-inline-row tf-inline-row-wrap">{props.children}</div>
     </details>
   );
 }

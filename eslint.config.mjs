@@ -89,6 +89,34 @@ export default [
           message:
             "Use a theme token such as var(--tf-surface) instead of a colour literal; tokens are defined in src/taskpane/taskpane.css and flip with the theme.",
         },
+        /*
+         * Font sizes, added in S10 — the gap this file's colour rule left open.
+         *
+         * `ProfileEditor` carried `sectionHeadingStyle = { fontSize: 20 }` for
+         * years. It survived because 20 is not a colour, so the rule above had
+         * nothing to say about it, and because a size inside a
+         * `React.CSSProperties` object cannot be changed by a stylesheet rule or
+         * by the heading ramp added later. The result was a 20px section heading
+         * beside a 14px page title: an inverted hierarchy no rule could reach.
+         *
+         * Only sizes on the ramp are allowed, so a value that means something
+         * cannot be written where it cannot be changed. The ramp itself lives in
+         * `taskpane.css`; `fluentTheme.ts` is exempt below for the same reason
+         * the colour rule exempts it — it defines the palette, so a literal there
+         * is the definition rather than an escape from it.
+         */
+        {
+          selector:
+            "Property[key.name=/^(fontSize|font-size)$/] > Literal[value=/^\\d+(\\.\\d+)?(px|rem|em)?$/]",
+          message:
+            "Use a type token from src/taskpane/taskpane.css instead of a hard-coded font size; the ramp is --tf-font-title / subtitle / body / caption / annotation.",
+        },
+        {
+          selector:
+            "JSXAttribute[name.name='style'] > JSXExpressionContainer > ObjectExpression > Property[key.name=/^(fontSize|font-weight|lineHeight)$/]",
+          message:
+            "Style in the stylesheet rather than an inline style object: an inline size cannot be re-themed or moved onto the type ramp.",
+        },
       ],
     },
   },

@@ -86,7 +86,7 @@ export default function ApplyResultBlock({
             without opening a per-change table, and a reader who wants the
             detail scrolls past a sentence rather than a wall.
           */}
-          <p style={{ margin: 0, fontSize: "0.85rem" }}>
+          <p className="tf-detail">
             {verifiedCount} verified
             {unverifiedCount > 0 && `, ${unverifiedCount} written but not confirmed`}
             {failedCount > 0 && `, ${failedCount} not applied`}.
@@ -128,7 +128,7 @@ export default function ApplyResultBlock({
             reassurance, and only the first renders the error above.
           */}
           {remainingFindings !== null && (
-            <p style={{ margin: "0.35rem 0 0", fontSize: "0.85rem" }}>
+            <p className="tf-detail tf-detail-spaced-1">
               {remainingFindings.summary.total === 0
                 ? "No deviations remain in the parts of the document this review covers."
                 : `${remainingFindings.summary.total} ${plural(remainingFindings.summary.total, "issue")} still ${remainingFindings.summary.total === 1 ? "stands" : "stand"} after Apply.`}

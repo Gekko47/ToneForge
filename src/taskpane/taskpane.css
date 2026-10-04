@@ -644,6 +644,55 @@ h4 {
   color: var(--tf-success);
 }
 
+/*
+ * The detail line: the counts, the scope list, the note under a result.
+ *
+ * Eleven components rendered this as `<p style={{ margin: …, fontSize:
+ * "0.85rem" }}>`, which made "smaller than body text" a per-component
+ * decision rather than a ramp step — 0.85rem of a 16px root is 13.6px, which
+ * is on no step at all. The size is now the caption step, the leading is on
+ * the 4px spacing grid, and one rule owns all three. The margins used to be
+ * 0, 0.25rem, 0.35rem and 0.5rem at the same call sites, so the gap between
+ * two detail lines in one panel was inconsistent before this rule existed.
+ */
+.tf-detail {
+  margin: 0;
+  font-size: var(--tf-font-caption);
+}
+
+.tf-detail-spaced-1 {
+  margin-top: var(--tf-space-1);
+}
+
+.tf-detail-spaced-2 {
+  margin-top: var(--tf-space-2);
+}
+
+/* 1.1rem matches .tf-coverage-reasons and .tf-apply-result-list, which are
+ * the two lists this class sits beside; a fourth indention for the same list
+ * would be the inconsistency, not the fix. */
+.tf-detail-list {
+  padding-left: 1.1rem;
+}
+
+/*
+ * A row of controls.
+ *
+ * Three components inlined `display: flex` and a gap, and two of them were
+ * byte-identical — so the same row appeared at a 0.5rem gap in one place and a
+ * 12px gap in another. Layout belongs here for the same reason type does: it
+ * cannot be re-themed or re-spaced from the component that sets it.
+ */
+.tf-inline-row {
+  display: flex;
+  gap: var(--tf-space-2);
+}
+
+.tf-inline-row-wrap {
+  flex-wrap: wrap;
+  gap: var(--tf-space-3);
+}
+
 /* The coverage verdict. It was an inline style object carrying a light-theme
    palette, so in dark mode it painted a near-white panel with dark text. The
    border carries the verdict in `--tf-danger`/`--tf-success`, and the panel

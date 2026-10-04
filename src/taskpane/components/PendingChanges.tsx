@@ -401,7 +401,7 @@ export default function PendingChanges({
       </div>
 
       {result && (
-        <p style={{ marginTop: "0.5rem", fontSize: "0.85rem" }} aria-live="polite">
+        <p className="tf-detail tf-detail-spaced-2" aria-live="polite">
           {result}
         </p>
       )}

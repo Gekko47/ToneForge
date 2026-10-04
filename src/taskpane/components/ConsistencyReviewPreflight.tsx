@@ -66,7 +66,7 @@ export default function ConsistencyReviewPreflight({
         </p>
       )}
       <p>Nothing in your document is changed by this review.</p>
-      <div style={{ display: "flex", gap: "0.5rem" }}>
+      <div className="tf-inline-row">
         <button className="tf-native-button" type="button" onClick={onStart} disabled={disabled}>
           Start consistency review
         </button>

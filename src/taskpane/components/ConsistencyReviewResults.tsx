@@ -321,7 +321,7 @@ export default function ConsistencyReviewResults({
        * own coverage statement, which is the only arrangement where the number
        * beside the list means what it says.
        */}
-      <div style={{ display: "flex", gap: "0.5rem" }}>
+      <div className="tf-inline-row">
         <button className="tf-native-button" type="button" onClick={onDismiss}>
           Dismiss
         </button>

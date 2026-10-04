@@ -202,7 +202,7 @@ export default function CoverageBanner({
           )}
 
           {deterministicCoverage !== null && (
-            <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
+            <p className="tf-detail tf-detail-spaced-1">
               Examined {deterministicCoverage.paragraphsExamined.toLocaleString()} paragraphs,{" "}
               {deterministicCoverage.headingsExamined.toLocaleString()} headings,{" "}
               {deterministicCoverage.listsExamined.toLocaleString()} list items,{" "}
@@ -213,7 +213,7 @@ export default function CoverageBanner({
           )}
 
           {coverage !== null && coverage.revisedCharacterCount > 0 && (
-            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+            <p className="tf-detail">
               {coverage.revisedCharacterCount.toLocaleString()} characters changed in the current
               workflow.
             </p>
@@ -227,7 +227,7 @@ export default function CoverageBanner({
           */}
           {deterministicCoverage !== null &&
             (deterministicCoverage.unsupportedScopes ?? []).length > 0 && (
-              <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem" }}>
+              <p className="tf-detail tf-detail-spaced-2">
                 Not checked because this Word host cannot read them:{" "}
                 {listScopes(deterministicCoverage.unsupportedScopes)}. A different Word version, or
                 turning the scope off in the governance policy, will change this.
@@ -235,19 +235,19 @@ export default function CoverageBanner({
             )}
 
           {namedExcludedScopes.length > 0 && (
-            <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
+            <p className="tf-detail tf-detail-spaced-1">
               Outside the current analysis scope: {listScopes(namedExcludedScopes)}.
             </p>
           )}
 
           {coverage !== null && coverage.unsupported.length > 0 && (
-            <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>
+            <p className="tf-detail tf-detail-spaced-1">
               Properties this host would not serve: {coverage.unsupported.join(", ")}
             </p>
           )}
 
           {coverage !== null && coverage.unprocessed.length > 0 && (
-            <ul style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem" }}>
+            <ul className="tf-detail tf-detail-spaced-2 tf-detail-list">
               {coverage.unprocessed.map((reason, index) => (
                 <li key={index} className="tf-coverage-reason">
                   {reason}
@@ -257,7 +257,7 @@ export default function CoverageBanner({
           )}
 
           {coverage !== null && coverage.excluded.length > 0 && (
-            <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem" }}>
+            <p className="tf-detail tf-detail-spaced-2">
               {coverage.excluded.length} protected or excluded area(s) were not checked.
             </p>
           )}
