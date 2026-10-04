@@ -91,21 +91,129 @@ function renderSections(
   };
 }
 
+/**
+ * The four section frames, typed.
+ *
+ * A compound selector alone returns `Element[]`, which has no `open`, so writing
+ * it inline costs the type as well as the precision. The helper keeps both, and
+ * gives the sub-division tests the same vocabulary.
+ */
+function sectionFrames(container: HTMLElement): HTMLDetailsElement[] {
+  return [...container.querySelectorAll<HTMLDetailsElement>("details.tf-profile-section")];
+}
+
+/** The collapsible groups nested inside a section. */
+function subSections(container: HTMLElement): HTMLDetailsElement[] {
+  return [...container.querySelectorAll<HTMLDetailsElement>("details.tf-profile-subsection")];
+}
+
+/** The group with the given title, or undefined. */
+function groupTitled(container: HTMLElement, title: string): HTMLDetailsElement | undefined {
+  return subSections(container).find(
+    (group) => group.querySelector(".tf-profile-subsection-title")?.textContent === title,
+  );
+}
+
+describe("the Language section sub-division (UX-4)", () => {
+  /*
+   * The defect this addresses is navigation, not styling. Language governed seven
+   * distinct conventions across roughly 430 lines presented as one flat run: a
+   * user opening Deterministic Style to change one number format had to scroll
+   * past every other convention, with nothing marking which part they were in.
+   */
+  it("divides Language into one collapsible group per convention", () => {
+    const { container } = renderSections(CAPABLE);
+    expect(
+      subSections(container).map(
+        (group) => group.querySelector(".tf-profile-subsection-title")?.textContent,
+      ),
+    ).toEqual([
+      "Terminology",
+      "Capitalisation",
+      "Abbreviations",
+      "Numbers",
+      "Dates",
+      "Currency",
+      "Units",
+    ]);
+  });
+
+  it("nests the groups inside the Language section rather than beside it", () => {
+    const { container } = renderSections(CAPABLE);
+    // Not merely "are they on the page" — a disclosure rendered as a sibling of
+    // the section would look the same and belong to no section at all.
+    expect(sectionFrames(container)[0]?.querySelectorAll(".tf-profile-subsection")).toHaveLength(7);
+  });
+
+  it("leaves them closed but for one, so the section stays scannable", () => {
+    // Every group open would be the flat list this exists to replace. One open
+    // group is the compromise: seven readable titles, with the likeliest showing.
+    const { container } = renderSections(CAPABLE);
+    const open = subSections(container).filter((group) => group.open);
+    expect(open).toHaveLength(1);
+    expect(open[0]?.querySelector(".tf-profile-subsection-title")?.textContent).toBe("Terminology");
+  });
+
+  it("keeps each group's controls inside that group", () => {
+    /*
+     * The failure this guards is a mis-nested closing tag: a group's details tag
+     * landing early would leave its controls in the next group, where they would
+     * still render and still work — and the disclosure a user opens would not be
+     * the one holding the control they came to change.
+     */
+    const { container } = renderSections(CAPABLE);
+    const numbers = groupTitled(container, "Numbers");
+    expect(numbers).toBeDefined();
+    expect(within(numbers as HTMLElement).getByText("Percent sign")).toBeInTheDocument();
+    expect(
+      within(groupTitled(container, "Dates") as HTMLElement).queryByText("Percent sign"),
+    ).toBeNull();
+  });
+
+  it("names host capability once, on the section, not on every group", () => {
+    /*
+     * Capability is a property of the whole section. Repeating it per group would
+     * put several claims on the page where one is true, and a group has no
+     * independent capability to report.
+     */
+    const { container } = renderSections(CAPABLE);
+    expect(container.querySelectorAll(".tf-profile-section-unsupported")).toHaveLength(0);
+    expect(
+      container.querySelectorAll(".tf-profile-subsection .tf-profile-section-unsupported"),
+    ).toHaveLength(0);
+  });
+
+  it("still marks a partly-unsupported section on the section frame itself", () => {
+    const { container } = renderSections(NO_TABLES);
+    const unsupported = container.querySelectorAll(".tf-profile-section-unsupported");
+    expect(unsupported).toHaveLength(1);
+    expect(unsupported[0]?.closest("details")?.className).toContain("tf-profile-section");
+  });
+});
+
 describe("DeterministicStyleSections", () => {
   it("presents the four deterministic sections, each collapsible", () => {
     renderSections(CAPABLE);
     ["Language", "Typography", "Document formatting", "Document structure"].forEach((title) => {
       expect(screen.getByText(title)).toBeInTheDocument();
     });
-    // `<details>` rather than a hand-rolled disclosure, so the open state and the
-    // keyboard behaviour are the browser's.
+    /*
+     * `<details>` rather than a hand-rolled disclosure, so the open state and the
+     * keyboard behaviour are the browser's.
+     *
+     * Scoped to `.tf-profile-section` because the Language section now nests
+     * seven `ProfileSubsection` disclosures inside it. Counting every `details`
+     * on the page would make this test a tripwire on how finely the editor is
+     * divided — it is asserting the *shape of the section frame*, not the
+     * number of groups inside one.
+     */
     const { container } = renderSections(CAPABLE);
-    expect(container.querySelectorAll("details")).toHaveLength(4);
+    expect(container.querySelectorAll("details.tf-profile-section")).toHaveLength(4);
   });
 
   it("opens the language section and leaves the rest closed", () => {
     const { container } = renderSections(CAPABLE);
-    const sections = [...container.querySelectorAll("details")];
+    const sections = sectionFrames(container);
     expect(sections[0]?.open).toBe(true);
     expect(sections[1]?.open).toBe(false);
   });

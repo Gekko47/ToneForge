@@ -666,6 +666,40 @@ button.tf-native-button:disabled {
 }
 
 /*
+ * A sub-section: a disclosure inside a disclosure.
+ *
+ * Indented and lighter than its parent, because the relationship is the whole
+ * point — a reader must be able to tell at a glance which group a control
+ * belongs to. The parent's own rules are not restated; a nested `<details>`
+ * inherits them, and duplicating them here would be a second place to keep in
+ * step.
+ */
+.tf-profile-subsection {
+  margin-top: 0.5rem;
+  border-left: 2px solid var(--tf-border);
+  padding-left: 0.6rem;
+}
+
+.tf-profile-subsection-summary {
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+
+.tf-profile-subsection-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--tf-muted);
+}
+
+.tf-profile-subsection[open] > .tf-profile-subsection-summary .tf-profile-subsection-title {
+  color: var(--tf-text);
+}
+
+.tf-profile-subsection-body {
+  padding: 0.35rem 0 0.25rem;
+}
+
+/*
  * The unsupported marking.
  *
  * Deliberately inside the summary rather than only in the body: a collapsed

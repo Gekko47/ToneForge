@@ -22,6 +22,7 @@
 
 import React from "react";
 import ProfileSection from "./ProfileSection";
+import ProfileSubsection from "./ProfileSubsection";
 import {
   AbbreviationProfileSchema,
   CapitalisationProfileSchema,
@@ -828,427 +829,478 @@ export default function DeterministicStyleSections({
         supported={capabilities === null ? null : true}
         defaultOpen
       >
-        {/*
-         * Terminology lives here, and this is the only place it is authored.
-         *
-         * It used to be on the *governance* policy page, which was the wrong
-         * record twice over: governance governs protection and editability, and two
-         * of these three fields were read by nothing at all. Preferred terms,
-         * banned terms and required terms are house wording — a deterministic
-         * standard — so they are authored beside the rules that consume them.
-         */}
-        <h4 className="tf-subheading">Preferred terminology</h4>
-        <p className="tf-sub">
-          Words the house always spells one way. A replacement is offered; accepting it is the
-          user's decision, never automatic.
-        </p>
-        {profile.language.terminology.map((rule) => (
-          <TerminologyRow
-            key={rule.id}
-            rule={rule}
-            withReplacement
-            onChange={(next) =>
-              tryPatchLanguage({
-                terminology: profile.language.terminology.map((entry) =>
-                  entry.id === next.id ? next : entry,
-                ),
-              })
-            }
-            onRemove={() =>
-              tryPatchLanguage({
-                terminology: profile.language.terminology.filter((entry) => entry.id !== rule.id),
-              })
-            }
-          />
-        ))}
-        <button
-          type="button"
-          className="tf-native-button tf-link-button"
-          onClick={() =>
-            tryPatchLanguage({
-              terminology: [
-                ...profile.language.terminology,
-                {
-                  id: nextTermId(profile.language.terminology),
-                  source: "term",
-                  replacement: "term",
-                  caseSensitive: false,
-                  wholeWord: true,
-                  severity: "advisory",
-                  scope: {},
-                },
-              ],
-            })
-          }
+        <ProfileSubsection
+          id="language-terminology"
+          title="Terminology"
+          summary="The words this house spells one way, and the words it will not use."
+          defaultOpen
         >
-          Add preferred term
-        </button>
-
-        {/*
-         * The heading is the control's name, so it is wired to it explicitly.
-         *
-         * This textarea had no accessible name at all — a heading above it is a
-         * visual grouping, not a label, and a screen reader announcing "edit text,
-         * blank" is a user with no idea which list they are typing into.
-         */}
-        <h4 className="tf-subheading" id="tf-banned-terms-heading">
-          Banned terms
-        </h4>
-        <p className="tf-sub" id="tf-banned-terms-hint">
-          One per line. Flagged, never rewritten.
-        </p>
-        <textarea
-          className="tf-native"
-          aria-labelledby="tf-banned-terms-heading"
-          aria-describedby="tf-banned-terms-hint"
-          rows={4}
-          value={formatTermList(profile.language.bannedTerms)}
-          onChange={(event) => tryPatchLanguage({ bannedTerms: parseTermList(event.target.value) })}
-        />
-
-        <h4 className="tf-subheading">Required terms</h4>
-        <p className="tf-sub">
-          Words that must appear somewhere in the document. Reported when absent; never inserted
-          automatically.
-        </p>
-        {profile.language.requiredTerms.map((rule) => (
-          <TerminologyRow
-            key={rule.id}
-            rule={rule}
-            withReplacement={false}
-            onChange={(next) =>
-              tryPatchLanguage({
-                requiredTerms: profile.language.requiredTerms.map((entry) =>
-                  entry.id === next.id ? next : entry,
-                ),
-              })
-            }
-            onRemove={() =>
-              tryPatchLanguage({
-                requiredTerms: profile.language.requiredTerms.filter(
-                  (entry) => entry.id !== rule.id,
-                ),
-              })
-            }
-          />
-        ))}
-        <button
-          type="button"
-          className="tf-native-button tf-link-button"
-          onClick={() =>
-            tryPatchLanguage({
-              requiredTerms: [
-                ...profile.language.requiredTerms,
-                {
-                  id: nextTermId(profile.language.requiredTerms),
-                  source: "term",
-                  caseSensitive: false,
-                  wholeWord: true,
-                  severity: "advisory",
-                  scope: {},
-                },
-              ],
-            })
-          }
-        >
-          Add required term
-        </button>
-
-        <label className="tf-field tf-field-inline">
-          <input
-            className="tf-native"
-            type="checkbox"
-            checked={profile.language.capitalisation.sentenceCase}
-            onChange={(event) =>
-              patchLanguage({
-                capitalisation: {
-                  ...profile.language.capitalisation,
-                  sentenceCase: event.target.checked,
-                },
-              })
-            }
-          />
-          <span>Sentences begin with a capital letter</span>
-        </label>
-        {/*
-         * A dropdown, because the locale is now *enforced* (D5).
-         *
-         * It was a free-text box labelled "recorded, not enforced" — an honest
-         * label on a control that changed nothing. It now supplies the default
-         * numeric date shape, and a closed set is what makes that possible: a
-         * typo in a free-text field would parse cleanly and then match no rule,
-         * which is the ND-13 failure wearing a different hat.
-         */}
-        <label className="tf-field">
-          <span>Locale</span>
-          <select
-            className="tf-native"
-            value={profile.language.locale}
-            onChange={(event) => tryPatchLanguage({ locale: event.target.value })}
-          >
-            {LOCALE_OPTIONS.map((locale) => (
-              <option key={locale} value={locale}>
-                {locale} — dates as {LOCALE_DATE_SHAPES[locale].format}
-              </option>
-            ))}
-          </select>
-          <span className="tf-sub">
-            Sets the default numeric date shape. A preferred date format set elsewhere always wins.
-          </span>
-        </label>
-        {/*
-         * Every language field, with a control.
-         *
-         * There was a sentence here saying these conventions were set in the House
-         * style panel. It was false in four directions: that panel holds terminology,
-         * banned terms, title-case words and one sentence-case toggle, and
-         * abbreviations, numbers, dates, currency and units had no control *anywhere*
-         * in the product. Every rule in those subsections was therefore reading a
-         * field no user could reach, so in the running product they all sat at their
-         * schema defaults and none of them could fire — including the units-symbol
-         * and locale behaviour D4 and D5 just added.
-         *
-         * The registry audit cannot see this. It can see that a rule *reads* a
-         * field; it can never see that a control *writes* one. Which is why the fix
-         * is the controls below and not a rewording — and why the sentence had to go
-         * either way.
-         */}
-        <fieldset className="tf-standard-block">
-          <legend>Capitalisation</legend>
-          <LineListField
-            label="Proper nouns (one per line)"
-            hint="Always written with a capital letter. Enter a word here and a report will look for it in lower case."
-            value={capitalisation.properNouns}
-            onChange={(next) => patchCapitalisation({ properNouns: next })}
-          />
-          <LineListField
-            label="Words that must never be capitalised (one per line)"
-            hint="Common nouns this house writes in lower case, such as “programme”."
-            value={capitalisation.prohibitedCapitalised}
-            onChange={(next) => patchCapitalisation({ prohibitedCapitalised: next })}
-          />
-          <OptionalEnumSelect
-            label="Heading case"
-            hint="Left unset, headings are not checked at all — which is a different answer from choosing sentence case. A heading is recognised by its paragraph style, so this check does nothing on a non-English Word, where the style is named “Überschrift” rather than “Heading”."
-            value={capitalisation.headingCase}
-            options={HEADING_CASE_OPTIONS}
-            onChange={(next) => setHeadingCase(next as HeadingCase | undefined)}
-          />
-        </fieldset>
-
-        <fieldset className="tf-standard-block">
-          <legend>Abbreviations</legend>
-          <PairListField
-            label="Approved abbreviations (one “short form: long form” per line)"
-            hint="The short forms this house permits, and the expansion each one stands for."
-            value={abbreviations.approved}
-            nouns={{ subject: "Approved abbreviation", left: "short form", right: "long form" }}
-            onChange={(next) => patchAbbreviations({ approved: next })}
-          />
-          <OptionalEnumSelect
-            label="Expansion on first use"
-            hint="Left unset, the first use is not checked at all — which is a different answer from deciding it is not required."
-            value={
-              abbreviations.requireFirstUseExpansion === undefined
-                ? undefined
-                : abbreviations.requireFirstUseExpansion
-                  ? "true"
-                  : "false"
-            }
-            options={FIRST_USE_EXPANSION_OPTIONS}
-            onChange={(next) =>
-              setFirstUseExpansion(next === undefined ? undefined : next === "true")
-            }
-          />
-          <PairListField
-            label="Preferred short form (one “long form: short form” per line)"
-            hint="Where the running text should use the short form. The long form is still required once, on first use, if you have asked for an expansion."
-            value={abbreviations.preferredExpanded}
-            nouns={{ subject: "Preferred short form", left: "long form", right: "short form" }}
-            onChange={(next) => patchAbbreviations({ preferredExpanded: next })}
-          />
-          <LineListField
-            label="Forms that must never appear (one per line)"
-            hint="Short or long forms this house does not use at all."
-            value={abbreviations.prohibitedVariants}
-            onChange={(next) => patchAbbreviations({ prohibitedVariants: next })}
-          />
-        </fieldset>
-
-        <fieldset className="tf-standard-block">
-          <legend>Numbers</legend>
-          <EnumSelect
-            label="Percent sign"
-            hint="Whether a percentage carries a space before the sign."
-            value={numbers.percentageSpacing}
-            options={PERCENTAGE_SPACING_OPTIONS}
-            onChange={(next) => patchNumbers({ percentageSpacing: next })}
-          />
-          <div className="tf-field">
-            <label htmlFor="tf-number-word-threshold">Spell out numbers up to</label>
-            <input
-              className="tf-native"
-              id="tf-number-word-threshold"
-              aria-describedby="tf-number-word-threshold-hint"
-              type="number"
-              min={0}
-              max={999}
-              value={numbers.numberWordThreshold ?? ""}
-              onChange={(event) => setNumberWordThreshold(event.target.value)}
+          {/*
+           * Terminology lives here, and this is the only place it is authored.
+           *
+           * It used to be on the *governance* policy page, which was the wrong
+           * record twice over: governance governs protection and editability, and two
+           * of these three fields were read by nothing at all. Preferred terms,
+           * banned terms and required terms are house wording — a deterministic
+           * standard — so they are authored beside the rules that consume them.
+           */}
+          <h4 className="tf-subheading">Preferred terminology</h4>
+          <p className="tf-sub">
+            Words the house always spells one way. A replacement is offered; accepting it is the
+            user's decision, never automatic.
+          </p>
+          {profile.language.terminology.map((rule) => (
+            <TerminologyRow
+              key={rule.id}
+              rule={rule}
+              withReplacement
+              onChange={(next) =>
+                tryPatchLanguage({
+                  terminology: profile.language.terminology.map((entry) =>
+                    entry.id === next.id ? next : entry,
+                  ),
+                })
+              }
+              onRemove={() =>
+                tryPatchLanguage({
+                  terminology: profile.language.terminology.filter((entry) => entry.id !== rule.id),
+                })
+              }
             />
-            <span className="tf-sub" id="tf-number-word-threshold-hint">
-              Left blank, numbers are never spelled out. This is reported only — rewriting “10” as
-              “ten” changes the author’s prose, so no correction is offered.
-            </span>
-          </div>
-          <EnumSelect
-            label="Negative numbers"
-            hint="How a negative figure is written."
-            value={numbers.negativeNumber}
-            options={NEGATIVE_NUMBER_OPTIONS}
-            onChange={(next) => patchNumbers({ negativeNumber: next })}
-          />
-          <EnumSelect
-            label="Ranges"
-            hint="What joins the two ends of a range."
-            value={numbers.rangeStyle}
-            options={RANGE_STYLE_OPTIONS}
-            onChange={(next) => patchNumbers({ rangeStyle: next })}
-          />
-        </fieldset>
-
-        <fieldset className="tf-standard-block">
-          <legend>Dates</legend>
-          {dates.formats.map((format, index) => (
-            <fieldset className="tf-standard-block" key={`date-format-${index}`}>
-              <legend>{`Date format ${index + 1}`}</legend>
-              {/*
-               * Ids are derived from the row index rather than generated by a hook,
-               * because a hook cannot be called inside this `map`. `useId` would be
-               * the usual answer and would be wrong here.
-               */}
-              <div className="tf-field">
-                <label htmlFor={`tf-date-shape-${index}`}>Shape</label>
-                <select
-                  className="tf-native"
-                  id={`tf-date-shape-${index}`}
-                  aria-describedby={`tf-date-shape-hint-${index}`}
-                  value={format.id}
-                  onChange={(event) => patchDateFormat(index, { id: event.target.value })}
-                >
-                  {DATE_SHAPE_OPTIONS.map(([id, text]) => (
-                    <option key={id} value={id}>
-                      {text}
-                    </option>
-                  ))}
-                </select>
-                <span className="tf-sub" id={`tf-date-shape-hint-${index}`}>
-                  The shape the rule recognises in the document. “unrecognised” is not offered: a
-                  profile cannot prefer a shape the tool cannot read.
-                </span>
-              </div>
-              <div className="tf-field">
-                <label htmlFor={`tf-date-format-${index}`}>Written as</label>
-                <input
-                  className="tf-native"
-                  id={`tf-date-format-${index}`}
-                  aria-describedby={`tf-date-format-hint-${index}`}
-                  type="text"
-                  value={format.format}
-                  onChange={(event) => patchDateFormat(index, { format: event.target.value })}
-                />
-                <span className="tf-sub" id={`tf-date-format-hint-${index}`}>
-                  For your reference, e.g. DD/MM/YYYY.
-                </span>
-              </div>
-              <label className="tf-field tf-field-inline">
-                <input
-                  className="tf-native"
-                  type="radio"
-                  name="tf-preferred-date-format"
-                  checked={format.preferred}
-                  onChange={() => preferDateFormat(index)}
-                />
-                <span>This is the shape new dates should be written in</span>
-              </label>
-              <button
-                type="button"
-                className="tf-native-button tf-link-button"
-                onClick={() => removeDateFormat(index)}
-              >
-                Remove
-              </button>
-            </fieldset>
           ))}
-          <button type="button" className="tf-native-button tf-link-button" onClick={addDateFormat}>
-            Add date format
+          <button
+            type="button"
+            className="tf-native-button tf-link-button"
+            onClick={() =>
+              tryPatchLanguage({
+                terminology: [
+                  ...profile.language.terminology,
+                  {
+                    id: nextTermId(profile.language.terminology),
+                    source: "term",
+                    replacement: "term",
+                    caseSensitive: false,
+                    wholeWord: true,
+                    severity: "advisory",
+                    scope: {},
+                  },
+                ],
+              })
+            }
+          >
+            Add preferred term
           </button>
+
+          {/*
+           * The heading is the control's name, so it is wired to it explicitly.
+           *
+           * This textarea had no accessible name at all — a heading above it is a
+           * visual grouping, not a label, and a screen reader announcing "edit text,
+           * blank" is a user with no idea which list they are typing into.
+           */}
+          <h4 className="tf-subheading" id="tf-banned-terms-heading">
+            Banned terms
+          </h4>
+          <p className="tf-sub" id="tf-banned-terms-hint">
+            One per line. Flagged, never rewritten.
+          </p>
+          <textarea
+            className="tf-native"
+            aria-labelledby="tf-banned-terms-heading"
+            aria-describedby="tf-banned-terms-hint"
+            rows={4}
+            value={formatTermList(profile.language.bannedTerms)}
+            onChange={(event) =>
+              tryPatchLanguage({ bannedTerms: parseTermList(event.target.value) })
+            }
+          />
+
+          <h4 className="tf-subheading">Required terms</h4>
+          <p className="tf-sub">
+            Words that must appear somewhere in the document. Reported when absent; never inserted
+            automatically.
+          </p>
+          {profile.language.requiredTerms.map((rule) => (
+            <TerminologyRow
+              key={rule.id}
+              rule={rule}
+              withReplacement={false}
+              onChange={(next) =>
+                tryPatchLanguage({
+                  requiredTerms: profile.language.requiredTerms.map((entry) =>
+                    entry.id === next.id ? next : entry,
+                  ),
+                })
+              }
+              onRemove={() =>
+                tryPatchLanguage({
+                  requiredTerms: profile.language.requiredTerms.filter(
+                    (entry) => entry.id !== rule.id,
+                  ),
+                })
+              }
+            />
+          ))}
+          <button
+            type="button"
+            className="tf-native-button tf-link-button"
+            onClick={() =>
+              tryPatchLanguage({
+                requiredTerms: [
+                  ...profile.language.requiredTerms,
+                  {
+                    id: nextTermId(profile.language.requiredTerms),
+                    source: "term",
+                    caseSensitive: false,
+                    wholeWord: true,
+                    severity: "advisory",
+                    scope: {},
+                  },
+                ],
+              })
+            }
+          >
+            Add required term
+          </button>
+
           <label className="tf-field tf-field-inline">
             <input
               className="tf-native"
               type="checkbox"
-              checked={dates.requireUnambiguous}
-              onChange={(event) => patchDates({ requireUnambiguous: event.target.checked })}
+              checked={profile.language.capitalisation.sentenceCase}
+              onChange={(event) =>
+                patchLanguage({
+                  capitalisation: {
+                    ...profile.language.capitalisation,
+                    sentenceCase: event.target.checked,
+                  },
+                })
+              }
             />
-            <span>Refuse a date written in a shape that could be read two ways</span>
+            <span>Sentences begin with a capital letter</span>
           </label>
-        </fieldset>
-
-        <fieldset className="tf-standard-block">
-          <legend>Currency</legend>
-          <EnumSelect
-            label="Amounts are written with"
-            hint="A symbol, or a three-letter code."
-            value={currency.representation}
-            options={CURRENCY_REPRESENTATION_OPTIONS}
-            onChange={(next) => patchCurrency({ representation: next })}
-          />
-          <EnumSelect
-            label="Between the symbol and the amount"
-            value={currency.symbolSpacing}
-            options={CURRENCY_SPACING_OPTIONS}
-            onChange={(next) => patchCurrency({ symbolSpacing: next })}
-          />
           {/*
-           * No thousands or decimal separator control here, deliberately.
+           * A dropdown, because the locale is now *enforced* (D5).
            *
-           * `typography` owns both document-wide, and a second control for the same
-           * characters is the two-owners defect ND-2 describes — a house that set
-           * `£1,000` here and `1,000` there would get two findings over one comma,
-           * and the planner would be entitled to refuse the whole plan. They are set
-           * in the Typography panel.
+           * It was a free-text box labelled "recorded, not enforced" — an honest
+           * label on a control that changed nothing. It now supplies the default
+           * numeric date shape, and a closed set is what makes that possible: a
+           * typo in a free-text field would parse cleanly and then match no rule,
+           * which is the ND-13 failure wearing a different hat.
            */}
-          <EnumSelect
-            label="How large amounts are written"
-            hint="Stored as the house’s house rule. Abbreviating a figure changes what it says, so it is reported and never corrected."
-            value={currency.magnitude}
-            options={CURRENCY_MAGNITUDE_OPTIONS}
-            onChange={(next) => patchCurrency({ magnitude: next })}
-          />
-        </fieldset>
+          <label className="tf-field">
+            <span>Locale</span>
+            <select
+              className="tf-native"
+              value={profile.language.locale}
+              onChange={(event) => tryPatchLanguage({ locale: event.target.value })}
+            >
+              {LOCALE_OPTIONS.map((locale) => (
+                <option key={locale} value={locale}>
+                  {locale} — dates as {LOCALE_DATE_SHAPES[locale].format}
+                </option>
+              ))}
+            </select>
+            <span className="tf-sub">
+              Sets the default numeric date shape. A preferred date format set elsewhere always
+              wins.
+            </span>
+          </label>
+          {/*
+           * Every language field, with a control.
+           *
+           * There was a sentence here saying these conventions were set in the House
+           * style panel. It was false in four directions: that panel holds terminology,
+           * banned terms, title-case words and one sentence-case toggle, and
+           * abbreviations, numbers, dates, currency and units had no control *anywhere*
+           * in the product. Every rule in those subsections was therefore reading a
+           * field no user could reach, so in the running product they all sat at their
+           * schema defaults and none of them could fire — including the units-symbol
+           * and locale behaviour D4 and D5 just added.
+           *
+           * The registry audit cannot see this. It can see that a rule *reads* a
+           * field; it can never see that a control *writes* one. Which is why the fix
+           * is the controls below and not a rewording — and why the sentence had to go
+           * either way.
+           */}
+        </ProfileSubsection>
 
-        <fieldset className="tf-standard-block">
-          <legend>Units</legend>
-          <EnumSelect
-            label="Between the value and the unit"
-            value={units.valueSpacing}
-            options={UNIT_VALUE_SPACING_OPTIONS}
-            onChange={(next) => patchUnits({ valueSpacing: next })}
-          />
-          <EnumSelect
-            label="Unit symbols are written in"
-            value={units.capitalisation}
-            options={UNIT_CAPITALISATION_OPTIONS}
-            onChange={(next) => patchUnits({ capitalisation: next })}
-          />
-          <PairListField
-            label="Preferred symbol (one “unit name: symbol” per line)"
-            hint="The named unit is what the rule looks for; the symbol is what it wants in its place."
-            value={units.symbols}
-            nouns={{ subject: "Preferred symbol", left: "unit name", right: "symbol" }}
-            onChange={(next) => patchUnits({ symbols: next })}
-          />
-        </fieldset>
+        <ProfileSubsection
+          id="language-capitalisation"
+          title="Capitalisation"
+          summary="Proper nouns, words that must never be capitalised, and heading case."
+        >
+          <fieldset className="tf-standard-block">
+            <legend>Capitalisation</legend>
+            <LineListField
+              label="Proper nouns (one per line)"
+              hint="Always written with a capital letter. Enter a word here and a report will look for it in lower case."
+              value={capitalisation.properNouns}
+              onChange={(next) => patchCapitalisation({ properNouns: next })}
+            />
+            <LineListField
+              label="Words that must never be capitalised (one per line)"
+              hint="Common nouns this house writes in lower case, such as “programme”."
+              value={capitalisation.prohibitedCapitalised}
+              onChange={(next) => patchCapitalisation({ prohibitedCapitalised: next })}
+            />
+            <OptionalEnumSelect
+              label="Heading case"
+              hint="Left unset, headings are not checked at all — which is a different answer from choosing sentence case. A heading is recognised by its paragraph style, so this check does nothing on a non-English Word, where the style is named “Überschrift” rather than “Heading”."
+              value={capitalisation.headingCase}
+              options={HEADING_CASE_OPTIONS}
+              onChange={(next) => setHeadingCase(next as HeadingCase | undefined)}
+            />
+          </fieldset>
+        </ProfileSubsection>
+
+        <ProfileSubsection
+          id="language-abbreviations"
+          title="Abbreviations"
+          summary="The short forms this house allows, and the long forms they stand for."
+        >
+          <fieldset className="tf-standard-block">
+            <legend>Abbreviations</legend>
+            <PairListField
+              label="Approved abbreviations (one “short form: long form” per line)"
+              hint="The short forms this house permits, and the expansion each one stands for."
+              value={abbreviations.approved}
+              nouns={{ subject: "Approved abbreviation", left: "short form", right: "long form" }}
+              onChange={(next) => patchAbbreviations({ approved: next })}
+            />
+            <OptionalEnumSelect
+              label="Expansion on first use"
+              hint="Left unset, the first use is not checked at all — which is a different answer from deciding it is not required."
+              value={
+                abbreviations.requireFirstUseExpansion === undefined
+                  ? undefined
+                  : abbreviations.requireFirstUseExpansion
+                    ? "true"
+                    : "false"
+              }
+              options={FIRST_USE_EXPANSION_OPTIONS}
+              onChange={(next) =>
+                setFirstUseExpansion(next === undefined ? undefined : next === "true")
+              }
+            />
+            <PairListField
+              label="Preferred short form (one “long form: short form” per line)"
+              hint="Where the running text should use the short form. The long form is still required once, on first use, if you have asked for an expansion."
+              value={abbreviations.preferredExpanded}
+              nouns={{ subject: "Preferred short form", left: "long form", right: "short form" }}
+              onChange={(next) => patchAbbreviations({ preferredExpanded: next })}
+            />
+            <LineListField
+              label="Forms that must never appear (one per line)"
+              hint="Short or long forms this house does not use at all."
+              value={abbreviations.prohibitedVariants}
+              onChange={(next) => patchAbbreviations({ prohibitedVariants: next })}
+            />
+          </fieldset>
+        </ProfileSubsection>
+
+        <ProfileSubsection
+          id="language-numbers"
+          title="Numbers"
+          summary="Digit grouping, decimal marks, percentages and ranges."
+        >
+          <fieldset className="tf-standard-block">
+            <legend>Numbers</legend>
+            <EnumSelect
+              label="Percent sign"
+              hint="Whether a percentage carries a space before the sign."
+              value={numbers.percentageSpacing}
+              options={PERCENTAGE_SPACING_OPTIONS}
+              onChange={(next) => patchNumbers({ percentageSpacing: next })}
+            />
+            <div className="tf-field">
+              <label htmlFor="tf-number-word-threshold">Spell out numbers up to</label>
+              <input
+                className="tf-native"
+                id="tf-number-word-threshold"
+                aria-describedby="tf-number-word-threshold-hint"
+                type="number"
+                min={0}
+                max={999}
+                value={numbers.numberWordThreshold ?? ""}
+                onChange={(event) => setNumberWordThreshold(event.target.value)}
+              />
+              <span className="tf-sub" id="tf-number-word-threshold-hint">
+                Left blank, numbers are never spelled out. This is reported only — rewriting “10” as
+                “ten” changes the author’s prose, so no correction is offered.
+              </span>
+            </div>
+            <EnumSelect
+              label="Negative numbers"
+              hint="How a negative figure is written."
+              value={numbers.negativeNumber}
+              options={NEGATIVE_NUMBER_OPTIONS}
+              onChange={(next) => patchNumbers({ negativeNumber: next })}
+            />
+            <EnumSelect
+              label="Ranges"
+              hint="What joins the two ends of a range."
+              value={numbers.rangeStyle}
+              options={RANGE_STYLE_OPTIONS}
+              onChange={(next) => patchNumbers({ rangeStyle: next })}
+            />
+          </fieldset>
+        </ProfileSubsection>
+
+        <ProfileSubsection
+          id="language-dates"
+          title="Dates"
+          summary="The date formats this house accepts, and their order."
+        >
+          <fieldset className="tf-standard-block">
+            <legend>Dates</legend>
+            {dates.formats.map((format, index) => (
+              <fieldset className="tf-standard-block" key={`date-format-${index}`}>
+                <legend>{`Date format ${index + 1}`}</legend>
+                {/*
+                 * Ids are derived from the row index rather than generated by a hook,
+                 * because a hook cannot be called inside this `map`. `useId` would be
+                 * the usual answer and would be wrong here.
+                 */}
+                <div className="tf-field">
+                  <label htmlFor={`tf-date-shape-${index}`}>Shape</label>
+                  <select
+                    className="tf-native"
+                    id={`tf-date-shape-${index}`}
+                    aria-describedby={`tf-date-shape-hint-${index}`}
+                    value={format.id}
+                    onChange={(event) => patchDateFormat(index, { id: event.target.value })}
+                  >
+                    {DATE_SHAPE_OPTIONS.map(([id, text]) => (
+                      <option key={id} value={id}>
+                        {text}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="tf-sub" id={`tf-date-shape-hint-${index}`}>
+                    The shape the rule recognises in the document. “unrecognised” is not offered: a
+                    profile cannot prefer a shape the tool cannot read.
+                  </span>
+                </div>
+                <div className="tf-field">
+                  <label htmlFor={`tf-date-format-${index}`}>Written as</label>
+                  <input
+                    className="tf-native"
+                    id={`tf-date-format-${index}`}
+                    aria-describedby={`tf-date-format-hint-${index}`}
+                    type="text"
+                    value={format.format}
+                    onChange={(event) => patchDateFormat(index, { format: event.target.value })}
+                  />
+                  <span className="tf-sub" id={`tf-date-format-hint-${index}`}>
+                    For your reference, e.g. DD/MM/YYYY.
+                  </span>
+                </div>
+                <label className="tf-field tf-field-inline">
+                  <input
+                    className="tf-native"
+                    type="radio"
+                    name="tf-preferred-date-format"
+                    checked={format.preferred}
+                    onChange={() => preferDateFormat(index)}
+                  />
+                  <span>This is the shape new dates should be written in</span>
+                </label>
+                <button
+                  type="button"
+                  className="tf-native-button tf-link-button"
+                  onClick={() => removeDateFormat(index)}
+                >
+                  Remove
+                </button>
+              </fieldset>
+            ))}
+            <button
+              type="button"
+              className="tf-native-button tf-link-button"
+              onClick={addDateFormat}
+            >
+              Add date format
+            </button>
+            <label className="tf-field tf-field-inline">
+              <input
+                className="tf-native"
+                type="checkbox"
+                checked={dates.requireUnambiguous}
+                onChange={(event) => patchDates({ requireUnambiguous: event.target.checked })}
+              />
+              <span>Refuse a date written in a shape that could be read two ways</span>
+            </label>
+          </fieldset>
+        </ProfileSubsection>
+
+        <ProfileSubsection
+          id="language-currency"
+          title="Currency"
+          summary="How amounts are written, and the magnitude words that follow them."
+        >
+          <fieldset className="tf-standard-block">
+            <legend>Currency</legend>
+            <EnumSelect
+              label="Amounts are written with"
+              hint="A symbol, or a three-letter code."
+              value={currency.representation}
+              options={CURRENCY_REPRESENTATION_OPTIONS}
+              onChange={(next) => patchCurrency({ representation: next })}
+            />
+            <EnumSelect
+              label="Between the symbol and the amount"
+              value={currency.symbolSpacing}
+              options={CURRENCY_SPACING_OPTIONS}
+              onChange={(next) => patchCurrency({ symbolSpacing: next })}
+            />
+            {/*
+             * No thousands or decimal separator control here, deliberately.
+             *
+             * `typography` owns both document-wide, and a second control for the same
+             * characters is the two-owners defect ND-2 describes — a house that set
+             * `£1,000` here and `1,000` there would get two findings over one comma,
+             * and the planner would be entitled to refuse the whole plan. They are set
+             * in the Typography panel.
+             */}
+            <EnumSelect
+              label="How large amounts are written"
+              hint="Stored as the house’s house rule. Abbreviating a figure changes what it says, so it is reported and never corrected."
+              value={currency.magnitude}
+              options={CURRENCY_MAGNITUDE_OPTIONS}
+              onChange={(next) => patchCurrency({ magnitude: next })}
+            />
+          </fieldset>
+        </ProfileSubsection>
+
+        <ProfileSubsection
+          id="language-units"
+          title="Units"
+          summary="The symbols this house prints, and the spellings it will not use."
+        >
+          <fieldset className="tf-standard-block">
+            <legend>Units</legend>
+            <EnumSelect
+              label="Between the value and the unit"
+              value={units.valueSpacing}
+              options={UNIT_VALUE_SPACING_OPTIONS}
+              onChange={(next) => patchUnits({ valueSpacing: next })}
+            />
+            <EnumSelect
+              label="Unit symbols are written in"
+              value={units.capitalisation}
+              options={UNIT_CAPITALISATION_OPTIONS}
+              onChange={(next) => patchUnits({ capitalisation: next })}
+            />
+            <PairListField
+              label="Preferred symbol (one “unit name: symbol” per line)"
+              hint="The named unit is what the rule looks for; the symbol is what it wants in its place."
+              value={units.symbols}
+              nouns={{ subject: "Preferred symbol", left: "unit name", right: "symbol" }}
+              onChange={(next) => patchUnits({ symbols: next })}
+            />
+          </fieldset>
+        </ProfileSubsection>
 
         <p className="tf-sub">
           Typography — dashes, quotes, ellipsis and the spacing conventions — is set in the

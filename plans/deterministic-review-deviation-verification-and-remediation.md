@@ -1750,3 +1750,60 @@ with `Accordion`, sub-divide Language and Typography, and preserve the per-secti
 host-capability marking as a Badge. Unchanged — and now better founded, because the
 marker work above is what makes that migration safe: a control it forgets to migrate
 simply stops being styled rather than starting to fight the theme.
+
+### Phase 6b — Language sub-division (UX-4, the collapsible half)
+
+#### The defect was navigation, not styling
+
+Language governed seven distinct conventions across ~430 lines presented as one
+flat run. A user opening Deterministic Style to change one number format had to
+scroll past every other convention, with nothing marking which part they were in.
+
+Now seven nested `ProfileSubsection` disclosures — Terminology, Capitalisation,
+Abbreviations, Numbers, Dates, Currency, Units — with one open by default, so the
+section reads as seven titles rather than a wall of controls.
+
+#### Typography was left alone, deliberately
+
+The plan said to sub-divide Language _and_ Typography. Typography has no controls:
+its body states the dash, quote and ellipsis controls live in the Typography panel
+above and that the section is the normative summary the rules read. There is nothing
+to divide, and an empty disclosure would be a control that does nothing. Recorded
+here rather than silently skipped.
+
+#### `<details>`, not a Fluent `Accordion`
+
+`ProfileSection` already used native `<details>` deliberately, so open state,
+keyboard behaviour and SR semantics are the browser's. Fluent v8's `Accordion`
+implements its own expand/collapse and ARIA wiring — that would trade a guarantee
+for a component and make every one of those properties something to re-implement
+and re-test. A disclosure inside a disclosure is valid HTML and needs no state,
+effect or ref.
+
+This is the same shape as the ND-9 and `reviewedPlan` findings: an audit instruction
+whose stated reason no longer holds, because the code already satisfies the reason.
+Recorded rather than obeyed.
+
+#### Two tests corrected rather than satisfied
+
+Both asserted the total number of `<details>` on the page, which made them
+tripwires on how finely the editor happens to be divided. They now scope to the
+section frame and still assert what they were written to assert: four collapsible
+sections, and only Language open by default.
+
+#### Six new tests
+
+The seven titles and their order; that they nest inside Language rather than beside
+it; that only one is open; that a group's controls stay inside it (a mis-nested
+closing tag would leave controls in the next group, still rendering and still
+working); that host capability is named once on the section; and that a
+partly-unsupported section is still marked on its own frame.
+
+#### Verification
+
+format clean, typecheck clean, lint 0 warnings, **2728 tests / 194 files**.
+
+#### Still open in Phase 6
+
+UX-4: migrate the editor controls to Fluent (`TextField`, `Dropdown`, `Switch`,
+`SpinButton`, `Textarea`, `Checkbox`).
