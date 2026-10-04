@@ -17,7 +17,9 @@ before the page was read end to end.
 | D-c | Headings are **global and uniform**, adopting Microsoft + Fluent, **not** page-local     | Scope grows from one page to the whole task pane. §4 is now an app-wide change.              |
 | D-d | **`.tf-title` changes globally** to the ramp's Title size — no page-local override class | All nine `<h1 className="tf-title">` move together, which is the point. §4.                  |
 
-**Status: approved.** B1–B6 and S1–S13 are authorised to implement.
+**Status: approved and implemented (B1–B11).** S12–S13 and Phase 7 remain. See
+[§7 Log](#7-log) for what each step actually changed, including two places where
+the plan's instruction was factually wrong and was not followed.
 
 ---
 
@@ -27,9 +29,9 @@ Six defects. D-3's true cause is worse than first diagnosed — see §4.
 
 ### D-1 — Two Typography sections, one of them empty
 
-[`ProfileEditor.tsx`](../../src/taskpane/components/ProfileEditor.tsx) renders a
+[`ProfileEditor.tsx`](../src/taskpane/components/ProfileEditor.tsx) renders a
 `Typography` panel with eight real `Dropdown`s. Twenty lines below,
-[`DeterministicStyleSections.tsx`](../../src/taskpane/components/DeterministicStyleSections.tsx)
+[`DeterministicStyleSections.tsx`](../src/taskpane/components/DeterministicStyleSections.tsx)
 renders a Typography **section** whose entire body is the sentence _"The
 individual dash, quote and ellipsis controls are in the Typography panel above."_
 A heading that leads nowhere, pointing at another panel on the same page.
@@ -128,9 +130,9 @@ two toggles reading almost identically.
 
 > **Ownership verified (D2).** `decimalSeparator` and `thousandsSeparator` are
 > declared **only** in `typography`
-> ([`StyleProfile.ts:62`](../../src/core/domain/StyleProfile.ts:62)); the language
+> ([`StyleProfile.ts:62`](../src/core/domain/StyleProfile.ts:62)); the language
 > `numbers` schema carries no separator fields by design
-> ([:248`](../../src/core/domain/StyleProfile.ts:248)). They go under
+> ([:248`](../src/core/domain/StyleProfile.ts:248)). They go under
 > **Typography → Numbers & separators**, _not_ Language → Numbers. Moving them
 > the other way reopens D2.
 
@@ -195,7 +197,7 @@ change taken **after** someone has looked at it, rather than before.
 **B — Prerequisite: bulk-add to the terminology row editor** _(D-a)_ — **COMPLETE**
 
 1. A "Add many terms" disclosure beside the row editor, reusing the existing
-   [`terminologyText.ts`](../../src/taskpane/settings/terminologyText.ts)
+   [`terminologyText.ts`](../src/taskpane/settings/terminologyText.ts)
    `parseTerminology` / `formatTerminology` — **already the single shared parser**,
    so this is reuse, not a third implementation. **Done.**
 2. Paste `term: replacement` lines → preview count → Apply adds rows, each with
@@ -211,7 +213,7 @@ change taken **after** someone has looked at it, rather than before.
 **Two deviations from the plan above, both recorded rather than made quietly.**
 
 - The shared logic went into a **pure module**
-  ([`terminologyRows.ts`](../../src/taskpane/terminologyRows.ts)) rather than the
+  ([`terminologyRows.ts`](../src/taskpane/terminologyRows.ts)) rather than the
   component, so it is tested without jsdom. The local `nextTermId` in
   `DeterministicStyleSections` was deleted and the single-add button now calls the
   same factory — so the button and the paste **cannot** produce different rules.
@@ -264,4 +266,55 @@ moves means restyling elements that are about to be deleted.
 
 No automated run establishes how any of this looks. The visual result needs a
 human in Word, both themes, at 329px — it joins the manual checklist in
-[`manual-verification.md`](../../docs/manual-verification.md).
+[`manual-verification.md`](../docs/manual-verification.md).
+
+---
+
+## 7. Log
+
+What each step actually changed, rather than what it was asked to change.
+
+| Step  | Result | Note                                                                              |
+| ----- | ------ | --------------------------------------------------------------------------------- |
+| B1–B6 | Done   | `5d65b92`, ADR-0123. Two deviations, recorded not made quietly — see below.       |
+| S1–S2 | Done   | `9cad205`. D-1 closed. Typography's 8 dropdowns moved in, split into 4 groups.    |
+| S3    | Done   | `61336b8`. **The instruction was wrong and was not followed** — see below.        |
+| S4–S6 | Done   | `61336b8`. Duplicate editors deleted; `ProfileEditor` reduced to identity + save. |
+| S7–S9 | Done   | `6025693`. The app-wide heading ramp; ~25 bare `<h2>`s no longer fall back.       |
+| S10   | Done   | `b9ca5ef`. Guard extended past colour; 14 inline objects found and fixed.         |
+| S11   | Done   | `3d1ec6b`. **Found 8 typography fields with no control at all** — see below.      |
+| S12   | Done   | ADR-0124; manual item added to `docs/manual-verification.md`.                     |
+| S13   | Done   | `npm run verify` green. 2777 tests / 198 files.                                   |
+
+### Three places the plan was wrong
+
+**S3 said to move two sentence-case rules into Language → Capitalisation.** It is
+factually wrong, and following it would have been a regression. `houseStyle.capitalization.sentenceCase`
+is read by `houseStyle.ts:178` and `language.capitalisation.sentenceCase` by
+`language.ts:754` — two live, different behaviours that happen to share a name.
+Moving one would have misfiled a live rule. The owner confirmed keeping them where
+they are, and the fix applied to the real hazard instead: the two panels are now
+**named** for what they hold, and each says which one is normative.
+
+**S11 was listed as "Typography has controls".** Written that way it reads as a
+check that Typography's controls exist — which they did, eight of them. The
+question worth asking was how many typography fields exist, and the answer was
+sixteen. Eight were read by `typography.ts`, produced findings, and had **no
+control anywhere in the pane**. The section summary had been promising them since
+before the audit. This is D-1 at smaller scale and it survived S1 because S1 moved
+the controls that were duplicated rather than asking which fields had none.
+
+**S6 said "shared collapsible panel class".** Delivered as four classes
+(`.tf-editor-panel`, `.tf-editor-grid`, `.tf-editor-actions`,
+`.tf-editor-actions-spaced`) rather than one. A single class would have carried
+four unrelated layout decisions under one name, which is the coupling S7–S9 exist
+to remove.
+
+### The pattern behind all three
+
+Every one of these was found by reading, not by testing — and each was invisible
+to the checks that existed. The reason is structural: **a test that names the
+controls it expects cannot notice a control that does not exist.** S11 fixes that
+for typography by deriving the expectation from `TypographyRulesSchema.shape`, and
+S10 fixes the type half by making the guard fail on a _rule_ rather than on a
+list of literals. Both are recorded in ADR-0124.

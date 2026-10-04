@@ -882,3 +882,54 @@ also suppresses the announcement debounce visual behaviour if any is added.
 Record host product, version, browser, screen reader and version, build, and
 date for each. Until this is recorded, `docs/accessibility.md` claims markup
 conformance only.
+
+## Open gate — the profile page's type ramp and section structure
+
+This gate is **not closed by any automated run.** Everything below is a statement
+about a stylesheet rule, a label or a written value; none of it is a statement
+about a painted pixel, because jsdom computes no styles (ADR-0124, ADR-0051).
+
+The Word task pane is **329 × 445 px**. Every item below is judged at that width,
+in **both themes**, because a page that only works because it happens to be light —
+or wide — is not a pane.
+
+1. **The heading ramp, on every page.** `h1` 21px, `h2` 17px, `h3` 14px,
+   `h4` 12px, from `taskpane.css`, declared once outside the theme blocks. Walk
+   all nine pages and confirm the outline never reads as inverted — a small
+   heading above a large one was the original defect (D-3, D-4), and roughly
+   twenty-five bare `<h2>`s used to render at the browser's own 24px default
+   beside a 14px "h1".
+2. **The brand lockup in the header.** It followed `.tf-title` from 14px to 21px
+   as a consequence of D-d. It was never looked at. Confirm it does not crowd the
+   header at 329px or clip against the navigation control.
+3. **The Deterministic Style page's section structure.** Four collapsible
+   sections, each divided into groups, with Language opening and the rest closed.
+   Confirm each group's disclosure is reachable by keyboard, that the summary is
+   the whole header, and that the host-capability marking is readable in the
+   **collapsed** header — a collapsed section is exactly the case where a note in
+   the body would go unread.
+4. **The fifth Typography group, "Whitespace and spacing".** Added because eight
+   of the sixteen typography fields had no control anywhere in the pane. Confirm
+   the two fieldsets read as two groups and that the note about percent spacing
+   points somewhere real.
+5. **The detail lines.** `.tf-detail` replaced eleven inline `0.85rem` styles.
+   0.85rem of a 16px root is 13.6px, which sat between the body and caption steps
+   and so on neither; they are now the caption step. Confirm the detail lines in
+   Coverage, Apply result and Pending changes are legible at 329px and do not
+   disappear into the panel behind them.
+6. **The row of controls** in Consistency Review preflight and results, now
+   `.tf-inline-row`. Two of these were byte-identical inline objects and one was
+   the same at a different gap; confirm the gap now matches everywhere.
+
+**What a pass here does and does not mean.** A pass means a person looked at the
+page in Word at the pane's real width, in both themes, and found the ramp and the
+structure readable. It does not mean the ramp is correct against Microsoft's
+add-in typography guidance, only that it is applied consistently — the sizes are
+Microsoft's table, the weights are 400 rather than Segoe Semilight because
+Semilight read as under-weight beside a semibold subhead at this width, and that
+substitution is a judgement that has not been reviewed by anyone but the author.
+
+**Not claimed:** migrating the profile page to Fluent's own controls is still
+open. Every dropdown there is a native `EnumSelect`; converting Typography alone
+would make it the one section that looks different, which is the complaint that
+started this work.

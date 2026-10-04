@@ -4888,3 +4888,75 @@ the row editor can accept a paste first, which is what this records.
 - **Not claimed:** jsdom cannot see the disclosure's appearance or the
   announcement's timing. The count text and the disabled state are asserted; how
   it looks in a 329px pane is a manual item.
+
+## ADR-0124 — One owner per profile field, and coverage derived from the schema
+
+**Status:** Accepted.
+
+**Context.** D-1 (two Typography headings, one meaning) and D-2 (two editors for
+one field) were found by reading the page, and S1–S11 fixed what that reading
+found. What the reading could not do was answer the question that produced them:
+_which fields have no control at all?_ That is not a question a human reading a
+page can answer reliably, and it was not asked by any existing check.
+
+The registry's orphan-setting assertion (ADR-0091) asks whether a **rule reads** a
+field. It cannot ask whether a **control writes** one, because the rules live in
+`src/rules/` and the controls in `src/taskpane/` — the architecture boundary keeps
+them apart, correctly, and that boundary is also why the gap is invisible from
+either side.
+
+The cost was measurable. `TypographyRulesSchema` carries sixteen fields. Eight had
+a control. The other eight — `normaliseWhitespace`, `flagTabs`,
+`nonBreakingSpace`, `slashSpacing`, `currencySpacing`, `spaceBeforeParenthesis`,
+`spaceAfterHyphen` — are each read by `typography.ts` and each produces a finding,
+so they were settings a user could not reach: a house could not turn off the tab
+check it was being flagged under. The section's own summary had promised them
+("dashes, quotes, ellipses, and the whitespace and spacing conventions this house
+prints in") since before the audit.
+
+**Decision.**
+
+- **One owner per field, and that owner is where the label is.** Where a field
+  genuinely has two homes, one is normative and the other defers to it in
+  language the page shows. `typography.percentageSpacing` is declared in both
+  schemas; `numbers.percentageSpacing` is normative and the rule prefers it, so
+  Language → Numbers owns the control and the Typography group **names where it
+  lives** rather than staying silent. A second control would be ND-2 in the UI:
+  two findings over one offset, which the planner then refuses.
+
+- **Coverage is asserted from `TypographyRulesSchema.shape`, not from a list
+  someone wrote.** The test compares its own field→label map against the schema's
+  own keys, so a field added to the schema fails the test and is named, rather
+  than silently widening the surface. This is the load-bearing part: the previous
+  tests all named the controls they expected, which is why a new field was
+  invisible to all of them.
+
+- **The exemption list is itself tested.** An exemption that quietly grows is how
+  a "no control exists" defect gets reclassified as intentional, so every exempt
+  field must be reachable somewhere on the page _and_ named there.
+
+- **The lint guard extends past colour to type and layout**
+  ([`eslint.config.mjs`](../eslint.config.mjs)), and
+  [`inlineType.test.ts`](../tests/unit/taskpane/inlineType.test.ts) asserts the same
+  property independently of lint. Two rules would otherwise be one point of
+  failure, and relaxing one would quietly reopen D-5.
+
+**Consequences.**
+
+- Positive: the "which fields are unreachable" question now has an answer that
+  updates itself.
+- Positive: `.tf-detail` and `.tf-inline-row` replaced eleven repeated inline
+  style objects, three of which were byte-identical to each other.
+- Cost: a schema change now fails a UI test. That is the intended coupling, but it
+  means the exemption list is a place where a reviewer must look.
+- Cost: the type ramp moves type from per-component data to the stylesheet, so a
+  new control is a `className` and a CSS rule, not a value.
+- **Still open:** migrating the page to Fluent's own controls (`Dropdown`,
+  `TextField`, `Toggle`) is deliberately **not** done. Every other dropdown on the
+  page is a native `EnumSelect`; converting one section would make Typography the
+  odd one out, which is the complaint that started this work. It has to move
+  everything at once, and it is a separate pass.
+- **Not claimed:** jsdom computes no styles. Every assertion here is about a rule,
+  a label or a written value. How the page looks at 329px in both themes is a
+  human item in `docs/manual-verification.md`, and no green run closes the
+  Word-host gate (ADR-0051).
