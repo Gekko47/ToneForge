@@ -700,6 +700,40 @@ button.tf-native-button:disabled {
 }
 
 /*
+ * Bulk-add for preferred terminology.
+ *
+ * Styled like a sub-section because it is one: a disclosure inside a disclosure,
+ * sitting beside the single-add button and above the rows it produces. The skip
+ * list is indented rather than boxed, so the eye reads it as a note about the
+ * paste rather than as another control.
+ */
+.tf-bulk-add {
+  margin-top: 0.5rem;
+}
+
+.tf-bulk-add-summary {
+  cursor: pointer;
+  padding: 0.25rem 0;
+  color: var(--tf-muted);
+  font-size: 0.85rem;
+}
+
+.tf-bulk-add[open] > .tf-bulk-add-summary {
+  color: var(--tf-text);
+}
+
+.tf-bulk-add-body {
+  padding: 0.35rem 0 0.25rem;
+}
+
+.tf-bulk-add-skipped {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+  color: var(--tf-muted);
+  font-size: 0.8rem;
+}
+
+/*
  * The unsupported marking.
  *
  * Deliberately inside the summary rather than only in the body: a collapsed

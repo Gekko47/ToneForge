@@ -4834,3 +4834,57 @@ because it is a general trap in stylesheet testing, not a one-off.
 - **Still open:** jsdom computes no styles. These tests assert the rule, never the
   painted result. The visual confirmation remains a manual item in
   `docs/manual-verification.md`, and no green run closes the Word-host gate.
+
+## ADR-0123 — Bulk-add for terminology, so the lossy second editor can go
+
+**Status:** Accepted.
+
+**Context.** The profile page carried **two editors for
+`language.terminology`**: a row per rule in Language → Terminology, and a
+`term: replacement` textarea in a separate House style panel. Two owners for one
+field is the ND-2 defect in the UI rather than the schema — and the textarea is
+the lossy one, because a line can express a substitution and none of `severity`,
+`caseSensitive`, `wholeWord` or `scope`. `foldTerminology()` reconstructs what the
+format cannot carry.
+
+Removing the textarea is the correct fix and was authorised. It is only safe if
+the row editor can accept a paste first, which is what this records.
+
+**Decision.**
+
+- **New module [`terminologyRows.ts`](../src/taskpane/terminologyRows.ts)** owns
+  `newTerminologyRule`, `nextTermIds`/`nextTermId`, `planBulkTerms` and
+  `buildBulkRules`. The local `nextTermId` in `DeterministicStyleSections` is
+  deleted and the single-add button now calls the shared factory.
+
+  The factory exists so the button and the paste _cannot_ drift. Written
+  separately they would have spelled out the same defaults twice and eventually
+  disagreed — and the symptom would have been findings the user did not expect
+  from a term they added one way but not the other.
+
+- **`planBulkTerms` is pure and separate from the mutation**, so the UI can
+  state what a paste _would_ do before anything is written. A paste of two
+  hundred lines is something a user should agree to.
+
+- **Additive only.** A term already in the list is reported as skipped, never
+  overwritten. A user pasting twenty lines who has already tuned three of them
+  must not lose those three to a default the paste carries.
+
+- **Matching is case-sensitive on the trimmed source.** "colour" and "Colour"
+  stay distinct, because `caseSensitive` is a per-rule flag and a house may
+  legitimately want both. Collapsing them is a product decision this function
+  has no standing to make.
+
+- **Reuses the existing shared parser**
+  ([`terminologyText.ts`](../src/taskpane/settings/terminologyText.ts)), which was
+  extracted precisely so a second implementation could not appear. No third
+  format ships.
+
+**Consequences.**
+
+- Positive: S4 can delete the House style textarea without losing bulk editing.
+- Positive: the pure module is tested directly — no jsdom, no Office, no React.
+- Cost: a new product surface, so it carries its own tests and this record.
+- **Not claimed:** jsdom cannot see the disclosure's appearance or the
+  announcement's timing. The count text and the disabled state are asserted; how
+  it looks in a 329px pane is a manual item.

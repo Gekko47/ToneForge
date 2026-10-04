@@ -23,6 +23,8 @@
 import React from "react";
 import ProfileSection from "./ProfileSection";
 import ProfileSubsection from "./ProfileSubsection";
+import TerminologyBulkAdd from "./TerminologyBulkAdd";
+import { newTerminologyRule, nextTermId } from "../terminologyRows";
 import {
   AbbreviationProfileSchema,
   CapitalisationProfileSchema,
@@ -395,15 +397,13 @@ function withoutReplacement(rule: TerminologyRule): TerminologyRule {
   return rest;
 }
 
-/** An id no existing rule is using, so a new row cannot collide with an old one. */
-function nextTermId(existing: readonly TerminologyRule[]): string {
-  const taken = new Set(existing.map((rule) => rule.id));
-  const candidates = Array.from(
-    { length: taken.size + 1 },
-    (_unused, index) => `term-${index + 1}`,
-  );
-  return candidates.find((candidate) => !taken.has(candidate)) ?? `term-${candidates.length + 1}`;
-}
+/*
+ * `nextTermId` and `newTerminologyRule` come from `../terminologyRows` rather
+ * than living here, because the bulk-add paste allocates ids from the same
+ * sequence and builds rules with the same defaults. Two allocators would
+ * eventually hand one id to two rules, and the symptom — a row that quietly
+ * edits the wrong rule — would be intermittent and hard to trace.
+ */
 
 /**
  * One editable terminology rule.
@@ -875,21 +875,29 @@ export default function DeterministicStyleSections({
               tryPatchLanguage({
                 terminology: [
                   ...profile.language.terminology,
-                  {
-                    id: nextTermId(profile.language.terminology),
-                    source: "term",
-                    replacement: "term",
-                    caseSensitive: false,
-                    wholeWord: true,
-                    severity: "advisory",
-                    scope: {},
-                  },
+                  /*
+                   * The shared factory, so this button and the bulk paste cannot
+                   * drift into creating different kinds of rule. It used to spell
+                   * the defaults out here; the paste would then have had to
+                   * repeat them, and the two would eventually disagree.
+                   */
+                  newTerminologyRule(nextTermId(profile.language.terminology), "term", "term"),
                 ],
               })
             }
           >
             Add preferred term
           </button>
+
+          <TerminologyBulkAdd
+            id="preferred-terminology-bulk"
+            existing={profile.language.terminology}
+            onAdd={(rules) =>
+              tryPatchLanguage({
+                terminology: [...profile.language.terminology, ...rules],
+              })
+            }
+          />
 
           {/*
            * The heading is the control's name, so it is wired to it explicitly.
