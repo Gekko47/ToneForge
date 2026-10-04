@@ -15,7 +15,10 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import DeterministicStyleSections from "../../../../src/taskpane/components/DeterministicStyleSections";
-import { DeterministicStyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
+import {
+  DeterministicStyleProfileSchema,
+  TypographyRulesSchema,
+} from "../../../../src/core/domain/StyleProfile";
 import type { DeterministicStyleProfile } from "../../../../src/core/domain/StyleProfile";
 import type { WordCapabilities } from "../../../../src/word/capabilityProbe";
 
@@ -810,6 +813,154 @@ describe("DeterministicStyleSections", () => {
       // were "set in the House style panel". They are set here, and a sentence that
       // sends a user looking in the wrong place is a claim the product cannot keep.
       expect(screen.queryByText(/are set in the House style panel/)).not.toBeInTheDocument();
+    });
+  });
+
+  /*
+   * The schema is the list, not a hand-written one.
+   *
+   * Every other coverage assertion in this file names the controls it expects,
+   * which means a field added to a schema is invisible to them: the registry's
+   * orphan check asks whether a *rule* reads a field, not whether a *control*
+   * writes it. That gap is how Typography ended up with sixteen fields, eight
+   * controls, and a section summary promising "the whitespace and spacing
+   * conventions" no user could reach. These tests drive the expectation from
+   * `TypographyRulesSchema` instead, so the next field added fails here unless it
+   * is wired — or is exempted, which then requires saying where it lives.
+   */
+  describe("every typography field is reachable", () => {
+    const TYPOGRAPHY_FIELDS = Object.keys(TypographyRulesSchema.shape).sort();
+
+    /**
+     * Field → the accessible label of the control that writes it.
+     *
+     * The map is the test's whole content. `expect(Object.keys(...).sort()).toEqual(
+     * TYPOGRAPHY_FIELDS)` is what makes it load-bearing: add a field to the schema
+     * and this fails, listing the field, rather than the count drifting silently.
+     */
+    const OWNED: Readonly<Record<string, string>> = {
+      apostrophes: "Apostrophes",
+      currencySpacing: "Before a currency symbol",
+      decimalSeparator: "Decimal separator",
+      doubleQuotes: "Double quotes",
+      emDash: "Em dash",
+      ellipsis: "Ellipsis",
+      enDashSpacing: "En dash spacing",
+      flagTabs: "Compare tabs against the document",
+      nonBreakingSpace: "A non-breaking space is",
+      normaliseWhitespace: "Compare runs of spaces against the document",
+      slashSpacing: "Around a solidus",
+      singleQuotes: "Single quotes",
+      spaceAfterHyphen: "Compare spaces inside a hyphenated compound against the document",
+      spaceBeforeParenthesis: "Compare a space before an opening bracket against the document",
+      thousandsSeparator: "Thousands separator",
+    };
+
+    /**
+     * Declared here, owned elsewhere, and deliberately not wired twice.
+     *
+     * `numbers.percentageSpacing` is normative and the rule prefers it; this
+     * schema field is the fallback for a typography-only profile. A second
+     * control would be the two-owners defect, so the section points at the owner.
+     */
+    const EXEMPT: Readonly<Record<string, string>> = {
+      percentageSpacing: "Language → Numbers",
+    };
+
+    function last(onChange: ReturnType<typeof vi.fn>): DeterministicStyleProfile {
+      return onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    }
+
+    it("maps every field to a control, so a new field cannot arrive unwired", () => {
+      // Keys and labels together: a mapping with the wrong label would make the
+      // per-field assertions below pass vacuously while naming nothing.
+      expect(Object.keys(OWNED).sort()).toEqual(
+        TYPOGRAPHY_FIELDS.filter((f) => f !== "percentageSpacing"),
+      );
+      Object.entries(OWNED).forEach(([, label]) => {
+        expect(label.length).toBeGreaterThan(0);
+      });
+    });
+
+    it("finds that control on the page for every field", () => {
+      renderSections(CAPABLE);
+      Object.values(OWNED).forEach((label) => {
+        expect(screen.getByLabelText(label)).toBeInTheDocument();
+      });
+    });
+
+    it("says where each exempt field is set, rather than leaving the absence silent", () => {
+      /*
+       * The guard against the guard. An exemption list that quietly grows is how a
+       * "no control exists" defect gets reclassified as intentional, so every
+       * exempt field must be reachable somewhere AND named on the page.
+       */
+      renderSections(CAPABLE);
+      Object.entries(EXEMPT).forEach(([field, owner]) => {
+        expect(screen.getByText(new RegExp(owner, "i"))).toBeInTheDocument();
+        // The field name itself must not appear as an editable label here.
+        expect(screen.queryByLabelText(new RegExp(field, "i"))).toBeNull();
+      });
+    });
+
+    it("has exactly one control per field, so nothing is edited from two places", () => {
+      renderSections(CAPABLE);
+      Object.entries(OWNED).forEach(([field, label]) => {
+        expect({ field, matches: screen.getAllByLabelText(label) }).toEqual({
+          field,
+          matches: [expect.anything()],
+        });
+      });
+    });
+
+    it("writes the eight punctuation fields through to typography", () => {
+      const { onChange } = renderSections(CAPABLE);
+      fireEvent.change(screen.getByLabelText("Em dash"), { target: { value: "hyphen" } });
+      expect(last(onChange).typography.emDash).toBe("hyphen");
+
+      fireEvent.change(screen.getByLabelText("Double quotes"), { target: { value: "straight" } });
+      expect(last(onChange).typography.doubleQuotes).toBe("straight");
+
+      fireEvent.change(screen.getByLabelText("Ellipsis"), { target: { value: "three-dots" } });
+      expect(last(onChange).typography.ellipsis).toBe("three-dots");
+
+      fireEvent.change(screen.getByLabelText("Thousands separator"), {
+        target: { value: "space" },
+      });
+      expect(last(onChange).typography.thousandsSeparator).toBe("space");
+    });
+
+    it("writes the whitespace and spacing fields through to typography", () => {
+      const { onChange } = renderSections(CAPABLE);
+
+      fireEvent.click(screen.getByLabelText("Compare runs of spaces against the document"));
+      expect(last(onChange).typography.normaliseWhitespace).toBe(false);
+
+      fireEvent.click(screen.getByLabelText("Compare tabs against the document"));
+      expect(last(onChange).typography.flagTabs).toBe(false);
+
+      fireEvent.change(screen.getByLabelText("A non-breaking space is"), {
+        target: { value: "preserve" },
+      });
+      expect(last(onChange).typography.nonBreakingSpace).toBe("preserve");
+
+      fireEvent.change(screen.getByLabelText("Around a solidus"), { target: { value: "spaced" } });
+      expect(last(onChange).typography.slashSpacing).toBe("spaced");
+
+      fireEvent.change(screen.getByLabelText("Before a currency symbol"), {
+        target: { value: "tight" },
+      });
+      expect(last(onChange).typography.currencySpacing).toBe("tight");
+
+      fireEvent.click(
+        screen.getByLabelText("Compare a space before an opening bracket against the document"),
+      );
+      expect(last(onChange).typography.spaceBeforeParenthesis).toBe(true);
+
+      fireEvent.click(
+        screen.getByLabelText("Compare spaces inside a hyphenated compound against the document"),
+      );
+      expect(last(onChange).typography.spaceAfterHyphen).toBe(true);
     });
   });
 });

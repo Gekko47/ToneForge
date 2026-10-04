@@ -1460,6 +1460,93 @@ export default function DeterministicStyleSections({
             onChange={(next) => patchTypography({ thousandsSeparator: next })}
           />
         </ProfileSubsection>
+
+        {/*
+         * The whitespace and spacing conventions.
+         *
+         * The section summary has promised these since the section was written —
+         * "dashes, quotes, ellipses, and the whitespace and spacing conventions" —
+         * and eight of the sixteen typography fields had no control anywhere in
+         * the pane, so the sentence described settings a user could not reach.
+         * Every one is read by `typography.ts` and produces a finding, so this is
+         * the same defect as D-1 at smaller scale: a field that exists, is read,
+         * and cannot be set.
+         *
+         * `percentageSpacing` is deliberately absent. It is declared in both
+         * schemas, but `numbers.percentageSpacing` is the normative one and the
+         * rule prefers it; Language → Numbers already owns it. A second control
+         * here would be the two-owners defect D2 was opened for, over a field
+         * whose typography value is a fallback. The note below says where it
+         * lives rather than leaving a reader to search for it.
+         */}
+        <ProfileSubsection
+          id="typography-spacing"
+          title="Whitespace and spacing"
+          summary="Runs of spaces, tabs, non-breaking spaces, and how symbols are spaced."
+        >
+          <fieldset className="tf-standard-block">
+            <legend>Whitespace</legend>
+            <CompareToggle
+              what="runs of spaces"
+              checked={typography.normaliseWhitespace}
+              onChange={(next) => patchTypography({ normaliseWhitespace: next })}
+            />
+            <CompareToggle
+              what="tabs"
+              checked={typography.flagTabs}
+              onChange={(next) => patchTypography({ flagTabs: next })}
+            />
+            <EnumSelect
+              label="A non-breaking space is"
+              hint="Preserving is how a house style keeps “10 kg” together."
+              value={typography.nonBreakingSpace}
+              options={[
+                ["flag", "Flagged as a deviation"],
+                ["preserve", "Preserved"],
+              ]}
+              onChange={(next) => patchTypography({ nonBreakingSpace: next })}
+            />
+          </fieldset>
+          <fieldset className="tf-standard-block">
+            <legend>Spacing</legend>
+            <EnumSelect
+              label="Around a solidus"
+              hint="None means this house has no opinion and the rule does not run."
+              value={typography.slashSpacing}
+              options={[
+                ["none", "No opinion"],
+                ["spaced", "Spaced"],
+                ["tight", "Tight"],
+              ]}
+              onChange={(next) => patchTypography({ slashSpacing: next })}
+            />
+            <EnumSelect
+              label="Before a currency symbol"
+              hint="Money normally follows Language → Currency, which is normative."
+              value={typography.currencySpacing}
+              options={[
+                ["none", "No opinion"],
+                ["spaced", "Spaced"],
+                ["tight", "Tight"],
+              ]}
+              onChange={(next) => patchTypography({ currencySpacing: next })}
+            />
+            <CompareToggle
+              what="a space before an opening bracket"
+              checked={typography.spaceBeforeParenthesis}
+              onChange={(next) => patchTypography({ spaceBeforeParenthesis: next })}
+            />
+            <CompareToggle
+              what="spaces inside a hyphenated compound"
+              checked={typography.spaceAfterHyphen}
+              onChange={(next) => patchTypography({ spaceAfterHyphen: next })}
+            />
+          </fieldset>
+          <p className="tf-sub">
+            The space before a percent sign is set under Language → Numbers, which owns that
+            convention; this section defers to it.
+          </p>
+        </ProfileSubsection>
       </ProfileSection>
 
       <ProfileSection
