@@ -4960,3 +4960,60 @@ prints in") since before the audit.
   a label or a written value. How the page looks at 329px in both themes is a
   human item in `docs/manual-verification.md`, and no green run closes the
   Word-host gate (ADR-0051).
+
+## ADR-0125 — The house-style sentence-case toggle is deleted, not re-scoped
+
+**Status:** Accepted.
+
+**Context.** Phase 7 wrote a test that walks the profile schemas rather than
+trusting `PROFILE_FIELD_PATHS`, and it found `houseStyle.capitalization.sentenceCase`
+absent from every list. That prompted a check of what the field actually did, and
+the answer was worse than an unreachable field:
+
+- `ProfileEditor.tsx` rendered a toggle for it, labelled "House-style rule: flag a
+  sentence that does not open with a capital letter".
+- `houseStyle.ts` read it and built findings.
+- **The registry discarded those findings.** `language/legacyTitleCase` calls
+  `findHouseStyleIssues(...)` and then `selectCategories(..., ["houseStyle.capitalization.titleCase"])`.
+  Sentence case is not in that list, so nothing it produced was ever emitted.
+- The field was also missing from `PROFILE_FIELD_PATHS`, so §11 could not see it —
+  not as wired, and not as orphaned. Both are the same silence.
+
+So the toggle validated, persisted, displayed as authoritative, and produced
+nothing a user could observe. That is ND-13, at the one place the audit had
+previously declared itself clean.
+
+**The S3 comment was wrong.** It said the two sentence-case fields were "live and
+both are registered, so neither control can be deleted". That was verified from
+the fact that a rule _read_ the field, which is not the same as anything emitting
+it. The owner decision to keep both controls was taken on that incomplete premise
+and is superseded here.
+
+**Decision.**
+
+- **The field, the rule and the toggle are deleted.** Sentence case is a house
+  style enforced in headings; `language.capitalisation.headingCase` already
+  enforces it there, and `language.capitalisation.sentenceCase` governs body
+  prose. There is no third owner.
+- **Re-scoping the rule to headings was rejected**, because that is precisely what
+  `headingCase` does. Keeping both would put two findings on the same character,
+  which is the conflict that made the planner refuse whole plans.
+- **`houseStyle.spellingVariant` is now listed in both
+  `PROFILE_FIELD_PATHS` and `METADATA_ONLY_PROFILE_PATHS`.** It was in neither.
+  Its own comment said `METADATA_ONLY_PROFILE_PATHS` was "the place a field with
+  no rule says so", while the list was empty — the decision existed as prose and
+  nowhere a test could read.
+
+**Consequences.**
+
+- Positive: the profile no longer carries a sentence-case setting that governs
+  nothing, and the Capital case defaults panel has one control that genuinely owns
+  its field.
+- Positive: `PROFILE_FIELD_PATHS` and `METADATA_ONLY_PROFILE_PATHS` are now
+  checked against the schemas, so a field absent from both fails
+  `profileBehaviour.test.ts` rather than passing unnoticed.
+- Cost: a stored profile with `houseStyle.capitalization.sentenceCase` loses it on
+  load. There are no users to migrate (owner decision), and Zod strips unknown
+  keys, so no stored record can become unreadable.
+- **Not claimed:** this removes a check that never ran. Nothing that worked
+  before stops working; what is removed is a promise the product was not keeping.

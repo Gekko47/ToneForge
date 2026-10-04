@@ -218,17 +218,22 @@ export interface DeterministicRule {
  * an explicit, reviewed exception rather than an oversight. The list is the
  * reason the audit can insist every field is either wired *or* excused.
  *
- * **Empty as of D5.** `language.locale` was the only entry, and it was there
- * because no rule read it — the setting was an editable text box that changed
- * nothing. It now supplies the default numeric date shape in `findDateIssues`,
- * so it is a live input like any other and the exception no longer applies.
+ * **Not empty, and that is the point.** `language.locale` was the only entry
+ * until D5 made it a live input — it supplies the default numeric date shape in
+ * `findDateIssues` — and the list went back to empty. An empty list is a claim
+ * that every profile field is read by something. It was true, and it hid two
+ * problems: a field can be *absent from this list and from `PROFILE_FIELD_PATHS`*
+ * entirely, in which case no audit can see it.
  *
- * Keeping this list is still worth it. A field with no rule and no excuse is
- * exactly the ND-13 class of defect, and this is where such a field has to be
- * *declared* rather than quietly tolerated: an empty list is a claim that every
- * profile field is read by something, and it is checkable.
+ * `houseStyle.spellingVariant` is the field that was invisible. No rule reads
+ * it, and its own comment in `PROFILE_FIELD_PATHS` said `METADATA_ONLY_PROFILE_PATHS`
+ * was "the place a field with no rule says so" — while the list was empty and the
+ * field was absent from the profile list too. The decision existed as prose and
+ * nowhere else. It is listed in both places now, and
+ * `tests/unit/analysis/deterministic/profileBehaviour.test.ts` walks the schemas
+ * so the next such field fails rather than passing unnoticed.
  */
-export const METADATA_ONLY_PROFILE_PATHS: readonly string[] = [];
+export const METADATA_ONLY_PROFILE_PATHS: readonly string[] = ["houseStyle.spellingVariant"];
 
 /**
  * Every field a deterministic profile exposes, as dotted paths.
@@ -271,7 +276,7 @@ export const PROFILE_FIELD_PATHS: readonly string[] = [
   "language.locale",
 
   /*
-   * House style (spec §4.3), capitalisation only.
+   * House style (spec §4.3).
    *
    * This list previously named no `houseStyle` field at all, which is exactly why
    * the registry audit could not see ND-13: `houseStyle.preferredTerminology` and
@@ -279,11 +284,20 @@ export const PROFILE_FIELD_PATHS: readonly string[] = [
    * that no rule reached, and the one mechanism designed to catch an unreachable
    * field was not looking at this section.
    *
-   * `spellingVariant` is deliberately absent. It is metadata — no rule reads it,
-   * and `METADATA_ONLY_PROFILE_PATHS` is the place a field with no rule says so
-   * rather than pretending to be wired.
+   * `capitalization.sentenceCase` was deleted with its rule and its toggle
+   * (ADR-0125). It is listed nowhere now, deliberately: it was a field the §11
+   * audit could not see, a toggle that produced nothing, and a second
+   * `sentenceCase` beside the normative one. `language.capitalisation.headingCase`
+   * governs headings and `language.capitalisation.sentenceCase` governs body prose.
+   *
+   * `spellingVariant` IS listed here, and excused in `METADATA_ONLY_PROFILE_PATHS`.
+   * It is carried in a persisted profile and round-trips through the editor, but
+   * no rule reads it — spec §4.3 removed the US/UK variant table that would have.
+   * Being listed and excused is the honest statement; being absent from both
+   * lists, which is what it was, is a silence.
    */
   "houseStyle.capitalization.titleCaseWords",
+  "houseStyle.spellingVariant",
 
   // Typography (spec §5).
   "typography.emDash",

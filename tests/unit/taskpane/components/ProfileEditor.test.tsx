@@ -70,7 +70,7 @@ function makeProfile(): StyleProfile {
       bannedTerms: ["utilize"],
     },
     houseStyle: {
-      capitalization: { sentenceCase: true, titleCaseWords: ["ToneForge"] },
+      capitalization: { titleCaseWords: ["ToneForge"] },
       spellingVariant: "en-US",
     },
   };
@@ -368,7 +368,7 @@ describe("ProfileEditor", () => {
         ellipsis: "three-dots",
       }),
       houseStyle: {
-        capitalization: { sentenceCase: false, titleCaseWords: [] },
+        capitalization: { titleCaseWords: [] },
         spellingVariant: "en-GB",
       },
     };

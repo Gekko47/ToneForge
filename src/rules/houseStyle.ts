@@ -15,8 +15,6 @@
 import { v4 as uuidv4 } from "uuid";
 import type { Finding, Range, Severity } from "../core/domain/Finding";
 import type { HouseStyle } from "../core/domain/StyleProfile";
-import { splitSentences } from "../shared/utils/text";
-import { toSentenceCase } from "../shared/utils/caseConversion";
 
 export interface HouseStyleCheckOptions {
   text: string;
@@ -71,7 +69,6 @@ export function findHouseStyleIssues(options: HouseStyleCheckOptions): Finding[]
   if (text.length === 0) return [];
 
   const findings: Finding[] = [];
-  findings.push(...checkSentenceCase(text, rules));
   findings.push(...checkTitleCaseWords(text, rules));
   return findings;
 }
@@ -174,46 +171,24 @@ function isLowerCase(character: string): boolean {
   return /\p{Ll}/u.test(character);
 }
 
-function checkSentenceCase(text: string, rules: HouseStyle): Finding[] {
-  if (!rules.capitalization.sentenceCase) return [];
-
-  const findings: Finding[] = [];
-  let searchFrom = 0;
-  splitSentences(text).forEach((sentence) => {
-    const sentenceStart = text.indexOf(sentence, searchFrom);
-    if (sentenceStart < 0) return;
-    searchFrom = sentenceStart + sentence.length;
-
-    const firstCased = firstCasedCharacter(text, sentenceStart, sentenceStart + sentence.length);
-    if (firstCased === null || !isLowerCase(firstCased.character)) return;
-
-    const range = { start: firstCased.index, end: firstCased.index + firstCased.character.length };
-    findings.push(
-      makeFinding({
-        category: "houseStyle.capitalization.sentenceCase",
-        profilePath: "houseStyle.capitalization.sentenceCase",
-        range: makeRange(range),
-        message: `Start the sentence with uppercase “${firstCased.character.toUpperCase()}”`,
-        severity: "warning",
-        evidence: text.slice(range.start, range.end),
-        actual: text.slice(range.start, range.end),
-        expected: toSentenceCase(text.slice(range.start, range.end)),
-        // The expected value is the uppercased character itself, so every
-        // occurrence wanting the same letter groups together and a sentence
-        // starting with a different one does not join it.
-        safeBatchKey: "sentenceCase",
-        transformation: {
-          kind: "case",
-          style: "sentence",
-          text: text.slice(range.start, range.end),
-        },
-      }),
-    );
-  });
-
-  return findings;
-}
-
+/*
+ * `checkSentenceCase` is deleted (ADR-0125).
+ *
+ * It flagged a sentence not opening with a capital — the same judgement
+ * `language/capitalisation.sentenceCase` makes — while walking *every sentence
+ * in the document*, not headings. Two faults, and the second is why it could
+ * never simply have been enabled:
+ *
+ * 1. The registry filtered its category out, so the toggle in the editor wrote a
+ *    field whose findings never reached the user. A control that saves,
+ *    validates, and produces nothing observable is ND-13.
+ * 2. Scoped to headings, it would collide with `language.capitalisation.headingCase`,
+ *    which already enforces sentence case there. Two findings on one character
+ *    is what makes the planner refuse a whole plan as conflicting.
+ *
+ * Sentence case now has exactly two owners: `headingCase` for headings, and
+ * `language.capitalisation.sentenceCase` for body prose. There is no third.
+ */
 function checkTitleCaseWords(text: string, rules: HouseStyle): Finding[] {
   const findings: Finding[] = [];
   const seenRanges = new Set<string>();

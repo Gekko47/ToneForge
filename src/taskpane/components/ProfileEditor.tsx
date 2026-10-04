@@ -7,7 +7,6 @@ import {
   MessageBarType,
   PrimaryButton,
   TextField,
-  Toggle,
 } from "@fluentui/react";
 import type { DeterministicStyleProfile } from "../../core/domain/StyleProfile";
 import {
@@ -56,7 +55,6 @@ interface ProfileFormValues {
   ellipsis: TypographyRules["ellipsis"];
   preferredTerminology: string;
   bannedTerms: string;
-  capitalizationSentenceCase: boolean;
   titleCaseWords: string;
   spellingVariant: HouseStyle["spellingVariant"];
 }
@@ -130,7 +128,6 @@ function profileToValues(profile: StyleProfile): ProfileFormValues {
       .map((rule) => `${rule.source}: ${rule.replacement}`)
       .join("\n"),
     bannedTerms: profile.language.bannedTerms.join("\n"),
-    capitalizationSentenceCase: profile.houseStyle.capitalization.sentenceCase,
     titleCaseWords: profile.houseStyle.capitalization.titleCaseWords.join("\n"),
     spellingVariant: profile.houseStyle.spellingVariant,
   };
@@ -213,7 +210,6 @@ function buildCandidate(values: ProfileFormValues, baseProfile: StyleProfile): S
       ...baseProfile.houseStyle,
       capitalization: {
         ...baseProfile.houseStyle.capitalization,
-        sentenceCase: values.capitalizationSentenceCase,
         titleCaseWords: parseLines(values.titleCaseWords),
       },
       spellingVariant: values.spellingVariant,
@@ -678,33 +674,33 @@ export default function ProfileEditor({
         onChange={(next) => patchDeterministicSections(next)}
       />
       {/*
-       * What is left here, and why so little (D-2, S3/S4).
+       * What is left here, and why so little (D-2, S3/S4, ADR-0125).
        *
-       * This panel used to hold four controls. Two of them — preferred
-       * terminology and banned terms — were a *second* editor for fields the
-       * Language section already owned, in a lossy format: a line can express a
-       * substitution and none of `severity`, `caseSensitive`, `wholeWord` or
-       * `scope`. That is the two-owners defect, and it is why the terminology
-       * editor was replaced by a bulk paste that produces real rows (ADR-0123).
+       * This panel held four controls. Two of them — preferred terminology and
+       * banned terms — were a *second* editor for fields the Language section
+       * already owned, in a lossy format: a line can express a substitution and
+       * none of `severity`, `caseSensitive`, `wholeWord` or `scope`. That is the
+       * two-owners defect, and it is why the terminology editor was replaced by a
+       * bulk paste that produces real rows (ADR-0123).
        *
-       * The two that remain are genuinely different behaviours from the
-       * similarly-named ones under Language:
+       * The third, a "sentence case" toggle, was deleted after Phase 7 verified
+       * that its findings were filtered out by the registry and never reached
+       * the user. The comment here used to claim it was "live and registered";
+       * that was checked from the fact that a rule *read* the field, which is not
+       * the same as anything emitting it. Sentence case now has two owners and
+       * two: `headingCase` for headings, `language.capitalisation.sentenceCase`
+       * for body prose.
        *
-       *   houseStyle.capitalization.sentenceCase  -> houseStyle.ts `checkSentenceCase`
-       *   language.capitalisation.sentenceCase    -> language.ts  `findCapitalisationIssues`
-       *
-       * Both are live and both are registered, so neither control can be deleted.
-       * They were left in place deliberately (owner decision) rather than merged,
-       * because merging them would change which rules fire — a product change,
-       * not a tidy-up. What was fixed is the *labelling*: two toggles reading
-       * almost the same were the real hazard, and the one below now says which
-       * rule it belongs to.
+       * That leaves one control. It is not merged into Language because
+       * `titleCaseWords` has no equivalent there — the expanded capitalisation
+       * schema has no legacy word list — so this is the only owner of it, not a
+       * second one.
        */}
       <section aria-labelledby="house-style-heading" className="tf-editor-panel">
         <h3 id="house-style-heading">Capital case defaults</h3>
         <p className="tf-sub">
-          Two house-style capitalisation rules. They are separate from the capitalisation settings
-          under Language, which are checked by different rules.
+          The legacy title-case word list. Sentence and heading case are set under Language, where
+          the rules that enforce them live.
         </p>
         <div className="tf-editor-grid">
           <TextField
@@ -724,13 +720,6 @@ export default function ProfileEditor({
            * observe. The value stays in `ProfileFormValues` so a profile written
            * before the rule was removed is not silently reset on save.
            */}
-          <Toggle
-            label="House-style rule: flag a sentence that does not open with a capital letter"
-            checked={values.capitalizationSentenceCase}
-            onText="Checked"
-            offText="Not checked"
-            onChange={(_event, value) => patch({ capitalizationSentenceCase: value ?? false })}
-          />
         </div>
       </section>
 

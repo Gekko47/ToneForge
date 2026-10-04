@@ -686,10 +686,22 @@ export type DocumentStructureProfile = z.infer<typeof DocumentStructureProfileSc
  * here because there are no users to migrate; it would not be safe if a stored
  * term were ever load-bearing.
  */
+/**
+ * The legacy flat house-style record (spec §4.3).
+ *
+ * **`capitalization.sentenceCase` was removed** (ADR-0125). It was a second
+ * `sentenceCase` beside `language.capitalisation.sentenceCase`, it walked every
+ * sentence in the document rather than headings, and the registry discarded its
+ * findings — so the field was a toggle that saved, validated, and produced
+ * nothing a user could see. Headings are governed by
+ * `language.capitalisation.headingCase`; body prose by
+ * `language.capitalisation.sentenceCase`. There is no third sentence-case rule,
+ * and there should not be: two owners over one character is what makes the
+ * planner refuse a plan as conflicting.
+ */
 export const HouseStyleSchema = z.object({
   capitalization: z
     .object({
-      sentenceCase: z.boolean().default(true),
       titleCaseWords: z.array(z.string()).default([]),
     })
     .default({}),

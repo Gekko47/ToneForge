@@ -19,7 +19,7 @@ function makeProfile(overrides: Partial<StyleProfile> = {}): StyleProfile {
     // here without this test having to be amended to stay type-correct.
     typography: sampleTypography(overrides.typography ?? {}),
     houseStyle: {
-      capitalization: { sentenceCase: true, titleCaseWords: [] },
+      capitalization: { titleCaseWords: [] },
       spellingVariant: "en-US",
       ...overrides.houseStyle,
     },

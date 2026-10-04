@@ -15,6 +15,19 @@
  * in `language.test.ts` and `requiredTerms.test.ts`.
  *
  * What is left here is capitalisation, and it is tested properly.
+ *
+ * **`checkSentenceCase` was deleted** (ADR-0125), along with the profile field and
+ * the toggle that wrote it. It flagged a sentence not opening with a capital —
+ * the same judgement `language.capitalisation.sentenceCase` makes — while walking
+ * every sentence in the document. The registry filtered its category out, so the
+ * toggle produced nothing a user could observe. Scoped to headings it would have
+ * collided with `language.capitalisation.headingCase`, which already enforces
+ * sentence case there.
+ *
+ * The four tests that asserted its behaviour are deleted rather than rewritten,
+ * because the behaviour is gone. `sentenceCase has left the house-style rule`
+ * below replaces them: it asserts the module reports nothing for the text those
+ * tests used to assert it reported, which is the direction that actually matters.
  */
 
 import { describe, expect, it } from "vitest";
@@ -23,18 +36,19 @@ import type { HouseStyle } from "../../../src/core/domain/StyleProfile";
 import { findHouseStyleIssues } from "../../../src/rules/houseStyle";
 
 const defaultHouseStyle: HouseStyle = {
-  capitalization: {
-    sentenceCase: true,
-    titleCaseWords: [],
-  },
+  capitalization: { titleCaseWords: [] },
   spellingVariant: "en-US",
 };
 
-const quietHouseStyle: HouseStyle = {
-  ...defaultHouseStyle,
-  capitalization: { sentenceCase: false, titleCaseWords: [] },
-};
+const quietHouseStyle: HouseStyle = defaultHouseStyle;
 
+/**
+ * The shape every finding this module emits must have.
+ *
+ * Applied to the title-case findings rather than only asserted once: a finding
+ * with no id cannot be reviewed, and one without `kind` cannot be told apart
+ * from a semantic finding in a list that shows both.
+ */
 function expectDeterministicFinding(finding: Finding): void {
   expect(finding.id).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
@@ -58,67 +72,13 @@ describe("findHouseStyleIssues", () => {
     expect(findings).toEqual([]);
   });
 
-  it("flags lowercase sentence starts, including after punctuation", () => {
-    const text = "hello world. another world! third starts here.";
-    const findings = findHouseStyleIssues({ text, rules: defaultHouseStyle });
-
-    expect(findings.map((finding) => finding.category)).toEqual([
-      "houseStyle.capitalization.sentenceCase",
-      "houseStyle.capitalization.sentenceCase",
-      "houseStyle.capitalization.sentenceCase",
-    ]);
-    expect(findings.map((finding) => finding.range)).toEqual([
-      { start: 0, end: 1, unit: "character" },
-      { start: 13, end: 14, unit: "character" },
-      { start: 28, end: 29, unit: "character" },
-    ]);
-    expect(findings.map((finding) => finding.evidence)).toEqual(["h", "a", "t"]);
-    expect(findings.map((finding) => finding.message)).toEqual([
-      "Start the sentence with uppercase “H”",
-      "Start the sentence with uppercase “A”",
-      "Start the sentence with uppercase “T”",
-    ]);
-    findings.forEach(expectDeterministicFinding);
-  });
-
-  it("skips punctuation and numbers when finding the first sentence character", () => {
-    const findings = findHouseStyleIssues({
-      text: '"hello" again. 123 second.',
-      rules: defaultHouseStyle,
-    });
-
-    expect(findings.map((finding) => finding.range)).toEqual([
-      { start: 1, end: 2, unit: "character" },
-      { start: 19, end: 20, unit: "character" },
-    ]);
-    expect(findings.map((finding) => finding.evidence)).toEqual(["h", "s"]);
-  });
-
-  it("does not flag sentence starts when sentence-case checking is disabled", () => {
-    const findings = findHouseStyleIssues({
-      text: "lowercase start. another lowercase start.",
-      rules: quietHouseStyle,
-    });
-
-    expect(findings).toEqual([]);
-  });
-
-  it("does not flag already capitalized sentence starts", () => {
-    const findings = findHouseStyleIssues({
-      text: "Hello world. Another sentence.",
-      rules: defaultHouseStyle,
-    });
-
-    expect(findings).toEqual([]);
-  });
-
   it("flags configured title-case words when their first cased character is lowercase", () => {
     const text = "the Value and test";
     const findings = findHouseStyleIssues({
       text,
       rules: {
         ...defaultHouseStyle,
-        capitalization: { sentenceCase: false, titleCaseWords: ["the", "value", "and"] },
+        capitalization: { titleCaseWords: ["the", "value", "and"] },
       },
     });
 
@@ -142,6 +102,7 @@ describe("findHouseStyleIssues", () => {
       "Capitalize title-case word “the”",
       "Capitalize title-case word “and”",
     ]);
+    findings.forEach(expectDeterministicFinding);
   });
 
   it("matches title-case words case-insensitively but ignores larger words", () => {
@@ -149,7 +110,7 @@ describe("findHouseStyleIssues", () => {
       text: "VALUE value valueless",
       rules: {
         ...defaultHouseStyle,
-        capitalization: { sentenceCase: false, titleCaseWords: ["value"] },
+        capitalization: { titleCaseWords: ["value"] },
       },
     });
 
@@ -166,7 +127,6 @@ describe("findHouseStyleIssues", () => {
       rules: {
         ...defaultHouseStyle,
         capitalization: {
-          sentenceCase: false,
           titleCaseWords: ["", "   ", "value"],
         },
       },
@@ -180,7 +140,7 @@ describe("findHouseStyleIssues", () => {
       text: "🙂 café test",
       rules: {
         ...quietHouseStyle,
-        capitalization: { sentenceCase: false, titleCaseWords: ["test"] },
+        capitalization: { titleCaseWords: ["test"] },
       },
     });
 
@@ -199,7 +159,7 @@ describe("findHouseStyleIssues", () => {
       text: "CAFÉ and café",
       rules: {
         ...quietHouseStyle,
-        capitalization: { sentenceCase: false, titleCaseWords: ["café"] },
+        capitalization: { titleCaseWords: ["café"] },
       },
     });
 
@@ -211,6 +171,41 @@ describe("findHouseStyleIssues", () => {
       range: { start: 9, end: 10, unit: "character" },
       evidence: "c",
     });
+  });
+});
+
+describe("sentenceCase has left the house-style rule (ADR-0125)", () => {
+  /*
+   * Four tests were deleted with the check they asserted. This is what replaces
+   * them, and it asserts the opposite direction: the text those tests expected
+   * findings for must now produce none.
+   *
+   * Without this, deleting the rule would look identical to deleting its tests —
+   * which is the shape a coverage loss takes when nobody is looking. Here the
+   * removal is the assertion.
+   */
+  it("reports nothing for the text the retired check used to flag", () => {
+    const findings = findHouseStyleIssues({
+      text: 'hello world. another world! third starts here. "quoted" again. 123 second.',
+      rules: defaultHouseStyle,
+    });
+
+    expect(findings).toEqual([]);
+  });
+
+  it("emits no sentence-case category or profile path at all, whatever the text", () => {
+    const findings = findHouseStyleIssues({
+      text: "lowercase start. Another Sentence. yet another one.",
+      rules: defaultHouseStyle,
+    });
+
+    const categories = findings.map((finding) => finding.category);
+    const profilePaths = findings.flatMap((finding) =>
+      finding.deterministic === undefined ? [] : [finding.deterministic.profilePath],
+    );
+
+    expect(categories).not.toContain("houseStyle.capitalization.sentenceCase");
+    expect(profilePaths).not.toContain("houseStyle.capitalization.sentenceCase");
   });
 });
 
