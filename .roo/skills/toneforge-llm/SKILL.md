@@ -1,6 +1,6 @@
 ---
 name: toneforge-llm
-description: Work with the provider-agnostic LLM layer in ToneForge src/ai. Use when adding providers, building prompt templates, implementing semantic profiling or deviation detection, or testing LLM behavior with MockAdapter.
+description: Work with the provider-agnostic LLM layer in ToneForge src/ai. Use when adding providers, building prompt templates, implementing semantic profiling or deviation detection, or testing LLM behavior with MockAdapter. Apply Ponytail first — YAGNI, reuse existing code, minimal diff.
 ---
 
 # LLM Integration for ToneForge

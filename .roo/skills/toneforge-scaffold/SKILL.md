@@ -1,6 +1,6 @@
 ---
 name: toneforge-scaffold
-description: Scaffold and extend the ToneForge Word add-in repository. Use when creating modules, adding tests or configs, setting up the dev environment, or aligning work to ROADMAP stages and architecture boundaries.
+description: Scaffold and extend the ToneForge Word add-in repository. Use when creating modules, adding tests or configs, setting up the dev environment, or aligning work to ROADMAP stages and architecture boundaries. Apply Ponytail first — YAGNI, reuse existing code, minimal diff.
 ---
 
 # ToneForge Scaffold

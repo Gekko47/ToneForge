@@ -1,6 +1,6 @@
 ---
 name: toneforge-testing
-description: Write and run tests for ToneForge with Vitest and jsdom. Use when implementing features, debugging failures, adding unit or integration tests, or mocking Office and LLM providers.
+description: Write and run tests for ToneForge with Vitest and jsdom. Use when implementing features, debugging failures, adding unit or integration tests, or mocking Office and LLM providers. Apply Ponytail first — YAGNI, reuse existing code, minimal diff.
 ---
 
 # Testing for ToneForge

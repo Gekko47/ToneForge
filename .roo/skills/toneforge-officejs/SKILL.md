@@ -1,6 +1,6 @@
 ---
 name: toneforge-officejs
-description: Work with Word documents via Office.js in ToneForge. Use when reading document content, probing Word capabilities, implementing the revision adapter, or debugging host compatibility through the runInWord wrapper.
+description: Work with Word documents via Office.js in ToneForge. Use when reading document content, probing Word capabilities, implementing the revision adapter, or debugging host compatibility through the runInWord wrapper. Apply Ponytail first — YAGNI, reuse existing code, minimal diff.
 ---
 
 # Office.js for ToneForge
