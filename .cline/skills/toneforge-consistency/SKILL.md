@@ -91,7 +91,7 @@ Be honest about these limits; they are recorded in
 
 1. Add or change the check in `checks/`, and register it in
    `src/analysis/consistency/checks/index.ts` and
-   `src/analysis/consistency/contracts.ts`.
+   `src/analysis/consistency/contracts/`.
 2. If it is structural and deterministic, keep it that way. Escalation must be
    the exception inside the check, not its default.
 3. Add tests under `tests/unit/analysis/consistency/`.

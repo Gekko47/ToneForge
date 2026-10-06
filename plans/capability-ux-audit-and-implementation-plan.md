@@ -62,7 +62,7 @@ Legend:
 
 | Capability                                                  | Class               | Evidence                                                                                                                                                                                                                                                         |
 | ----------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cross-report consistency engine (C1-C10) with own consent   | F (repo) / M (live) | [`analysis/consistency/engine.ts`](src/analysis/consistency/engine.ts), [`AiReviewSection.tsx`](src/taskpane/components/AiReviewSection.tsx), [`Dashboard.tsx`](src/taskpane/pages/Dashboard.tsx). Never run against a real document or model.                   |
+| Cross-report consistency engine (C1-C10) with own consent   | F (repo) / M (live) | [`analysis/consistency/engine.ts`](src/analysis/consistency/indexedEngine.ts), [`AiReviewSection.tsx`](src/taskpane/components/AiReviewSection.tsx), [`Dashboard.tsx`](src/taskpane/pages/Dashboard.tsx). Never run against a real document or model.            |
 | Consistency preflight disclosure + progress + cancel        | F                   | [`ConsistencyReviewPreflight.tsx`](src/taskpane/components/ConsistencyReviewPreflight.tsx), [`ConsistencyReviewProgress.tsx`](src/taskpane/components/ConsistencyReviewProgress.tsx)                                                                             |
 | Consistency findings bridged into the ordinary finding list | F                   | [`analysis/consistency/bridge.ts`](src/analysis/consistency/bridge.ts), [`Dashboard.tsx`](src/taskpane/pages/Dashboard.tsx)                                                                                                                                      |
 | Full-document editorial review pipeline                     | **X**               | `ai/review/documentEditorialReview.ts`. Reachable only through [`reformat/index.ts`](src/reformat/index.ts) → `reviewEntireDocument`, which has no UI caller. [`Dashboard.tsx`](src/taskpane/pages/Dashboard.tsx) passes `null` for the full and spot arguments. |
@@ -511,7 +511,7 @@ gives them precedence over learned evidence. Nothing can author them:
 #### 4.1 Batch the consistency engine (M)
 
 The engine is quadratic and hard-bounded at 400 statements
-([`contracts.ts`](src/analysis/consistency/contracts.ts),
+([`contracts.ts`](src/analysis/consistency/contracts/),
 `CONSISTENCY_DEFAULT_MAX_STATEMENTS`). A clean partial result is not a clean
 document, which the preflight already admits. Reuse the batching partition from
 `ai/review/batcher.ts` (salvaged in 2.1) so long

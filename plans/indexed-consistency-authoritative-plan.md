@@ -1,6 +1,6 @@
 # Indexed Consistency — Authoritative Plan v2 (Owner-Revised)
 
-> **Authority:** This v2 supersedes both [`ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md`](systematic%20review/ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md:1) and v1 of this plan.
+> **Authority:** This v2 supersedes both [`ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md`](systematic review/ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md:1) and v1 of this plan.
 > Owner decisions 2026-10-05 incorporated. Senior decision: best final product is a full delay-expert-report consistency engine with complete claim schema, encrypted per-document store, and token-efficient decision LLM — built as a clean replacement with no migration burden.
 > Standing constraint: there are no users. No migration code is written. Old engine, old state keys, and old fixtures may be deleted outright.
 
@@ -11,11 +11,11 @@
 - D2 accepted with answer below: encrypted per-document store is mandatory because content is confidential and document-specific. JSON can handle the complex schema via IndexedDB object stores plus WebCrypto, without native SQLite.
 - D3 accepted: separate decision LLM role is key to low token rate — only a typed decision is requested once the document is parsed.
 - D4 agreed: General-model fallback never consumes a DecisionPlan.
-- D5 accepted: existing engine is replaced, not strangled. Delete [`engine.ts`](src/analysis/consistency/engine.ts:418), [`contracts.ts`](src/analysis/consistency/contracts.ts:44), [`batching.ts`](src/analysis/consistency/batching.ts:47), [`grouping.ts`](src/analysis/consistency/grouping.ts:1) pair logic and sentence-pair checks outright.
+- D5 accepted: existing engine is replaced, not strangled. Delete [`engine.ts`](src/analysis/consistency/indexedEngine.ts), [`contracts.ts`](src/analysis/consistency/contracts/), [`batching.ts`](src/analysis/consistency/index/), [`grouping.ts`](src/analysis/consistency/grouping.ts:1) pair logic and sentence-pair checks outright.
 - D6: indexed retrieval replaces windowing entirely. No windows, no `crossWindowPairsSkipped`. Blocking keys plus per-block caps bound the work; overflow is counted as `blockOverflowSkipped`.
 - D7 agreed: versioned confidence with explicit intervals derived from the pipeline.
 - D8 accepted: all 16 D-outcomes retained. A single delay-expert claim has many facets and must be cross-checked on every axis.
-- D9 resolved below: all ten C-profiles defined, reflecting the deterministic realignment already in [`contracts.ts`](src/analysis/consistency/contracts.ts:82) and [`semantic.ts`](src/analysis/consistency/checks/semantic.ts:1).
+- D9 resolved below: all ten C-profiles defined, reflecting the deterministic realignment already in [`contracts.ts`](src/analysis/consistency/contracts/) and [`semantic.ts`](src/analysis/consistency/candidates/).
 - D10 agreed: budget caps stay. No double search.
 - D11: preflight shows measured counts from the snapshot, never illustrative numbers.
 - D12 agreed: concrete `DecisionSubject` union with Zod schemas.
@@ -39,7 +39,7 @@ Yes, with IndexedDB as the physical layer, not roamingSettings JSON text.
 
 ## 3. D9 — all ten C-profiles with deterministic realignment
 
-Current code already realigned checks via `deterministicFirst` in [`contracts.ts`](src/analysis/consistency/contracts.ts:82) and ambiguous-only output in [`semantic.ts`](src/analysis/consistency/checks/semantic.ts:99). The indexed engine keeps that split and makes it explicit per check:
+Current code already realigned checks via `deterministicFirst` in [`contracts.ts`](src/analysis/consistency/contracts/) and ambiguous-only output in [`semantic.ts`](src/analysis/consistency/candidates/). The indexed engine keeps that split and makes it explicit per check:
 
 - C1 terminology drift: deterministic alias and normalisation match first; ambiguous residue goes to decision LLM on `E-ENTITY-SAME` and `E-DEFINITION-INCOMPATIBLE`.
 - C2 numeric contradiction: deterministic first. Normalised value, unit, scope, scenario, period, programme, basis, attribution gates decide most pairs. Only genuine semantic scope or basis ambiguity escalates.
@@ -86,7 +86,7 @@ flowchart TD
 
 Consolidation map, all under `src/analysis/consistency/` reusing [`text.ts`](src/shared/utils/text.ts:1) and [`primitives.ts`](src/analysis/consistency/checks/primitives.ts:1) logic where still valid:
 
-- `contracts/` — full claim, entity, event, programme, quantum, delay, evidence, candidate, subject, evaluation, plan, report schemas. Replaces old [`contracts.ts`](src/analysis/consistency/contracts.ts:1).
+- `contracts/` — full claim, entity, event, programme, quantum, delay, evidence, candidate, subject, evaluation, plan, report schemas. Replaces old [`contracts.ts`](src/analysis/consistency/contracts/).
 - `extraction/` — prompt, schema, batch extractor, global resolver, evidence validator. New.
 - `normalisation/` — dates, quantities, currencies, durations, units, terminology, aliases. Consolidates numeric and date logic from primitives.
 - `index/` — nine indices with add, remove, replace. New.
@@ -94,7 +94,7 @@ Consolidation map, all under `src/analysis/consistency/` reusing [`text.ts`](src
 - `comparison/` — diff, deterministic resolver, profiles, derivation with 16 outcomes, hard gates, confidence engine with intervals. New.
 - `decision/` — provider interface, plan compiler, context expansion, question registry with all ten profiles, `systemOne/` adapter triple, no `fallback/` General-model path. New.
 - `persistence/` — `ConsistencyStore` interface, `IndexedDbStore`, `MemoryStore`, schema versioning, WebCrypto field encryption, TTL wipe. No SQL.js, no `crypto.ts` beyond WebCrypto wrapper.
-- `indexedEngine.ts` — orchestration per original §36. Replaces old [`engine.ts`](src/analysis/consistency/engine.ts:418). Old `bridge.ts` mapping updated to V3 issue shape; `kind: consistency` preserved.
+- `indexedEngine.ts` — orchestration per original §36. Replaces old [`engine.ts`](src/analysis/consistency/indexedEngine.ts). Old `bridge.ts` mapping updated to V3 issue shape; `kind: consistency` preserved.
 
 Lint scope in [`eslint.config.mjs`](eslint.config.mjs:349) unchanged: `ai/providers` allowed, `word`, `taskpane`, `commands`, `reformat`, `changes` forbidden.
 

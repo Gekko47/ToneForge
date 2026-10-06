@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import ConsistencyReviewPreflight from "../../../../src/taskpane/components/ConsistencyReviewPreflight";
 import ConsistencyReviewProgress from "../../../../src/taskpane/components/ConsistencyReviewProgress";
 import ConsistencyReviewResults from "../../../../src/taskpane/components/ConsistencyReviewResults";
-import { CONSISTENCY_DEFAULT_MAX_STATEMENTS } from "../../../../src/analysis/consistency";
+import { CONSISTENCY_DEFAULT_MAX_PER_SUBJECT } from "../../../../src/analysis/consistency";
 import type { ConsistencyReport } from "../../../../src/analysis/consistency";
 
 /**
@@ -31,8 +31,9 @@ function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
       statementsConsidered: 120,
       statementsTotal: 120,
       comparisonsMade: 7140,
-      crossWindowPairsSkipped: 0,
-      windowsExamined: 1,
+      blockOverflowSkipped: 0,
+      adjudicationsUsed: 2,
+      adjudicationsAvailable: 60,
       perCheck: { C1: 1, C2: 0, C3: 1, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0, C9: 0, C10: 0 },
       limitations: [],
       modelAdjudicated: 2,
@@ -42,38 +43,41 @@ function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
 }
 
 describe("the consistency preflight", () => {
-  it("warns that a windowed run is not a complete review", () => {
+  it("states the per-subject cap, because a capped run is not a complete review", () => {
     render(
       <ConsistencyReviewPreflight
         approximateWords={9000}
         statementCount={900}
-        maxStatements={CONSISTENCY_DEFAULT_MAX_STATEMENTS}
+        maxPerSubject={CONSISTENCY_DEFAULT_MAX_PER_SUBJECT}
         providerName="openai"
         onStart={() => undefined}
         onCancel={() => undefined}
       />,
     );
-    const alert = screen.getByRole("alert");
-    // Every statement is examined now, so the honest limitation is the pairs
-    // between windows — not the statements past the bound, which the old
-    // wording claimed and which is no longer true.
-    expect(alert.textContent).toMatch(/3 windows/);
-    expect(alert.textContent).toMatch(/different windows is not looked for/i);
-    expect(alert.textContent).toMatch(/would not mean the whole document is consistent/i);
-    expect(alert.textContent).not.toMatch(/will not be examined/i);
+    // Every statement is indexed now, so the honest limitation is the work per
+    // subject — not statements past a bound, which the old wording claimed and
+    // which is no longer true.
+    const text = screen.getByText(/capped at/).textContent ?? "";
+    expect(text).toMatch(/900 statements/);
+    expect(text).toMatch(/share a subject/);
+    expect(text).toMatch(/would not mean the whole document is consistent/);
+    expect(text).not.toMatch(/will not be examined/i);
   });
 
-  it("gives no windowing warning when the whole document fits", () => {
+  it("states the same cap when the whole document fits", () => {
     render(
       <ConsistencyReviewPreflight
         approximateWords={400}
         statementCount={40}
-        maxStatements={CONSISTENCY_DEFAULT_MAX_STATEMENTS}
+        maxPerSubject={CONSISTENCY_DEFAULT_MAX_PER_SUBJECT}
         providerName="openai"
         onStart={() => undefined}
         onCancel={() => undefined}
       />,
     );
+    // The cap is stated unconditionally: it is the bound of the run, not a
+    // warning that appears only for long documents.
+    expect(screen.getByText(/capped at/)).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -82,7 +86,7 @@ describe("the consistency preflight", () => {
       <ConsistencyReviewPreflight
         approximateWords={400}
         statementCount={40}
-        maxStatements={CONSISTENCY_DEFAULT_MAX_STATEMENTS}
+        maxPerSubject={CONSISTENCY_DEFAULT_MAX_PER_SUBJECT}
         providerName="openrouter"
         onStart={() => undefined}
         onCancel={() => undefined}
@@ -96,7 +100,7 @@ describe("the consistency preflight", () => {
       <ConsistencyReviewPreflight
         approximateWords={400}
         statementCount={40}
-        maxStatements={CONSISTENCY_DEFAULT_MAX_STATEMENTS}
+        maxPerSubject={CONSISTENCY_DEFAULT_MAX_PER_SUBJECT}
         providerName="openai"
         onStart={() => undefined}
         onCancel={() => undefined}
@@ -436,10 +440,10 @@ describe("consistency results", () => {
    * The summary must name the real gap.
    *
    * It used to read "400 of 900 statements", which was true of a truncated run
-   * and is false of a windowed one. All 900 are examined now, so the honest
-   * statement is about the pairs that fell between windows.
+   * and is false of an indexed one. All 900 are examined now, so the honest
+   * statement is about the comparisons the per-subject cap skipped.
    */
-  it("says a windowed partial run is not a complete review", () => {
+  it("says a capped partial run is not a complete review", () => {
     render(
       <ConsistencyReviewResults
         report={report({
@@ -448,10 +452,11 @@ describe("consistency results", () => {
             statementsConsidered: 900,
             statementsTotal: 900,
             comparisonsMade: 239400,
-            crossWindowPairsSkipped: 165000,
-            windowsExamined: 3,
+            blockOverflowSkipped: 165000,
+            adjudicationsUsed: 3,
+            adjudicationsAvailable: 60,
             perCheck: {},
-            limitations: ["Compared 900 statements in windows."],
+            limitations: ["Compared 900 statements with a per-subject cap."],
             modelAdjudicated: 3,
           },
         })}
@@ -460,7 +465,7 @@ describe("consistency results", () => {
     );
     const summary = screen.getByText(/not a complete review/i);
     expect(summary.textContent).toMatch(/all 900 statements were examined/i);
-    expect(summary.textContent).toMatch(/3 windows/);
+    expect(summary.textContent).toMatch(/per-subject cap/);
     expect(summary.textContent).toMatch(/165000 comparison\(s\)/);
     // The old truncation phrasing must not survive in either surface.
     expect(summary.textContent).not.toMatch(/400 of 900/);
@@ -473,13 +478,14 @@ describe("consistency results", () => {
         report={report({
           coverage: {
             complete: false,
-            statementsConsidered: 400,
+            statementsConsidered: 900,
             statementsTotal: 900,
             comparisonsMade: 79800,
-            crossWindowPairsSkipped: 0,
-            windowsExamined: 1,
+            blockOverflowSkipped: 1200,
+            adjudicationsUsed: 0,
+            adjudicationsAvailable: 60,
             perCheck: {},
-            limitations: ["Compared the first 400 of 900 statements."],
+            limitations: ["The per-subject cap skipped 1200 comparisons."],
             modelAdjudicated: 0,
           },
         })}

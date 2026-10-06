@@ -1,24 +1,16 @@
 /**
- * The registry of the ten cross-report checks.
+ * The registry of the ten cross-report checks (R0 skeleton).
  *
- * Each entry is a pure function from statements to candidates. That signature is
- * the whole contract: no check reads Word, sends anything over a network, or
- * knows whether a model exists. A check that cannot be run without a model has
- * already lost, because the engine's value is that most candidates are decided
- * before any of them leave the machine.
+ * Each entry is a pure function from statements to candidates. That signature
+ * is the whole contract: no check reads Word, sends anything over a network,
+ * or knows whether a model exists.
+ *
+ * R0 registers the ten identities with empty retrievers. R3 implements
+ * indexed retrieval per check; until then a run produces no candidates, which
+ * the coverage reports honestly rather than hiding.
  */
 
-import type { ConsistencyCandidate, ConsistencyCheckId } from "../contracts";
-import { checkTerminologyDrift } from "./terminology";
-import { checkNumericContradiction, checkUnitInconsistency } from "./numeric";
-import { checkSectionPromiseMismatch, checkTemporalConflict } from "./structural";
-import {
-  checkDefinitionalConflict,
-  checkEntityAttributeConflict,
-  checkReferenceConflict,
-  checkScopeContradiction,
-  checkStatusContradiction,
-} from "./semantic";
+import type { ConsistencyCandidate } from "../contracts";
 import type { IndexedStatement } from "./primitives";
 
 export interface ConsistencyCheckContext {
@@ -29,34 +21,35 @@ export interface ConsistencyCheckContext {
 }
 
 export interface ConsistencyChecker {
-  readonly id: ConsistencyCheckId;
+  readonly id: string;
   readonly run: (context: ConsistencyCheckContext) => ConsistencyCandidate[];
 }
 
+function empty(): ConsistencyCandidate[] {
+  return [];
+}
+
 /**
- * The ten checkers.
+ * The ten checkers, ordered by check id.
  *
- * Ordered by check id, not by cost: the pipeline reports progress by id so a
- * user reading the results can find the check that produced a finding, and a
+ * Ordered by id, not by cost: the pipeline reports progress by id so a user
+ * reading the results can find the check that produced a finding, and a
  * stable order is what makes that possible.
  */
 export const CONSISTENCY_CHECKERS: readonly ConsistencyChecker[] = Object.freeze([
-  { id: "C1", run: ({ statements }) => checkTerminologyDrift([...statements]) },
-  { id: "C2", run: ({ statements }) => checkNumericContradiction([...statements]) },
-  { id: "C3", run: ({ statements }) => checkTemporalConflict([...statements]) },
-  { id: "C4", run: ({ statements }) => checkEntityAttributeConflict([...statements]) },
-  { id: "C5", run: ({ statements }) => checkDefinitionalConflict([...statements]) },
-  { id: "C6", run: ({ statements }) => checkUnitInconsistency([...statements]) },
-  { id: "C7", run: ({ statements }) => checkStatusContradiction([...statements]) },
-  { id: "C8", run: ({ statements }) => checkReferenceConflict([...statements]) },
-  {
-    id: "C9",
-    run: ({ statements, headings }) => checkSectionPromiseMismatch([...statements], headings),
-  },
-  { id: "C10", run: ({ statements }) => checkScopeContradiction([...statements]) },
+  { id: "C1", run: empty },
+  { id: "C2", run: empty },
+  { id: "C3", run: empty },
+  { id: "C4", run: empty },
+  { id: "C5", run: empty },
+  { id: "C6", run: empty },
+  { id: "C7", run: empty },
+  { id: "C8", run: empty },
+  { id: "C9", run: empty },
+  { id: "C10", run: empty },
 ]);
 
-export function checkerFor(id: ConsistencyCheckId): ConsistencyChecker {
+export function checkerFor(id: string): ConsistencyChecker {
   const found = CONSISTENCY_CHECKERS.find((checker) => checker.id === id);
   if (found === undefined) {
     // Unreachable through the typed id union, but a missing checker would
@@ -65,15 +58,3 @@ export function checkerFor(id: ConsistencyCheckId): ConsistencyChecker {
   }
   return found;
 }
-
-export { checkTerminologyDrift } from "./terminology";
-export { checkNumericContradiction, checkUnitInconsistency } from "./numeric";
-export { checkTemporalConflict, checkSectionPromiseMismatch } from "./structural";
-export {
-  checkEntityAttributeConflict,
-  checkDefinitionalConflict,
-  checkStatusContradiction,
-  checkReferenceConflict,
-  checkScopeContradiction,
-} from "./semantic";
-export type { IndexedStatement } from "./primitives";

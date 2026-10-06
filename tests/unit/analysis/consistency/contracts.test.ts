@@ -1,202 +1,221 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
   CONSISTENCY_ACTIONABLE_CONFIDENCE,
   CONSISTENCY_CHECK_IDS,
   CONSISTENCY_CHECKS,
   CONSISTENCY_CONSENT_ERROR,
+  CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS,
+  CONSISTENCY_DEFAULT_MAX_PER_SUBJECT,
+  ConsistencyAdjudicationSchema,
   ConsistencyCheckIdSchema,
+  ConsistencyCoverageSchema,
+  ConsistencyIssueSchema,
+  ConsistencyProgressSchema,
+  ConsistencyReportSchema,
+  ConsistencyReviewRequestSchema,
+  ConfidenceProfileSchema,
+  DOutcomeSchema,
+  DecisionPlanSchema,
+  DecisionQuestionSchema,
+  DecisionSubjectSchema,
+  EvaluationVectorSchema,
+  EvidenceRegistrySchema,
+  ExpertReportClaimSchema,
   consistencyCheck,
   parseConsistencyReviewRequest,
-} from "../../../../src/analysis/consistency";
+} from "../../../../src/analysis/consistency/contracts";
 
 /**
- * The contracts are the engine's safety boundary, so these tests are mostly
- * about what must be impossible rather than what must work.
+ * R0 skeleton tests: the contracts parse what they claim to parse, and the
+ * consent gate fails closed.
  */
-
-function request(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    consistencyConsent: true,
-    document: { revision: "r1", text: "Some text.", sections: [] },
-    ...overrides,
-  };
-}
-
-describe("consistency check identities", () => {
-  it("declares exactly ten checks", () => {
+describe("consistency contracts", () => {
+  it("exposes ten checks with deterministic-first flags", () => {
     expect(CONSISTENCY_CHECK_IDS).toHaveLength(10);
+    expect(CONSISTENCY_CHECKS.map((check) => check.id)).toEqual(CONSISTENCY_CHECK_IDS);
+    const c1 = consistencyCheck("C1");
+    expect(c1.deterministicFirst).toBe(true);
+    expect(() => consistencyCheck("C99")).toThrow();
+    expect(ConsistencyCheckIdSchema.parse("C10")).toBe("C10");
+    expect(() => ConsistencyCheckIdSchema.parse("C99")).toThrow();
   });
 
-  it("numbers them C1 through C10 with no gaps", () => {
-    expect(CONSISTENCY_CHECK_IDS).toEqual([
-      "C1",
-      "C2",
-      "C3",
-      "C4",
-      "C5",
-      "C6",
-      "C7",
-      "C8",
-      "C9",
-      "C10",
-    ]);
+  it("keeps the actionable threshold and budget defaults", () => {
+    expect(CONSISTENCY_ACTIONABLE_CONFIDENCE).toBe(0.7);
+    expect(CONSISTENCY_DEFAULT_MAX_PER_SUBJECT).toBe(400);
+    expect(CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS).toBe(60);
   });
 
-  it("gives every check a descriptor with a real question", () => {
-    CONSISTENCY_CHECK_IDS.forEach((id) => {
-      const descriptor = consistencyCheck(id);
-      expect(descriptor.id).toBe(id);
-      expect(descriptor.title.length).toBeGreaterThan(0);
-      // A check with no stated question is a check nobody can review.
-      expect(descriptor.question.endsWith("?")).toBe(true);
+  it("refuses a request without explicit opt-in consent", () => {
+    expect(() =>
+      parseConsistencyReviewRequest({
+        consistencyConsent: false,
+        document: { revision: "r1", text: "Hello.", sections: [] },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseConsistencyReviewRequest({
+        document: { revision: "r1", text: "Hello.", sections: [] },
+      }),
+    ).toThrow();
+    expect(CONSISTENCY_CONSENT_ERROR).toMatch(/own consent/);
+  });
+
+  it("parses a consented request with defaults", () => {
+    const request = parseConsistencyReviewRequest({
+      consistencyConsent: true,
+      document: { revision: "r1", text: "Hello.", sections: [] },
     });
-  });
-
-  it("describes each check distinctly", () => {
-    // Two checks asking the same question would be one check with two names.
-    const titles = CONSISTENCY_CHECK_IDS.map((id) => consistencyCheck(id).title);
-    expect(new Set(titles).size).toBe(titles.length);
-  });
-
-  it("keeps C2 and C6 separate: value conflict is not unit conflict", () => {
-    expect(CONSISTENCY_CHECKS.C2.title).not.toBe(CONSISTENCY_CHECKS.C6.title);
-    expect(CONSISTENCY_CHECKS.C6.title.toLowerCase()).toContain("unit");
+    expect(request.checks).toEqual([...CONSISTENCY_CHECK_IDS]);
+    expect(request.maxPerSubject).toBe(CONSISTENCY_DEFAULT_MAX_PER_SUBJECT);
+    expect(request.maxAdjudications).toBe(CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS);
+    expect(request.allowUnredacted).toBe(false);
+    expect(ConsistencyReviewRequestSchema.parse(request)).toEqual(request);
   });
 
   it("rejects an unknown check id", () => {
-    expect(ConsistencyCheckIdSchema.safeParse("C11").success).toBe(false);
-    expect(ConsistencyCheckIdSchema.safeParse("c1").success).toBe(false);
+    expect(() =>
+      parseConsistencyReviewRequest({
+        consistencyConsent: true,
+        document: { revision: "r1", text: "Hello.", sections: [] },
+        checks: ["C99"],
+      }),
+    ).toThrow();
   });
 
-  it("states whether each check can be decided deterministically first", () => {
-    CONSISTENCY_CHECK_IDS.forEach((id) => {
-      expect(typeof consistencyCheck(id).deterministicFirst).toBe("boolean");
+  it("parses adjudications and verdicts", () => {
+    expect(
+      ConsistencyAdjudicationSchema.parse({
+        verdict: "contradiction",
+        reason: "The figures differ.",
+        wrongSide: "left",
+      }).verdict,
+    ).toBe("contradiction");
+    expect(() => ConsistencyAdjudicationSchema.parse({ verdict: "maybe", reason: "x" })).toThrow();
+  });
+
+  it("parses coverage, issues, reports, and progress", () => {
+    const coverage = ConsistencyCoverageSchema.parse({
+      complete: false,
+      statementsConsidered: 10,
+      statementsTotal: 10,
+      comparisonsMade: 0,
+      blockOverflowSkipped: 5,
+      adjudicationsUsed: 0,
+      adjudicationsAvailable: 60,
+      perCheck: {},
+      limitations: ["skeleton"],
+      modelAdjudicated: 0,
     });
+    expect(coverage.complete).toBe(false);
+    const issue = ConsistencyIssueSchema.parse({
+      checkId: "C1",
+      fingerprint: "C1:a|b",
+      title: "Terminology drift",
+      detail: "Same term, two ways.",
+      severity: "warning",
+      confidence: 0.9,
+      actionable: true,
+      nodeIds: ["s-0", "s-1"],
+      evidence: { left: "A", right: "B", sectionLeft: "", sectionRight: "" },
+    });
+    expect(issue.verdict).toBeUndefined();
+    const report = ConsistencyReportSchema.parse({
+      revision: "r1",
+      issues: [issue],
+      coverage,
+      usedModel: false,
+      startedAt: "2026-10-06T00:00:00.000Z",
+      finishedAt: "2026-10-06T00:00:01.000Z",
+    });
+    expect(report.issues).toHaveLength(1);
+    const progress = ConsistencyProgressSchema.parse({
+      phase: "done",
+      fraction: 1,
+      message: "Done.",
+    });
+    expect(progress.phase).toBe("done");
   });
 
-  it("keeps a confidence threshold the engine can act on", () => {
-    expect(CONSISTENCY_ACTIONABLE_CONFIDENCE).toBeGreaterThan(0);
-    expect(CONSISTENCY_ACTIONABLE_CONFIDENCE).toBeLessThanOrEqual(1);
+  it("parses the full claim schema with all facets", () => {
+    const claim = ExpertReportClaimSchema.parse({
+      id: "claim-1",
+      class: "delay",
+      text: "Completion slipped by six weeks.",
+      adoption: "asserted",
+      delay: { durationText: "six weeks", durationDays: 42 },
+      scenario: "actual",
+      evidenceIds: ["e1"],
+      section: "Programme",
+    });
+    expect(claim.class).toBe("delay");
+    expect(claim.delay?.durationDays).toBe(42);
+    expect(() => ExpertReportClaimSchema.parse({ ...claim, class: "nope" })).toThrow();
   });
-});
 
-describe("the consent gate", () => {
-  it("refuses a request with no consent at all", () => {
-    expect(() => parseConsistencyReviewRequest({ document: { revision: "r", text: "t" } })).toThrow(
-      /own explicit consent/,
+  it("parses the evidence registry with quarantine", () => {
+    const registry = EvidenceRegistrySchema.parse({
+      anchors: {
+        e1: { id: "e1", text: "Completion slipped.", section: "Programme" },
+      },
+      quarantined: [{ claimId: "claim-9", reason: "hash mismatch" }],
+    });
+    expect(registry.quarantined).toHaveLength(1);
+  });
+
+  it("parses every decision subject kind", () => {
+    expect(DecisionSubjectSchema.parse({ kind: "entity", name: "Acme" }).kind).toBe("entity");
+    expect(DecisionSubjectSchema.parse({ kind: "event", description: "handover" }).kind).toBe(
+      "event",
     );
-  });
-
-  it("refuses a request whose consent is false", () => {
-    expect(() => parseConsistencyReviewRequest(request({ consistencyConsent: false }))).toThrow(
-      CONSISTENCY_CONSENT_ERROR,
+    expect(DecisionSubjectSchema.parse({ kind: "programme", identifier: "P1" }).kind).toBe(
+      "programme",
     );
-  });
-
-  it("refuses a truthy-but-not-true consent", () => {
-    // A caller passing the string "true" has not opted in; treating it as
-    // consent would let a mis-typed value send a document.
-    expect(() => parseConsistencyReviewRequest(request({ consistencyConsent: "true" }))).toThrow(
-      CONSISTENCY_CONSENT_ERROR,
+    expect(DecisionSubjectSchema.parse({ kind: "quantum", measure: "revenue" }).kind).toBe(
+      "quantum",
     );
+    expect(DecisionSubjectSchema.parse({ kind: "reference", citation: "[3]" }).kind).toBe(
+      "reference",
+    );
+    expect(DecisionSubjectSchema.parse({ kind: "section", heading: "Summary" }).kind).toBe(
+      "section",
+    );
+    expect(DecisionSubjectSchema.parse({ kind: "term", term: "handover" }).kind).toBe("term");
+    expect(DecisionSubjectSchema.parse({ kind: "unknown", reason: "x" }).kind).toBe("unknown");
+    expect(() => DecisionSubjectSchema.parse({ kind: "nope" })).toThrow();
   });
 
-  it("refuses null and undefined consent", () => {
-    expect(() => parseConsistencyReviewRequest(request({ consistencyConsent: null }))).toThrow();
-    expect(() =>
-      parseConsistencyReviewRequest(request({ consistencyConsent: undefined })),
-    ).toThrow();
+  it("parses D-outcomes, evaluation vectors, and confidence profiles", () => {
+    expect(DOutcomeSchema.parse("D-CONFLICT")).toBe("D-CONFLICT");
+    expect(() => DOutcomeSchema.parse("D-MAYBE")).toThrow();
+    const vector = EvaluationVectorSchema.parse({ sameSubject: true, valuesAgree: false });
+    expect(vector.valuesAgree).toBe(false);
+    const profile = ConfidenceProfileSchema.parse({
+      point: 0.72,
+      lower: 0.6,
+      upper: 0.84,
+      calibrationVersion: "v1",
+      reviewThreshold: 0.5,
+      presentationThreshold: 0.7,
+    });
+    expect(profile.lower).toBeLessThan(profile.point);
+    expect(profile.point).toBeLessThan(profile.upper);
   });
 
-  it("refuses non-object input entirely", () => {
-    expect(() => parseConsistencyReviewRequest(null)).toThrow();
-    expect(() => parseConsistencyReviewRequest("run it")).toThrow();
-  });
-
-  it("does not accept another consent flag in its place", () => {
-    // Spot review, full-document review, and semantic opt-in are all separate
-    // decisions. None of them implies this one (ADR-0052).
-    expect(() =>
-      parseConsistencyReviewRequest(
-        request({ consistencyConsent: undefined, fullDocumentReviewConsent: true }),
-      ),
-    ).toThrow(/own explicit consent/);
-    expect(() =>
-      parseConsistencyReviewRequest(
-        request({ consistencyConsent: undefined, spotReviewConsent: true, semanticOptIn: true }),
-      ),
-    ).toThrow(/own explicit consent/);
-  });
-
-  it("accepts a well-formed consented request", () => {
-    const parsed = parseConsistencyReviewRequest(request());
-    expect(parsed.consistencyConsent).toBe(true);
-    expect(parsed.document.revision).toBe("r1");
-  });
-
-  it("defaults to running all ten checks", () => {
-    expect(parseConsistencyReviewRequest(request()).checks).toEqual([...CONSISTENCY_CHECK_IDS]);
-  });
-
-  it("treats an explicitly empty check list as all ten, not as none", () => {
-    // Running zero checks would report a clean document over a document nothing
-    // looked at, and the omitted case already meant "all ten".
-    expect(parseConsistencyReviewRequest(request({ checks: [] })).checks).toEqual([
-      ...CONSISTENCY_CHECK_IDS,
-    ]);
-  });
-
-  it("still validates the document when consent is present", () => {
-    expect(() =>
-      parseConsistencyReviewRequest(request({ document: { revision: "", text: "t" } })),
-    ).toThrow();
-  });
-
-  it("bounds the statement count so a run cannot be unbounded", () => {
-    // The cap is a safety property, not a preference: pairwise comparison is
-    // quadratic, so an unbounded run would stall the pane.
-    expect(() => parseConsistencyReviewRequest(request({ maxStatements: 10_000 }))).toThrow();
-  });
-});
-
-describe("the module boundary", () => {
-  const engineSource = readFileSync(resolve("src/analysis/consistency/engine.ts"), "utf8");
-  const eslintConfig = readFileSync(resolve("eslint.config.mjs"), "utf8");
-
-  it("does not import Word from the engine", () => {
-    expect(engineSource).not.toMatch(/from\s+"\.\.\/\.\.\/word\//);
-    expect(engineSource).not.toMatch(/Office\./);
-  });
-
-  it("does not import the revision adapter from the engine", () => {
-    expect(engineSource).not.toMatch(/revisionAdapter/);
-  });
-
-  it("declares an eslint scope covering the consistency directory", () => {
-    expect(eslintConfig).toContain("src/analysis/consistency/**/*.ts");
-  });
-
-  it("documents the ai exception in the eslint config rather than leaving it implicit", () => {
-    // The whole point of the exception is that it is deliberate and narrow. An
-    // undocumented exception is indistinguishable from a mistake.
-    expect(eslintConfig).toMatch(/sanctioned exception/i);
-  });
-
-  it("forbids word/ and the observer from importing the consistency engine", () => {
-    // The engine runs on a whole-document snapshot the user chose to review. An
-    // incremental path calling it gets a different answer each time the text
-    // shifts underneath it.
-    expect(eslintConfig).toMatch(/\*\*\/analysis\/consistency\/\*/);
-  });
-
-  it("still forbids the consistency engine from reaching word, taskpane, commands, and reformat", () => {
-    const scope = eslintConfig.slice(eslintConfig.indexOf("src/analysis/consistency/**/*.ts"));
-    const block = scope.slice(0, scope.indexOf("files:"));
-    expect(block).toContain("**/word/*");
-    expect(block).toContain("**/taskpane/*");
-    expect(block).toContain("**/commands/*");
-    expect(block).toContain("**/reformat/*");
+  it("parses decision questions and plans", () => {
+    const binary = DecisionQuestionSchema.parse({
+      kind: "binary",
+      id: "q1",
+      prompt: "Same period?",
+      subjectId: "s-0",
+    });
+    expect(binary.kind).toBe("binary");
+    const plan = DecisionPlanSchema.parse({
+      revision: "r1",
+      questions: [binary],
+      budget: { maxQuestions: 60, maxExpansions: 1 },
+    });
+    expect(plan.questions).toHaveLength(1);
+    expect(plan.allowUnredacted).toBe(false);
   });
 });

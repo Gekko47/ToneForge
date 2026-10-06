@@ -24,7 +24,7 @@ import ConsistencyReviewPreflight from "./ConsistencyReviewPreflight";
 import ConsistencyReviewProgress from "./ConsistencyReviewProgress";
 import ConsistencyReviewResults from "./ConsistencyReviewResults";
 import {
-  CONSISTENCY_DEFAULT_MAX_STATEMENTS,
+  CONSISTENCY_DEFAULT_MAX_PER_SUBJECT,
   type ConsistencyProgress,
   type ConsistencyReport,
 } from "../../analysis/consistency";
@@ -142,7 +142,7 @@ export default function AiReviewSection({
         <ConsistencyReviewPreflight
           approximateWords={preflight.wordCount}
           statementCount={preflight.statementCount}
-          maxStatements={CONSISTENCY_DEFAULT_MAX_STATEMENTS}
+          maxPerSubject={CONSISTENCY_DEFAULT_MAX_PER_SUBJECT}
           providerName={providerName}
           onStart={onConfirm}
           onCancel={onCancel}
