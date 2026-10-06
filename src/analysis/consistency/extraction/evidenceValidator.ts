@@ -2,6 +2,7 @@ import { hashText } from "../../../shared/utils/text";
 import {
   EvidenceRegistrySchema,
   type EvidenceAnchor,
+  type EvidenceBasis,
   type EvidenceRegistry,
   type ExpertReportClaim,
 } from "../contracts";
@@ -45,6 +46,57 @@ export function canonicalAnchorId(anchor: EvidenceAnchor): string {
   return `ev-${hashText(
     `${anchor.documentId}|${anchor.paragraphId}|${anchor.startOffset}|${anchor.endOffset}`,
   )}`;
+}
+
+/**
+ * Resolve the secondary citations on every validated claim against
+ * the registry.
+ *
+ * A claim's primary anchor is proven by `validateEvidence`; the
+ * `evidenceBasis` facet is the list of further anchors the claim
+ * leans on. Those are citations, not assertions: they name an
+ * anchor id, and if that id is not in the registry the citation
+ * is dangling. This rewrites each claim's `evidenceBasis` to the
+ * subset that actually resolved, and records the rest as
+ * quarantined with the claim's provisional id, so a bad
+ * secondary citation is visible in the report rather than
+ * silently dropped.
+ *
+ * It is idempotent: passing claims whose `evidenceBasis` is
+ * already a subset of the registry leaves them unchanged.
+ */
+export function resolveSecondaryCitations(
+  result: EvidenceValidationResult,
+): EvidenceValidationResult {
+  const anchorIds = new Set(Object.keys(result.registry.anchors));
+  const quarantined = [...result.registry.quarantined];
+  const claims = result.claims.map((claim) => {
+    if (claim.evidenceBasis.length === 0) {
+      return claim;
+    }
+    const resolved: EvidenceBasis[] = [];
+    for (const basis of claim.evidenceBasis) {
+      if (anchorIds.has(basis.anchorId)) {
+        resolved.push(basis);
+      } else {
+        quarantined.push({
+          claimId: claim.id,
+          reason: `secondary evidence citation ${basis.anchorId} is not in the registry`,
+        });
+      }
+    }
+    return resolved.length === claim.evidenceBasis.length
+      ? claim
+      : { ...claim, evidenceBasis: resolved };
+  });
+
+  return {
+    claims,
+    registry: EvidenceRegistrySchema.parse({
+      anchors: result.registry.anchors,
+      quarantined,
+    }),
+  };
 }
 
 /**

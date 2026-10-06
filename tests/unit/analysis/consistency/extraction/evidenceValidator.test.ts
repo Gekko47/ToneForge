@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { hashText } from "../../../../../src/shared/utils/text";
 import {
   canonicalAnchorId,
+  resolveSecondaryCitations,
   validateEvidence,
 } from "../../../../../src/analysis/consistency/extraction";
+import { EvidenceRegistrySchema } from "../../../../../src/analysis/consistency/contracts";
 import {
   FIXTURE_DOCUMENT_ID,
   FIXTURE_TEXT,
@@ -195,5 +197,115 @@ describe("the evidence validator", () => {
     });
     expect(result.claims).toHaveLength(2);
     expect(Object.keys(result.registry.anchors)).toHaveLength(1);
+  });
+
+  describe("secondary citation resolution", () => {
+    it("keeps a secondary citation that names a registered anchor", () => {
+      const primary = claim({ id: "primary" });
+      const result = validateEvidence({
+        documentId: FIXTURE_DOCUMENT_ID,
+        text: FIXTURE_TEXT,
+        claims: [primary],
+      });
+      const anchorId = canonicalAnchorId(primary.evidence);
+      const withCitation = resolveSecondaryCitations({
+        ...result,
+        claims: [{ ...result.claims[0]!, evidenceBasis: [{ anchorId }] }],
+      });
+      expect(withCitation.claims[0]?.evidenceBasis).toEqual([{ anchorId }]);
+      expect(withCitation.registry.quarantined).toHaveLength(0);
+    });
+
+    it("quarantines a secondary citation that names an anchor not in the registry", () => {
+      const primary = claim({ id: "primary" });
+      const result = validateEvidence({
+        documentId: FIXTURE_DOCUMENT_ID,
+        text: FIXTURE_TEXT,
+        claims: [primary],
+      });
+      const withCitation = resolveSecondaryCitations({
+        ...result,
+        claims: [
+          {
+            ...result.claims[0]!,
+            evidenceBasis: [{ anchorId: "ev-does-not-exist" }],
+          },
+        ],
+      });
+      expect(withCitation.claims[0]?.evidenceBasis).toEqual([]);
+      expect(withCitation.registry.quarantined).toHaveLength(1);
+      expect(withCitation.registry.quarantined[0]?.claimId).toBe("claim-1");
+      expect(withCitation.registry.quarantined[0]?.reason).toMatch(
+        /ev-does-not-exist is not in the registry/,
+      );
+    });
+
+    it("keeps the resolved citations and quarantines only the dangling ones", () => {
+      const primary = claim({ id: "primary" });
+      const result = validateEvidence({
+        documentId: FIXTURE_DOCUMENT_ID,
+        text: FIXTURE_TEXT,
+        claims: [primary],
+      });
+      const goodId = canonicalAnchorId(primary.evidence);
+      const withCitations = resolveSecondaryCitations({
+        ...result,
+        claims: [
+          {
+            ...result.claims[0]!,
+            evidenceBasis: [{ anchorId: goodId }, { anchorId: "ev-missing" }],
+          },
+        ],
+      });
+      expect(withCitations.claims[0]?.evidenceBasis).toEqual([{ anchorId: goodId }]);
+      expect(withCitations.registry.quarantined).toHaveLength(1);
+    });
+
+    it("is idempotent: a claim whose citations already resolve is left unchanged", () => {
+      const primary = claim({ id: "primary" });
+      const result = validateEvidence({
+        documentId: FIXTURE_DOCUMENT_ID,
+        text: FIXTURE_TEXT,
+        claims: [primary],
+      });
+      const anchorId = canonicalAnchorId(primary.evidence);
+      const once = resolveSecondaryCitations({
+        ...result,
+        claims: [{ ...result.claims[0]!, evidenceBasis: [{ anchorId }] }],
+      });
+      const twice = resolveSecondaryCitations(once);
+      expect(twice).toEqual(once);
+    });
+
+    it("leaves a claim with no secondary citations untouched", () => {
+      const primary = claim({ id: "primary" });
+      const result = validateEvidence({
+        documentId: FIXTURE_DOCUMENT_ID,
+        text: FIXTURE_TEXT,
+        claims: [primary],
+      });
+      const resolved = resolveSecondaryCitations(result);
+      expect(resolved.claims[0]?.evidenceBasis).toEqual([]);
+      expect(resolved.registry.quarantined).toHaveLength(0);
+    });
+
+    it("produces a registry that still parses", () => {
+      const primary = claim({ id: "primary" });
+      const result = validateEvidence({
+        documentId: FIXTURE_DOCUMENT_ID,
+        text: FIXTURE_TEXT,
+        claims: [primary],
+      });
+      const resolved = resolveSecondaryCitations({
+        ...result,
+        claims: [
+          {
+            ...result.claims[0]!,
+            evidenceBasis: [{ anchorId: "ev-missing" }],
+          },
+        ],
+      });
+      expect(() => EvidenceRegistrySchema.parse(resolved.registry)).not.toThrow();
+    });
   });
 });

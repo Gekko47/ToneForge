@@ -104,6 +104,7 @@ function emptyCoverage(
   statementsTotal: number,
   maxAdjudications: number,
   limitations: string[],
+  quarantinedClaims = 0,
 ): ConsistencyCoverage {
   return ConsistencyCoverageSchema.parse({
     complete: limitations.length === 0,
@@ -116,6 +117,7 @@ function emptyCoverage(
     perCheck: {},
     limitations,
     modelAdjudicated: 0,
+    quarantinedClaims,
   });
 }
 
