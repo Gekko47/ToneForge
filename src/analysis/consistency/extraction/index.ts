@@ -6,8 +6,13 @@
  * may enter the pipeline, quarantines what it cannot prove, and
  * assigns canonical ids only to what survives. Secondary
  * citations are resolved against the registry after validation.
- * The prompt, the batch extractor, and the global resolver land
- * in R2.
+ *
+ * R2 lands the two extraction passes around it: the section
+ * hierarchy batches the document with stable paragraph ids, the
+ * prompt encodes the ten extraction rules behind the raw-text
+ * opt-in gate, Pass A extracts one batch per provider call with
+ * retry and abort support, and Pass B resolves claims to their
+ * canonical identity across the whole document.
  */
 export {
   canonicalAnchorId,
@@ -16,3 +21,21 @@ export {
   type EvidenceValidationInput,
   type EvidenceValidationResult,
 } from "./evidenceValidator";
+export { buildExtractionBatches, type ExtractionBatch, type ExtractionParagraph } from "./batch";
+export {
+  buildExtractionPrompt,
+  ExtractionResponseSchema,
+  RawExtractedClaimSchema,
+  RawEvidenceSchema,
+  type ExtractionPromptOptions,
+  type ExtractionResponse,
+  type RawExtractedClaim,
+  type RawEvidence,
+} from "./prompt";
+export {
+  extractClaims,
+  type ExtractionCallOptions,
+  type ExtractionDocument,
+  type ExtractionResult,
+} from "./batchExtractor";
+export { resolveCanonicalClaims, type CanonicalResolutionInput } from "./globalResolver";

@@ -1,5 +1,5 @@
 /**
- * The indexed consistency engine (R0 skeleton).
+ * The indexed consistency engine (R0–R2).
  *
  * Orchestration per the authoritative plan §6: extraction, evidence
  * validation, canonical resolution, normalisation, indexing, retrieval,
@@ -7,9 +7,13 @@
  * D-derivation, confidence scoring, and reporting.
  *
  * R0 provides the consent gate, the cancellation and staleness guards, and
- * the report shape. The pipeline stages land in R1–R7; until then a run
- * segments the document, reports what it saw, and resolves nothing — which is
- * the honest skeleton, not a silent stub.
+ * the report shape. R2 lands the first pipeline stage: when a provider is
+ * configured and the run has opted out of redaction, the document is
+ * batched by its section hierarchy, claims are extracted in two passes, and
+ * every claim's evidence is proven against the document before it may enter
+ * the pipeline. The comparison stages land in R3–R6; until then a run with
+ * a provider extracts and validates claims and says honestly that it compared
+ * nothing — which is the honest pipeline, not a silent stub.
  */
 
 import type { LlmProvider } from "../../ai/providers/LlmProvider";
@@ -23,6 +27,12 @@ import {
   type ConsistencyReport,
   type ConsistencyStatement,
 } from "./contracts";
+import {
+  buildExtractionBatches,
+  extractClaims,
+  resolveCanonicalClaims,
+  type ExtractionResult,
+} from "./extraction";
 
 /** Thrown when the run is cancelled or the document moved underneath it. */
 export class ConsistencyRunCancelled extends Error {
@@ -145,16 +155,68 @@ export async function runConsistencyReview(
   const maxPerSubject = request.maxPerSubject ?? CONSISTENCY_DEFAULT_MAX_PER_SUBJECT;
   const maxAdjudications = request.maxAdjudications ?? CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS;
   void maxPerSubject;
-  const limitations = [
-    "The indexed pipeline is not yet implemented (R0 skeleton): statements were segmented and counted, but no comparisons were made.",
-  ];
+
+  const limitations: string[] = [];
+  let quarantinedClaims = 0;
+  let usedModel = false;
+
+  if (options.provider === undefined) {
+    limitations.push(
+      "No provider was configured for the run, so no claims were extracted and nothing was compared.",
+    );
+  } else if (!request.allowUnredacted) {
+    limitations.push(
+      "Extraction was skipped: the run did not opt out of redaction, so document text was not sent to the provider and nothing was compared.",
+    );
+  } else {
+    options.onProgress?.({
+      phase: "extracting",
+      fraction: 0.4,
+      message: "Extracting claims…",
+    });
+    await assertCurrent(options, request.document.revision);
+    const batches = buildExtractionBatches(request.document);
+    let extraction: ExtractionResult;
+    try {
+      extraction = await extractClaims(
+        options.provider,
+        batches,
+        {
+          documentId: request.document.revision,
+          text: request.document.text,
+          reviewSessionId: request.document.revision,
+        },
+        {
+          now,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        },
+      );
+    } catch (err) {
+      if (options.signal?.aborted === true) {
+        throw new ConsistencyRunCancelled("cancelled");
+      }
+      throw err;
+    }
+    await assertCurrent(options, request.document.revision);
+    const resolved = resolveCanonicalClaims({
+      documentId: request.document.revision,
+      text: request.document.text,
+      claims: extraction.claims,
+    });
+    quarantinedClaims = resolved.registry.quarantined.length + extraction.quarantined.length;
+    usedModel = true;
+    limitations.push(
+      "Claims were extracted and their evidence validated, but the indexed comparison pipeline is not yet implemented (R3–R6), so no comparisons were made.",
+    );
+  }
+
   options.onProgress?.({ phase: "done", fraction: 1, message: "Done." });
 
   return ConsistencyReportSchema.parse({
     revision: request.document.revision,
     issues: [],
-    coverage: emptyCoverage(statements.length, maxAdjudications, limitations),
-    usedModel: false,
+    coverage: emptyCoverage(statements.length, maxAdjudications, limitations, quarantinedClaims),
+    usedModel,
     startedAt,
     finishedAt: now(),
   });

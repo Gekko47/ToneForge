@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { LlmProvider, LlmResponse } from "../../../../src/ai/providers/LlmProvider";
+import { MockAdapter } from "../../../../src/ai/providers/mockAdapter";
 import {
   ConsistencyRunCancelled,
   previewStatements,
@@ -73,5 +75,142 @@ describe("indexed engine skeleton", () => {
   it("marks the cancellation reason", () => {
     expect(new ConsistencyRunCancelled("cancelled").reason).toBe("cancelled");
     expect(new ConsistencyRunCancelled("stale").reason).toBe("stale");
+  });
+});
+
+/**
+ * R2 extraction wiring: with a provider configured and
+ * the run opted out of redaction, the document is
+ * batched by its section hierarchy, claims are
+ * extracted in two passes, and every claim's evidence
+ * is proven against the document. Without the opt-out,
+ * or without a provider, the run says so and compares
+ * nothing.
+ */
+function headedRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    consistencyConsent: true,
+    document: {
+      revision: "doc-r2",
+      text: "## Programme\n\nThe contractor reported a six-week delay.\n\n## Quantum\n\nThe quantum is 1,250,000 USD.",
+      sections: ["Programme", "Quantum"],
+    },
+    allowUnredacted: true,
+    ...overrides,
+  };
+}
+
+function rawClaim(overrides: Record<string, unknown> = {}) {
+  return {
+    claimClass: "FACT_ASSERTION",
+    predicate: "the contractor reported a delay",
+    speaker: { id: "party-contractor", name: "The Contractor" },
+    adoptionStatus: "reported_party_position",
+    polarity: "positive",
+    evidence: { paragraphId: "p-1-0", exactText: "a six-week delay" },
+    ...overrides,
+  };
+}
+
+describe("R2 extraction wiring", () => {
+  it("extracts and validates claims when a provider runs with the redaction opt-out", async () => {
+    const provider = new MockAdapter({
+      responses: {
+        "six-week": JSON.stringify({ claims: [rawClaim()] }),
+        "1,250,000": JSON.stringify({ claims: [] }),
+      },
+    });
+    const report = await runConsistencyReview(headedRequest(), {
+      provider,
+    });
+    expect(report.usedModel).toBe(true);
+    expect(report.coverage.quarantinedClaims).toBe(0);
+    expect(report.coverage.limitations).toContain(
+      "Claims were extracted and their evidence validated, but the indexed comparison pipeline is not yet implemented (R3–R6), so no comparisons were made.",
+    );
+  });
+
+  it("counts a claim whose quoted evidence is not in the document", async () => {
+    const singleSection = {
+      consistencyConsent: true,
+      document: {
+        revision: "doc-r2",
+        text: "## Programme\n\nThe contractor reported a six-week delay.",
+        sections: ["Programme"],
+      },
+      allowUnredacted: true,
+    };
+    const provider = new MockAdapter({
+      responses: {
+        "six-week": JSON.stringify({
+          claims: [
+            rawClaim({
+              evidence: {
+                paragraphId: "p-1-0",
+                exactText: "a twelve-week delay",
+              },
+            }),
+          ],
+        }),
+      },
+    });
+    const report = await runConsistencyReview(singleSection, {
+      provider,
+    });
+    expect(report.usedModel).toBe(true);
+    expect(report.coverage.quarantinedClaims).toBe(1);
+  });
+
+  it("skips extraction when the run does not opt out of redaction", async () => {
+    const provider = new MockAdapter({
+      responses: {
+        "six-week": JSON.stringify({ claims: [rawClaim()] }),
+      },
+    });
+    const report = await runConsistencyReview(headedRequest({ allowUnredacted: false }), {
+      provider,
+    });
+    expect(report.usedModel).toBe(false);
+    expect(report.coverage.quarantinedClaims).toBe(0);
+    expect(report.coverage.limitations.join(" ")).toContain("did not opt out of redaction");
+  });
+
+  it("skips extraction when no provider is configured", async () => {
+    const report = await runConsistencyReview(headedRequest());
+    expect(report.usedModel).toBe(false);
+    expect(report.coverage.limitations.join(" ")).toContain("No provider was configured");
+  });
+
+  it("reports the extracting phase when a provider runs", async () => {
+    const phases: string[] = [];
+    const provider = new MockAdapter({
+      responses: {
+        "six-week": JSON.stringify({ claims: [rawClaim()] }),
+        "1,250,000": JSON.stringify({ claims: [] }),
+      },
+    });
+    await runConsistencyReview(headedRequest(), {
+      provider,
+      onProgress: (progress) => phases.push(progress.phase),
+    });
+    expect(phases).toContain("extracting");
+    expect(phases[phases.length - 1]).toBe("done");
+  });
+
+  it("maps a cancellation during extraction to ConsistencyRunCancelled", async () => {
+    const controller = new AbortController();
+    const provider: LlmProvider = {
+      name: "aborting",
+      complete: async (): Promise<LlmResponse> => {
+        controller.abort();
+        return { text: "{}", model: "aborting" };
+      },
+    };
+    await expect(
+      runConsistencyReview(headedRequest(), {
+        provider,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow(ConsistencyRunCancelled);
   });
 });
