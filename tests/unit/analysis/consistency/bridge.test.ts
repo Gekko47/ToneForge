@@ -46,6 +46,7 @@ function report(issues: ConsistencyIssue[] = []): ConsistencyReport {
       perCheck: {},
       limitations: [],
       modelAdjudicated: 0,
+      quarantinedClaims: 0,
     },
     usedModel: false,
     startedAt: "2026-10-06T00:00:00.000Z",

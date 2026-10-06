@@ -65,6 +65,14 @@ export const ConsistencyCoverageSchema = z.object({
   perCheck: z.record(z.string(), z.number().int().min(0)),
   limitations: z.array(z.string()),
   modelAdjudicated: z.number().int().min(0),
+  /**
+   * Claims the evidence validator quarantined because their
+   * evidence could not be resolved (corrupt offsets, a hash
+   * mismatch, text that is not there). Counted, never silent:
+   * a quarantined claim is a claim the report refused to
+   * compare, and the coverage says so.
+   */
+  quarantinedClaims: z.number().int().min(0).default(0),
 });
 
 export type ConsistencyCoverage = z.infer<typeof ConsistencyCoverageSchema>;

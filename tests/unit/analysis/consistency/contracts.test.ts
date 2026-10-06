@@ -140,23 +140,46 @@ describe("consistency contracts", () => {
   it("parses the full claim schema with all facets", () => {
     const claim = ExpertReportClaimSchema.parse({
       id: "claim-1",
-      class: "delay",
-      text: "Completion slipped by six weeks.",
-      adoption: "asserted",
+      reviewSessionId: "session-1",
+      claimClass: "FACT_ASSERTION",
+      predicate: { text: "completion slipped" },
+      speaker: { id: "p1", name: "Contractor" },
+      polarity: "positive",
       delay: { durationText: "six weeks", durationDays: 42 },
-      scenario: "actual",
-      evidenceIds: ["e1"],
-      section: "Programme",
+      scenario: { type: "primary" },
+      evidence: {
+        documentId: "doc-1",
+        paragraphId: "p-1",
+        startOffset: 0,
+        endOffset: 10,
+        exactText: "completion ",
+        evidenceHash: "deadbeef",
+      },
+      extraction: {
+        modelId: "m1",
+        pass: "local",
+        batchId: "b1",
+        extractedAt: "2026-10-06T00:00:00.000Z",
+      },
     });
-    expect(claim.class).toBe("delay");
+    expect(claim.claimClass).toBe("FACT_ASSERTION");
     expect(claim.delay?.durationDays).toBe(42);
-    expect(() => ExpertReportClaimSchema.parse({ ...claim, class: "nope" })).toThrow();
+    expect(claim.adoptionStatus).toBe("unknown");
+    expect(claim.scenario?.type).toBe("primary");
+    expect(() => ExpertReportClaimSchema.parse({ ...claim, claimClass: "NOPE" })).toThrow();
   });
 
   it("parses the evidence registry with quarantine", () => {
     const registry = EvidenceRegistrySchema.parse({
       anchors: {
-        e1: { id: "e1", text: "Completion slipped.", section: "Programme" },
+        "ev-1": {
+          documentId: "doc-1",
+          paragraphId: "p-1",
+          startOffset: 0,
+          endOffset: 10,
+          exactText: "completion ",
+          evidenceHash: "deadbeef",
+        },
       },
       quarantined: [{ claimId: "claim-9", reason: "hash mismatch" }],
     });

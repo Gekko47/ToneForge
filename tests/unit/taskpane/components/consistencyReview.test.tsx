@@ -37,6 +37,7 @@ function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
       perCheck: { C1: 1, C2: 0, C3: 1, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0, C9: 0, C10: 0 },
       limitations: [],
       modelAdjudicated: 2,
+      quarantinedClaims: 0,
     },
     ...overrides,
   };
@@ -458,6 +459,7 @@ describe("consistency results", () => {
             perCheck: {},
             limitations: ["Compared 900 statements with a per-subject cap."],
             modelAdjudicated: 3,
+            quarantinedClaims: 0,
           },
         })}
         onDismiss={() => undefined}
@@ -487,6 +489,7 @@ describe("consistency results", () => {
             perCheck: {},
             limitations: ["The per-subject cap skipped 1200 comparisons."],
             modelAdjudicated: 0,
+            quarantinedClaims: 0,
           },
         })}
         onDismiss={() => undefined}

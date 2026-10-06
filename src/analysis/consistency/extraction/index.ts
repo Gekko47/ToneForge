@@ -1,7 +1,15 @@
 /**
- * Extraction skeleton (R2).
+ * Extraction (R1–R2).
  *
- * Prompt, schema, batch extractor, global resolver, evidence validator.
- * Until R2 lands, this module exports nothing.
+ * The evidence validator (R1) is here: it proves a proposed
+ * claim's evidence against the document text before the claim
+ * may enter the pipeline, quarantines what it cannot prove, and
+ * assigns canonical ids only to what survives. The prompt, the
+ * batch extractor, and the global resolver land in R2.
  */
-export {};
+export {
+  canonicalAnchorId,
+  validateEvidence,
+  type EvidenceValidationInput,
+  type EvidenceValidationResult,
+} from "./evidenceValidator";
