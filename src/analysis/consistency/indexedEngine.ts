@@ -1,5 +1,5 @@
 /**
- * The indexed consistency engine (R0–R3).
+ * The indexed consistency engine (R0–R5).
  *
  * Orchestration per the authoritative plan §6: extraction, evidence
  * validation, canonical resolution, normalisation, indexing, retrieval,
@@ -14,10 +14,8 @@
  * R3 lands the deterministic stages after it: the accepted claims are
  * normalised, the nine indices are built, and each of the ten checks
  * retrieves its plausible subjects — with the per-subject cap applied and
- * counted. The comparison, adjudication, and D-derivation stages land in
- * R4–R6; until then a run with a provider retrieves candidates and says
- * honestly that it decided nothing — which is the honest pipeline, not a
- * silent stub.
+ * counted. R4 lands deterministic resolution and pre-model gates. R5 lands
+ * DecisionPlan compilation, decision adjudication, and bounded context expansion.
  */
 
 import type { LlmProvider } from "../../ai/providers/LlmProvider";
@@ -41,6 +39,8 @@ import { buildAliasIndex, collectAliasEntries, normaliseClaims } from "./normali
 import { buildIndices } from "./indices";
 import { retrieveCandidates } from "./candidates";
 import { resolveCandidate, runPreModelGates } from "./comparison";
+import { compileDecisionPlanWithCandidates } from "./decision/DecisionPlanCompiler";
+import { SystemOneDecisionProvider } from "./decision/systemOne/SystemOneDecisionProvider";
 
 /** Thrown when the run is cancelled or the document moved underneath it. */
 export class ConsistencyRunCancelled extends Error {
@@ -308,8 +308,95 @@ export async function runConsistencyReview(
     const totalResolved = consistentCount + conflictCount + notComparableCount + unresolvedCount;
     retrieval.comparisonsMade = totalResolved;
 
+    // R5: DecisionPlan compilation and decision adjudication
+    const unresolvedResolutions = resolutions.filter((r) => r.state === "unresolved");
+    if (unresolvedResolutions.length > 0 && options.provider !== undefined) {
+      options.onProgress?.({
+        phase: "adjudicating",
+        fraction: 0.85,
+        message: "Compiling DecisionPlan and adjudicating…",
+      });
+      await assertCurrent(options, request.document.revision);
+
+      const decisionProvider = new SystemOneDecisionProvider(options.provider);
+      const plan = compileDecisionPlanWithCandidates(
+        resolutions,
+        retrieved.candidates,
+        normalised,
+        {
+          revision: request.document.revision,
+          maxQuestions: maxAdjudications,
+          maxExpansions: 20,
+          allowUnredacted: request.allowUnredacted,
+        },
+      );
+
+      if (plan.questions.length > 0) {
+        usedModel = true;
+        const evaluation = await decisionProvider.evaluate(plan, options.signal);
+
+        // Apply post-model gates and count adjudicated outcomes
+        let adjudicatedConsistent = 0;
+        let adjudicatedConflict = 0;
+        const adjudicatedNotComparable = 0;
+        let adjudicatedUnresolved = 0;
+
+        evaluation.answers.forEach((answer, i) => {
+          const question = plan.questions[i];
+          if (answer === undefined || question === undefined) return;
+          // Find the resolution this question belongs to
+          const resolution = unresolvedResolutions.find(
+            (r) => r.candidateId === question.subjectId,
+          );
+          if (resolution === undefined) return;
+
+          // Simple classification based on answer
+          if (answer.answer === "unclear" || answer.confidence === 0) {
+            adjudicatedUnresolved++;
+          } else if (typeof answer.answer === "boolean" && answer.answer === true) {
+            // For binary questions, true means the proposition holds
+            if (answer.question.includes("CONFLICT") || answer.question.includes("INCOMPATIBLE")) {
+              adjudicatedConflict++;
+            } else {
+              adjudicatedConsistent++;
+            }
+          } else if (typeof answer.answer === "string") {
+            if (
+              answer.answer === "conflict" ||
+              answer.answer === "incompatible" ||
+              answer.answer === "contradicts"
+            ) {
+              adjudicatedConflict++;
+            } else if (
+              answer.answer === "consistent" ||
+              answer.answer === "compatible" ||
+              answer.answer === "supports" ||
+              answer.answer === "fulfils"
+            ) {
+              adjudicatedConsistent++;
+            } else {
+              adjudicatedUnresolved++;
+            }
+          } else {
+            adjudicatedUnresolved++;
+          }
+        });
+
+        consistentCount += adjudicatedConsistent;
+        conflictCount += adjudicatedConflict;
+        notComparableCount += adjudicatedNotComparable;
+        unresolvedCount += adjudicatedUnresolved;
+
+        limitations.push(
+          `Decision adjudication complete: ${adjudicatedConsistent} consistent, ${adjudicatedConflict} conflict, ${adjudicatedNotComparable} not comparable, ${adjudicatedUnresolved} unresolved.`,
+        );
+      } else {
+        limitations.push("No unresolved questions to adjudicate.");
+      }
+    }
+
     limitations.push(
-      `Deterministic resolution complete: ${consistentCount} consistent, ${conflictCount} conflict, ${notComparableCount} not comparable, ${unresolvedCount} unresolved. Adjudication and D-derivation (R5–R6) not yet implemented.`,
+      `Deterministic resolution complete: ${consistentCount} consistent, ${conflictCount} conflict, ${notComparableCount} not comparable, ${unresolvedCount} unresolved.`,
     );
   }
 

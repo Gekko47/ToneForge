@@ -71,4 +71,24 @@ export const ConfidenceProfileSchema = z.object({
   presentationThreshold: z.number().min(0).max(1),
 });
 
+/**
+ * An answer to an E-question from the decision model.
+ *
+ * The model answers only the questions the deterministic resolver
+ * could not prove. Each answer carries its provenance.
+ */
+export const EvaluationAnswerSchema = z.object({
+  question: z.string().trim().min(1),
+  /** The model's answer: true/false for binary, option for choice, number for score. */
+  answer: z.union([z.boolean(), z.string(), z.number()]),
+  /** Confidence in this answer (0-1). */
+  confidence: z.number().min(0).max(1),
+  /** Provenance: "deterministic" | "system_one" | "mixed". */
+  provenance: z.enum(["deterministic", "system_one", "mixed"]),
+  /** The model's reasoning, if provided. */
+  reasoning: z.string().optional(),
+});
+
+export type EvaluationAnswer = z.infer<typeof EvaluationAnswerSchema>;
+
 export type ConfidenceProfile = z.infer<typeof ConfidenceProfileSchema>;
