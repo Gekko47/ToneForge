@@ -38,3 +38,20 @@ export {
   type PreModelGateResult,
   type PostModelGateResult,
 } from "./hardGates";
+
+export {
+  deriveDOutcome,
+  buildEvaluationVector,
+  isConclusiveDOutcome,
+  getDerivationReasonCodes,
+  type DOutcome,
+} from "./dDerivation";
+
+export {
+  computeConfidence,
+  meetsReviewThreshold,
+  meetsPresentationThreshold,
+  getConfidenceBand,
+  formatConfidence,
+  type ConfidenceProfile,
+} from "./confidenceEngine";

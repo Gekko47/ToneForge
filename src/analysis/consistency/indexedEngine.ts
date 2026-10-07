@@ -1,5 +1,5 @@
 /**
- * The indexed consistency engine (R0–R5).
+ * The indexed consistency engine (R0–R6).
  *
  * Orchestration per the authoritative plan §6: extraction, evidence
  * validation, canonical resolution, normalisation, indexing, retrieval,
@@ -16,6 +16,7 @@
  * retrieves its plausible subjects — with the per-subject cap applied and
  * counted. R4 lands deterministic resolution and pre-model gates. R5 lands
  * DecisionPlan compilation, decision adjudication, and bounded context expansion.
+ * R6 lands D-derivation, post-model gates, and confidence with intervals.
  */
 
 import type { LlmProvider } from "../../ai/providers/LlmProvider";
@@ -29,6 +30,7 @@ import {
   type ConsistencyReport,
   type ConsistencyStatement,
 } from "./contracts";
+import type { DOutcome } from "./contracts";
 import {
   buildExtractionBatches,
   extractClaims,
@@ -38,7 +40,18 @@ import {
 import { buildAliasIndex, collectAliasEntries, normaliseClaims } from "./normalisation";
 import { buildIndices } from "./indices";
 import { retrieveCandidates } from "./candidates";
-import { resolveCandidate, runPreModelGates } from "./comparison";
+import {
+  resolveCandidate,
+  runPreModelGates,
+  runPostModelGates,
+  deriveDOutcome,
+  buildEvaluationVector,
+  computeConfidence,
+  meetsReviewThreshold,
+  meetsPresentationThreshold,
+  formatConfidence,
+  getDerivationReasonCodes,
+} from "./comparison";
 import { compileDecisionPlanWithCandidates } from "./decision/DecisionPlanCompiler";
 import { SystemOneDecisionProvider } from "./decision/systemOne/SystemOneDecisionProvider";
 
@@ -335,60 +348,132 @@ export async function runConsistencyReview(
         usedModel = true;
         const evaluation = await decisionProvider.evaluate(plan, options.signal);
 
-        // Apply post-model gates and count adjudicated outcomes
-        let adjudicatedConsistent = 0;
-        let adjudicatedConflict = 0;
-        const adjudicatedNotComparable = 0;
-        let adjudicatedUnresolved = 0;
-
-        evaluation.answers.forEach((answer, i) => {
-          const question = plan.questions[i];
-          if (answer === undefined || question === undefined) return;
-          // Find the resolution this question belongs to
-          const resolution = unresolvedResolutions.find(
-            (r) => r.candidateId === question.subjectId,
-          );
-          if (resolution === undefined) return;
-
-          // Simple classification based on answer
-          if (answer.answer === "unclear" || answer.confidence === 0) {
-            adjudicatedUnresolved++;
-          } else if (typeof answer.answer === "boolean" && answer.answer === true) {
-            // For binary questions, true means the proposition holds
-            if (answer.question.includes("CONFLICT") || answer.question.includes("INCOMPATIBLE")) {
-              adjudicatedConflict++;
-            } else {
-              adjudicatedConsistent++;
-            }
-          } else if (typeof answer.answer === "string") {
-            if (
-              answer.answer === "conflict" ||
-              answer.answer === "incompatible" ||
-              answer.answer === "contradicts"
-            ) {
-              adjudicatedConflict++;
-            } else if (
-              answer.answer === "consistent" ||
-              answer.answer === "compatible" ||
-              answer.answer === "supports" ||
-              answer.answer === "fulfils"
-            ) {
-              adjudicatedConsistent++;
-            } else {
-              adjudicatedUnresolved++;
-            }
-          } else {
-            adjudicatedUnresolved++;
-          }
+        // R6: D-derivation, post-model gates, and confidence with intervals
+        options.onProgress?.({
+          phase: "consolidating",
+          fraction: 0.9,
+          message: "Deriving outcomes and computing confidence…",
         });
+        await assertCurrent(options, request.document.revision);
 
-        consistentCount += adjudicatedConsistent;
-        conflictCount += adjudicatedConflict;
-        notComparableCount += adjudicatedNotComparable;
-        unresolvedCount += adjudicatedUnresolved;
+        for (const resolution of unresolvedResolutions) {
+          const candidate = retrieved.candidates.find((c) => c.id === resolution.candidateId);
+          if (candidate === undefined) continue;
+
+          const claimsForCandidate = normalised.filter((nc) =>
+            candidate.claimIds.includes(nc.claim.id),
+          );
+          if (claimsForCandidate.length < 2) continue;
+
+          // Find model answers for this candidate
+          const candidateQuestions = plan.questions.filter(
+            (q) => q.subjectId === resolution.candidateId,
+          );
+          const modelAnswers = candidateQuestions.map((q, idx) => {
+            const answer = evaluation.answers[idx];
+            return {
+              question: q.id,
+              holds:
+                answer?.answer === true ||
+                answer?.answer === "conflict" ||
+                answer?.answer === "incompatible" ||
+                answer?.answer === "contradicts",
+              confidence: answer?.confidence ?? 0,
+              reason: answer?.reasoning ?? "",
+            };
+          });
+
+          const deterministicAnswers = resolution.answers.map((a) => ({
+            question: a.question,
+            holds: a.holds,
+            reason: a.reason,
+          }));
+
+          // Build E-vector
+          const vector = buildEvaluationVector(deterministicAnswers, modelAnswers);
+
+          // Run post-model gates
+          const postGateResult = runPostModelGates(
+            claimsForCandidate,
+            resolution.checkId,
+            modelAnswers,
+            deterministicAnswers,
+          );
+
+          let finalState: "consistent" | "conflict" | "not_comparable" | "unresolved";
+          let reasonCodes: string[] = [];
+          let dOutcome: DOutcome;
+
+          if (!postGateResult.accept) {
+            // Post-model gate rejected the model's answers
+            finalState = postGateResult.overrideState ?? "unresolved";
+            reasonCodes = [...postGateResult.reasonCodes];
+            dOutcome = "D-AMBIGUOUS"; // Gate rejection means we can't determine
+          } else {
+            // Derive D-outcome
+            dOutcome = deriveDOutcome(
+              resolution.checkId,
+              vector,
+              modelAnswers,
+              deterministicAnswers,
+            );
+            reasonCodes = getDerivationReasonCodes(resolution.checkId, vector, dOutcome);
+
+            // Map D-outcome to final state
+            switch (dOutcome) {
+              case "D-CONSISTENT":
+                finalState = "consistent";
+                break;
+              case "D-CONFLICT":
+                finalState = "conflict";
+                break;
+              case "D-NOT-COMPARABLE":
+                finalState = "not_comparable";
+                break;
+              case "D-INSUFFICIENT-EVIDENCE":
+              case "D-AMBIGUOUS":
+                finalState = "unresolved";
+                break;
+              default:
+                // Other D-outcomes are specific types of conflict or difference
+                finalState = "conflict";
+            }
+          }
+
+          // Compute confidence
+          const confidence = computeConfidence(
+            resolution.checkId,
+            vector,
+            modelAnswers,
+            deterministicAnswers,
+            dOutcome,
+          );
+
+          // Check thresholds
+          const meetsReview = meetsReviewThreshold(confidence);
+          const meetsPresentation = meetsPresentationThreshold(confidence);
+
+          // Count outcomes
+          if (finalState === "consistent") consistentCount++;
+          else if (finalState === "conflict") conflictCount++;
+          else if (finalState === "not_comparable") notComparableCount++;
+          else unresolvedCount++;
+
+          // Create issue if it meets presentation threshold and is a conflict or difference
+          if (meetsPresentation && (finalState === "conflict" || finalState === "not_comparable")) {
+            // Issue creation would go here - for now we track in limitations
+            limitations.push(
+              `Candidate ${resolution.candidateId} (${resolution.checkId}): ${finalState} with confidence ${formatConfidence(confidence)} (review: ${meetsReview}, presentation: ${meetsPresentation})`,
+            );
+          } else if (finalState === "unresolved") {
+            limitations.push(
+              `Candidate ${resolution.candidateId} (${resolution.checkId}): unresolved - ${reasonCodes.join(", ")}`,
+            );
+          }
+        }
 
         limitations.push(
-          `Decision adjudication complete: ${adjudicatedConsistent} consistent, ${adjudicatedConflict} conflict, ${adjudicatedNotComparable} not comparable, ${adjudicatedUnresolved} unresolved.`,
+          `Decision adjudication complete: ${consistentCount} consistent, ${conflictCount} conflict, ${notComparableCount} not comparable, ${unresolvedCount} unresolved.`,
         );
       } else {
         limitations.push("No unresolved questions to adjudicate.");
