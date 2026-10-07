@@ -1,5 +1,5 @@
 /**
- * The indexed consistency engine (R0–R2).
+ * The indexed consistency engine (R0–R3).
  *
  * Orchestration per the authoritative plan §6: extraction, evidence
  * validation, canonical resolution, normalisation, indexing, retrieval,
@@ -7,13 +7,17 @@
  * D-derivation, confidence scoring, and reporting.
  *
  * R0 provides the consent gate, the cancellation and staleness guards, and
- * the report shape. R2 lands the first pipeline stage: when a provider is
- * configured and the run has opted out of redaction, the document is
- * batched by its section hierarchy, claims are extracted in two passes, and
- * every claim's evidence is proven against the document before it may enter
- * the pipeline. The comparison stages land in R3–R6; until then a run with
- * a provider extracts and validates claims and says honestly that it compared
- * nothing — which is the honest pipeline, not a silent stub.
+ * the report shape. R2 lands extraction: when a provider is configured and
+ * the run has opted out of redaction, the document is batched by its
+ * section hierarchy, claims are extracted in two passes, and every claim's
+ * evidence is proven against the document before it may enter the pipeline.
+ * R3 lands the deterministic stages after it: the accepted claims are
+ * normalised, the nine indices are built, and each of the ten checks
+ * retrieves its plausible subjects — with the per-subject cap applied and
+ * counted. The comparison, adjudication, and D-derivation stages land in
+ * R4–R6; until then a run with a provider retrieves candidates and says
+ * honestly that it decided nothing — which is the honest pipeline, not a
+ * silent stub.
  */
 
 import type { LlmProvider } from "../../ai/providers/LlmProvider";
@@ -33,6 +37,9 @@ import {
   resolveCanonicalClaims,
   type ExtractionResult,
 } from "./extraction";
+import { buildAliasIndex, collectAliasEntries, normaliseClaims } from "./normalisation";
+import { buildIndices } from "./indices";
+import { retrieveCandidates } from "./candidates";
 
 /** Thrown when the run is cancelled or the document moved underneath it. */
 export class ConsistencyRunCancelled extends Error {
@@ -110,21 +117,35 @@ export function segmentDocument(text: string, sections: readonly string[]): Cons
   }));
 }
 
-function emptyCoverage(
+/**
+ * What a run covered, and what it did not.
+ *
+ * `complete` is a discovery claim, not a type requirement (ADR-0066): it is
+ * true only when nothing was skipped and nothing was left unreviewed. A run
+ * that hit a budget cap reports `complete: false` with the skipped counts in
+ * `limitations`, and the UI renders the limitation rather than a clean bill
+ * of health.
+ */
+function coverage(
   statementsTotal: number,
   maxAdjudications: number,
   limitations: string[],
-  quarantinedClaims = 0,
+  quarantinedClaims: number,
+  retrieval: {
+    comparisonsMade: number;
+    blockOverflowSkipped: number;
+    perCheck: Readonly<Record<string, number>>;
+  } = { comparisonsMade: 0, blockOverflowSkipped: 0, perCheck: {} },
 ): ConsistencyCoverage {
   return ConsistencyCoverageSchema.parse({
     complete: limitations.length === 0,
     statementsConsidered: statementsTotal,
     statementsTotal,
-    comparisonsMade: 0,
-    blockOverflowSkipped: 0,
+    comparisonsMade: retrieval.comparisonsMade,
+    blockOverflowSkipped: retrieval.blockOverflowSkipped,
     adjudicationsUsed: 0,
     adjudicationsAvailable: maxAdjudications,
-    perCheck: {},
+    perCheck: { ...retrieval.perCheck },
     limitations,
     modelAdjudicated: 0,
     quarantinedClaims,
@@ -136,8 +157,11 @@ function emptyCoverage(
  *
  * R0: parses the request (failing closed on consent), segments the document,
  * guards cancellation and staleness, and returns an empty report with honest
- * coverage. R1–R7 fill in the pipeline; the contract — consent first, guards
- * throughout, report tied to its revision — does not change.
+ * coverage. R2 extracts and validates claims when a provider runs with the
+ * redaction opt-out. R3 normalises what was accepted, builds the nine
+ * indices, and retrieves each check's plausible subjects. R4–R7 fill in the
+ * comparison, adjudication, and D-derivation stages; the contract — consent
+ * first, guards throughout, report tied to its revision — does not change.
  */
 export async function runConsistencyReview(
   rawRequest: unknown,
@@ -154,11 +178,15 @@ export async function runConsistencyReview(
 
   const maxPerSubject = request.maxPerSubject ?? CONSISTENCY_DEFAULT_MAX_PER_SUBJECT;
   const maxAdjudications = request.maxAdjudications ?? CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS;
-  void maxPerSubject;
 
   const limitations: string[] = [];
   let quarantinedClaims = 0;
   let usedModel = false;
+  let retrieval = {
+    comparisonsMade: 0,
+    blockOverflowSkipped: 0,
+    perCheck: {} as Record<string, number>,
+  };
 
   if (options.provider === undefined) {
     limitations.push(
@@ -205,8 +233,43 @@ export async function runConsistencyReview(
     });
     quarantinedClaims = resolved.registry.quarantined.length + extraction.quarantined.length;
     usedModel = true;
+
+    options.onProgress?.({
+      phase: "normalising",
+      fraction: 0.55,
+      message: "Normalising claims…",
+    });
+    await assertCurrent(options, request.document.revision);
+    const normalised = normaliseClaims(resolved.claims);
+    const aliases = buildAliasIndex(collectAliasEntries(resolved.claims));
+
+    options.onProgress?.({
+      phase: "indexing",
+      fraction: 0.65,
+      message: "Building indices…",
+    });
+    await assertCurrent(options, request.document.revision);
+    const indices = buildIndices(normalised);
+
+    options.onProgress?.({
+      phase: "comparing",
+      fraction: 0.75,
+      message: "Retrieving candidates…",
+    });
+    await assertCurrent(options, request.document.revision);
+    const retrieved = retrieveCandidates({
+      indices,
+      aliases,
+      maxPerSubject,
+    });
+    retrieval = {
+      comparisonsMade: retrieved.candidates.length,
+      blockOverflowSkipped: retrieved.blockOverflowSkipped,
+      perCheck: { ...retrieved.perCheck },
+    };
+
     limitations.push(
-      "Claims were extracted and their evidence validated, but the indexed comparison pipeline is not yet implemented (R3–R6), so no comparisons were made.",
+      "Candidates were retrieved for all ten checks, but comparison, adjudication, and D-derivation are not yet implemented (R4–R6), so no issue was decided.",
     );
   }
 
@@ -215,7 +278,13 @@ export async function runConsistencyReview(
   return ConsistencyReportSchema.parse({
     revision: request.document.revision,
     issues: [],
-    coverage: emptyCoverage(statements.length, maxAdjudications, limitations, quarantinedClaims),
+    coverage: coverage(
+      statements.length,
+      maxAdjudications,
+      limitations,
+      quarantinedClaims,
+      retrieval,
+    ),
     usedModel,
     startedAt,
     finishedAt: now(),

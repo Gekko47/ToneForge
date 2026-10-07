@@ -95,8 +95,6 @@ export const CONSISTENCY_CHECK_IDS: readonly string[] = Object.freeze(
   CONSISTENCY_CHECKS.map((check) => check.id),
 );
 
-export type ConsistencyCheckId = (typeof CONSISTENCY_CHECK_IDS)[number];
-
 export const ConsistencyCheckIdSchema = z.enum([
   "C1",
   "C2",
@@ -109,6 +107,9 @@ export const ConsistencyCheckIdSchema = z.enum([
   "C9",
   "C10",
 ]);
+
+/** The ten check ids, as the runtime-validated contract types them. */
+export type ConsistencyCheckId = z.infer<typeof ConsistencyCheckIdSchema>;
 
 export function consistencyCheck(id: string): ConsistencyCheckDescriptor {
   const found = CONSISTENCY_CHECKS.find((check) => check.id === id);

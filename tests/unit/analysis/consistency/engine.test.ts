@@ -126,7 +126,7 @@ describe("R2 extraction wiring", () => {
     expect(report.usedModel).toBe(true);
     expect(report.coverage.quarantinedClaims).toBe(0);
     expect(report.coverage.limitations).toContain(
-      "Claims were extracted and their evidence validated, but the indexed comparison pipeline is not yet implemented (R3–R6), so no comparisons were made.",
+      "Candidates were retrieved for all ten checks, but comparison, adjudication, and D-derivation are not yet implemented (R4–R6), so no issue was decided.",
     );
   });
 
@@ -212,5 +212,75 @@ describe("R2 extraction wiring", () => {
         signal: controller.signal,
       }),
     ).rejects.toThrow(ConsistencyRunCancelled);
+  });
+});
+
+/**
+ * R3 retrieval wiring: after extraction, the accepted
+ * claims are normalised, the nine indices are built,
+ * and each check retrieves its plausible subjects. The
+ * per-subject cap is applied and counted, so a capped
+ * run says how much it did not read.
+ */
+function entityClaim(overrides: Record<string, unknown> = {}) {
+  return {
+    ...rawClaim(),
+    subjectIds: ["entity-works"],
+    predicate: "the works were delayed",
+    ...overrides,
+  };
+}
+
+function twoEntityClaimsResponse(): string {
+  return JSON.stringify({
+    claims: [entityClaim(), entityClaim({ predicate: "the works suffered disruption" })],
+  });
+}
+
+describe("R3 retrieval wiring", () => {
+  it("reports the normalising, indexing, and comparing phases", async () => {
+    const phases: string[] = [];
+    const provider = new MockAdapter({
+      responses: {
+        "six-week": JSON.stringify({ claims: [rawClaim()] }),
+        "1,250,000": JSON.stringify({ claims: [] }),
+      },
+    });
+    await runConsistencyReview(headedRequest(), {
+      provider,
+      onProgress: (progress) => phases.push(progress.phase),
+    });
+    expect(phases).toContain("normalising");
+    expect(phases).toContain("indexing");
+    expect(phases).toContain("comparing");
+    expect(phases[phases.length - 1]).toBe("done");
+  });
+
+  it("counts the candidates each check retrieved", async () => {
+    const provider = new MockAdapter({
+      responses: {
+        "six-week": twoEntityClaimsResponse(),
+        "1,250,000": JSON.stringify({ claims: [] }),
+      },
+    });
+    const report = await runConsistencyReview(headedRequest(), {
+      provider,
+    });
+    // Two claims about one entity, in two ways: C1 retrieves
+    // them as one terminology subject.
+    expect(report.coverage.perCheck.C1).toBe(1);
+    expect(report.coverage.comparisonsMade).toBeGreaterThan(0);
+  });
+
+  it("reports the claims a capped subject did not contribute", async () => {
+    const provider = new MockAdapter({
+      responses: {
+        "six-week": twoEntityClaimsResponse(),
+        "1,250,000": JSON.stringify({ claims: [] }),
+      },
+    });
+    const report = await runConsistencyReview(headedRequest({ maxPerSubject: 1 }), { provider });
+    expect(report.coverage.blockOverflowSkipped).toBeGreaterThan(0);
+    expect(report.coverage.complete).toBe(false);
   });
 });

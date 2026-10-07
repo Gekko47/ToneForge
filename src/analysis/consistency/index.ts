@@ -125,11 +125,48 @@ export {
 } from "./indexedEngine";
 
 export {
-  CONSISTENCY_CHECKERS,
-  checkerFor,
-  type ConsistencyCheckContext,
-  type ConsistencyChecker,
-} from "./checks";
+  buildAliasIndex,
+  collectAliasEntries,
+  normaliseClaims,
+  partyAliases,
+  type AliasEntry,
+  type AliasIndex,
+  type NormalisedClaim,
+  type NormalisedDate,
+} from "./normalisation";
+export {
+  baseUnit,
+  compatibleUnits,
+  currencyCode,
+  normaliseDate,
+  normaliseValue,
+  parseDecimal,
+  parseDurationDays,
+  quantityKey,
+  toBaseUnit,
+  unitDimension,
+} from "./normalisation";
+export { buildIndices, type ConsistencyIndices } from "./indices";
+export {
+  capSubjectClaims,
+  evidenceIdsFor,
+  makeCandidate,
+  retrieveCandidates,
+  retrieveC1,
+  retrieveC2,
+  retrieveC3,
+  retrieveC4,
+  retrieveC5,
+  retrieveC6,
+  retrieveC7,
+  retrieveC8,
+  retrieveC9,
+  retrieveC10,
+  subjectKey,
+  type CheckRetrieval,
+  type CheckRetriever,
+  type RetrievalContext,
+} from "./candidates";
 
 export { consistencyCategory, summarizeReport, toFinding, toFindings } from "./bridge";
 

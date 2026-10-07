@@ -10,14 +10,6 @@
  * of ToneForge. They take statements and return comparisons.
  */
 
-import type { ConsistencyCandidate, ConsistencyStatement } from "../contracts";
-
-/** A statement paired with its own source. Keeps check code free of index maths. */
-export interface IndexedStatement {
-  readonly statement: ConsistencyStatement;
-  readonly index: number;
-}
-
 const SENTENCE_BOUNDARY = /(?<=[.!?])\s+/;
 
 /**
@@ -40,7 +32,7 @@ export function normalizeForComparison(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-/** Every pair of statements, in a stable order. */
+/** Every pair of items, in a stable order. */
 export function pairwise<T>(items: readonly T[]): [T, T][] {
   const pairs: [T, T][] = [];
   items.forEach((item, i) => {
@@ -49,42 +41,6 @@ export function pairwise<T>(items: readonly T[]): [T, T][] {
     });
   });
   return pairs;
-}
-
-/**
- * A stable identity for a comparison between two statements.
- *
- * Order-independent on purpose: the same two statements compared in the other
- * order are the same finding, and a fingerprint that changed with iteration
- * order would produce a duplicate for every conflict.
- */
-export function candidateFingerprint(checkId: string, a: string, b: string): string {
-  const [first, second] = [a, b].sort();
-  return `${checkId}:${first}|${second}`;
-}
-
-/** Build a candidate, filling in the derived fields the checks would otherwise repeat. */
-export function makeCandidate(input: {
-  checkId: ConsistencyCandidate["checkId"];
-  left: IndexedStatement;
-  right: IndexedStatement;
-  suspicion: string;
-  certainty: ConsistencyCandidate["certainty"];
-  evidence?: Record<string, string>;
-}): ConsistencyCandidate {
-  return {
-    checkId: input.checkId,
-    fingerprint: candidateFingerprint(
-      input.checkId,
-      input.left.statement.id,
-      input.right.statement.id,
-    ),
-    suspicion: input.suspicion,
-    left: input.left.statement,
-    right: input.right.statement,
-    certainty: input.certainty,
-    evidence: input.evidence ?? {},
-  };
 }
 
 /** Content words, with common stop words removed. */

@@ -51,11 +51,15 @@ ADR-0052, and should be recorded as such.
 
 ## The pipeline
 
-Segment, compare, adjudicate, consolidate — with its own progress, cancellation,
-and stale-run handling. Within the engine, each check compares
-**deterministically first** and escalates a candidate to model adjudication only
-when the structured comparison is genuinely ambiguous. Most candidates never
-reach the model.
+Segment, extract, normalise, index, retrieve — with its own progress,
+cancellation, and stale-run handling. Extraction is two-pass with canonical
+resolution; normalisation gives every claim canonical date, quantity, and
+alias keys; nine indices map those keys to claims; and each of the ten
+checks retrieves only the subjects its rule names — no window scanning, no
+pairwise comparison of everything. Comparison, adjudication, and D-derivation
+land in R4–R6, so a candidate is never a user-facing issue by itself: it
+names a subject and the claims that bear on it, and the comparison stages
+decide what, if anything, is wrong.
 
 ## Consent and the surface
 
@@ -79,9 +83,11 @@ Be honest about these limits; they are recorded in
 - **The ten checks are heuristic.** They will miss real conflicts below their
   subject-overlap thresholds and will produce false positives on real prose.
   They are not calibrated against a corpus.
-- **It is quadratic and bounded at 400 statements.** A larger document reports
-  partial coverage rather than silently truncating. Partial coverage is not full
-  coverage, and a clean partial result is not a clean document.
+- **Retrieval is capped, and a capped run says so.** A subject contributes at
+  most 400 claims; the rest are counted as `blockOverflowSkipped`, and a
+  capped run reports partial coverage rather than silently truncating. Partial
+  coverage is not full coverage, and a clean partial result is not a clean
+  document.
 - **A finding can propose rewriting prose.** Below 0.7 confidence it is marked
   `actionable: false` and produces no change. Above it, the plan still passes
   through the ordinary review and apply gates. The confidence scale itself is
@@ -89,9 +95,15 @@ Be honest about these limits; they are recorded in
 
 ## Changes here
 
-1. Add or change the check in `checks/`, and register it in
-   `src/analysis/consistency/checks/index.ts` and
-   `src/analysis/consistency/contracts/`.
+1. Add or change the check in `candidates/` — one retriever per check,
+   dispatched by
+   [`src/analysis/consistency/candidates/registry.ts`](../../../src/analysis/consistency/candidates/registry.ts) —
+   and its contract in `src/analysis/consistency/contracts/`. The shared
+   retrieval helpers live in
+   [`src/analysis/consistency/candidates/kit.ts`](../../../src/analysis/consistency/candidates/kit.ts),
+   apart from the dispatch: the retrievers depend on the kit, and the
+   registry depends on the retrievers, so neither side imports the other
+   mid-evaluation.
 2. If it is structural and deterministic, keep it that way. Escalation must be
    the exception inside the check, not its default.
 3. Add tests under `tests/unit/analysis/consistency/`.
