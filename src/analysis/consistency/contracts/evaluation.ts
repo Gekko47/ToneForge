@@ -44,6 +44,7 @@ export const EvaluationVectorSchema = z.object({
   sameScenario: z.boolean().optional(),
   sameBasis: z.boolean().optional(),
   sameAttribution: z.boolean().optional(),
+  sameScope: z.boolean().optional(),
   valuesAgree: z.boolean().optional(),
   unitsCompatible: z.boolean().optional(),
   qualifiersCompatible: z.boolean().optional(),

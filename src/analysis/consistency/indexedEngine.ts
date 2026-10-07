@@ -40,6 +40,7 @@ import {
 import { buildAliasIndex, collectAliasEntries, normaliseClaims } from "./normalisation";
 import { buildIndices } from "./indices";
 import { retrieveCandidates } from "./candidates";
+import { resolveCandidate, runPreModelGates } from "./comparison";
 
 /** Thrown when the run is cancelled or the document moved underneath it. */
 export class ConsistencyRunCancelled extends Error {
@@ -268,8 +269,47 @@ export async function runConsistencyReview(
       perCheck: { ...retrieved.perCheck },
     };
 
+    // R4: deterministic resolution and pre-model gates
+    options.onProgress?.({
+      phase: "comparing",
+      fraction: 0.8,
+      message: "Running deterministic resolution…",
+    });
+    await assertCurrent(options, request.document.revision);
+
+    const resolutions = retrieved.candidates.map((candidate) =>
+      resolveCandidate(candidate, normalised),
+    );
+
+    // Apply pre-model gates and count outcomes
+    let consistentCount = 0;
+    let conflictCount = 0;
+    let notComparableCount = 0;
+    let unresolvedCount = 0;
+
+    resolutions.forEach((resolution, i) => {
+      const candidate = retrieved.candidates[i]!;
+      const gateResult = runPreModelGates(
+        normalised.filter((nc) => candidate.claimIds.includes(nc.claim.id)),
+        resolution.checkId,
+        resolution.diff ?? { matches: [], differences: [], unknowns: [] },
+      );
+      if (!gateResult.proceedToModel) {
+        if (gateResult.state === "consistent") consistentCount++;
+        else if (gateResult.state === "not_comparable") notComparableCount++;
+      } else {
+        if (resolution.state === "conflict") conflictCount++;
+        else if (resolution.state === "consistent") consistentCount++;
+        else if (resolution.state === "not_comparable") notComparableCount++;
+        else unresolvedCount++;
+      }
+    });
+
+    const totalResolved = consistentCount + conflictCount + notComparableCount + unresolvedCount;
+    retrieval.comparisonsMade = totalResolved;
+
     limitations.push(
-      "Candidates were retrieved for all ten checks, but comparison, adjudication, and D-derivation are not yet implemented (R4–R6), so no issue was decided.",
+      `Deterministic resolution complete: ${consistentCount} consistent, ${conflictCount} conflict, ${notComparableCount} not comparable, ${unresolvedCount} unresolved. Adjudication and D-derivation (R5–R6) not yet implemented.`,
     );
   }
 

@@ -101,13 +101,24 @@ function headedRequest(overrides: Record<string, unknown> = {}) {
 }
 
 function rawClaim(overrides: Record<string, unknown> = {}) {
+  // The extraction pipeline expects RawEvidence (paragraphId + exactText)
+  // The locateEvidence function will resolve this to a full EvidenceAnchor
+  // Document text: "## Programme\n\nThe contractor reported a six-week delay.\n\n## Quantum\n\nThe quantum is 1,250,000 USD."
+  // "a six-week delay" starts at offset 38, ends at 54
+  // FNV-1a hash of "a six-week delay" = 533f0dc0
   return {
     claimClass: "FACT_ASSERTION",
     predicate: "the contractor reported a delay",
     speaker: { id: "party-contractor", name: "The Contractor" },
     adoptionStatus: "reported_party_position",
     polarity: "positive",
-    evidence: { paragraphId: "p-1-0", exactText: "a six-week delay" },
+    evidence: {
+      paragraphId: "p-1-0",
+      startOffset: 38,
+      endOffset: 54,
+      exactText: "a six-week delay",
+      evidenceHash: "533f0dc0",
+    },
     ...overrides,
   };
 }
@@ -125,9 +136,9 @@ describe("R2 extraction wiring", () => {
     });
     expect(report.usedModel).toBe(true);
     expect(report.coverage.quarantinedClaims).toBe(0);
-    expect(report.coverage.limitations).toContain(
-      "Candidates were retrieved for all ten checks, but comparison, adjudication, and D-derivation are not yet implemented (R4–R6), so no issue was decided.",
-    );
+    expect(
+      report.coverage.limitations.some((l) => l.startsWith("Deterministic resolution complete:")),
+    ).toBe(true);
   });
 
   it("counts a claim whose quoted evidence is not in the document", async () => {
