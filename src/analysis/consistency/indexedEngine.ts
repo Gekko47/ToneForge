@@ -21,12 +21,15 @@
 
 import type { LlmProvider } from "../../ai/providers/LlmProvider";
 import {
+  CONSISTENCY_ACTIONABLE_CONFIDENCE,
   CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS,
   CONSISTENCY_DEFAULT_MAX_PER_SUBJECT,
+  CONSISTENCY_STORE_VERSION,
   ConsistencyCoverageSchema,
   ConsistencyReportSchema,
   parseConsistencyReviewRequest,
   type ConsistencyCoverage,
+  type ConsistencyIssue,
   type ConsistencyReport,
   type ConsistencyStatement,
 } from "./contracts";
@@ -49,11 +52,13 @@ import {
   computeConfidence,
   meetsReviewThreshold,
   meetsPresentationThreshold,
-  formatConfidence,
   getDerivationReasonCodes,
+  type DeterministicResolution,
 } from "./comparison";
+import { buildIssue } from "./issues";
 import { compileDecisionPlanWithCandidates } from "./decision/DecisionPlanCompiler";
 import { SystemOneDecisionProvider } from "./decision/systemOne/SystemOneDecisionProvider";
+import { buildAuditRecord, buildProvenance, type ConsistencySessionStore } from "./persistence";
 
 /** Thrown when the run is cancelled or the document moved underneath it. */
 export class ConsistencyRunCancelled extends Error {
@@ -84,6 +89,12 @@ export interface ConsistencyRunOptions {
   }) => void;
   currentRevision?: () => Promise<string>;
   now?: () => string;
+  /**
+   * When supplied, the finished run is persisted as an encrypted audit record
+   * (R7, original §30–§31). The engine never persists a credential, and the
+   * store holds ciphertext only.
+   */
+  store?: ConsistencySessionStore;
 }
 
 function assertNotCancelled(options: ConsistencyRunOptions): void {
@@ -150,6 +161,25 @@ function coverage(
     blockOverflowSkipped: number;
     perCheck: Readonly<Record<string, number>>;
   } = { comparisonsMade: 0, blockOverflowSkipped: 0, perCheck: {} },
+  work: {
+    deterministicResolved: number;
+    decisionAdjudicated: number;
+    unresolved: number;
+    gated: number;
+    reviewBandSuppressed: number;
+    budgetExceeded: number;
+    adjudicationsUsed: number;
+    modelAdjudicated: number;
+  } = {
+    deterministicResolved: 0,
+    decisionAdjudicated: 0,
+    unresolved: 0,
+    gated: 0,
+    reviewBandSuppressed: 0,
+    budgetExceeded: 0,
+    adjudicationsUsed: 0,
+    modelAdjudicated: 0,
+  },
 ): ConsistencyCoverage {
   return ConsistencyCoverageSchema.parse({
     complete: limitations.length === 0,
@@ -157,13 +187,48 @@ function coverage(
     statementsTotal,
     comparisonsMade: retrieval.comparisonsMade,
     blockOverflowSkipped: retrieval.blockOverflowSkipped,
-    adjudicationsUsed: 0,
+    adjudicationsUsed: work.adjudicationsUsed,
     adjudicationsAvailable: maxAdjudications,
     perCheck: { ...retrieval.perCheck },
     limitations,
-    modelAdjudicated: 0,
+    modelAdjudicated: work.modelAdjudicated,
     quarantinedClaims,
+    deterministicResolved: work.deterministicResolved,
+    decisionAdjudicated: work.decisionAdjudicated,
+    unresolved: work.unresolved,
+    gated: work.gated,
+    reviewBandSuppressed: work.reviewBandSuppressed,
+    budgetExceeded: work.budgetExceeded,
   });
+}
+
+/**
+ * Map a derived D-outcome to the candidate's final state.
+ *
+ * Only D-CONFLICT is a contradiction. Every D-DIFFERENT-* outcome is a
+ * legitimate difference — a different basis, period, scenario, attribution,
+ * scope, or measurement basis — which is not a conflict and must not be
+ * reported as one. That is the false positive the 16-outcome derivation exists
+ * to prevent, so the default is `not_comparable`, never `conflict`.
+ */
+function stateForDOutcome(
+  dOutcome: DOutcome,
+): "consistent" | "conflict" | "not_comparable" | "unresolved" {
+  switch (dOutcome) {
+    case "D-CONFLICT":
+      return "conflict";
+    case "D-CONSISTENT":
+      return "consistent";
+    case "D-NOT-COMPARABLE":
+      return "not_comparable";
+    case "D-INSUFFICIENT-EVIDENCE":
+    case "D-AMBIGUOUS":
+      return "unresolved";
+    default:
+      // D-DIFFERENT-*, D-QUALIFIED-POSITION, D-UPDATED-POSITION: a real
+      // difference, not a contradiction.
+      return "not_comparable";
+  }
 }
 
 /**
@@ -194,12 +259,25 @@ export async function runConsistencyReview(
   const maxAdjudications = request.maxAdjudications ?? CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS;
 
   const limitations: string[] = [];
+  const issues: ConsistencyIssue[] = [];
+  const evidenceHashes = new Set<string>();
   let quarantinedClaims = 0;
   let usedModel = false;
   let retrieval = {
     comparisonsMade: 0,
     blockOverflowSkipped: 0,
     perCheck: {} as Record<string, number>,
+  };
+  // Coverage V3 (original §34): the work separated by how it was settled.
+  const work = {
+    deterministicResolved: 0,
+    decisionAdjudicated: 0,
+    unresolved: 0,
+    gated: 0,
+    reviewBandSuppressed: 0,
+    budgetExceeded: 0,
+    adjudicationsUsed: 0,
+    modelAdjudicated: 0,
   };
 
   if (options.provider === undefined) {
@@ -246,6 +324,9 @@ export async function runConsistencyReview(
       claims: extraction.claims,
     });
     quarantinedClaims = resolved.registry.quarantined.length + extraction.quarantined.length;
+    Object.values(resolved.registry.anchors).forEach((anchor) => {
+      evidenceHashes.add(anchor.evidenceHash);
+    });
     usedModel = true;
 
     options.onProgress?.({
@@ -294,36 +375,83 @@ export async function runConsistencyReview(
       resolveCandidate(candidate, normalised),
     );
 
-    // Apply pre-model gates and count outcomes
+    // Apply pre-model gates and count outcomes. A candidate a gate settles
+    // never reaches the model; a candidate the resolver settles is counted as
+    // deterministic work; only the resolver's unresolved residue is queued for
+    // the decision model.
     let consistentCount = 0;
     let conflictCount = 0;
     let notComparableCount = 0;
     let unresolvedCount = 0;
+    const pendingModel: DeterministicResolution[] = [];
 
     resolutions.forEach((resolution, i) => {
       const candidate = retrieved.candidates[i]!;
+      const claimsForCandidate = normalised.filter((nc) =>
+        candidate.claimIds.includes(nc.claim.id),
+      );
       const gateResult = runPreModelGates(
-        normalised.filter((nc) => candidate.claimIds.includes(nc.claim.id)),
+        claimsForCandidate,
         resolution.checkId,
         resolution.diff ?? { matches: [], differences: [], unknowns: [] },
       );
       if (!gateResult.proceedToModel) {
+        work.gated++;
         if (gateResult.state === "consistent") consistentCount++;
         else if (gateResult.state === "not_comparable") notComparableCount++;
+        return;
+      }
+      if (resolution.state === "unresolved") {
+        pendingModel.push(resolution);
+        return;
+      }
+      work.deterministicResolved++;
+      if (resolution.state === "conflict") {
+        conflictCount++;
+        // A proven conflict is a D-CONFLICT: the resolver proved the values
+        // disagree, so no model call is needed to name the outcome.
+        const deterministicAnswers = resolution.answers.map((a) => ({
+          question: a.question,
+          holds: a.holds,
+          reason: a.reason,
+        }));
+        const vector = buildEvaluationVector(deterministicAnswers, []);
+        const dOutcome: DOutcome = "D-CONFLICT";
+        const confidence = computeConfidence(
+          resolution.checkId,
+          vector,
+          [],
+          deterministicAnswers,
+          dOutcome,
+        );
+        if (meetsPresentationThreshold(confidence)) {
+          const issue = buildIssue({
+            candidate,
+            checkId: resolution.checkId,
+            claims: normalised,
+            dOutcome,
+            confidence,
+            deterministicAnswers,
+            modelAnswers: [],
+            reasonCodes: resolution.reasonCodes,
+            actionable: confidence.point >= CONSISTENCY_ACTIONABLE_CONFIDENCE,
+          });
+          if (issue !== null) issues.push(issue);
+        } else if (meetsReviewThreshold(confidence)) {
+          work.reviewBandSuppressed++;
+        }
+      } else if (resolution.state === "consistent") {
+        consistentCount++;
       } else {
-        if (resolution.state === "conflict") conflictCount++;
-        else if (resolution.state === "consistent") consistentCount++;
-        else if (resolution.state === "not_comparable") notComparableCount++;
-        else unresolvedCount++;
+        notComparableCount++;
       }
     });
 
-    const totalResolved = consistentCount + conflictCount + notComparableCount + unresolvedCount;
-    retrieval.comparisonsMade = totalResolved;
+    retrieval.comparisonsMade =
+      consistentCount + conflictCount + notComparableCount + pendingModel.length;
 
     // R5: DecisionPlan compilation and decision adjudication
-    const unresolvedResolutions = resolutions.filter((r) => r.state === "unresolved");
-    if (unresolvedResolutions.length > 0 && options.provider !== undefined) {
+    if (pendingModel.length > 0 && options.provider !== undefined) {
       options.onProgress?.({
         phase: "adjudicating",
         fraction: 0.85,
@@ -346,6 +474,7 @@ export async function runConsistencyReview(
 
       if (plan.questions.length > 0) {
         usedModel = true;
+        work.adjudicationsUsed = plan.questions.length;
         const evaluation = await decisionProvider.evaluate(plan, options.signal);
 
         // R6: D-derivation, post-model gates, and confidence with intervals
@@ -356,7 +485,9 @@ export async function runConsistencyReview(
         });
         await assertCurrent(options, request.document.revision);
 
-        for (const resolution of unresolvedResolutions) {
+        const adjudicated = new Set(plan.questions.map((q) => q.subjectId));
+
+        for (const resolution of pendingModel) {
           const candidate = retrieved.candidates.find((c) => c.id === resolution.candidateId);
           if (candidate === undefined) continue;
 
@@ -364,6 +495,17 @@ export async function runConsistencyReview(
             candidate.claimIds.includes(nc.claim.id),
           );
           if (claimsForCandidate.length < 2) continue;
+
+          // A candidate the budget left unasked is unresolved, and counted as
+          // budget-exceeded rather than silently dropped.
+          if (!adjudicated.has(resolution.candidateId)) {
+            work.budgetExceeded++;
+            unresolvedCount++;
+            continue;
+          }
+
+          work.decisionAdjudicated++;
+          work.modelAdjudicated++;
 
           // Find model answers for this candidate
           const candidateQuestions = plan.questions.filter(
@@ -418,26 +560,7 @@ export async function runConsistencyReview(
               deterministicAnswers,
             );
             reasonCodes = getDerivationReasonCodes(resolution.checkId, vector, dOutcome);
-
-            // Map D-outcome to final state
-            switch (dOutcome) {
-              case "D-CONSISTENT":
-                finalState = "consistent";
-                break;
-              case "D-CONFLICT":
-                finalState = "conflict";
-                break;
-              case "D-NOT-COMPARABLE":
-                finalState = "not_comparable";
-                break;
-              case "D-INSUFFICIENT-EVIDENCE":
-              case "D-AMBIGUOUS":
-                finalState = "unresolved";
-                break;
-              default:
-                // Other D-outcomes are specific types of conflict or difference
-                finalState = "conflict";
-            }
+            finalState = stateForDOutcome(dOutcome);
           }
 
           // Compute confidence
@@ -449,36 +572,50 @@ export async function runConsistencyReview(
             dOutcome,
           );
 
-          // Check thresholds
-          const meetsReview = meetsReviewThreshold(confidence);
-          const meetsPresentation = meetsPresentationThreshold(confidence);
-
           // Count outcomes
           if (finalState === "consistent") consistentCount++;
           else if (finalState === "conflict") conflictCount++;
           else if (finalState === "not_comparable") notComparableCount++;
           else unresolvedCount++;
 
-          // Create issue if it meets presentation threshold and is a conflict or difference
-          if (meetsPresentation && (finalState === "conflict" || finalState === "not_comparable")) {
-            // Issue creation would go here - for now we track in limitations
-            limitations.push(
-              `Candidate ${resolution.candidateId} (${resolution.checkId}): ${finalState} with confidence ${formatConfidence(confidence)} (review: ${meetsReview}, presentation: ${meetsPresentation})`,
-            );
-          } else if (finalState === "unresolved") {
-            limitations.push(
-              `Candidate ${resolution.candidateId} (${resolution.checkId}): unresolved - ${reasonCodes.join(", ")}`,
-            );
+          if (finalState === "unresolved") continue;
+
+          // Only above-presentation candidates become issues; the review band
+          // (at or above review, below presentation) is retained as advisory.
+          if (meetsPresentationThreshold(confidence)) {
+            const issue = buildIssue({
+              candidate,
+              checkId: resolution.checkId,
+              claims: normalised,
+              dOutcome,
+              confidence,
+              deterministicAnswers,
+              modelAnswers,
+              reasonCodes,
+              actionable: confidence.point >= CONSISTENCY_ACTIONABLE_CONFIDENCE,
+            });
+            if (issue !== null) issues.push(issue);
+          } else if (meetsReviewThreshold(confidence)) {
+            work.reviewBandSuppressed++;
           }
         }
 
         limitations.push(
-          `Decision adjudication complete: ${consistentCount} consistent, ${conflictCount} conflict, ${notComparableCount} not comparable, ${unresolvedCount} unresolved.`,
+          `Decision adjudication complete: ${work.decisionAdjudicated} candidate(s) judged by the model.`,
         );
       } else {
-        limitations.push("No unresolved questions to adjudicate.");
+        // No question compiled: the residue stays unresolved, honestly.
+        pendingModel.forEach(() => {
+          unresolvedCount++;
+        });
       }
+    } else {
+      pendingModel.forEach(() => {
+        unresolvedCount++;
+      });
     }
+
+    work.unresolved = unresolvedCount;
 
     limitations.push(
       `Deterministic resolution complete: ${consistentCount} consistent, ${conflictCount} conflict, ${notComparableCount} not comparable, ${unresolvedCount} unresolved.`,
@@ -487,18 +624,40 @@ export async function runConsistencyReview(
 
   options.onProgress?.({ phase: "done", fraction: 1, message: "Done." });
 
-  return ConsistencyReportSchema.parse({
+  const report = ConsistencyReportSchema.parse({
     revision: request.document.revision,
-    issues: [],
+    issues,
     coverage: coverage(
       statements.length,
       maxAdjudications,
       limitations,
       quarantinedClaims,
       retrieval,
+      work,
     ),
     usedModel,
     startedAt,
     finishedAt: now(),
   });
+
+  // R7: persist the audit record when a store is supplied. The record is what
+  // makes a run reproducible — provenance, coverage, issues, and the evidence
+  // hashes an exception rests on. No credential is ever part of it.
+  if (options.store !== undefined) {
+    const provenance = buildProvenance({
+      documentFingerprint: request.document.revision,
+      claimGraphSchemaVersion: String(CONSISTENCY_STORE_VERSION),
+      extractionPromptVersion: "extraction-v1",
+      generalModel: request.model,
+      decisionProvider: options.provider?.name ?? "none",
+      decisionModel: request.model,
+      questionSetVersion: "1.0",
+      confidenceProfileVersion: "1.0",
+      createdAt: startedAt,
+    });
+    const record = buildAuditRecord(report, provenance, [...evidenceHashes]);
+    await options.store.save(record, now());
+  }
+
+  return report;
 }

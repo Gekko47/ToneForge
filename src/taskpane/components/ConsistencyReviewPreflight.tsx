@@ -23,6 +23,7 @@
  */
 
 import React from "react";
+import { redactionListFor } from "../../analysis/consistency";
 
 export interface ConsistencyReviewPreflightProps {
   approximateWords: number;
@@ -30,6 +31,18 @@ export interface ConsistencyReviewPreflightProps {
   /** The per-subject cap the run will honour, shown so the user can see the bound. */
   maxPerSubject: number;
   providerName: string;
+  /**
+   * The storage line, in the user's terms (original §32). Measured by
+   * `buildPreflight`, not guessed here.
+   */
+  storageNote?: string | undefined;
+  /**
+   * The per-run redaction opt-out (D13). Default off, so the run redacts unless
+   * the user turns it on here. The redaction list below is derived from this
+   * value, so the disclosure and the run can never disagree about what is sent.
+   */
+  allowUnredacted?: boolean | undefined;
+  onAllowUnredactedChange?: ((value: boolean) => void) | undefined;
   onStart: () => void;
   onCancel: () => void;
   disabled?: boolean;
@@ -40,10 +53,14 @@ export default function ConsistencyReviewPreflight({
   statementCount,
   maxPerSubject,
   providerName,
+  storageNote,
+  allowUnredacted = false,
+  onAllowUnredactedChange,
   onStart,
   onCancel,
   disabled = false,
 }: ConsistencyReviewPreflightProps): React.ReactNode {
+  const redactionList = redactionListFor(allowUnredacted);
   return (
     <section aria-label="Consistency review preflight">
       <h2>Consistency review — please confirm</h2>
@@ -64,6 +81,28 @@ export default function ConsistencyReviewPreflight({
         The report states how many comparisons were skipped, so a clean result would not mean the
         whole document is consistent.
       </p>
+      <div aria-label="What is withheld from the provider">
+        <p>What is withheld before anything is sent:</p>
+        <ul>
+          {redactionList.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </div>
+      {onAllowUnredactedChange !== undefined ? (
+        <label className="tf-inline-row">
+          <input
+            className="tf-native"
+            type="checkbox"
+            checked={allowUnredacted}
+            onChange={(event) => onAllowUnredactedChange(event.target.checked)}
+            disabled={disabled}
+          />
+          Allow unredacted evidence for this run — exact statement text will be sent to{" "}
+          {providerName}.
+        </label>
+      ) : null}
+      {storageNote !== undefined ? <p className="tf-sub">Storage: {storageNote}</p> : null}
       <p>Nothing in your document is changed by this review.</p>
       <div className="tf-inline-row">
         <button className="tf-native-button" type="button" onClick={onStart} disabled={disabled}>

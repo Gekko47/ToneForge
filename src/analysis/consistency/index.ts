@@ -177,3 +177,36 @@ export {
   issueGroupKey,
   type ConsistencyIssueGroup,
 } from "./grouping";
+
+export { buildIssue, buildWhyConfidence, type IssueAnswer, type IssueInput } from "./issues";
+
+export {
+  buildPreflight,
+  redactionListFor,
+  type ConsistencyPreflight,
+  type PreflightInput,
+} from "./preflight";
+
+export {
+  CONSISTENCY_STORE_TTL_DAYS,
+  CONSISTENCY_STORE_TTL_MS,
+  ConsistencyAuditRecordSchema,
+  ConsistencySessionProvenanceSchema,
+  ConsistencySessionStore,
+  IndexedDbStore,
+  MemoryStore,
+  buildAuditRecord,
+  buildProvenance,
+  decryptString,
+  deriveDeviceKey,
+  encryptString,
+  evidenceStillValid,
+  generateDataKey,
+  isExpired,
+  unwrapDataKey,
+  wrapDataKey,
+  type ConsistencyAuditRecord,
+  type ConsistencySessionProvenance,
+  type EncryptedPayload,
+  type ProvenanceInput,
+} from "./persistence";

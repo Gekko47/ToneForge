@@ -21,6 +21,7 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof AiReviewSe
     onCancel: vi.fn(),
     onCancelRun: vi.fn(),
     onDismiss: vi.fn(),
+    onAllowUnredactedChange: vi.fn(),
     ...overrides,
   };
   return { props, ...render(<AiReviewSection {...props} />) };
@@ -71,7 +72,15 @@ describe("AiReviewSection", () => {
   });
 
   it("shows the preflight instead of the trigger once a review is being started", () => {
-    renderSection({ stage: "preflight", preflight: { wordCount: 900, statementCount: 12 } });
+    renderSection({
+      stage: "preflight",
+      preflight: {
+        wordCount: 900,
+        statementCount: 12,
+        storageNote: "Temporary on this device · 7 days",
+        allowUnredacted: false,
+      },
+    });
     expect(screen.queryByRole("button", { name: /review this document/i })).not.toBeInTheDocument();
     expect(screen.getByText(/900/)).toBeInTheDocument();
   });

@@ -18,7 +18,17 @@ vi.mock("../../../../src/word/documentReader", () => ({
 }));
 
 vi.mock("../../../../src/analysis/consistency", () => ({
-  previewStatements: () => ({ length: 1 }),
+  CONSISTENCY_DEFAULT_MAX_PER_SUBJECT: 400,
+  CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS: 60,
+  buildPreflight: (input: { text: string; allowUnredacted: boolean }) => ({
+    approximateWords: input.text.split(/\s+/).filter((word) => word.length > 0).length,
+    statementCount: 1,
+    maxPerSubject: 400,
+    maxAdjudications: 60,
+    allowUnredacted: input.allowUnredacted,
+    redactionList: [],
+    storageNote: "Temporary on this device · 7 days",
+  }),
   runConsistencyReview: (...args: unknown[]) => mocks.runConsistencyReview(...args),
 }));
 

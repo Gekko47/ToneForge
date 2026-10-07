@@ -7,8 +7,11 @@ import {
   isRemoteProviderConfigured,
 } from "../settings/providerComposition";
 import {
-  previewStatements,
+  CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS,
+  CONSISTENCY_DEFAULT_MAX_PER_SUBJECT,
+  buildPreflight,
   runConsistencyReview,
+  type ConsistencyPreflight,
   type ConsistencyProgress,
   type ConsistencyReport,
 } from "../../analysis/consistency";
@@ -35,8 +38,8 @@ export interface ConsistencyReviewProps {
 
 /** What the preflight is opened with: the document to be reviewed. */
 interface Preflight {
-  wordCount: number;
-  statementCount: number;
+  /** The measured disclosure, built once from the document that will be sent. */
+  disclosure: ConsistencyPreflight;
   text: string;
   sections: string[];
   revision: string;
@@ -65,6 +68,13 @@ export default function ConsistencyReview({
   const [progress, setProgress] = React.useState<ConsistencyProgress | null>(null);
   const [cancelled, setCancelled] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
+  /*
+   * The per-run redaction opt-out (D13). Deliberately component state, not a
+   * persisted setting: it is a decision about *this* run, and a stored "yes"
+   * would silently send exact text on every later run. It resets to false on
+   * every mount, so the default is always redaction.
+   */
+  const [allowUnredacted, setAllowUnredacted] = React.useState(false);
   const abortRef = React.useRef<AbortController | null>(null);
 
   const state = loadState();
@@ -117,8 +127,15 @@ export default function ConsistencyReview({
       });
       const text = blocks.join("\n\n");
       setPreflight({
-        wordCount: text.split(/\s+/).filter((word) => word.length > 0).length,
-        statementCount: previewStatements(text).length,
+        // Measured from the document that will be sent, by the same splitter the
+        // engine segments with, so the disclosure counts the reviewed document
+        // and not a different one.
+        disclosure: buildPreflight({
+          text,
+          maxPerSubject: CONSISTENCY_DEFAULT_MAX_PER_SUBJECT,
+          maxAdjudications: CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS,
+          allowUnredacted,
+        }),
         text,
         sections,
         // The document's content hash is the run's identity, not its length: an
@@ -160,6 +177,9 @@ export default function ConsistencyReview({
           consistencyConsent: true,
           document: { revision, text, sections },
           model: state.settings.openAiModel ?? "",
+          // The value the preflight disclosed, not a fresh read: the user agreed
+          // to the run the disclosure described, so the run must be that one.
+          allowUnredacted: preflight.disclosure.allowUnredacted,
         },
         {
           // Reused, never re-selected: the consistency engine has no provider
@@ -206,7 +226,12 @@ export default function ConsistencyReview({
         preflight={
           preflight === null
             ? null
-            : { wordCount: preflight.wordCount, statementCount: preflight.statementCount }
+            : {
+                wordCount: preflight.disclosure.approximateWords,
+                statementCount: preflight.disclosure.statementCount,
+                storageNote: preflight.disclosure.storageNote,
+                allowUnredacted: preflight.disclosure.allowUnredacted,
+              }
         }
         progress={progress}
         cancelled={cancelled}
@@ -224,6 +249,7 @@ export default function ConsistencyReview({
           setCancelled(true);
         }}
         onDismiss={() => onResult(null)}
+        onAllowUnredactedChange={setAllowUnredacted}
       />
     </div>
   );

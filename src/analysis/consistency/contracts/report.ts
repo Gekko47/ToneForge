@@ -41,6 +41,24 @@ export const ConsistencyIssueSchema = z.object({
   outcome: z.string().optional(),
   /** Free-text reason the adjudicator or the resolver gave. */
   reason: z.string().optional(),
+  /**
+   * Why-confidence provenance (original §33): the human-readable E-results
+   * behind the score, each with its source. The UI renders this under
+   * "Why N%?" so a reader can see which facets were proven deterministically
+   * and which a model judged. Absent when the engine has nothing to show.
+   */
+  whyConfidence: z
+    .array(
+      z.object({
+        /** The E-question, in the user's terms. */
+        label: z.string().trim().min(1),
+        /** How strongly the facet holds, in the user's terms. */
+        strength: z.string().trim().min(1),
+        /** Who answered it: a proven fact or a model judgement. */
+        provenance: z.enum(["deterministic", "system_one", "mixed"]),
+      }),
+    )
+    .optional(),
 });
 
 export type ConsistencyIssue = z.infer<typeof ConsistencyIssueSchema>;
@@ -73,6 +91,28 @@ export const ConsistencyCoverageSchema = z.object({
    * compare, and the coverage says so.
    */
   quarantinedClaims: z.number().int().min(0).default(0),
+  /**
+   * Coverage V3 (original §34): the work is separated by how it was
+   * settled, so a reader can tell a deterministic proof from a model
+   * judgement from work that was never finished. Every field defaults
+   * to 0 so a report written before V3 still parses.
+   *
+   * - `deterministicResolved`: candidates a gate or the resolver settled
+   *   with no model call.
+   * - `decisionAdjudicated`: candidates the decision model answered.
+   * - `unresolved`: candidates left unresolved (no model, or a model
+   *   failure) — the honest residue.
+   * - `gated`: candidates a hard gate terminated before the model.
+   * - `reviewBandSuppressed`: candidates above the presentation threshold
+   *   but below the review threshold, shown as advisory only.
+   * - `budgetExceeded`: candidates dropped because a cap was hit.
+   */
+  deterministicResolved: z.number().int().min(0).default(0),
+  decisionAdjudicated: z.number().int().min(0).default(0),
+  unresolved: z.number().int().min(0).default(0),
+  gated: z.number().int().min(0).default(0),
+  reviewBandSuppressed: z.number().int().min(0).default(0),
+  budgetExceeded: z.number().int().min(0).default(0),
 });
 
 export type ConsistencyCoverage = z.infer<typeof ConsistencyCoverageSchema>;

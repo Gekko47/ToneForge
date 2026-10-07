@@ -31,12 +31,27 @@ import {
 
 export type AiReviewStage = "idle" | "preflight" | "running" | "results";
 
+/**
+ * What the preflight is opened with, measured by `buildPreflight` on the page.
+ *
+ * `storageNote` and `allowUnredacted` are carried here rather than recomputed in
+ * the component so the disclosure and the run cannot disagree: the page holds
+ * the one `allowUnredacted` value it will send, and the preflight renders the
+ * redaction list from that same value.
+ */
+export interface AiReviewPreflight {
+  wordCount: number;
+  statementCount: number;
+  storageNote: string;
+  allowUnredacted: boolean;
+}
+
 export interface AiReviewSectionProps {
   stage: AiReviewStage;
   providerConfigured: boolean;
   hasConsent: boolean;
   providerName: string;
-  preflight: { wordCount: number; statementCount: number } | null;
+  preflight: AiReviewPreflight | null;
   progress: ConsistencyProgress | null;
   /** True once the user has cancelled, so a partial run says so. */
   cancelled: boolean;
@@ -48,6 +63,8 @@ export interface AiReviewSectionProps {
   onCancel: () => void;
   onCancelRun: () => void;
   onDismiss: () => void;
+  /** The per-run redaction opt-out (D13), owned by the page. */
+  onAllowUnredactedChange: (value: boolean) => void;
 }
 
 /**
@@ -93,6 +110,7 @@ export default function AiReviewSection({
   onCancel,
   onCancelRun,
   onDismiss,
+  onAllowUnredactedChange,
 }: AiReviewSectionProps): React.ReactNode {
   const blocker = aiReviewBlocker({ hasConsent, providerConfigured, onOpenSettings });
 
@@ -144,6 +162,9 @@ export default function AiReviewSection({
           statementCount={preflight.statementCount}
           maxPerSubject={CONSISTENCY_DEFAULT_MAX_PER_SUBJECT}
           providerName={providerName}
+          storageNote={preflight.storageNote}
+          allowUnredacted={preflight.allowUnredacted}
+          onAllowUnredactedChange={onAllowUnredactedChange}
           onStart={onConfirm}
           onCancel={onCancel}
         />

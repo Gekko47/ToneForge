@@ -38,6 +38,12 @@ function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
       limitations: [],
       modelAdjudicated: 2,
       quarantinedClaims: 0,
+      deterministicResolved: 0,
+      decisionAdjudicated: 2,
+      unresolved: 0,
+      gated: 0,
+      reviewBandSuppressed: 0,
+      budgetExceeded: 0,
     },
     ...overrides,
   };
@@ -460,6 +466,12 @@ describe("consistency results", () => {
             limitations: ["Compared 900 statements with a per-subject cap."],
             modelAdjudicated: 3,
             quarantinedClaims: 0,
+            deterministicResolved: 0,
+            decisionAdjudicated: 3,
+            unresolved: 0,
+            gated: 0,
+            reviewBandSuppressed: 0,
+            budgetExceeded: 0,
           },
         })}
         onDismiss={() => undefined}
@@ -490,6 +502,12 @@ describe("consistency results", () => {
             limitations: ["The per-subject cap skipped 1200 comparisons."],
             modelAdjudicated: 0,
             quarantinedClaims: 0,
+            deterministicResolved: 0,
+            decisionAdjudicated: 0,
+            unresolved: 0,
+            gated: 0,
+            reviewBandSuppressed: 0,
+            budgetExceeded: 0,
           },
         })}
         onDismiss={() => undefined}

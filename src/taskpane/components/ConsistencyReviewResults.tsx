@@ -53,6 +53,36 @@ const UNLOCATABLE_NOTE =
 const LOCATABLE_NOTE = "Located in the document.";
 
 /**
+ * Why-confidence (original §33): the E-results behind the score, each tagged
+ * with whether a proven fact or a model judgement produced it.
+ *
+ * Rendered from the issue's own provenance, never recomputed here. A reader who
+ * asks "why 91%?" is asking which facets held and who decided them, and the
+ * engine already recorded exactly that. The block is absent when the engine has
+ * nothing to show, rather than an empty panel that implies it does.
+ */
+function WhyConfidence({
+  rows,
+  confidence,
+}: {
+  rows: NonNullable<ConsistencyIssueGroup["issues"][number]["whyConfidence"]>;
+  confidence: number;
+}): React.ReactNode {
+  return (
+    <details className="tf-finding-detail-region">
+      <summary>{`Why ${Math.round(confidence * 100)}%?`}</summary>
+      <ul>
+        {rows.map((row, index) => (
+          <li key={`${row.label}-${index}`}>
+            <strong>{row.label}</strong>: {row.strength}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
  * One collapsed conflict, rendered in the shared finding format.
  *
  * The identity is the group's first issue. A group's members are the same
@@ -142,6 +172,14 @@ function ConflictCard({
               )}% — advisory only; this will not change anything on its own.`,
         ].join(" · ")}
       />
+      {/*
+        Why-confidence (original §33). The lead issue carries the E-results; a
+        group's members are the same comparison reported repeatedly, so the
+        facets are the same and one block describes them all.
+      */}
+      {lead.whyConfidence !== undefined && lead.whyConfidence.length > 0 ? (
+        <WhyConfidence rows={lead.whyConfidence} confidence={lead.confidence} />
+      ) : null}
     </article>
   );
 }
