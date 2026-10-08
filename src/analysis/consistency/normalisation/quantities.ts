@@ -37,12 +37,43 @@ export function parseDecimal(raw: string): number | undefined {
   return parsed * multiplier;
 }
 
-const CURRENCY_CODE = /\b([A-Z]{3})\b/;
+/**
+ * The ISO 4217 codes this module recognises.
+ *
+ * A bare three-letter uppercase token is not a currency: `GDP`, `VAT`, and
+ * `THE` all match `[A-Z]{3}`. Only a known code is read as a currency, so an
+ * acronym in the text is not mistaken for one.
+ */
+const CURRENCY_CODES: ReadonlySet<string> = new Set([
+  "USD",
+  "EUR",
+  "GBP",
+  "JPY",
+  "AUD",
+  "CAD",
+  "CHF",
+  "SEK",
+  "NOK",
+  "DKK",
+  "NZD",
+  "CNY",
+  "INR",
+  "HKD",
+  "SGD",
+  "ZAR",
+  "MXN",
+  "BRL",
+  "RUB",
+  "KRW",
+]);
+
+const CURRENCY_CODE = /\b([A-Z]{3})\b/g;
 
 /** The ISO 4217 code a raw value carries, uppercased. */
 export function currencyCode(raw: string): string | undefined {
-  const match = CURRENCY_CODE.exec(raw);
-  return match?.[1];
+  return [...raw.matchAll(CURRENCY_CODE)]
+    .map((match) => match[1])
+    .find((code): code is string => code !== undefined && CURRENCY_CODES.has(code));
 }
 
 /**

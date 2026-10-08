@@ -7,7 +7,7 @@ precision at or above the presentation bar (0.75).
 | Model | Precision | Recall | D-accuracy | E-calibration | FP rate | FN rate | Stability | Latency (ms) | Tokens in | Tokens out |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | oracle | 100% | 100% | 100% | 95% | 0% | 0% | 100% | 0 | 2160 | 720 |
-| over-eager | 63% | 100% | 61% | 54% | 75% | 0% | 100% | 0 | 2160 | 720 |
+| over-eager | 67% | 100% | 61% | 54% | 63% | 0% | 100% | 0 | 2160 | 720 |
 | under-eager | 0% | 0% | 44% | 46% | 0% | 100% | 100% | 0 | 2160 | 720 |
 | definition-blind | 100% | 80% | 89% | 81% | 0% | 20% | 100% | 0 | 2160 | 720 |
 
@@ -27,7 +27,7 @@ precision at or above the presentation bar (0.75).
 | oracle | C10 | 100% | 100% |
 | over-eager | C1 | 50% | 100% |
 | over-eager | C2 | 50% | 100% |
-| over-eager | C3 | 50% | 100% |
+| over-eager | C3 | 100% | 100% |
 | over-eager | C4 | 100% | 100% |
 | over-eager | C5 | 100% | 100% |
 | over-eager | C6 | 50% | 100% |

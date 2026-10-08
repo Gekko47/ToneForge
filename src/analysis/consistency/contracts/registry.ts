@@ -134,10 +134,17 @@ export const CONSISTENCY_CONSENT_ERROR =
  * selection still runs the full set rather than silently running nothing.
  */
 export function parseConsistencyReviewRequest(raw: unknown): ConsistencyReviewRequest {
-  const parsed = ConsistencyReviewRequestSchema.parse(raw);
-  if (parsed.consistencyConsent !== true) {
+  // Check consent before parsing — a request without consent must not
+  // even be validated, as that would leak schema information to an
+  // unauthorized caller.
+  if (typeof raw !== "object" || raw === null) {
     throw new Error(CONSISTENCY_CONSENT_ERROR);
   }
+  const consent = (raw as Record<string, unknown>).consistencyConsent;
+  if (consent !== true) {
+    throw new Error(CONSISTENCY_CONSENT_ERROR);
+  }
+  const parsed = ConsistencyReviewRequestSchema.parse(raw);
   const checks = parsed.checks.length === 0 ? [...CONSISTENCY_CHECK_IDS] : parsed.checks;
   for (const id of checks) {
     consistencyCheck(id);

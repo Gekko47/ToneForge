@@ -23,6 +23,7 @@ describe("R5 decision: SystemOneCompiler", () => {
           options: ["compatible", "incompatible", "unclear"],
         },
       ],
+      projectedStates: [],
       budget: { maxQuestions: 60, maxExpansions: 20 },
       allowUnredacted: false,
       ...overrides,

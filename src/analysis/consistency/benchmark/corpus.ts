@@ -174,7 +174,7 @@ export const CORPUS: readonly CorpusFixture[] = [
     id: "C7-legitimate-update",
     checkId: "C7",
     deterministicAnswers: COMPARABLE,
-    expertAnswers: [a("E-UPDATE-SUPERSEDES", false, "a later claim supersedes the earlier one")],
+    expertAnswers: [a("E-UPDATE-SUPERSEDES", false, "the claims have different adoption statuses")],
     expectedDOutcome: "D-UPDATED-POSITION",
     expectedPresent: false,
   },

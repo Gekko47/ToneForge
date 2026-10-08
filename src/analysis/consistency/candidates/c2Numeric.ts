@@ -47,6 +47,7 @@ export function retrieveC2(ctx: RetrievalContext): CheckRetrieval {
   ctx.indices.claims.claimIds.forEach((claimId) => {
     const normalised = ctx.indices.claims.byId(claimId);
     if (normalised === null) return;
+    if (normalised.values.length === 0) return;
     const predicate = normalised.claim.predicate.text;
     const bucket = byPredicate.get(predicate);
     if (bucket === undefined) {

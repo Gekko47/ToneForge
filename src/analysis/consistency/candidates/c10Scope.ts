@@ -81,7 +81,12 @@ export function retrieveC10(ctx: RetrievalContext): CheckRetrieval {
         kept,
         {
           reasonCodes: ["universal-scope", "plausible-exception"],
-          sharedEntityIds: subject.kind === "entity" ? [subject.name] : [],
+          sharedEntityIds: kept
+            .map((id) => ctx.indices.claims.byId(id))
+            .filter((c) => c !== null)
+            .flatMap((c) => c.claim.subjectIds)
+            .filter((v, i, a) => a.indexOf(v) === i)
+            .filter((id) => ctx.indices.entities.entityIds.includes(id)),
           sharedEventIds: [],
           sharedProgrammeIds: [],
           sharedMetricIds: [],

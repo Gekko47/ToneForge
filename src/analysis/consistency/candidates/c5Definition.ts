@@ -24,7 +24,12 @@ export function retrieveC5(ctx: RetrievalContext): CheckRetrieval {
     const claimIds = ctx.indices.terminology.claimsFor(term);
     const definitions = claimIds.filter((id) => {
       const normalised = ctx.indices.claims.byId(id);
-      return normalised?.claim.predicate.kind === "definition";
+      if (normalised === null) return false;
+      const predicate = normalised.claim.predicate;
+      return (
+        predicate.kind === "definition" ||
+        /define|definition|means|refers to|is defined as/i.test(predicate.text)
+      );
     });
     if (definitions.length === 0) return;
     const usages = claimIds.filter((id) => !definitions.includes(id));

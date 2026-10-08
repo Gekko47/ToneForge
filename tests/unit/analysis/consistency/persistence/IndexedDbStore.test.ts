@@ -48,14 +48,24 @@ function createIdbMock() {
   }
 
   function makeTransaction(): IDBTransaction {
-    return {
+    const tx = {
       objectStore: () => makeObjectStore(),
       commit: () => undefined,
       abort: () => undefined,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
       dispatchEvent: () => false,
+      oncomplete: null as ((event: Event) => void) | null,
+      onerror: null as ((event: Event) => void) | null,
+      onabort: null as ((event: Event) => void) | null,
     } as unknown as IDBTransaction;
+    // Fire oncomplete on the next microtask, after the request's onsuccess.
+    // This matches real IDB: the transaction completes after all requests
+    // in it have succeeded.
+    queueMicrotask(() => {
+      tx.oncomplete?.({} as Event);
+    });
+    return tx;
   }
 
   function makeDatabase(): IDBDatabase {
@@ -114,7 +124,6 @@ describe("IndexedDbStore", () => {
     vi.stubGlobal("indexedDB", factory);
     const store = new IndexedDbStore();
     expect(await store.load("missing")).toBeNull();
-    vi.unstubAllGlobals();
   });
 
   it("saves and loads a record", async () => {
@@ -124,7 +133,6 @@ describe("IndexedDbStore", () => {
     const rec = record("r1", "2026-10-06T00:00:00.000Z");
     await store.save(rec);
     expect(await store.load("r1")).toEqual(rec);
-    vi.unstubAllGlobals();
   });
 
   it("parses on write and rejects a malformed record", async () => {
@@ -133,7 +141,6 @@ describe("IndexedDbStore", () => {
     const store = new IndexedDbStore();
     const bad = { ...record("r1", "2026-10-06T00:00:00.000Z"), version: "not-a-number" };
     await expect(store.save(bad as unknown as ConsistencyStoreRecord)).rejects.toThrow();
-    vi.unstubAllGlobals();
   });
 
   it("parses on read and rejects a malformed stored record", async () => {
@@ -149,7 +156,6 @@ describe("IndexedDbStore", () => {
     });
     const store = new IndexedDbStore();
     await expect(store.load("bad")).rejects.toThrow();
-    vi.unstubAllGlobals();
   });
 
   it("removes a record", async () => {
@@ -159,7 +165,6 @@ describe("IndexedDbStore", () => {
     await store.save(record("r1", "2026-10-06T00:00:00.000Z"));
     await store.remove("r1");
     expect(await store.load("r1")).toBeNull();
-    vi.unstubAllGlobals();
   });
 
   it("wipes only expired records", async () => {
@@ -172,13 +177,11 @@ describe("IndexedDbStore", () => {
     expect(removed).toBe(1);
     expect(await store.load("fresh")).not.toBeNull();
     expect(await store.load("stale")).toBeNull();
-    vi.unstubAllGlobals();
   });
 
   it("throws a clear error when IndexedDB is unavailable", async () => {
     vi.stubGlobal("indexedDB", undefined);
     const store = new IndexedDbStore();
     await expect(store.load("r1")).rejects.toThrow("IndexedDB is not available");
-    vi.unstubAllGlobals();
   });
 });

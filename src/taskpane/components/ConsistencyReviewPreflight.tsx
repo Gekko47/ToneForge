@@ -81,7 +81,7 @@ export default function ConsistencyReviewPreflight({
         The report states how many comparisons were skipped, so a clean result would not mean the
         whole document is consistent.
       </p>
-      <div aria-label="What is withheld from the provider">
+      <div>
         <p>What is withheld before anything is sent:</p>
         <ul>
           {redactionList.map((item) => (

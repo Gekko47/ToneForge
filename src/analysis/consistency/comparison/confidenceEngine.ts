@@ -42,29 +42,37 @@ export function computeConfidence(
   const profile = evaluationProfile(checkId as ConsistencyCheckId);
   const confidenceProfile = profile.confidenceProfile;
 
-  // Count resolved vs unresolved facets
+  // Count resolved vs unresolved facets — only among relevant E-questions
+  const relevant = new Set(profile.relevantEQuestions);
+  const relevantDeterministic = deterministicAnswers.filter((a) =>
+    relevant.has(a.question as EQuestion),
+  );
+  const relevantModel = modelAnswers.filter((a) => relevant.has(a.question as EQuestion));
   const totalFacets = profile.relevantEQuestions.length;
-  const resolvedFacets = deterministicAnswers.length + modelAnswers.length;
+  const resolvedFacets = Math.min(totalFacets, relevantDeterministic.length + relevantModel.length);
   const unresolvedFacets = totalFacets - resolvedFacets;
 
   // Base weight from deterministic answers (proven facts)
   let deterministicWeight = 0;
-  for (const ans of deterministicAnswers) {
-    const weight = confidenceProfile.weights[ans.question as EQuestion] ?? 0.1;
+  for (const ans of relevantDeterministic) {
+    const weight = confidenceProfile.weights[ans.question as EQuestion] ?? 0;
     deterministicWeight += weight * (ans.holds ? 1 : 0.5);
   }
 
   // Model answer weight (calibrated by model confidence)
   let modelWeight = 0;
   let modelConfidenceSum = 0;
-  for (const ans of modelAnswers) {
-    const weight = confidenceProfile.weights[ans.question as EQuestion] ?? 0.1;
+  for (const ans of relevantModel) {
+    const weight = confidenceProfile.weights[ans.question as EQuestion] ?? 0;
     modelWeight += weight * ans.confidence;
     modelConfidenceSum += ans.confidence;
   }
 
-  // Total possible weight
-  const totalWeight = Object.values(confidenceProfile.weights).reduce((sum, w) => sum + w, 0);
+  // Total possible weight — only from relevant facets
+  const totalWeight = profile.relevantEQuestions.reduce(
+    (sum, q) => sum + (confidenceProfile.weights[q] ?? 0),
+    0,
+  );
 
   // Point estimate: weighted combination
   const point =

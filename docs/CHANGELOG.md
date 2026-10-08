@@ -1,5 +1,42 @@
 # ToneForge — Changelog
 
+## Unreleased — Consistency engine code-review pass (2026-10-08)
+
+- **Fixed: IndexedDB transaction completion.** `IndexedDbStore.tx()` resolved on
+  request success, which could let a caller read a value before the transaction
+  committed. It now resolves on `transaction.oncomplete`.
+- **Fixed: provenance fallback for unparseable dates.** `buildProvenance` echoed
+  an unparseable `createdAt` as `expiresAt`, making the record unreadable by
+  `isExpired` and the TTL wipe. It now falls back to `now + TTL`.
+- **Fixed: AES-GCM key extractability.** `unwrapDataKey` and `deriveDeviceKey`
+  created extractable keys, exposing key material to any code with access to
+  the CryptoKey object. Both now use `extractable: false`.
+- **Fixed: AAD binding for encrypted audit records.** `encryptString`/
+  `decryptString` now accept an optional `additionalData` parameter, and the
+  persistence layer passes the revision as AAD so a ciphertext from one revision
+  cannot be replayed against another.
+- **Fixed: currency-code regex.** `currencyCode()` accepted any three-letter
+  string; it now matches ISO 4217 codes only.
+- **Fixed: confidence-engine facet weighting.** Unresolved facets now correctly
+  reduce the confidence point estimate.
+- **Fixed: C8/C9 evaluation profiles.** Added missing profiles for reference and
+  section checks.
+- **Fixed: dead aria-label.** Removed `aria-label` from a `<div>` with no
+  implicit ARIA role in `ConsistencyReviewPreflight`.
+- **Fixed: test hygiene.** Removed redundant per-test `vi.unstubAllGlobals()`
+  calls (vitest `restoreMocks: true` handles this globally).
+- **Fixed: deterministic resolver gaps.** Fixed E-question resolution for
+  temporal comparability, data-date comparability, and valuation period.
+- **Fixed: D-derivation gaps.** Fixed model-answer derivation and evaluation
+  vector construction.
+- **Fixed: contract schemas.** Tightened Zod schemas and removed backwards-
+  compat shims (still in development).
+- **Fixed: extraction and decision-layer gaps.** Fixed batch extractor,
+  decision compiler, and context expansion issues.
+- **Fixed: indexedEngine wiring.** Fixed coverage and phase-reporting issues.
+
+`npm run verify` passes all stages green. 2959 tests pass.
+
 ## Unreleased — Indexed consistency engine (2026-10-08)
 
 - **The consistency engine is replaced by the indexed engine (R1–R7).** The

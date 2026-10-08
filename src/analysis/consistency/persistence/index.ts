@@ -61,7 +61,9 @@ export class ConsistencySessionStore {
   /** Encrypt and persist the audit record for its revision. */
   async save(record: ConsistencyAuditRecord, updatedAt: string): Promise<void> {
     const parsed = ConsistencyAuditRecordSchema.parse(record);
-    const payload = await encryptString(JSON.stringify(parsed), this.dataKey);
+    // Bind the ciphertext to the revision as additional authenticated data, so
+    // a ciphertext from one revision cannot be replayed against another.
+    const payload = await encryptString(JSON.stringify(parsed), this.dataKey, parsed.revision);
     await this.store.save(
       ConsistencyStoreRecordSchema.parse({
         version: CONSISTENCY_STORE_VERSION,
@@ -77,9 +79,13 @@ export class ConsistencySessionStore {
   async load(revision: string): Promise<ConsistencyAuditRecord | null> {
     const stored: ConsistencyStoreRecord | null = await this.store.load(revision);
     if (stored === null) return null;
+    // Pass the revision as AAD to match the encryption in save(). A mismatch
+    // would fail decryption, which is the correct behaviour for a replayed
+    // ciphertext.
     const plaintext = await decryptString(
       { ciphertext: stored.ciphertext, nonce: stored.nonce },
       this.dataKey,
+      revision,
     );
     return ConsistencyAuditRecordSchema.parse(JSON.parse(plaintext));
   }

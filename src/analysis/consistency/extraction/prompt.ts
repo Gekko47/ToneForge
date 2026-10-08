@@ -110,7 +110,7 @@ const PROMPT_RULES = [
   "2. Attribute every claim exactly: name the party the text names as the source, and the party it is attributed to when they differ.",
   "3. Separate the expert's own opinions and conclusions from reported party positions and quoted sources.",
   "4. Keep scenarios separate: a figure stated under one scenario is never merged with the same figure under another.",
-  "5. Mark the modality of every claim: actual, forecast, assumption, or conclusion.",
+  "5. Mark the modality of every claim: assertion, obligation, permission, prohibition, forecast, hypothetical, or unknown.",
   "6. Record the programme revision and the data date wherever a figure is dated.",
   "7. Record the basis of every delay and every quantum figure.",
   "8. Quote the exact evidence for every claim, and name the paragraph it comes from.",

@@ -6,7 +6,12 @@
  * translate between the typed DecisionPlan and the model's native format.
  */
 
-import { LlmError, type LlmProvider, type LlmRequest } from "@/ai/providers/LlmProvider";
+import {
+  LlmError,
+  type LlmProvider,
+  type LlmRequest,
+  type LlmResponse,
+} from "@/ai/providers/LlmProvider";
 import type {
   ConsistencyDecisionProvider,
   ConsistencyDecisionEvaluation,
@@ -46,22 +51,29 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
     if (signal !== undefined) {
       llmRequest.signal = signal;
     }
-    const response = await Promise.race([
-      this.provider.complete(llmRequest),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new LlmError(
-                `Decision provider timed out after ${DEFAULT_TIMEOUT_MS}ms`,
-                this.provider.name,
-                false,
-              ),
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(
+        () =>
+          reject(
+            new LlmError(
+              `Decision provider timed out after ${DEFAULT_TIMEOUT_MS}ms`,
+              this.provider.name,
+              false,
             ),
-          DEFAULT_TIMEOUT_MS,
-        ),
-      ),
-    ]);
+          ),
+        DEFAULT_TIMEOUT_MS,
+      );
+    });
+
+    let response: LlmResponse;
+    try {
+      response = await Promise.race([this.provider.complete(llmRequest), timeout]);
+    } finally {
+      // Clear the timer whether the provider won the race or the timeout fired,
+      // so a fast provider does not leave a pending timer behind.
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
 
     // Map the response back to typed answers
     const answers = this.mapper.map(response, plan);

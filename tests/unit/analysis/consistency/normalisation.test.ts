@@ -123,6 +123,15 @@ describe("quantity normalisation equivalence", () => {
     expect(normaliseValue({ raw: "100", currency: "gbp" }).currency).toBe("GBP");
   });
 
+  it("does not mistake a three-letter acronym for a currency", () => {
+    // `GDP`, `VAT`, and `THE` all match `[A-Z]{3}`; only a known ISO 4217 code
+    // is a currency.
+    expect(currencyCode("GDP grew 3%")).toBeUndefined();
+    expect(currencyCode("VAT was added")).toBeUndefined();
+    expect(currencyCode("THE figure rose")).toBeUndefined();
+    expect(currencyCode("1,250,000 EUR")).toBe("EUR");
+  });
+
   it("gives a figure with no parsed magnitude no key", () => {
     expect(quantityKey(normaliseValue({ raw: "a sum" }))).toBeNull();
   });

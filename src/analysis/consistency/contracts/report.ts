@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ConsistencyCheckIdSchema } from "./checkIds";
 import { ConsistencyVerdictSchema } from "./verdict";
+import { DOutcomeSchema } from "./evaluation";
 
 /**
  * One issue in the finished report.
@@ -39,7 +40,7 @@ export const ConsistencyIssueSchema = z.object({
   suggestedNodeId: z.string().optional(),
   verdict: ConsistencyVerdictSchema.optional(),
   /** The D-outcome the engine derived, when one applies (D8). */
-  outcome: z.string().optional(),
+  outcome: DOutcomeSchema.optional(),
   /** Free-text reason the adjudicator or the resolver gave. */
   reason: z.string().optional(),
   /**

@@ -71,9 +71,14 @@ describe("audit", () => {
       expect(expires - created).toBe(CONSISTENCY_STORE_TTL_MS);
     });
 
-    it("passes through an unparseable createdAt as expiresAt", () => {
+    it("falls back to now + TTL when createdAt is unparseable", () => {
       const provenance = buildProvenance(provenanceInput({ createdAt: "not-a-date" }));
-      expect(provenance.expiresAt).toBe("not-a-date");
+      const expires = Date.parse(provenance.expiresAt);
+      const now = Date.now();
+      // expiresAt should be approximately now + TTL (within a few seconds)
+      expect(expires).toBeGreaterThan(now);
+      expect(expires).toBeLessThan(now + CONSISTENCY_STORE_TTL_MS + 5000);
+      expect(expires).toBeGreaterThan(now + CONSISTENCY_STORE_TTL_MS - 5000);
     });
 
     it("carries every version and identity field", () => {

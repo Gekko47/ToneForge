@@ -82,8 +82,11 @@ export interface ProvenanceInput {
 /** Build the provenance, deriving `expiresAt` from the TTL. */
 export function buildProvenance(input: ProvenanceInput): ConsistencySessionProvenance {
   const created = Date.parse(input.createdAt);
+  // When createdAt is unparseable, fall back to now + TTL rather than echoing
+  // the unparseable string. An unparseable expiresAt would make the record
+  // unreadable by isExpired and the TTL wipe.
   const expiresAt = Number.isNaN(created)
-    ? input.createdAt
+    ? new Date(Date.now() + CONSISTENCY_STORE_TTL_MS).toISOString()
     : new Date(created + CONSISTENCY_STORE_TTL_MS).toISOString();
   return ConsistencySessionProvenanceSchema.parse({ ...input, expiresAt });
 }

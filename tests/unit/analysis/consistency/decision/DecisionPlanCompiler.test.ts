@@ -145,15 +145,17 @@ describe("R5 decision: DecisionPlanCompiler", () => {
       allowUnredacted: false,
     });
 
-    // C1 only cares about specific E-questions
+    // C1 only cares about specific E-questions. Question ids are prefixed with
+    // the candidate id, so strip it before comparing to the E-question name.
     for (const q of plan.questions) {
+      const eQuestion = q.id.slice(q.id.indexOf(":") + 1);
       expect([
         "E-ENTITY-SAME",
         "E-PREDICATE-COMPARABLE",
         "E-DEFINITION-INCOMPATIBLE",
         "E-EVIDENCE-SUFFICIENT",
         "E-SUBSTANTIVE-CONFLICT",
-      ]).toContain(q.id);
+      ]).toContain(eQuestion);
     }
   });
 

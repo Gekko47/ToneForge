@@ -20,7 +20,7 @@ import type {
   ConsistencyDecisionEvaluation,
   ConsistencyDecisionProvider,
 } from "../decision/ConsistencyDecisionProvider";
-import { QUESTION_SET_VERSION } from "../decision/questionRegistry";
+import { QUESTION_REGISTRY, QUESTION_SET_VERSION } from "../decision/questionRegistry";
 import { buildEvaluationVector, deriveDOutcome } from "../comparison/dDerivation";
 import { computeConfidence, meetsPresentationThreshold } from "../comparison/confidenceEngine";
 import { CORPUS, type CorpusFixture } from "./corpus";
@@ -79,13 +79,26 @@ export interface BenchmarkResult {
 /** Build the DecisionPlan a fixture's unresolved questions compile to. */
 function planFor(fixture: CorpusFixture): DecisionPlan {
   return {
-    revision: fixture.id,
-    questions: fixture.expertAnswers.map((answer) => ({
-      kind: "binary" as const,
-      id: answer.question,
-      prompt: answer.question,
-      subjectId: fixture.id,
-    })),
+    revision: "benchmark",
+    questions: fixture.expertAnswers.map((answer) => {
+      const registryQuestion = QUESTION_REGISTRY.getQuestion(
+        answer.question as Parameters<typeof QUESTION_REGISTRY.getQuestion>[0],
+        fixture.checkId,
+      );
+      if (registryQuestion === undefined) {
+        return {
+          kind: "binary" as const,
+          id: answer.question,
+          prompt: answer.question,
+          subjectId: fixture.id,
+        };
+      }
+      return {
+        ...registryQuestion,
+        subjectId: fixture.id,
+      };
+    }),
+    projectedStates: [],
     budget: { maxQuestions: fixture.expertAnswers.length, maxExpansions: 0 },
     allowUnredacted: false,
   };

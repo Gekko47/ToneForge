@@ -154,14 +154,16 @@ function genericDeriveDOutcome(
     return "D-CONFLICT";
   }
 
-  // Check for specific D-outcomes based on E-vector facets
-  if (!vector.sameSubject) return "D-NOT-COMPARABLE";
-  if (!vector.samePeriod) return "D-DIFFERENT-PERIOD";
-  if (!vector.sameScenario) return "D-DIFFERENT-SCENARIO";
-  if (!vector.sameBasis) return "D-DIFFERENT-BASIS";
-  if (!vector.sameAttribution) return "D-DIFFERENT-ATTRIBUTION";
-  if (!vector.sameScope) return "D-DIFFERENT-SCOPE";
-  if (!vector.qualifiersCompatible) return "D-QUALIFIED-POSITION";
+  // Check for specific D-outcomes based on E-vector facets.
+  // Only trigger on explicit false — undefined means the facet was never
+  // resolved, and treating absence as false fabricates a difference.
+  if (vector.sameSubject === false) return "D-NOT-COMPARABLE";
+  if (vector.samePeriod === false) return "D-DIFFERENT-PERIOD";
+  if (vector.sameScenario === false) return "D-DIFFERENT-SCENARIO";
+  if (vector.sameBasis === false) return "D-DIFFERENT-BASIS";
+  if (vector.sameAttribution === false) return "D-DIFFERENT-ATTRIBUTION";
+  if (vector.sameScope === false) return "D-DIFFERENT-SCOPE";
+  if (vector.qualifiersCompatible === false) return "D-QUALIFIED-POSITION";
 
   // Check for programme basis difference
   const programmeBasisAnswer = allAnswers.find((a) => a.question === "E-PROGRAMME-BASIS-SAME");
@@ -220,7 +222,11 @@ export function buildEvaluationVector(
   const answerMap = new Map(allAnswers.map((a) => [a.question, a.holds]));
 
   return {
-    sameSubject: answerMap.get("E-ENTITY-SAME") ?? answerMap.get("E-EVENT-SAME") ?? false,
+    // If neither entity nor event same-subject was determined, assume same
+    // subject — checks like C8 (reference) and C9 (section) have no entity or
+    // event subject question, and defaulting to false would fabricate
+    // D-NOT-COMPARABLE for every such pair.
+    sameSubject: answerMap.get("E-ENTITY-SAME") ?? answerMap.get("E-EVENT-SAME") ?? true,
     samePeriod:
       answerMap.get("E-TEMPORAL-COMPARABLE") ??
       answerMap.get("E-DATA-DATE-COMPARABLE") ??
@@ -258,15 +264,15 @@ export function getDerivationReasonCodes(
 ): string[] {
   const codes: string[] = [`derived:${outcome}`];
 
-  if (!vector.sameSubject) codes.push("different-subject");
-  if (!vector.samePeriod) codes.push("different-period");
-  if (!vector.sameScenario) codes.push("different-scenario");
-  if (!vector.sameBasis) codes.push("different-basis");
-  if (!vector.sameAttribution) codes.push("different-attribution");
-  if (!vector.sameScope) codes.push("different-scope");
-  if (!vector.qualifiersCompatible) codes.push("different-qualifiers");
+  if (vector.sameSubject === false) codes.push("different-subject");
+  if (vector.samePeriod === false) codes.push("different-period");
+  if (vector.sameScenario === false) codes.push("different-scenario");
+  if (vector.sameBasis === false) codes.push("different-basis");
+  if (vector.sameAttribution === false) codes.push("different-attribution");
+  if (vector.sameScope === false) codes.push("different-scope");
+  if (vector.qualifiersCompatible === false) codes.push("different-qualifiers");
   if (vector.valuesAgree === false) codes.push("values-disagree");
-  if (!vector.unitsCompatible) codes.push("units-incompatible");
+  if (vector.unitsCompatible === false) codes.push("units-incompatible");
 
   return codes;
 }

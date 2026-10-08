@@ -14,6 +14,7 @@
 
 import type { ConsistencyIndices } from "../indices/buildIndices";
 import type { NormalisedClaim } from "../normalisation";
+import type { ConsistencyCandidate } from "../contracts";
 
 /** Context request types (original §23). */
 export type ContextRequestType =
@@ -46,12 +47,13 @@ export function expandContext(
   requests: readonly ContextRequest[],
   indices: ConsistencyIndices,
   claims: readonly NormalisedClaim[],
+  candidates: readonly ConsistencyCandidate[],
   documentText: string,
 ): ContextExpansionResult[] {
   const results: ContextExpansionResult[] = [];
 
   for (const request of requests) {
-    const content = expandSingleContext(request, indices, claims, documentText);
+    const content = expandSingleContext(request, indices, claims, candidates, documentText);
     results.push({
       request,
       content,
@@ -62,16 +64,37 @@ export function expandContext(
   return results;
 }
 
+/**
+ * The normalised claims a candidate retrieved.
+ *
+ * A `ContextRequest` names a candidate, not a claim: the model asks
+ * about the subject it is deciding, and the candidate holds the claims
+ * that subject grouped. Resolving through the candidate keeps the
+ * request honest — a claim id that is not in the candidate is not
+ * context for it.
+ */
+function claimsForCandidate(
+  candidateId: string,
+  candidates: readonly ConsistencyCandidate[],
+  claims: readonly NormalisedClaim[],
+): NormalisedClaim[] {
+  const candidate = candidates.find((c) => c.id === candidateId);
+  if (candidate === undefined) return [];
+  const ids = new Set(candidate.claimIds);
+  return claims.filter((c) => ids.has(c.claim.id));
+}
+
 /** Expand a single context request. */
 function expandSingleContext(
   request: ContextRequest,
   indices: ConsistencyIndices,
   claims: readonly NormalisedClaim[],
+  candidates: readonly ConsistencyCandidate[],
   documentText: string,
 ): string {
   switch (request.type) {
     case "CTX-SURROUNDING-PARAGRAPHS":
-      return expandSurroundingParagraphs(request, indices, claims, documentText);
+      return expandSurroundingParagraphs(request, indices, claims, candidates, documentText);
     case "CTX-EVENT-HISTORY":
       return expandEventHistory(request, indices, claims);
     case "CTX-PROGRAMME-HISTORY":
@@ -79,11 +102,11 @@ function expandSingleContext(
     case "CTX-TERM-DEFINITION":
       return expandTermDefinition(request, indices, claims);
     case "CTX-RELATED-CLAIMS":
-      return expandRelatedClaims(request, indices, claims);
+      return expandRelatedClaims(request, indices, claims, candidates);
     case "CTX-VALUATION-BASIS":
-      return expandValuationBasis(request, indices, claims);
+      return expandValuationBasis(request, indices, claims, candidates);
     case "CTX-MEASUREMENT-BASIS":
-      return expandMeasurementBasis(request, indices, claims);
+      return expandMeasurementBasis(request, indices, claims, candidates);
     case "CTX-REFERENCE-CONTENT":
       return expandReferenceContent(request, indices, claims);
     case "CTX-SECTION-SUMMARY":
@@ -98,13 +121,13 @@ function expandSurroundingParagraphs(
   request: ContextRequest,
   _indices: ConsistencyIndices,
   claims: readonly NormalisedClaim[],
+  candidates: readonly ConsistencyCandidate[],
   documentText: string,
 ): string {
-  const candidateId = request.candidateId;
-  const claim = claims.find((c) => c.claim.id === candidateId);
-  if (claim === undefined) return "Claim not found";
+  const candidateClaims = claimsForCandidate(request.candidateId, candidates, claims);
+  if (candidateClaims.length === 0) return "Candidate not found";
 
-  const paragraphId = claim.claim.evidence?.paragraphId;
+  const paragraphId = candidateClaims[0]?.claim.evidence?.paragraphId;
   if (paragraphId === undefined) return "No paragraph ID";
 
   // Extract surrounding paragraphs from document text
@@ -183,13 +206,14 @@ function expandRelatedClaims(
   request: ContextRequest,
   indices: ConsistencyIndices,
   claims: readonly NormalisedClaim[],
+  candidates: readonly ConsistencyCandidate[],
 ): string {
-  const candidateId = request.candidateId;
-  const claim = claims.find((c) => c.claim.id === candidateId);
-  if (claim === undefined) return "Claim not found";
+  const candidateClaims = claimsForCandidate(request.candidateId, candidates, claims);
+  if (candidateClaims.length === 0) return "Candidate not found";
 
-  const entityIds = claim.claim.subjectIds;
-  const eventIds = claim.claim.eventIds;
+  const candidateClaimIds = new Set(candidateClaims.map((c) => c.claim.id));
+  const entityIds = candidateClaims.flatMap((c) => c.claim.subjectIds);
+  const eventIds = candidateClaims.flatMap((c) => c.claim.eventIds);
 
   const relatedIds = new Set<string>();
   for (const entityId of entityIds) {
@@ -204,7 +228,7 @@ function expandRelatedClaims(
   const relatedClaims = [...relatedIds]
     .map((id: string) => claims.find((c) => c.claim.id === id))
     .filter((c): c is NormalisedClaim => c !== undefined)
-    .filter((c) => c.claim.id !== candidateId);
+    .filter((c) => !candidateClaimIds.has(c.claim.id));
 
   if (relatedClaims.length === 0) return "No related claims found";
 
@@ -216,24 +240,25 @@ function expandValuationBasis(
   request: ContextRequest,
   _indices: ConsistencyIndices,
   claims: readonly NormalisedClaim[],
+  candidates: readonly ConsistencyCandidate[],
 ): string {
-  const candidateId = request.candidateId;
-  const claim = claims.find((c) => c.claim.id === candidateId);
-  if (claim === undefined) return "Claim not found";
-
-  const quantum = claim.claim.quantum;
-  if (quantum === undefined) return "No quantum context";
+  const candidateClaims = claimsForCandidate(request.candidateId, candidates, claims);
+  if (candidateClaims.length === 0) return "Candidate not found";
 
   const parts: string[] = [];
-  if (quantum.valuationPeriod !== undefined) {
-    const vp = quantum.valuationPeriod;
-    parts.push(`Valuation period: ${vp.start?.raw ?? "unknown"} to ${vp.end?.raw ?? "unknown"}`);
-  }
-  if (quantum.valuationMethod !== undefined) {
-    parts.push(`Valuation method: ${quantum.valuationMethod}`);
-  }
-  if (quantum.basis !== undefined) {
-    parts.push(`Basis: ${quantum.basis}`);
+  for (const claim of candidateClaims) {
+    const quantum = claim.claim.quantum;
+    if (quantum === undefined) continue;
+    if (quantum.valuationPeriod !== undefined) {
+      const vp = quantum.valuationPeriod;
+      parts.push(`Valuation period: ${vp.start?.raw ?? "unknown"} to ${vp.end?.raw ?? "unknown"}`);
+    }
+    if (quantum.valuationMethod !== undefined) {
+      parts.push(`Valuation method: ${quantum.valuationMethod}`);
+    }
+    if (quantum.basis !== undefined) {
+      parts.push(`Basis: ${quantum.basis}`);
+    }
   }
 
   return parts.length > 0 ? parts.join("\n") : "No valuation basis information";
@@ -244,24 +269,25 @@ function expandMeasurementBasis(
   request: ContextRequest,
   _indices: ConsistencyIndices,
   claims: readonly NormalisedClaim[],
+  candidates: readonly ConsistencyCandidate[],
 ): string {
-  const candidateId = request.candidateId;
-  const claim = claims.find((c) => c.claim.id === candidateId);
-  if (claim === undefined) return "Claim not found";
-
-  const delay = claim.claim.delay;
-  if (delay === undefined) return "No delay context";
+  const candidateClaims = claimsForCandidate(request.candidateId, candidates, claims);
+  if (candidateClaims.length === 0) return "Candidate not found";
 
   const parts: string[] = [];
-  if (delay.analysisMethod !== undefined) {
-    parts.push(`Analysis method: ${delay.analysisMethod}`);
-  }
-  if (delay.analysisWindow !== undefined) {
-    const aw = delay.analysisWindow;
-    parts.push(`Analysis window: ${aw.start?.raw ?? "unknown"} to ${aw.end?.raw ?? "unknown"}`);
-  }
-  if (delay.programmeBasis !== undefined) {
-    parts.push(`Programme basis: ${delay.programmeBasis}`);
+  for (const claim of candidateClaims) {
+    const delay = claim.claim.delay;
+    if (delay === undefined) continue;
+    if (delay.analysisMethod !== undefined) {
+      parts.push(`Analysis method: ${delay.analysisMethod}`);
+    }
+    if (delay.analysisWindow !== undefined) {
+      const aw = delay.analysisWindow;
+      parts.push(`Analysis window: ${aw.start?.raw ?? "unknown"} to ${aw.end?.raw ?? "unknown"}`);
+    }
+    if (delay.programmeBasis !== undefined) {
+      parts.push(`Programme basis: ${delay.programmeBasis}`);
+    }
   }
 
   return parts.length > 0 ? parts.join("\n") : "No measurement basis information";

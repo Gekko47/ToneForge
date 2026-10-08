@@ -38,10 +38,61 @@ export const DecisionQuestionSchema = z.discriminatedUnion("kind", [
 
 export type DecisionQuestion = z.infer<typeof DecisionQuestionSchema>;
 
+/** Projected state for one claim in a DecisionPlan. */
+export const ProjectedClaimStateSchema = z.object({
+  claimId: z.string().trim().min(1),
+  predicate: z.string().trim().min(1),
+  subjectIds: z.array(z.string()),
+  eventIds: z.array(z.string()),
+  programmeIds: z.array(z.string()),
+  values: z.array(
+    z.object({
+      raw: z.string(),
+      normalized: z.number().optional(),
+      unit: z.string().optional(),
+    }),
+  ),
+  dates: z.array(
+    z.object({
+      role: z.string(),
+      date: z.object({ iso: z.string(), raw: z.string(), coarse: z.boolean() }),
+    }),
+  ),
+  scope: z.object({ kind: z.string() }),
+  scenario: z.object({ type: z.string() }).optional(),
+  attribution: z.string().optional(),
+  qualifiers: z.array(z.string()),
+  evidence: z.object({ exactText: z.string(), paragraphId: z.string() }).optional(),
+  evidenceBasis: z.array(z.object({ anchorId: z.string(), role: z.string() })),
+});
+
+export type ProjectedClaimState = z.infer<typeof ProjectedClaimStateSchema>;
+
+/** Projected state for a candidate pair. */
+export const ProjectedCandidateStateSchema = z.object({
+  candidateId: z.string().trim().min(1),
+  checkId: z.string().trim().min(1),
+  left: ProjectedClaimStateSchema,
+  right: ProjectedClaimStateSchema,
+  diff: z.object({
+    matches: z.array(z.unknown()),
+    differences: z.array(z.unknown()),
+    unknowns: z.array(z.unknown()),
+  }),
+  deterministicAnswers: z.array(
+    z.object({ question: z.string(), holds: z.boolean(), reason: z.string() }),
+  ),
+  unresolvedQuestions: z.array(z.object({ question: z.string(), reason: z.string() })),
+});
+
+export type ProjectedCandidateState = z.infer<typeof ProjectedCandidateStateSchema>;
+
 /** The compiled plan for one run. */
 export const DecisionPlanSchema = z.object({
   revision: z.string().trim().min(1),
   questions: z.array(DecisionQuestionSchema),
+  /** Projected state for each unresolved candidate. */
+  projectedStates: z.array(ProjectedCandidateStateSchema),
   /** Budgets the run must not exceed. */
   budget: z.object({
     maxQuestions: z.number().int().min(1),

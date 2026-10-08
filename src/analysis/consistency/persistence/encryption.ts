@@ -46,6 +46,9 @@ function fromBase64(base64: string): Uint8Array<ArrayBuffer> {
  * The key is ephemeral: loss equals wipe, which is the safe failure.
  */
 export async function generateDataKey(): Promise<CryptoKey> {
+  // extractable: true — the data key must be exportable so wrapDataKey can
+  // wrap it with the device key for storage. The wrapped form is what gets
+  // persisted; the raw key is never stored.
   return getCrypto().subtle.generateKey({ name: "AES-GCM", length: AES_KEY_LENGTH }, true, [
     "encrypt",
     "decrypt",
@@ -92,19 +95,29 @@ export async function unwrapDataKey(
     "raw",
     unwrapped,
     { name: "AES-GCM", length: AES_KEY_LENGTH },
-    true,
+    false,
     ["encrypt", "decrypt"],
   );
 }
 
 /**
  * Encrypt a UTF-8 string with AES-GCM.
+ *
+ * `additionalData` is optional authenticated data (AAD). When provided, it is
+ * bound into the ciphertext: decryption fails if the same AAD is not supplied.
+ * This binds the ciphertext to a context (e.g. a document revision) so it
+ * cannot be replayed against a different context.
  */
-export async function encryptString(plaintext: string, key: CryptoKey): Promise<EncryptedPayload> {
+export async function encryptString(
+  plaintext: string,
+  key: CryptoKey,
+  additionalData?: string,
+): Promise<EncryptedPayload> {
   const iv = getCrypto().getRandomValues(new Uint8Array(AES_IV_LENGTH));
   const encoded = new TextEncoder().encode(plaintext);
+  const aad = additionalData !== undefined ? new TextEncoder().encode(additionalData) : undefined;
   const ciphertext = await getCrypto().subtle.encrypt(
-    { name: "AES-GCM", iv: iv as BufferSource },
+    { name: "AES-GCM", iv: iv as BufferSource, additionalData: aad as BufferSource | undefined },
     key,
     encoded,
   );
@@ -116,11 +129,23 @@ export async function encryptString(plaintext: string, key: CryptoKey): Promise<
 
 /**
  * Decrypt an AES-GCM encrypted string.
+ *
+ * `additionalData` must match the value supplied at encryption time, or
+ * decryption fails. This is the mechanism that binds ciphertext to a context.
  */
-export async function decryptString(payload: EncryptedPayload, key: CryptoKey): Promise<string> {
+export async function decryptString(
+  payload: EncryptedPayload,
+  key: CryptoKey,
+  additionalData?: string,
+): Promise<string> {
   const iv = fromBase64(payload.nonce);
   const ciphertext = fromBase64(payload.ciphertext);
-  const decrypted = await getCrypto().subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+  const aad = additionalData !== undefined ? new TextEncoder().encode(additionalData) : undefined;
+  const decrypted = await getCrypto().subtle.decrypt(
+    { name: "AES-GCM", iv, additionalData: aad as BufferSource | undefined },
+    key,
+    ciphertext,
+  );
   return new TextDecoder().decode(decrypted);
 }
 
@@ -142,7 +167,7 @@ export async function deriveDeviceKey(passphrase: string, salt: Uint8Array): Pro
     },
     baseKey,
     { name: "AES-GCM", length: AES_KEY_LENGTH },
-    true,
+    false,
     ["encrypt", "decrypt"],
   );
 }

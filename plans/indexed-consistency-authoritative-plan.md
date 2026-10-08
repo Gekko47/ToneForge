@@ -11,11 +11,11 @@
 - D2 accepted with answer below: encrypted per-document store is mandatory because content is confidential and document-specific. JSON can handle the complex schema via IndexedDB object stores plus WebCrypto, without native SQLite.
 - D3 accepted: separate decision LLM role is key to low token rate — only a typed decision is requested once the document is parsed.
 - D4 agreed: General-model fallback never consumes a DecisionPlan.
-- D5 accepted: existing engine is replaced, not strangled. Delete [`engine.ts`](src/analysis/consistency/indexedEngine.ts), [`contracts.ts`](src/analysis/consistency/contracts/), [`batching.ts`](src/analysis/consistency/indices/), [`grouping.ts`](src/analysis/consistency/grouping.ts:1) pair logic and sentence-pair checks outright.
+- D5 accepted: existing engine is replaced, not strangled. Delete `engine.ts`, `contracts.ts`, `batching.ts`, `grouping.ts` pair logic and sentence-pair checks outright.
 - D6: indexed retrieval replaces windowing entirely. No windows, no `crossWindowPairsSkipped`. Blocking keys plus per-block caps bound the work; overflow is counted as `blockOverflowSkipped`.
 - D7 agreed: versioned confidence with explicit intervals derived from the pipeline.
 - D8 accepted: all 16 D-outcomes retained. A single delay-expert claim has many facets and must be cross-checked on every axis.
-- D9 resolved below: all ten C-profiles defined, reflecting the deterministic realignment already in [`contracts.ts`](src/analysis/consistency/contracts/) and [`semantic.ts`](src/analysis/consistency/candidates/).
+- D9 resolved below: all ten C-profiles defined, reflecting the deterministic realignment already in `contracts/` and `candidates/`.
 - D10 agreed: budget caps stay. No double search.
 - D11: preflight shows measured counts from the snapshot, never illustrative numbers.
 - D12 agreed: concrete `DecisionSubject` union with Zod schemas.
@@ -94,7 +94,7 @@ Consolidation map, all under `src/analysis/consistency/` reusing [`text.ts`](src
 - `comparison/` — diff, deterministic resolver, profiles, derivation with 16 outcomes, hard gates, confidence engine with intervals. New.
 - `decision/` — provider interface, plan compiler, context expansion, question registry with all ten profiles, `systemOne/` adapter triple, no `fallback/` General-model path. New.
 - `persistence/` — `ConsistencyStore` interface, `IndexedDbStore`, `MemoryStore`, schema versioning, WebCrypto field encryption, TTL wipe. No SQL.js, no `crypto.ts` beyond WebCrypto wrapper.
-- `indexedEngine.ts` — orchestration per original §36. Replaces old [`engine.ts`](src/analysis/consistency/indexedEngine.ts). Old `bridge.ts` mapping updated to V3 issue shape; `kind: consistency` preserved.
+- `indexedEngine.ts` — orchestration per original §36. Replaces old `engine.ts`. Old `bridge.ts` mapping updated to V3 issue shape; `kind: consistency` preserved.
 
 Lint scope in [`eslint.config.mjs`](eslint.config.mjs:349) unchanged: `ai/providers` allowed, `word`, `taskpane`, `commands`, `reformat`, `changes` forbidden.
 

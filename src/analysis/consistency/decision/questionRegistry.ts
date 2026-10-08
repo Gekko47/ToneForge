@@ -157,7 +157,8 @@ function binaryPrompt(eq: EQuestion): string {
     "E-VALUE-INCOMPATIBLE": "Are the values incompatible after unit conversion?",
     "E-QUALIFIER-RECONCILES": "Do the qualifiers reconcile the apparent difference?",
     "E-EVIDENCE-SUFFICIENT": "Do both claims have sufficient evidence anchors?",
-    "E-UPDATE-SUPERSEDES": "Do both claims have the same adoption status?",
+    "E-UPDATE-SUPERSEDES":
+      "Do both claims have the same adoption status (so neither supersedes the other)?",
     "E-PROGRAMME-BASIS-SAME": "Do both claims reference the same programme basis?",
     "E-DATA-DATE-COMPARABLE": "Are the data dates comparable?",
     "E-ANALYSIS-WINDOW-SAME": "Are the analysis windows the same?",

@@ -15,7 +15,7 @@ node_modules/
 # Generated benchmark report. `tests/unit/analysis/consistency/benchmark/
 # report.test.ts` compares this file byte-for-byte against a fresh render, so
 # Prettier must not reformat its markdown tables. Regenerate it with
-# `WRITE_BENCHMARK=1 npx vitest run .../benchmark/report.test.ts`.
+# `WRITE_BENCHMARK=1 npx vitest run tests/unit/analysis/consistency/benchmark/report.test.ts`.
 docs/consistency-benchmark.md
 
 # External specification documents, not repository source.

@@ -168,9 +168,13 @@ export function compileDecisionPlanWithCandidates(
       const decisionQuestion = registry.getQuestion(unresolved.question, state.checkId);
       if (decisionQuestion === undefined) continue;
 
+      // Make the question ID unique per candidate by prefixing with candidateId
+      const uniqueId = `${state.candidateId}:${decisionQuestion.id}`;
+
       // Fill in the subjectId
       const questionWithSubject: DecisionQuestion = {
         ...decisionQuestion,
+        id: uniqueId,
         subjectId: state.candidateId,
       };
 
@@ -182,6 +186,7 @@ export function compileDecisionPlanWithCandidates(
   return {
     revision: options.revision,
     questions,
+    projectedStates: projectedStates as unknown as DecisionPlan["projectedStates"],
     budget: {
       maxQuestions: options.maxQuestions,
       maxExpansions: options.maxExpansions,

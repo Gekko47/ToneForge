@@ -59,7 +59,19 @@ export class IndexedDbStore implements ConsistencyStore {
 
   private async tx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>) {
     const db = await this.open();
-    return request(run(db.transaction(STORE_NAME, mode).objectStore(STORE_NAME)));
+    const transaction = db.transaction(STORE_NAME, mode);
+    const result = request(run(transaction.objectStore(STORE_NAME)));
+    // Resolve only after the transaction commits, not when the request succeeds.
+    // A request can succeed before the transaction commits; resolving early would
+    // let a caller read a value that has not yet been persisted.
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error("IndexedDB transaction failed."));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error("IndexedDB transaction aborted."));
+    });
+    return result;
   }
 
   async load(revision: string): Promise<ConsistencyStoreRecord | null> {

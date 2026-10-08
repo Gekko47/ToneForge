@@ -72,7 +72,12 @@ export function retrieveC6(ctx: RetrievalContext): CheckRetrieval {
         kept,
         {
           reasonCodes: [...reasonCodes, "convert-units"],
-          sharedEntityIds: subject.kind === "entity" ? [subject.name] : [],
+          sharedEntityIds: kept
+            .map((id) => ctx.indices.claims.byId(id))
+            .filter((c) => c !== null)
+            .flatMap((c) => c.claim.subjectIds)
+            .filter((v, i, a) => a.indexOf(v) === i)
+            .filter((id) => ctx.indices.entities.entityIds.includes(id)),
           sharedEventIds: subject.kind === "event" ? [subject.description] : [],
           sharedProgrammeIds: [],
           sharedMetricIds: [...sharedMetricIds],

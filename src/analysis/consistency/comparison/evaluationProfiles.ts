@@ -353,9 +353,13 @@ export const EVALUATION_PROFILES: Record<ConsistencyCheckId, EvaluationProfile> 
     allowedContextRequests: ["CTX-REFERENCE", "CTX-CITATION"],
     confidenceProfile: {
       version: "1.0",
+      // E-SUBSTANTIVE-CONFLICT is the decisive question for C8: the profile
+      // lists it as relevant, so it must carry weight or a proven conflict can
+      // never clear the presentation threshold.
       weights: {
-        "E-REFERENCE-SUPPORTS-CLAIM": 0.6,
-        "E-EVIDENCE-SUFFICIENT": 0.4,
+        "E-REFERENCE-SUPPORTS-CLAIM": 0.3,
+        "E-EVIDENCE-SUFFICIENT": 0.2,
+        "E-SUBSTANTIVE-CONFLICT": 0.5,
       },
       reviewThreshold: 0.5,
       presentationThreshold: 0.65,
@@ -379,9 +383,13 @@ export const EVALUATION_PROFILES: Record<ConsistencyCheckId, EvaluationProfile> 
     allowedContextRequests: ["CTX-SECTION", "CTX-PROMISE"],
     confidenceProfile: {
       version: "1.0",
+      // E-SUBSTANTIVE-CONFLICT is the decisive question for C9: the profile
+      // lists it as relevant, so it must carry weight or a proven conflict can
+      // never clear the presentation threshold.
       weights: {
-        "E-SECTION-FULFILS-PROMISE": 0.6,
-        "E-EVIDENCE-SUFFICIENT": 0.4,
+        "E-SECTION-FULFILS-PROMISE": 0.3,
+        "E-EVIDENCE-SUFFICIENT": 0.2,
+        "E-SUBSTANTIVE-CONFLICT": 0.5,
       },
       reviewThreshold: 0.5,
       presentationThreshold: 0.65,

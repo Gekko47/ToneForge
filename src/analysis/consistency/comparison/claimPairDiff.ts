@@ -255,6 +255,11 @@ export function compareValues(
   if (left.normalized === undefined || right.normalized === undefined) {
     return "unrelated";
   }
+  const leftCurrency = left.currency ?? "";
+  const rightCurrency = right.currency ?? "";
+  if (leftCurrency !== "" && rightCurrency !== "" && leftCurrency !== rightCurrency) {
+    return "incomparable";
+  }
   const leftUnit = left.unit ?? "";
   const rightUnit = right.unit ?? "";
   if (!compatibleUnits(leftUnit, rightUnit)) {

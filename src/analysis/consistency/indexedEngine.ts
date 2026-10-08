@@ -58,6 +58,7 @@ import {
 import { buildIssue } from "./issues";
 import { compileDecisionPlanWithCandidates } from "./decision/DecisionPlanCompiler";
 import { SystemOneDecisionProvider } from "./decision/systemOne/SystemOneDecisionProvider";
+import type { ConsistencyDecisionEvaluation } from "./decision/ConsistencyDecisionProvider";
 import { buildAuditRecord, buildProvenance, type ConsistencySessionStore } from "./persistence";
 
 /** Thrown when the run is cancelled or the document moved underneath it. */
@@ -155,7 +156,6 @@ function coverage(
   statementsTotal: number,
   maxAdjudications: number,
   blockers: string[],
-  notes: string[],
   quarantinedClaims: number,
   retrieval: {
     comparisonsMade: number;
@@ -201,7 +201,7 @@ function coverage(
     adjudicationsUsed: work.adjudicationsUsed,
     adjudicationsAvailable: maxAdjudications,
     perCheck: { ...retrieval.perCheck },
-    limitations: [...blockers, ...notes],
+    limitations: [...blockers],
     modelAdjudicated: work.modelAdjudicated,
     quarantinedClaims,
     deterministicResolved: work.deterministicResolved,
@@ -269,10 +269,8 @@ export async function runConsistencyReview(
   const maxPerSubject = request.maxPerSubject ?? CONSISTENCY_DEFAULT_MAX_PER_SUBJECT;
   const maxAdjudications = request.maxAdjudications ?? CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS;
 
-  // Genuine limitations that make the run incomplete, kept apart from the
-  // informational summaries below so `complete` is not forced false by a note.
+  // Genuine limitations that make the run incomplete.
   const blockers: string[] = [];
-  const notes: string[] = [];
   const issues: ConsistencyIssue[] = [];
   const evidenceHashes = new Set<string>();
   let quarantinedClaims = 0;
@@ -498,7 +496,15 @@ export async function runConsistencyReview(
       if (plan.questions.length > 0) {
         usedModel = true;
         work.adjudicationsUsed = plan.questions.length;
-        const evaluation = await decisionProvider.evaluate(plan, options.signal);
+        let evaluation: ConsistencyDecisionEvaluation | null = null;
+        try {
+          evaluation = await decisionProvider.evaluate(plan, options.signal);
+        } catch {
+          if (options.signal?.aborted === true) {
+            throw new ConsistencyRunCancelled("cancelled");
+          }
+          blockers.push("Decision adjudication failed: the decision provider threw an error.");
+        }
 
         // R6: D-derivation, post-model gates, and confidence with intervals
         options.onProgress?.({
@@ -511,13 +517,20 @@ export async function runConsistencyReview(
         const adjudicated = new Set(plan.questions.map((q) => q.subjectId));
 
         for (const resolution of pendingModel) {
+          if (evaluation === null) {
+            unresolvedCount++;
+            continue;
+          }
           const candidate = candidateById.get(resolution.candidateId);
           if (candidate === undefined) continue;
 
           const claimsForCandidate = candidate.claimIds
             .map((id) => claimsById.get(id))
             .filter((nc) => nc !== undefined);
-          if (claimsForCandidate.length < 2) continue;
+          if (claimsForCandidate.length < 2) {
+            unresolvedCount++;
+            continue;
+          }
 
           // A candidate the budget left unasked is unresolved, and counted as
           // budget-exceeded rather than silently dropped.
@@ -539,19 +552,24 @@ export async function runConsistencyReview(
           // wrong answer when a candidate's questions are not at the start of
           // the plan.
           const answersByQuestionId = new Map(evaluation.answers.map((a) => [a.question, a]));
-          const modelAnswers = candidateQuestions.map((q) => {
-            const answer = answersByQuestionId.get(q.id);
-            return {
-              question: q.id,
-              holds:
-                answer?.answer === true ||
-                answer?.answer === "conflict" ||
-                answer?.answer === "incompatible" ||
-                answer?.answer === "contradicts",
-              confidence: answer?.confidence ?? 0,
-              reason: answer?.reasoning ?? "",
-            };
-          });
+          const modelAnswers = candidateQuestions
+            .map((q) => {
+              const answer = answersByQuestionId.get(q.id);
+              if (answer?.answer === "unclear") return null;
+              // Strip the candidate prefix to get the E-question name for derivation lookups.
+              const eQuestion = q.id.slice(resolution.candidateId.length + 1);
+              return {
+                question: eQuestion,
+                holds:
+                  answer?.answer === true ||
+                  answer?.answer === "conflict" ||
+                  answer?.answer === "incompatible" ||
+                  answer?.answer === "contradicts",
+                confidence: answer?.confidence ?? 0,
+                reason: answer?.reasoning ?? "",
+              };
+            })
+            .filter((a): a is NonNullable<typeof a> => a !== null);
 
           const deterministicAnswers = resolution.answers.map((a) => ({
             question: a.question,
@@ -627,10 +645,6 @@ export async function runConsistencyReview(
             work.reviewBandSuppressed++;
           }
         }
-
-        notes.push(
-          `Decision adjudication complete: ${work.decisionAdjudicated} candidate(s) judged by the model.`,
-        );
       } else {
         // No question compiled: the residue stays unresolved, honestly.
         pendingModel.forEach(() => {
@@ -644,10 +658,6 @@ export async function runConsistencyReview(
     }
 
     work.unresolved = unresolvedCount;
-
-    notes.push(
-      `Deterministic resolution complete: ${consistentCount} consistent, ${conflictCount} conflict, ${notComparableCount} not comparable, ${unresolvedCount} unresolved.`,
-    );
   }
 
   options.onProgress?.({ phase: "done", fraction: 1, message: "Done." });
@@ -659,7 +669,6 @@ export async function runConsistencyReview(
       statements.length,
       maxAdjudications,
       blockers,
-      notes,
       quarantinedClaims,
       retrieval,
       work,

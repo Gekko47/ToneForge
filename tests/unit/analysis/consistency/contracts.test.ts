@@ -236,6 +236,7 @@ describe("consistency contracts", () => {
     const plan = DecisionPlanSchema.parse({
       revision: "r1",
       questions: [binary],
+      projectedStates: [],
       budget: { maxQuestions: 60, maxExpansions: 1 },
     });
     expect(plan.questions).toHaveLength(1);

@@ -18,8 +18,8 @@ import {
   compareValues,
   type ClaimPairDiff,
 } from "./claimPairDiff";
-import { attributionKey } from "../checks/primitives";
-import { isExclusiveStatePair } from "../checks/primitives";
+import { attributionKey, contentWords, isExclusiveStatePair } from "../checks/primitives";
+import { evaluationProfile } from "./evaluationProfiles";
 
 /**
  * The E-questions the resolver can answer (original §13).
@@ -129,7 +129,19 @@ export function resolveCandidate(
 
   // Build the diff between the first two claims (the primary pair).
   // Additional claims are compared pairwise in the engine's comparison loop.
-  const diff = buildClaimPairDiff(resolved[0]!.claim, resolved[1]!.claim);
+  const [first, second] = resolved;
+  if (first === undefined || second === undefined) {
+    return {
+      candidateId: candidate.id,
+      checkId: candidate.checkId,
+      diff: null,
+      answers: [],
+      unresolved: [],
+      state: "not_comparable",
+      reasonCodes: ["insufficient-claims"],
+    };
+  }
+  const diff = buildClaimPairDiff(first.claim, second.claim);
 
   // Answer every provable E-question.
   const answers: EAnswer[] = [];
@@ -763,26 +775,23 @@ function answerValueIncompatibility(left: NormalisedClaim, right: NormalisedClai
   const comparisons = leftValues.flatMap((leftValue) =>
     rightValues.map((rightValue) => compareValues(leftValue, rightValue)),
   );
-  const comparable = comparisons.filter((comparison) => comparison !== "unrelated");
+  // Only same-unit pairs are compared; cross-unit pairs are ignored, not
+  // treated as incomparable. A difference in any same-unit pair is a difference.
+  const comparable = comparisons.filter(
+    (comparison) => comparison !== "unrelated" && comparison !== "incomparable",
+  );
   if (comparable.length === 0) return null;
-  if (comparable.includes("differs")) {
-    return {
-      question: "E-VALUE-INCOMPATIBLE",
-      holds: true,
-      reason: "values differ after unit conversion",
-    };
-  }
-  if (comparable.includes("incomparable")) {
+  if (comparable.every((c) => c === "same")) {
     return {
       question: "E-VALUE-INCOMPATIBLE",
       holds: false,
-      reason: "values are incomparable (incompatible units)",
+      reason: "values are equivalent after unit conversion",
     };
   }
   return {
     question: "E-VALUE-INCOMPATIBLE",
-    holds: false,
-    reason: "values are equivalent after unit conversion",
+    holds: true,
+    reason: "values differ after unit conversion",
   };
 }
 
@@ -792,114 +801,144 @@ function answerValueIncompatibility(left: NormalisedClaim, right: NormalisedClai
  * These gates terminate proven non-comparability and proven
  * non-conflict before any model call. If a gate fires, the
  * candidate is classified immediately.
+ *
+ * Gates are filtered by the check's profile — only gates listed in
+ * the profile's `hardGates` are evaluated for that check.
  */
 export function runComparabilityGates(
   claims: readonly NormalisedClaim[],
-  _checkId: ConsistencyCheckId,
+  checkId: ConsistencyCheckId,
   diff: ClaimPairDiff,
 ): { state: "consistent" | "not_comparable"; reasonCodes: string[] } | null {
   const [left, right] = claims;
   if (left === undefined || right === undefined) return null;
 
+  const profile = evaluationProfile(checkId);
+  const gates = new Set(profile.hardGates);
+
   // Gate: different scenario → not comparable
-  const leftScenario = left.claim.scenario?.type;
-  const rightScenario = right.claim.scenario?.type;
-  if (leftScenario !== undefined && rightScenario !== undefined && leftScenario !== rightScenario) {
-    return {
-      state: "not_comparable",
-      reasonCodes: [`different-scenario:${leftScenario}-vs-${rightScenario}`],
-    };
-  }
-
-  // Gate: different attribution domain → not comparable
-  const leftAttribution = attributionKey(left.claim);
-  const rightAttribution = attributionKey(right.claim);
-  if (leftAttribution !== rightAttribution) {
-    return {
-      state: "not_comparable",
-      reasonCodes: ["different-attribution-domain"],
-    };
-  }
-
-  // Gate: different valuation period → not comparable
-  const leftValuation = left.claim.quantum?.valuationPeriod;
-  const rightValuation = right.claim.quantum?.valuationPeriod;
-  if (leftValuation !== undefined && rightValuation !== undefined) {
-    const leftStart = leftValuation.start?.iso ?? leftValuation.start?.raw ?? "";
-    const rightStart = rightValuation.start?.iso ?? rightValuation.start?.raw ?? "";
-    const leftEnd = leftValuation.end?.iso ?? leftValuation.end?.raw ?? "";
-    const rightEnd = rightValuation.end?.iso ?? rightValuation.end?.raw ?? "";
-    if (leftStart !== rightStart || leftEnd !== rightEnd) {
+  if (gates.has("different-scenario")) {
+    const leftScenario = left.claim.scenario?.type;
+    const rightScenario = right.claim.scenario?.type;
+    if (
+      leftScenario !== undefined &&
+      rightScenario !== undefined &&
+      leftScenario !== rightScenario
+    ) {
       return {
         state: "not_comparable",
-        reasonCodes: ["different-valuation-period"],
+        reasonCodes: [`different-scenario:${leftScenario}-vs-${rightScenario}`],
       };
     }
   }
 
+  // Gate: different attribution domain → not comparable
+  if (gates.has("different-attribution-domain")) {
+    const leftAttribution = attributionKey(left.claim);
+    const rightAttribution = attributionKey(right.claim);
+    if (leftAttribution !== rightAttribution) {
+      return {
+        state: "not_comparable",
+        reasonCodes: ["different-attribution-domain"],
+      };
+    }
+  }
+
+  // Gate: different valuation period → not comparable
+  if (gates.has("different-valuation-period")) {
+    const leftValuation = left.claim.quantum?.valuationPeriod;
+    const rightValuation = right.claim.quantum?.valuationPeriod;
+    if (leftValuation !== undefined && rightValuation !== undefined) {
+      const leftStart = leftValuation.start?.iso ?? leftValuation.start?.raw ?? "";
+      const rightStart = rightValuation.start?.iso ?? rightValuation.start?.raw ?? "";
+      const leftEnd = leftValuation.end?.iso ?? leftValuation.end?.raw ?? "";
+      const rightEnd = rightValuation.end?.iso ?? rightValuation.end?.raw ?? "";
+      if (leftStart !== rightStart || leftEnd !== rightEnd) {
+        return {
+          state: "not_comparable",
+          reasonCodes: ["different-valuation-period"],
+        };
+      }
+    }
+  }
+
   // Gate: different programme basis → not comparable
-  const leftProgrammes = new Set(left.claim.programmeIds);
-  const rightProgrammes = new Set(right.claim.programmeIds);
-  const sharedProgrammes = [...leftProgrammes].filter((id) => rightProgrammes.has(id));
-  if (leftProgrammes.size > 0 && rightProgrammes.size > 0 && sharedProgrammes.length === 0) {
-    return {
-      state: "not_comparable",
-      reasonCodes: ["different-programme-basis"],
-    };
+  if (gates.has("different-programme-basis")) {
+    const leftProgrammes = new Set(left.claim.programmeIds);
+    const rightProgrammes = new Set(right.claim.programmeIds);
+    const sharedProgrammes = [...leftProgrammes].filter((id) => rightProgrammes.has(id));
+    if (leftProgrammes.size > 0 && rightProgrammes.size > 0 && sharedProgrammes.length === 0) {
+      return {
+        state: "not_comparable",
+        reasonCodes: ["different-programme-basis"],
+      };
+    }
   }
 
   // Gate: forecast vs actual → not comparable
-  const leftForecast = left.dates.find((d) => d.role === "forecastDate");
-  const rightData = right.dates.find((d) => d.role === "dataDate");
-  const rightForecast = right.dates.find((d) => d.role === "forecastDate");
-  const leftData = left.dates.find((d) => d.role === "dataDate");
-  if (
-    (leftForecast !== undefined && rightData !== undefined) ||
-    (rightForecast !== undefined && leftData !== undefined)
-  ) {
-    return {
-      state: "not_comparable",
-      reasonCodes: ["forecast-vs-actual"],
-    };
+  if (gates.has("forecast-vs-actual")) {
+    const leftForecast = left.dates.find((d) => d.role === "forecastDate");
+    const rightData = right.dates.find((d) => d.role === "dataDate");
+    const rightForecast = right.dates.find((d) => d.role === "forecastDate");
+    const leftData = left.dates.find((d) => d.role === "dataDate");
+    if (
+      (leftForecast !== undefined && rightData !== undefined) ||
+      (rightForecast !== undefined && leftData !== undefined)
+    ) {
+      return {
+        state: "not_comparable",
+        reasonCodes: ["forecast-vs-actual"],
+      };
+    }
   }
 
   // Gate: different measurement basis → not comparable
-  const leftMethod = left.claim.delay?.analysisMethod;
-  const rightMethod = right.claim.delay?.analysisMethod;
-  if (leftMethod !== undefined && rightMethod !== undefined && leftMethod !== rightMethod) {
-    return {
-      state: "not_comparable",
-      reasonCodes: ["different-measurement-basis"],
-    };
+  if (gates.has("different-measurement-basis")) {
+    const leftMethod = left.claim.delay?.analysisMethod;
+    const rightMethod = right.claim.delay?.analysisMethod;
+    if (leftMethod !== undefined && rightMethod !== undefined && leftMethod !== rightMethod) {
+      return {
+        state: "not_comparable",
+        reasonCodes: ["different-measurement-basis"],
+      };
+    }
   }
 
   // Gate: entity/event mismatch → not comparable
-  const sharedEntities = left.claim.subjectIds.filter((id) => right.claim.subjectIds.includes(id));
-  const sharedEvents = left.claim.eventIds.filter((id) => right.claim.eventIds.includes(id));
-  const hasEntities = left.claim.subjectIds.length > 0 && right.claim.subjectIds.length > 0;
-  const hasEvents = left.claim.eventIds.length > 0 && right.claim.eventIds.length > 0;
-  if ((hasEntities && sharedEntities.length === 0) || (hasEvents && sharedEvents.length === 0)) {
-    return {
-      state: "not_comparable",
-      reasonCodes: ["entity-or-event-mismatch"],
-    };
+  if (gates.has("entity-or-event-mismatch")) {
+    const sharedEntities = left.claim.subjectIds.filter((id) =>
+      right.claim.subjectIds.includes(id),
+    );
+    const sharedEvents = left.claim.eventIds.filter((id) => right.claim.eventIds.includes(id));
+    const hasEntities = left.claim.subjectIds.length > 0 && right.claim.subjectIds.length > 0;
+    const hasEvents = left.claim.eventIds.length > 0 && right.claim.eventIds.length > 0;
+    if ((hasEntities && sharedEntities.length === 0) || (hasEvents && sharedEvents.length === 0)) {
+      return {
+        state: "not_comparable",
+        reasonCodes: ["entity-or-event-mismatch"],
+      };
+    }
   }
 
   // Gate: insufficient evidence → not comparable
-  if (left.claim.evidence === undefined || right.claim.evidence === undefined) {
-    return {
-      state: "not_comparable",
-      reasonCodes: ["insufficient-evidence"],
-    };
+  if (gates.has("insufficient-evidence")) {
+    if (left.claim.evidence === undefined || right.claim.evidence === undefined) {
+      return {
+        state: "not_comparable",
+        reasonCodes: ["insufficient-evidence"],
+      };
+    }
   }
 
   // Gate: unresolved source evidence → not comparable
   // (claims with no evidence anchors at all)
-  if (left.claim.evidenceBasis.length === 0 && right.claim.evidenceBasis.length === 0) {
-    return {
-      state: "not_comparable",
-      reasonCodes: ["unresolved-source-evidence"],
-    };
+  if (gates.has("unresolved-source-evidence")) {
+    if (left.claim.evidenceBasis.length === 0 && right.claim.evidenceBasis.length === 0) {
+      return {
+        state: "not_comparable",
+        reasonCodes: ["unresolved-source-evidence"],
+      };
+    }
   }
 
   // Gate: proven non-conflict — identical values, units, scenario, period, basis, attribution
@@ -924,60 +963,57 @@ export function runComparabilityGates(
  * Classify a candidate from its answers and unresolved questions.
  *
  * - If any substantive conflict was proven → conflict
- * - If any E-question remains unresolved → unresolved
+ * - If any relevant E-question remains unresolved → unresolved
  * - Otherwise → consistent
+ *
+ * Only unresolved questions that are relevant to this check are considered —
+ * questions that don't apply to this check type should not block classification.
  */
 function classify(
   candidateId: string,
-  _checkId: ConsistencyCheckId,
+  checkId: ConsistencyCheckId,
   diff: ClaimPairDiff,
   answers: readonly EAnswer[],
   unresolved: readonly EUnresolved[],
 ): DeterministicResolution {
+  const profile = evaluationProfile(checkId);
+  const relevant = new Set(profile.relevantEQuestions);
+  const relevantUnresolved = unresolved.filter((u) => relevant.has(u.question));
+
   const substantiveConflict = answers.find(
     (a) => a.question === "E-SUBSTANTIVE-CONFLICT" && a.holds,
   );
   if (substantiveConflict !== undefined) {
     return {
       candidateId,
-      checkId: _checkId,
+      checkId,
       diff,
       answers,
-      unresolved,
+      unresolved: relevantUnresolved,
       state: "conflict",
       reasonCodes: ["substantive-conflict-proven", substantiveConflict.reason],
     };
   }
 
-  if (unresolved.length > 0) {
+  if (relevantUnresolved.length > 0) {
     return {
       candidateId,
-      checkId: _checkId,
+      checkId,
       diff,
       answers,
-      unresolved,
+      unresolved: relevantUnresolved,
       state: "unresolved",
-      reasonCodes: unresolved.map((u) => `unresolved:${u.question}`),
+      reasonCodes: relevantUnresolved.map((u) => `unresolved:${u.question}`),
     };
   }
 
   return {
     candidateId,
-    checkId: _checkId,
+    checkId,
     diff,
     answers,
-    unresolved,
+    unresolved: relevantUnresolved,
     state: "consistent",
     reasonCodes: ["all-questions-answered-no-conflict"],
   };
-}
-
-/** Content words from a predicate, for comparability. */
-function contentWords(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9%$€£\s-]/g, " ")
-    .split(/\s+/)
-    .map((word) => word.replace(/^-+|-+$/g, ""))
-    .filter((word) => word.length > 2);
 }

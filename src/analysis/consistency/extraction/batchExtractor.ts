@@ -191,19 +191,21 @@ export async function extractClaims(
     // block the run indefinitely. The timeout is non-retryable — retrying a
     // call that timed out would double the wait.
     const response = await withRetry(
-      () =>
-        Promise.race([
-          provider.complete(request),
-          new Promise<never>((_, reject) =>
-            setTimeout(
-              () =>
-                reject(
-                  new LlmError(`Provider timed out after ${timeoutMs}ms`, provider.name, false),
-                ),
-              timeoutMs,
-            ),
-          ),
-        ]),
+      () => {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () =>
+              reject(new LlmError(`Provider timed out after ${timeoutMs}ms`, provider.name, false)),
+            timeoutMs,
+          );
+        });
+        // Clear the timer whether the provider won the race or the timeout
+        // fired, so a fast provider does not leave a pending timer behind.
+        return Promise.race([provider.complete(request), timeout]).finally(() => {
+          if (timeoutId !== undefined) clearTimeout(timeoutId);
+        });
+      },
       {
         maxRetries: opts.maxRetries ?? DEFAULT_MAX_RETRIES,
         baseDelayMs: opts.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,

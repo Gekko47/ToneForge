@@ -86,7 +86,12 @@ export function retrieveC4(ctx: RetrievalContext): CheckRetrieval {
           kept,
           {
             reasonCodes: ["shared-entity", "shared-attribute", ...changes],
-            sharedEntityIds: [subject.name],
+            sharedEntityIds: kept
+              .map((id) => ctx.indices.claims.byId(id))
+              .filter((c) => c !== null)
+              .flatMap((c) => c.claim.subjectIds)
+              .filter((v, i, a) => a.indexOf(v) === i)
+              .filter((id) => ctx.indices.entities.entityIds.includes(id)),
             sharedEventIds: [],
             sharedProgrammeIds: group[0] === undefined ? [] : [...group[0].claim.programmeIds],
             sharedMetricIds: [],
