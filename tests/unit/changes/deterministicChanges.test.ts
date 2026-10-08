@@ -96,6 +96,20 @@ describe("registry and planner agree about what can be corrected", () => {
 
     expect(unknown).toEqual([]);
   });
+
+  it("puts every category a non-correctable rule emits in the reported-only set", () => {
+    /*
+     * The partition must be exact: a `correctable: false` rule that emits a
+     * category absent from `DETERMINISTIC_REPORTED_ONLY_CATEGORIES` is a finding
+     * the planner has no answer for — neither a change nor a stated refusal.
+     */
+    const missing = allRules()
+      .filter((rule) => !rule.correctable)
+      .flatMap((rule) => rule.emits ?? [rule.category])
+      .filter((category) => !DETERMINISTIC_REPORTED_ONLY_CATEGORIES.has(category));
+
+    expect(missing).toEqual([]);
+  });
 });
 
 describe("planDeterministicChange", () => {

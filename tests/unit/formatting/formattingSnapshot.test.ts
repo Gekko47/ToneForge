@@ -4,6 +4,7 @@ import {
   FormattingSnapshotSchema,
   ParagraphAlignmentSchema,
 } from "../../../src/formatting/formattingSnapshot";
+import { WORD_STYLE_MAPPING } from "../../../src/formatting/wordStyles";
 import * as formattingIndex from "../../../src/formatting";
 
 describe("FormattingSnapshotSchema", () => {
@@ -113,7 +114,7 @@ describe("formatting barrel exports", () => {
     expect(formattingIndex.ParagraphAlignmentSchema).toBe(ParagraphAlignmentSchema);
     expect(formattingIndex.findFormattingIssues).toBeDefined();
     expect(formattingIndex.lookupWordStyle).toBeDefined();
-    expect(formattingIndex.WORD_STYLE_MAPPING).toBeDefined();
+    expect(WORD_STYLE_MAPPING).toBeDefined();
     expect(formattingIndex.HEADING_STYLE_NAMES).toBeDefined();
   });
 });

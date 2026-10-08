@@ -46,7 +46,7 @@ flowchart TD
 - State persistence with roaming plus localStorage fallback exists
 - LLM interface plus OpenAI plus mock plus registry plus retry plus prompts exist
 - Word probe, revision adapter, document reader exist
-- Shared utils [`text.ts`](src/shared/utils/text.ts), [`result.ts`](src/shared/utils/result.ts), [`logger.ts`](src/shared/utils/logger.ts), [`officeHelpers.ts`](src/shared/office/officeHelpers.ts) exist
+- Shared utils [`text.ts`](src/shared/utils/text.ts), `result.ts` (deleted), [`logger.ts`](src/shared/utils/logger.ts), [`officeHelpers.ts`](src/shared/office/officeHelpers.ts) exist
 - Tests: 7 files, ~30 cases, [`setup.ts`](tests/setup.ts) Office plus fetch mocks
 
 ### 3.2 Missing or stub-only

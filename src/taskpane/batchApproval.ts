@@ -172,28 +172,6 @@ export function skipGroup(options: BatchApprovalOptions): BatchApprovalOutcome {
 }
 
 /**
- * The identities in a group whose decision should be withdrawn, so the
- * occurrences can be reviewed again (spec §15, "Undo decision").
- *
- * Returns identities rather than performing the write, so the caller records
- * the same set it displays. A group with nothing decided returns an empty list
- * rather than a refusal: "undo" on a group with no decisions is a no-op, and
- * reporting it as an error would put a message on screen for a button that
- * correctly did nothing.
- */
-export function undoGroup(options: BatchApprovalOptions): string[] {
-  const { group, findings } = options;
-  const settled = options.alreadyDecided ?? new Set<string>();
-  const byId = new Map(findings.map((finding) => [finding.id, finding]));
-  return group.occurrenceIds.flatMap((id) => {
-    const finding = byId.get(id);
-    if (finding === undefined) return [];
-    const identity = reviewIdentity(finding);
-    return settled.has(identity) ? [identity] : [];
-  });
-}
-
-/**
  * The `Approve all` control's own state, read without pressing it.
  *
  * A disabled control with no stated reason is the failure the review gate was

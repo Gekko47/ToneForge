@@ -466,6 +466,51 @@ describe("DeterministicStyleSections", () => {
     expect(last.formatting.bodyStyle.styleName).toBe("Body Text");
   });
 
+  it("writes the named-style and heading standards the analyzer compares against", () => {
+    /*
+     * `formatting.titleStyle`, `subtitleStyle`, `captions` and `headings.1–9`
+     * are read by the analyzer and counted as wired by the registry, but had no
+     * control anywhere in the pane — so the comparison could never run. These
+     * assert the controls exist and write through, which is the half the
+     * registry audit cannot see.
+     */
+    const { onChange } = renderSections(CAPABLE);
+    const lastProfile = (): DeterministicStyleProfile =>
+      onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+
+    fireEvent.change(screen.getByLabelText("Title style"), { target: { value: "Title" } });
+    expect(lastProfile().formatting.titleStyle?.styleName).toBe("Title");
+
+    fireEvent.change(screen.getByLabelText("Subtitle style"), { target: { value: "Subtitle" } });
+    expect(lastProfile().formatting.subtitleStyle?.styleName).toBe("Subtitle");
+
+    fireEvent.change(screen.getByLabelText("Caption style"), { target: { value: "Caption" } });
+    expect(lastProfile().formatting.captions?.styleName).toBe("Caption");
+
+    fireEvent.change(screen.getByLabelText("Heading 2 style"), { target: { value: "Heading 2" } });
+    expect(lastProfile().formatting.headings["2"]?.styleName).toBe("Heading 2");
+  });
+
+  it("removes a named-style standard when its field is cleared", () => {
+    // A blank field is "no standard for this kind", not a standard named "".
+    // `ParagraphStyleStandardSchema.styleName` is `min(1)`, so writing an empty
+    // string would fail the parse; the field must drop the standard instead.
+    const { onChange } = renderSections(CAPABLE);
+    const lastProfile = (): DeterministicStyleProfile =>
+      onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    fireEvent.change(screen.getByLabelText("Title style"), { target: { value: "Title" } });
+    fireEvent.change(screen.getByLabelText("Title style"), { target: { value: "" } });
+    expect(lastProfile().formatting.titleStyle).toBeUndefined();
+  });
+
+  it("writes the deepest heading level the structure section promises", () => {
+    const { onChange } = renderSections(CAPABLE);
+    const lastProfile = (): DeterministicStyleProfile =>
+      onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
+    fireEvent.change(screen.getByLabelText("Deepest heading level"), { target: { value: "3" } });
+    expect(lastProfile().structure.maxHeadingLevel).toBe(3);
+  });
+
   it("authors all three vocabularies, and says which record each one writes", () => {
     /*
      * Terminology was relocated here from the governance policy page, where two
@@ -840,7 +885,6 @@ describe("DeterministicStyleSections", () => {
      */
     const OWNED: Readonly<Record<string, string>> = {
       apostrophes: "Apostrophes",
-      currencySpacing: "Before a currency symbol",
       decimalSeparator: "Decimal separator",
       doubleQuotes: "Double quotes",
       emDash: "Em dash",
@@ -856,17 +900,6 @@ describe("DeterministicStyleSections", () => {
       thousandsSeparator: "Thousands separator",
     };
 
-    /**
-     * Declared here, owned elsewhere, and deliberately not wired twice.
-     *
-     * `numbers.percentageSpacing` is normative and the rule prefers it; this
-     * schema field is the fallback for a typography-only profile. A second
-     * control would be the two-owners defect, so the section points at the owner.
-     */
-    const EXEMPT: Readonly<Record<string, string>> = {
-      percentageSpacing: "Language → Numbers",
-    };
-
     function last(onChange: ReturnType<typeof vi.fn>): DeterministicStyleProfile {
       return onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
     }
@@ -874,9 +907,7 @@ describe("DeterministicStyleSections", () => {
     it("maps every field to a control, so a new field cannot arrive unwired", () => {
       // Keys and labels together: a mapping with the wrong label would make the
       // per-field assertions below pass vacuously while naming nothing.
-      expect(Object.keys(OWNED).sort()).toEqual(
-        TYPOGRAPHY_FIELDS.filter((f) => f !== "percentageSpacing"),
-      );
+      expect(Object.keys(OWNED).sort()).toEqual(TYPOGRAPHY_FIELDS);
       Object.entries(OWNED).forEach(([, label]) => {
         expect(label.length).toBeGreaterThan(0);
       });
@@ -886,20 +917,6 @@ describe("DeterministicStyleSections", () => {
       renderSections(CAPABLE);
       Object.values(OWNED).forEach((label) => {
         expect(screen.getByLabelText(label)).toBeInTheDocument();
-      });
-    });
-
-    it("says where each exempt field is set, rather than leaving the absence silent", () => {
-      /*
-       * The guard against the guard. An exemption list that quietly grows is how a
-       * "no control exists" defect gets reclassified as intentional, so every
-       * exempt field must be reachable somewhere AND named on the page.
-       */
-      renderSections(CAPABLE);
-      Object.entries(EXEMPT).forEach(([field, owner]) => {
-        expect(screen.getByText(new RegExp(owner, "i"))).toBeInTheDocument();
-        // The field name itself must not appear as an editable label here.
-        expect(screen.queryByLabelText(new RegExp(field, "i"))).toBeNull();
       });
     });
 
@@ -946,11 +963,6 @@ describe("DeterministicStyleSections", () => {
 
       fireEvent.change(screen.getByLabelText("Around a solidus"), { target: { value: "spaced" } });
       expect(last(onChange).typography.slashSpacing).toBe("spaced");
-
-      fireEvent.change(screen.getByLabelText("Before a currency symbol"), {
-        target: { value: "tight" },
-      });
-      expect(last(onChange).typography.currencySpacing).toBe("tight");
 
       fireEvent.click(
         screen.getByLabelText("Compare a space before an opening bracket against the document"),

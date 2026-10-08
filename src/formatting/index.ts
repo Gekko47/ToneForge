@@ -7,4 +7,4 @@ export {
   type ParagraphAlignment,
 } from "./formattingSnapshot";
 export { findFormattingIssues, type FormattingCheckOptions } from "./analyzer";
-export { lookupWordStyle, WORD_STYLE_MAPPING, HEADING_STYLE_NAMES } from "./wordStyles";
+export { lookupWordStyle, HEADING_STYLE_NAMES } from "./wordStyles";

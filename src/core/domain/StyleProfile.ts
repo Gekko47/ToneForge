@@ -100,23 +100,6 @@ export const TypographyRulesSchema = z.object({
    */
   slashSpacing: z.enum(["none", "spaced", "tight"]).default("none"),
   /**
-   * Spacing before a percent sign.
-   *
-   * The number profile's own `percentageSpacing` is the normative one; this
-   * exists so a typography-only profile can express the rule without also
-   * configuring a number convention. The two are reconciled by the rule, which
-   * prefers the number profile's value when it differs.
-   */
-  percentageSpacing: z.enum(["none", "spaced", "tight"]).default("none"),
-  /**
-   * Spacing between a currency symbol and its amount.
-   *
-   * `none` defers to the currency profile, which is the normative source for
-   * money. The typography rule runs only when this is set, so a profile that
-   * configures neither stays silent rather than guessing.
-   */
-  currencySpacing: z.enum(["none", "spaced", "tight"]).default("none"),
-  /**
    * Whether a space is required before an opening bracket, as `word (paren)`.
    *
    * Off by default because the convention runs the other way in most house

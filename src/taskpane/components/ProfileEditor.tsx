@@ -16,7 +16,6 @@ import {
   type HouseStyle,
   type Revision,
   type StyleProfile,
-  type TerminologyRule,
   type TypographyRules,
 } from "../../core/domain/StyleProfile";
 import {
@@ -31,7 +30,6 @@ import { selectAllProfiles } from "../../core/state/profileSelectors";
 import { diffProfiles } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
 import DeterministicStyleSections from "./DeterministicStyleSections";
-import { parseTerminology } from "../settings/terminologyText";
 import type { WordCapabilities } from "../../word/capabilityProbe";
 
 /**
@@ -53,8 +51,6 @@ interface ProfileFormValues {
   decimalSeparator: TypographyRules["decimalSeparator"];
   thousandsSeparator: TypographyRules["thousandsSeparator"];
   ellipsis: TypographyRules["ellipsis"];
-  preferredTerminology: string;
-  bannedTerms: string;
   titleCaseWords: string;
   spellingVariant: HouseStyle["spellingVariant"];
 }
@@ -121,13 +117,6 @@ function profileToValues(profile: StyleProfile): ProfileFormValues {
     decimalSeparator: profile.typography.decimalSeparator,
     thousandsSeparator: profile.typography.thousandsSeparator,
     ellipsis: profile.typography.ellipsis,
-    preferredTerminology: profile.language.terminology
-      .filter((rule) => rule.replacement !== undefined)
-      .slice()
-      .sort((left, right) => left.source.localeCompare(right.source))
-      .map((rule) => `${rule.source}: ${rule.replacement}`)
-      .join("\n"),
-    bannedTerms: profile.language.bannedTerms.join("\n"),
     titleCaseWords: profile.houseStyle.capitalization.titleCaseWords.join("\n"),
     spellingVariant: profile.houseStyle.spellingVariant,
   };
@@ -143,50 +132,7 @@ function profileToValues(profile: StyleProfile): ProfileFormValues {
  * field to the schema meant every save through this editor silently reverted it
  * until someone remembered to add a control for it.
  */
-/**
- * Fold `term: replacement` lines into `language.terminology` rules.
- *
- * **Why this exists at all (ND-13).** These two controls used to write
- * `houseStyle.preferredTerminology` and `houseStyle.bannedTerms`, and neither
- * field produced a single finding — the registry filtered both checks out in
- * favour of the `language` rules. The fields looked authoritative, validated on
- * save, round-tripped through storage, and governed nothing.
- *
- * Rather than delete the capability, this writes to the live record. The
- * deterministic style section offers a richer per-rule editor for the same data
- * (severity, whole-word, case sensitivity, scope); this form remains the compact
- * `term: replacement` view of it.
- *
- * **Merging, not replacing.** A rule the form does not show — one with a scope,
- * or a severity the author chose in the per-rule editor — is preserved. Only a
- * rule whose `source` appears on a line is rewritten, so editing this form cannot
- * silently downgrade a mandatory term to advisory. That is the whole reason the
- * merge is written as a merge.
- */
-function foldTerminology(
-  parsed: Record<string, string>,
-  existing: readonly TerminologyRule[],
-): TerminologyRule[] {
-  const authored = new Map(Object.entries(parsed));
-  const retained = existing.filter((rule) => !authored.has(rule.source));
-  const rewritten = [...authored.entries()].map(([source, replacement], index): TerminologyRule => {
-    const match = existing.find((rule) => rule.source === source);
-    if (match) return { ...match, replacement };
-    return {
-      id: `house:${index + 1}-${source}`,
-      source,
-      replacement,
-      caseSensitive: false,
-      wholeWord: true,
-      severity: "advisory",
-      scope: {},
-    };
-  });
-  return [...retained, ...rewritten];
-}
-
 function buildCandidate(values: ProfileFormValues, baseProfile: StyleProfile): StyleProfile {
-  const terminology = parseTerminology(values.preferredTerminology);
   return {
     ...baseProfile,
     name: values.name,
@@ -200,11 +146,6 @@ function buildCandidate(values: ProfileFormValues, baseProfile: StyleProfile): S
       decimalSeparator: values.decimalSeparator,
       thousandsSeparator: values.thousandsSeparator,
       ellipsis: values.ellipsis,
-    },
-    language: {
-      ...baseProfile.language,
-      terminology: foldTerminology(terminology.values, baseProfile.language.terminology),
-      bannedTerms: parseLines(values.bannedTerms),
     },
     houseStyle: {
       ...baseProfile.houseStyle,
@@ -226,15 +167,8 @@ function fieldFromPath(path: readonly (string | number)[]): string {
 }
 
 function validateValues(values: ProfileFormValues, baseProfile: StyleProfile): ProfileValidation {
-  const terminology = parseTerminology(values.preferredTerminology);
   const candidate = buildCandidate(values, baseProfile);
   const errors: Record<string, string> = {};
-  if (terminology.error) {
-    // The form writes `language.terminology`, so that is the path a message must
-    // name. Reporting the old `houseStyle` path would point at a field that no
-    // longer exists.
-    errors["language.terminology"] = terminology.error;
-  }
 
   const result = StyleProfileSchema.safeParse(candidate);
   if (!result.success) {

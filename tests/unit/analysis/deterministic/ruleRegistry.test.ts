@@ -175,6 +175,28 @@ describe("deterministic rule registry", () => {
     });
   });
 
+  /*
+   * The assertion the registry's own comment claims exists.
+   *
+   * `emits` is what the engine filters a shared scanner's output by, and
+   * `filterCategories` is the same list the rule passes to that scanner. They
+   * are two declarations of one fact, and they drifted: `language/currency`'s
+   * filter named `language.currency.separator`, a category no rule emits, and
+   * `typography/numbers` claimed `typography.percentageSpacing` in `emits`
+   * while its filter discarded it. Neither was visible because the filter lived
+   * inside the `analyze` closure. This is the guard that makes the two agree.
+   */
+  it("emits exactly the categories its analyze filter selects", () => {
+    allRules().forEach((rule) => {
+      const declared = new Set(rule.emits ?? [rule.category]);
+      const filtered = new Set([rule.category, ...rule.filterCategories]);
+      expect({ rule: rule.id, categories: [...declared].sort() }).toEqual({
+        rule: rule.id,
+        categories: [...filtered].sort(),
+      });
+    });
+  });
+
   it("attaches a body to every rule the profile can reach a finding through", () => {
     /*
      * A rule with no `analyze` produces nothing. That is the correct state for

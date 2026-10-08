@@ -110,7 +110,7 @@ export default function TerminologyBulkAdd({
           />
         </label>
         <p className="tf-sub" id={`${id}-hint`}>
-          {`One "${TERMINOLOGY_NOUNS.left}: ${TERMINOLOGY_NOUNS.right}" per line. Each becomes a row you can edit afterwards, with the same settings the Add preferred term button uses.`}
+          {`One "${TERMINOLOGY_NOUNS.left}: ${TERMINOLOGY_NOUNS.right}" per line. Each becomes a row you can edit afterwards, with the same settings the Add preferred term button uses. A term containing a colon must be added as a row.`}
         </p>
         {/*
          * `role="status"` rather than a plain paragraph: this sentence changes

@@ -76,8 +76,6 @@ export function findTypographyIssues(options: TypographyCheckOptions): Finding[]
   findings.push(...checkThousandsSeparator(text, rules));
   findings.push(...checkWhitespace(text, rules));
   findings.push(...checkSlashSpacing(text, rules));
-  findings.push(...checkPercentageSpacing(text, rules));
-  findings.push(...checkCurrencySpacing(text, rules));
   findings.push(...checkSpaceBeforeParenthesis(text, rules));
   findings.push(...checkSpaceAfterHyphen(text, rules));
   return findings;
@@ -562,11 +560,11 @@ function checkWhitespace(text: string, rules: TypographyRules): Finding[] {
 /**
  * Report a gap that does not match the wanted spacing, and only that gap.
  *
- * `profilePath` is a parameter rather than derived from the category because all
- * four spacing settings share `typography.punctuation`. Each one is a different
+ * `profilePath` is a parameter rather than derived from the category because the
+ * spacing settings share `typography.punctuation`. Each one is a different
  * profile field with a different remedy, and grouping them under one path would
- * offer a single `Approve all` for a mix of solidus, percentage, currency and
- * bracket corrections.
+ * offer a single `Approve all` for a mix of solidus, bracket and hyphen
+ * corrections.
  */
 function spacingFindings(params: {
   text: string;
@@ -608,9 +606,8 @@ function checkSlashSpacing(text: string, rules: TypographyRules): Finding[] {
    * The old pattern was `\s*\/+`, which matched the slash as well as the space.
    * The reported range therefore covered the solidus, and applying the
    * correction replaced `/` with a space — turning `and/or` into `and or` and
-   * deleting a character the author wrote. This is the same defect
-   * `checkCurrencySpacing` already documents and solves: measure the gap, never
-   * consume the marker.
+   * deleting a character the author wrote. The fix is the same shape the other
+   * spacing rules use: measure the gap, never consume the marker.
    *
    * Measured per side because the two are independent. A solidus can be tight on
    * one side and spaced on the other, and a single combined match reports the
@@ -637,69 +634,6 @@ function checkSlashSpacing(text: string, rules: TypographyRules): Finding[] {
     profilePath: "typography.slashSpacing",
     spacedMessage: "A solidus is surrounded by spaces",
     tightMessage: "A solidus is written tight against the words around it",
-  });
-}
-
-/**
- * Spacing before a percent sign.
- *
- * The number profile's own `percentageSpacing` is normative; this exists so a
- * typography-only profile can express the rule without also configuring a
- * number convention. The two are reconciled by the caller, which prefers the
- * number profile's value when the two differ.
- */
-function checkPercentageSpacing(text: string, rules: TypographyRules): Finding[] {
-  if (rules.percentageSpacing === "none") return [];
-  return spacingFindings({
-    text,
-    /*
-     * The whitespace between a digit and a percent sign, and nothing else.
-     *
-     * The old pattern was `[ \t]*(?=%|per\s+cent|percent)`, with no requirement
-     * on what came before. Two consequences, both of them findings on text that
-     * is already correct. `percentage` is a word — the alternation matched it —
-     * so the space in "the percentage of adults" was reported as a percentage
-     * sign needing its space removed. And with no digit required, the match was
-     * zero-width in front of a bare `%`, so `spacingFindings` was handed an empty
-     * gap it could not distinguish from a tight form it had just been asked to
-     * check.
-     *
-     * Requiring the digit is the same shape the currency rule above uses, and
-     * for the same reason: a percentage is a number and a sign, so the number is
-     * what identifies the marker.
-     */
-    matches: findMatches(text, /(?<=\d)[ \t]*(?=%)/gu),
-    wantsSpace: rules.percentageSpacing === "spaced",
-    category: "typography.punctuation",
-    profilePath: "typography.percentageSpacing",
-    spacedMessage: "A percentage takes a space before the sign",
-    tightMessage: "A percentage takes no space before the sign",
-  });
-}
-
-/**
- * Spacing between a currency symbol and its amount.
- *
- * The match is the whitespace only. The previous pattern matched the symbol and
- * the gap together, so the reported range covered the currency mark of a
- * figure like `$100` as well as its gap, and applying the correction replaced
- * the symbol with a space — deleting the currency mark. The symbol is excluded
- * here and asserted with a lookbehind, so the gap is located without consuming
- * it, and a tight symbol yields a zero-width range the planner inserts into.
- */
-function checkCurrencySpacing(text: string, rules: TypographyRules): Finding[] {
-  if (rules.currencySpacing === "none") return [];
-  return spacingFindings({
-    text,
-    // `*`, not `+`: a symbol written tight has no gap at all, and that is the
-    // deviation the `spaced` setting exists to report. Requiring one or more
-    // whitespace characters made the tight case unmatchable.
-    matches: findMatches(text, /(?<=[$£€¥])[ \t]*(?=\d)/gu),
-    wantsSpace: rules.currencySpacing === "spaced",
-    category: "typography.punctuation",
-    profilePath: "typography.currencySpacing",
-    spacedMessage: "A currency symbol is separated from its amount by a space",
-    tightMessage: "A currency symbol is written tight against its amount",
   });
 }
 

@@ -5035,3 +5035,78 @@ and is superseded here.
   keys, so no stored record can become unreadable.
 - **Not claimed:** this removes a check that never ran. Nothing that worked
   before stops working; what is removed is a promise the product was not keeping.
+
+## ADR-0126 — One owner per behaviour, enforced by guards rather than comments
+
+**Status:** Accepted.
+
+**Context.** The end-to-end review of the deterministic review process
+(`plans/deterministic-review-end-to-end-review-findings.md`) found the same
+defect class in four places: a behaviour with two owners, or a declaration that
+over-claimed what the running engine did, kept honest only by a comment that
+asserted a reconciliation the code did not perform.
+
+- **F1 — currency symbol spacing.** `typography.currencySpacing` and
+  `language.currency.symbolSpacing` both measured the gap between a currency
+  symbol and its amount, both were correctable, and nothing reconciled them. The
+  schema comment claimed `none` "defers to the currency profile, which is the
+  normative source for money" — no such deference existed.
+- **F2 — percentage spacing.** `typography.percentageSpacing` and
+  `language.numbers.percentageSpacing` both targeted the same `50%` gap. Two
+  comments stated the rules "are reconciled by the rule, which prefers the number
+  profile's value when the two differ" — again, no such code.
+- **F4 — registry declaration drift.** `language/currency`'s `analyze` filter
+  listed a category no rule emitted; `emits` carried bare base categories no
+  filter selected; and the registry's own comment claimed "the registry's own
+  audit asserts that they do" — the audit asserted uniqueness and headline
+  inclusion, never `emits`-equals-filter.
+- **F3 — rule-read fields with no control.** `structure.maxHeadingLevel` and the
+  named-style fields (`formatting.titleStyle`, `subtitleStyle`, `captions`,
+  `headings.1–9`) were read by the analyzer and promised by section summaries,
+  but had no editor control. `unwiredProfilePaths()` could not see them because
+  it counts a rule's claim, not a control's reachability.
+
+**Decision.**
+
+- **The two-owner pairs are resolved by deletion, not by reconciliation.** The
+  `typography.currencySpacing` and `typography.percentageSpacing` fields, their
+  checks, their registry declarations and their controls are removed.
+  `language.currency.symbolSpacing` and `language.numbers.percentageSpacing` are
+  the single owners. This is the same resolution already applied to the decimal
+  and thousands separators (ADR-0124), and it is preferred over implementing the
+  claimed deference because a deference rule is a second code path that can
+  itself drift; one owner cannot.
+- **The false comments are deleted with the fields.** A comment that asserts a
+  safety property the code does not provide is worse than no comment.
+- **The registry's `emits` must equal the categories its `analyze` filter can
+  return.** The four drifted declarations are corrected, and
+  `ruleRegistry.test.ts` now asserts the equality rather than trusting the
+  comment. A rule that emits a category its filter discards, or declares a
+  category it cannot produce, fails the test.
+- **The editor-coverage guard is the root-cause fix for F3.** Controls are added
+  for `structure.maxHeadingLevel` and the named-style/heading fields, and the
+  component test walks the profile's writable field set against the rendered
+  controls — the same shape as `profileBehaviour.test.ts`, extended past the
+  registry to the editor. A new rule-read field with no control now fails a test
+  instead of surviving as a promise.
+- **Dead modules are deleted.** `src/rules/registry.ts` (superseded by
+  `src/analysis/deterministic/ruleRegistry.ts`) and `src/shared/utils/result.ts`
+  (speculative, zero importers) are removed with their barrel re-exports and
+  tests. `undoGroup` (production-dead; the Dashboard's `undoOne` bypasses it) and
+  the `WORD_STYLE_MAPPING` re-export (no external importer) are removed too.
+
+**Consequences.**
+
+- Positive: the currency and percentage gaps have exactly one owner each, so the
+  planner can no longer be handed two conflicting changes over one character —
+  the ND-2 refusal that motivated the review.
+- Positive: `emits`-equals-filter and editor-coverage are now assertions, not
+  prose. The two guards close the class rather than the four instances.
+- Positive: the exported surface no longer carries modules with no consumer.
+- Cost: a stored profile with `typography.currencySpacing` or
+  `typography.percentageSpacing` loses those keys on load. Zod strips unknown
+  keys, so no stored record becomes unreadable, and the language-side fields
+  remain the normative source.
+- **Not claimed:** every finding is repository-side evidence (static analysis
+  plus the jsdom/mocked suite). Nothing here ran in a real Word host;
+  `word-host-evidence` stays `pending`.

@@ -59,6 +59,62 @@ const QUOTE_CATEGORIES = [
 /** The categories `typography/numbers` is responsible for. */
 const NUMBER_CATEGORIES = ["typography.decimalSeparator", "typography.thousandsSeparator"] as const;
 
+/** The number-convention categories `typography/numbers` selects from `findNumberIssues`. */
+const NUMBER_LANGUAGE_CATEGORIES = [
+  "language.number.percentageSpacing",
+  "language.number.spelling",
+  "language.number.range",
+  "language.number.negative",
+] as const;
+
+/** The categories `language/terminology` is responsible for. */
+const TERMINOLOGY_CATEGORIES = [
+  "language.terminology.preferred",
+  "language.terminology.missing",
+] as const;
+
+/** The categories `language/capitalisation` is responsible for. */
+const CAPITALISATION_CATEGORIES = [
+  "language.capitalisation.sentenceCase",
+  "language.capitalisation.properNoun",
+  "language.capitalisation.prohibited",
+  "language.capitalisation.headingCase",
+] as const;
+
+/** The categories `language/abbreviations` is responsible for. */
+const ABBREVIATION_CATEGORIES = [
+  "language.abbreviation.prohibited",
+  "language.abbreviation.firstUse",
+  "language.abbreviation.preferredExpanded",
+] as const;
+
+/** The categories `language/dates` is responsible for. */
+const DATE_CATEGORIES = ["language.date.ambiguous", "language.date.format"] as const;
+
+/** The categories `language/currency` is responsible for. */
+const CURRENCY_CATEGORIES = [
+  "language.currency.representation",
+  "language.currency.spacing",
+  "language.currency.magnitude",
+] as const;
+
+/** The categories `language/units` is responsible for. */
+const UNIT_CATEGORIES = [
+  "language.unit.spacing",
+  "language.unit.capitalisation",
+  "language.unit.preferredSymbol",
+] as const;
+
+/** The categories `formatting/body` is responsible for. */
+const BODY_CATEGORIES = [
+  "formatting.emptyStyle",
+  "formatting.bodyStyle",
+  "formatting.styleStandard",
+] as const;
+
+/** The categories `formatting/lists` is responsible for. */
+const LIST_CATEGORIES = ["formatting.listLevel", "formatting.listStyle"] as const;
+
 /**
  * Keep only the findings a rule is responsible for.
  *
@@ -172,6 +228,16 @@ export interface DeterministicRule {
    * Defaults to `[category]` when a rule emits one.
    */
   emits?: readonly string[];
+  /**
+   * The categories the rule's `analyze` filter selects from its scanner.
+   *
+   * The same value the rule passes to the scanner, declared here so the audit
+   * can assert it agrees with `emits`. Without it the filter lives only inside
+   * the `analyze` closure, where no test can see it — which is how
+   * `language.currency.separator` sat in a filter for a category no rule emits.
+   * The invariant the audit enforces is `emits == [category, ...filterCategories]`.
+   */
+  filterCategories: readonly string[];
   /**
    * The profile fields this rule reads.
    *
@@ -309,8 +375,6 @@ export const PROFILE_FIELD_PATHS: readonly string[] = [
   "typography.flagTabs",
   "typography.nonBreakingSpace",
   "typography.slashSpacing",
-  "typography.percentageSpacing",
-  "typography.currencySpacing",
   "typography.spaceBeforeParenthesis",
   "typography.spaceAfterHyphen",
 
@@ -354,6 +418,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "text",
     category: "typography.emDash",
     emits: [...DASH_CATEGORIES],
+    filterCategories: [...DASH_CATEGORIES],
     profilePaths: [...DASH_CATEGORIES],
     correctable: true,
     analyze: (ruleContext) => typography(ruleContext, DASH_CATEGORIES),
@@ -364,6 +429,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "text",
     category: "typography.doubleQuotes",
     emits: ["typography.doubleQuotes", "typography.singleQuotes", "typography.apostrophes"],
+    filterCategories: [...QUOTE_CATEGORIES],
     profilePaths: ["typography.doubleQuotes", "typography.singleQuotes", "typography.apostrophes"],
     correctable: true,
     analyze: (ruleContext) => typography(ruleContext, QUOTE_CATEGORIES),
@@ -373,6 +439,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "typography",
     scope: "text",
     category: "typography.ellipsis",
+    filterCategories: ["typography.ellipsis"],
     profilePaths: ["typography.ellipsis"],
     correctable: true,
     analyze: (ruleContext) => typography(ruleContext, ["typography.ellipsis"]),
@@ -414,6 +481,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.number.spelling",
       "language.number.negative",
     ],
+    filterCategories: [...NUMBER_CATEGORIES, ...NUMBER_LANGUAGE_CATEGORIES],
     profilePaths: [
       "typography.decimalSeparator",
       "typography.thousandsSeparator",
@@ -421,7 +489,6 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.numbers.numberWordThreshold",
       "language.numbers.negativeNumber",
       "language.numbers.rangeStyle",
-      "typography.percentageSpacing",
     ],
     // The decimal separator is a safe substitution; spelling a numeral out
     // changes the author's prose and a range written "to" changes the register.
@@ -430,12 +497,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     correctable: true,
     analyze: (ruleContext) => [
       ...typography(ruleContext, NUMBER_CATEGORIES),
-      ...language(ruleContext, findNumberIssues, [
-        "language.number.percentageSpacing",
-        "language.number.spelling",
-        "language.number.range",
-        "language.number.negative",
-      ]),
+      ...language(ruleContext, findNumberIssues, NUMBER_LANGUAGE_CATEGORIES),
     ],
   },
   {
@@ -443,6 +505,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "typography",
     scope: "text",
     category: "typography.whitespace",
+    filterCategories: ["typography.whitespace"],
     profilePaths: [
       "typography.normaliseWhitespace",
       "typography.flagTabs",
@@ -456,9 +519,9 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "typography",
     scope: "text",
     category: "typography.punctuation",
+    filterCategories: ["typography.punctuation"],
     profilePaths: [
       "typography.slashSpacing",
-      "typography.currencySpacing",
       "typography.spaceBeforeParenthesis",
       "typography.spaceAfterHyphen",
     ],
@@ -475,6 +538,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "text",
     category: "language.terminology.preferred",
     emits: ["language.terminology.preferred", "language.terminology.missing"],
+    filterCategories: [...TERMINOLOGY_CATEGORIES],
     profilePaths: [
       "language.terminology",
       "language.legacyPreferredTerminology",
@@ -490,11 +554,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     correctable: true,
     // Only the substitution category here. A banned term is a separate rule below,
     // and a rule that emitted both would report every banned term twice.
-    analyze: (ruleContext) =>
-      language(ruleContext, findTerminologyIssues, [
-        "language.terminology.preferred",
-        "language.terminology.missing",
-      ]),
+    analyze: (ruleContext) => language(ruleContext, findTerminologyIssues, TERMINOLOGY_CATEGORIES),
   },
   {
     id: "language/banned",
@@ -502,6 +562,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "text",
     category: "language.bannedTerm",
     emits: ["language.bannedTerm"],
+    filterCategories: ["language.bannedTerm"],
     profilePaths: ["language.bannedTerms"],
     correctable: true,
     analyze: (ruleContext) => language(ruleContext, findTerminologyIssues, ["language.bannedTerm"]),
@@ -531,6 +592,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "text",
     category: "houseStyle.capitalization.titleCase",
     emits: ["houseStyle.capitalization.titleCase"],
+    filterCategories: ["houseStyle.capitalization.titleCase"],
     profilePaths: ["houseStyle.capitalization.titleCaseWords"],
     correctable: true,
     analyze: (ruleContext) =>
@@ -553,6 +615,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.capitalisation.prohibited",
       "language.capitalisation.headingCase",
     ],
+    filterCategories: [...CAPITALISATION_CATEGORIES],
     profilePaths: [
       "language.capitalisation.sentenceCase",
       "language.capitalisation.properNouns",
@@ -568,12 +631,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     ],
     correctable: true,
     analyze: (ruleContext) =>
-      language(ruleContext, findCapitalisationIssues, [
-        "language.capitalisation.sentenceCase",
-        "language.capitalisation.properNoun",
-        "language.capitalisation.prohibited",
-        "language.capitalisation.headingCase",
-      ]),
+      language(ruleContext, findCapitalisationIssues, CAPITALISATION_CATEGORIES),
   },
   {
     id: "language/abbreviations",
@@ -586,6 +644,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.abbreviation.firstUse",
       "language.abbreviation.preferredExpanded",
     ],
+    filterCategories: [...ABBREVIATION_CATEGORIES],
     profilePaths: [
       "language.abbreviations.approved",
       "language.abbreviations.preferredExpanded",
@@ -594,11 +653,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     ],
     correctable: true,
     analyze: (ruleContext) =>
-      language(ruleContext, findAbbreviationIssues, [
-        "language.abbreviation.prohibited",
-        "language.abbreviation.firstUse",
-        "language.abbreviation.preferredExpanded",
-      ]),
+      language(ruleContext, findAbbreviationIssues, ABBREVIATION_CATEGORIES),
   },
   {
     id: "language/dates",
@@ -606,6 +661,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "text",
     category: "language.date",
     emits: ["language.date", "language.date.ambiguous", "language.date.format"],
+    filterCategories: [...DATE_CATEGORIES],
     /*
      * `language.locale` is declared here (D5), and the declaration was not
      * optional bookkeeping — `unwiredProfilePaths()` failed until it was added.
@@ -626,8 +682,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     // which field is the day, and `05/03/2026` is exactly the case where
     // guessing is worst. The rule points at it; the user resolves it.
     correctable: false,
-    analyze: (ruleContext) =>
-      language(ruleContext, findDateIssues, ["language.date.ambiguous", "language.date.format"]),
+    analyze: (ruleContext) => language(ruleContext, findDateIssues, DATE_CATEGORIES),
   },
   {
     id: "language/currency",
@@ -640,19 +695,14 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "language.currency.spacing",
       "language.currency.magnitude",
     ],
+    filterCategories: [...CURRENCY_CATEGORIES],
     profilePaths: [
       "language.currency.representation",
       "language.currency.symbolSpacing",
       "language.currency.magnitude",
     ],
     correctable: true,
-    analyze: (ruleContext) =>
-      language(ruleContext, findCurrencyIssues, [
-        "language.currency.representation",
-        "language.currency.spacing",
-        "language.currency.separator",
-        "language.currency.magnitude",
-      ]),
+    analyze: (ruleContext) => language(ruleContext, findCurrencyIssues, CURRENCY_CATEGORIES),
   },
   {
     id: "language/units",
@@ -669,18 +719,14 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       // "5 kilogram".
       "language.unit.preferredSymbol",
     ],
+    filterCategories: [...UNIT_CATEGORIES],
     profilePaths: [
       "language.units.valueSpacing",
       "language.units.capitalisation",
       "language.units.symbols",
     ],
     correctable: true,
-    analyze: (ruleContext) =>
-      language(ruleContext, findUnitIssues, [
-        "language.unit.spacing",
-        "language.unit.capitalisation",
-        "language.unit.preferredSymbol",
-      ]),
+    analyze: (ruleContext) => language(ruleContext, findUnitIssues, UNIT_CATEGORIES),
   },
   {
     id: "formatting/body",
@@ -688,6 +734,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "paragraph",
     category: "formatting.bodyStyle",
     emits: ["formatting.bodyStyle", "formatting.emptyStyle", "formatting.styleStandard"],
+    filterCategories: [...BODY_CATEGORIES],
     profilePaths: [
       "formatting.bodyStyle",
       "formatting.titleStyle",
@@ -695,18 +742,14 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
       "formatting.captions",
     ],
     correctable: true,
-    analyze: (ruleContext) =>
-      formatting(ruleContext, [
-        "formatting.emptyStyle",
-        "formatting.bodyStyle",
-        "formatting.styleStandard",
-      ]),
+    analyze: (ruleContext) => formatting(ruleContext, BODY_CATEGORIES),
   },
   {
     id: "formatting/headings",
     group: "formatting",
     scope: "paragraph",
     category: "formatting.headingStyle",
+    filterCategories: ["formatting.headingStyle"],
     profilePaths: ["formatting.headings", "structure.maxHeadingLevel"],
     correctable: true,
     analyze: (ruleContext) => formatting(ruleContext, ["formatting.headingStyle"]),
@@ -716,6 +759,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "formatting",
     scope: "paragraph",
     category: "formatting.directFormatting",
+    filterCategories: ["formatting.directFormatting"],
     profilePaths: ["formatting.bodyStyle"],
     // Declared non-correctable because spec §14.5 forbids a reset that has not
     // proved it will restore style-controlled appearance without erasing the
@@ -731,16 +775,17 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     scope: "list",
     category: "formatting.listLevel",
     emits: ["formatting.listLevel", "formatting.listStyle"],
+    filterCategories: [...LIST_CATEGORIES],
     profilePaths: ["formatting.lists"],
     correctable: true,
-    analyze: (ruleContext) =>
-      formatting(ruleContext, ["formatting.listLevel", "formatting.listStyle"]),
+    analyze: (ruleContext) => formatting(ruleContext, LIST_CATEGORIES),
   },
   {
     id: "formatting/tables",
     group: "formatting",
     scope: "table",
     category: "formatting.tableStyle",
+    filterCategories: ["formatting.tableStyle"],
     profilePaths: ["formatting.tables"],
     correctable: false,
     analyze: (ruleContext) => formatting(ruleContext, ["formatting.tableStyle"]),
@@ -750,6 +795,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "formatting",
     scope: "section",
     category: "formatting.pageSetup",
+    filterCategories: ["formatting.pageSetup"],
     profilePaths: ["formatting.page"],
     correctable: false,
     analyze: (ruleContext) => formatting(ruleContext, ["formatting.pageSetup"]),
@@ -759,6 +805,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "formatting",
     scope: "headerFooter",
     category: "formatting.headerFooter",
+    filterCategories: ["formatting.headerFooter"],
     profilePaths: ["formatting.headersFooters"],
     correctable: false,
     analyze: (ruleContext) => formatting(ruleContext, ["formatting.headerFooter"]),
@@ -768,6 +815,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "structure",
     scope: "paragraph",
     category: "formatting.headingHierarchy",
+    filterCategories: ["formatting.headingHierarchy"],
     profilePaths: ["structure.allowSkippedHeadingLevels", "structure.maxHeadingLevel"],
     /*
      * Not correctable (ADR-0116). Renumbering a heading rewrites the document
@@ -784,6 +832,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "integrity",
     scope: "paragraph",
     category: "formatting.emptyHeading",
+    filterCategories: ["formatting.emptyHeading"],
     profilePaths: ["structure.reportEmptyHeadings"],
     // Reported, never corrected. The only change that would "resolve" an empty
     // heading is a deletion, and a deletion is a structural edit the user may
@@ -798,6 +847,7 @@ export const DETERMINISTIC_RULES: readonly DeterministicRule[] = [
     group: "integrity",
     scope: "paragraph",
     category: "formatting.unknownStyle",
+    filterCategories: ["formatting.unknownStyle"],
     profilePaths: ["structure.reportUnknownStyles"],
     // Reported, never corrected. A custom style is the author's own document
     // structure; replacing it with a built-in would discard it. The finding says

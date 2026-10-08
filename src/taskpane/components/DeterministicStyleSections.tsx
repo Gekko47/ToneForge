@@ -106,6 +106,9 @@ function stringOrUndefined(raw: string): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
+/** The nine heading levels Word defines, as the keys the profile uses. */
+const HEADING_LEVELS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
+
 /** A text input bound to one optional string field of the formatting standard. */
 function StyleTextField({
   label,
@@ -792,6 +795,39 @@ export default function DeterministicStyleSections({
     );
 
   /*
+   * The named-style and heading standards, and why they need controls.
+   *
+   * `formatting.titleStyle`, `subtitleStyle`, `captions` and `headings.1–9` are
+   * read by the analyzer — a Title paragraph is compared against `titleStyle`,
+   * an H2 against `headings.2` — and the registry counts them as wired because
+   * the rule reads them. But nothing in the pane could set them, so in the
+   * running product they were always absent and the comparison never ran. That
+   * is the §11 defect in the direction the registry audit cannot see: a rule
+   * reading a setting the user cannot reach.
+   *
+   * A blank field removes the standard rather than writing an empty style name,
+   * because `ParagraphStyleStandardSchema.styleName` is `min(1)` and "no
+   * standard for this kind" is a real answer distinct from "a standard named ''".
+   */
+  const patchNamedStyle = (
+    key: "titleStyle" | "subtitleStyle" | "captions",
+    next: string,
+  ): void => {
+    const trimmed = next.trim();
+    patchFormatting({ [key]: trimmed === "" ? undefined : { styleName: trimmed } });
+  };
+
+  const patchHeadingStyle = (level: (typeof HEADING_LEVELS)[number], next: string): void => {
+    const trimmed = next.trim();
+    patchFormatting({
+      headings: {
+        ...profile.formatting.headings,
+        [level]: trimmed === "" ? undefined : { styleName: trimmed },
+      },
+    });
+  };
+
+  /*
    * The four structural standards, and the editors that make them reachable.
    *
    * **Why these controls exist at all.** `formatting.lists`, `formatting.tables`,
@@ -1471,13 +1507,6 @@ export default function DeterministicStyleSections({
          * Every one is read by `typography.ts` and produces a finding, so this is
          * the same defect as D-1 at smaller scale: a field that exists, is read,
          * and cannot be set.
-         *
-         * `percentageSpacing` is deliberately absent. It is declared in both
-         * schemas, but `numbers.percentageSpacing` is the normative one and the
-         * rule prefers it; Language → Numbers already owns it. A second control
-         * here would be the two-owners defect D2 was opened for, over a field
-         * whose typography value is a fallback. The note below says where it
-         * lives rather than leaving a reader to search for it.
          */}
         <ProfileSubsection
           id="typography-spacing"
@@ -1520,17 +1549,6 @@ export default function DeterministicStyleSections({
               ]}
               onChange={(next) => patchTypography({ slashSpacing: next })}
             />
-            <EnumSelect
-              label="Before a currency symbol"
-              hint="Money normally follows Language → Currency, which is normative."
-              value={typography.currencySpacing}
-              options={[
-                ["none", "No opinion"],
-                ["spaced", "Spaced"],
-                ["tight", "Tight"],
-              ]}
-              onChange={(next) => patchTypography({ currencySpacing: next })}
-            />
             <CompareToggle
               what="a space before an opening bracket"
               checked={typography.spaceBeforeParenthesis}
@@ -1569,6 +1587,37 @@ export default function DeterministicStyleSections({
             }
           />
         </label>
+
+        <fieldset className="tf-standard-block">
+          <legend>Named styles</legend>
+          <StyleTextField
+            label="Title style"
+            value={profile.formatting.titleStyle?.styleName}
+            onChange={(next) => patchNamedStyle("titleStyle", next)}
+          />
+          <StyleTextField
+            label="Subtitle style"
+            value={profile.formatting.subtitleStyle?.styleName}
+            onChange={(next) => patchNamedStyle("subtitleStyle", next)}
+          />
+          <StyleTextField
+            label="Caption style"
+            value={profile.formatting.captions?.styleName}
+            onChange={(next) => patchNamedStyle("captions", next)}
+          />
+        </fieldset>
+
+        <fieldset className="tf-standard-block">
+          <legend>Heading styles</legend>
+          {HEADING_LEVELS.map((level) => (
+            <StyleTextField
+              key={level}
+              label={`Heading ${level} style`}
+              value={profile.formatting.headings[level]?.styleName}
+              onChange={(next) => patchHeadingStyle(level, next)}
+            />
+          ))}
+        </fieldset>
 
         {/*
          * Marked "partly checked" rather than unsupported, because the body style
@@ -1734,6 +1783,13 @@ export default function DeterministicStyleSections({
           />
           <span>Allow a skipped heading level</span>
         </label>
+        <NumberField
+          label="Deepest heading level"
+          min={1}
+          max={9}
+          value={profile.structure.maxHeadingLevel}
+          onChange={(next) => patchStructure({ maxHeadingLevel: numberOrUndefined(next) })}
+        />
       </ProfileSection>
     </div>
   );

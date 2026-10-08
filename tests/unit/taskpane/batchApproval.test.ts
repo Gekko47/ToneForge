@@ -11,16 +11,10 @@
 
 import { describe, expect, it } from "vitest";
 import { v4 as uuidv4 } from "uuid";
-import {
-  approveGroup,
-  batchApprovalLabel,
-  skipGroup,
-  undoGroup,
-} from "../../../src/taskpane/batchApproval";
+import { approveGroup, batchApprovalLabel, skipGroup } from "../../../src/taskpane/batchApproval";
 import type { Change, ChangePlan, Finding } from "../../../src/core/domain";
 import { createChangePlan } from "../../../src/core/domain/ChangePlan";
 import { FindingSchema } from "../../../src/core/domain/Finding";
-import { reviewIdentity } from "../../../src/taskpane/occurrenceIdentity";
 import type { DeterministicFindingGroup } from "../../../src/analysis/deterministic/contracts";
 import { DeterministicFindingGroupSchema } from "../../../src/analysis/deterministic/contracts";
 
@@ -355,59 +349,6 @@ describe("skipGroup", () => {
     expect(outcome.kind).toBe("approved");
     if (outcome.kind !== "approved") return;
     expect(outcome.decisions[0]?.decision).toBe("skipped");
-  });
-});
-
-describe("undoGroup", () => {
-  it("withdraws the decided occurrences and leaves the undecided ones alone", () => {
-    // Distinct offsets: two findings sharing a range are one occurrence, and
-    // "leaves the other alone" would then assert nothing.
-    const decided = finding(0);
-    const untouched = finding(40);
-    const findings = [decided, untouched];
-    // Only the first is decided. Deciding both and then undoing one would prove
-    // less: the group under test would contain nothing undecided to protect.
-    const identities = skipGroup({
-      group: group({ occurrenceIds: [decided.id] }),
-      findings,
-      plan: null,
-      planFindings: [],
-      decidedAt: NOW,
-    });
-    expect(identities.kind).toBe("approved");
-    if (identities.kind !== "approved") return;
-    const settled = new Set(identities.decisions.map((entry) => entry.identity));
-
-    const withdrawn = undoGroup({
-      group: group({ occurrenceIds: findings.map((entry) => entry.id) }),
-      findings,
-      plan: null,
-      planFindings: [],
-      alreadyDecided: settled,
-      decidedAt: NOW,
-    });
-
-    // Exactly the identity the skip recorded, and nothing else: the occurrence
-    // in the same run that was never decided is not collateral.
-    expect(withdrawn).toHaveLength(1);
-    expect(withdrawn[0]).toBe(reviewIdentity(decided));
-    expect(withdrawn).not.toContain(reviewIdentity(untouched));
-  });
-
-  it("returns nothing for a group with no decisions, rather than reporting an error", () => {
-    const subject = finding();
-    const withdrawn = undoGroup({
-      group: group({ occurrenceIds: [subject.id] }),
-      findings: [subject],
-      plan: null,
-      planFindings: [],
-      alreadyDecided: new Set<string>(),
-      decidedAt: NOW,
-    });
-
-    // "Undo" on nothing is a no-op; an error message on screen for a button
-    // that correctly did nothing is the confusing direction.
-    expect(withdrawn).toEqual([]);
   });
 });
 

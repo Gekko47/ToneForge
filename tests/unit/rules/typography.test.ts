@@ -417,48 +417,12 @@ describe("findTypographyIssues", () => {
   /*
    * A spacing finding's range must cover the gap and nothing else.
    *
-   * Both rules below matched one character wider than the gap, so the planner
-   * replaced text the finding was only pointing at: the currency symbol with the
-   * space case, and the word before the bracket with the parenthetical case.
-   * These assert the range, because "a finding was reported" was true before and
-   * said nothing about what applying it would have destroyed.
+   * The rule below matched one character wider than the gap, so the planner
+   * replaced text the finding was only pointing at: the word before the bracket
+   * with the parenthetical case. This asserts the range, because "a finding was
+   * reported" was true before and said nothing about what applying it would have
+   * destroyed.
    */
-  it("measures a currency symbol's gap without covering the symbol", () => {
-    const findings = findTypographyIssues({
-      text: "The cost was $ 100.",
-      rules: { ...defaultRules, currencySpacing: "tight" },
-    });
-
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.category).toBe("typography.punctuation");
-    // The single space, and only the single space. The `$` at index 13 is
-    // outside it, so the correction removes the gap and keeps the symbol.
-    expect(findings[0]?.range).toEqual({ start: 14, end: 15, unit: "character" });
-    expect(findings[0]?.evidence).toBe(" ");
-  });
-
-  it("reports a tight currency symbol as a zero-width gap to insert into", () => {
-    const findings = findTypographyIssues({
-      text: "The cost was $100.",
-      rules: { ...defaultRules, currencySpacing: "spaced" },
-    });
-
-    expect(findings).toHaveLength(1);
-    // Zero-width, immediately after the symbol: the planner turns this into an
-    // insert of one space rather than a replacement over the `$`.
-    expect(findings[0]?.range).toEqual({ start: 14, end: 14, unit: "character" });
-    expect(findings[0]?.expected).toBe(" ");
-  });
-
-  it("says nothing about a currency symbol already spaced as the profile wants", () => {
-    const findings = findTypographyIssues({
-      text: "The cost was $ 100.",
-      rules: { ...defaultRules, currencySpacing: "spaced" },
-    });
-
-    expect(findings).toEqual([]);
-  });
-
   it("says nothing about a bracket that already has its space", () => {
     // The setting asks for a space, and this text has one. The previous rule
     // reported it anyway, which is the failure the function's own note warns
