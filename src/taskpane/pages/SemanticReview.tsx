@@ -25,10 +25,7 @@ import {
   saveSemanticReviewOutcome,
 } from "../../core/state/persistence";
 import { effectiveProfile } from "../../core/domain/ProfileRecord";
-import {
-  createRegistryFromSettings,
-  isRemoteProviderConfigured,
-} from "../settings/providerComposition";
+import { generalRegistryFromState, isGeneralRoleConfigured } from "../settings/providerComposition";
 import type { TaskpaneNavigation } from "../../shared/office/taskpaneNavigation";
 
 /**
@@ -305,7 +302,7 @@ export default function SemanticReview({
       ? currentSession(localSession, sessionContext, new Date().toISOString())
       : localSession;
 
-  const providerConfigured = isRemoteProviderConfigured(settings, state.providerConnections);
+  const providerConfigured = isGeneralRoleConfigured(state);
   const gateInput: SemanticGateInput = {
     consent: settings.semanticOptIn === true,
     providerConfigured,
@@ -349,7 +346,7 @@ export default function SemanticReview({
         },
         {
           includeRawText: true,
-          registry: createRegistryFromSettings(settings, state.providerConnections),
+          registry: generalRegistryFromState(state),
         },
       );
       setResult(reviewed);

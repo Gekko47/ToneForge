@@ -7,9 +7,15 @@
  * - score → ordered score
  *
  * The C1–C10 engine must not contain model-specific request logic.
+ *
+ * Exact evidence is gated on the plan's `allowUnredacted` flag (D13): when the
+ * run did not opt out of redaction, the evidence text is redacted before it is
+ * placed in the prompt, so the compiler can never be the path that leaks exact
+ * document text the user did not agree to send.
  */
 
 import type { DecisionPlan } from "@/analysis/consistency/contracts/plan";
+import { redactSensitiveText } from "@/shared/utils/redaction";
 
 /** Compiled model request. */
 export interface CompiledRequest {
@@ -58,6 +64,14 @@ Output format: JSON array of answers matching the question order.`;
     // Build a map from candidateId to projected state for context lookup
     const stateByCandidate = new Map(plan.projectedStates.map((s) => [s.candidateId, s]));
 
+    // Expanded context, keyed by candidate, from the single expansion pass.
+    const expandedByCandidate = new Map<string, string[]>();
+    plan.expandedContext.forEach((entry) => {
+      const list = expandedByCandidate.get(entry.candidateId) ?? [];
+      list.push(`    [${entry.kind}] ${entry.content}`);
+      expandedByCandidate.set(entry.candidateId, list);
+    });
+
     for (const question of plan.questions) {
       parts.push(`Question ${question.id} (${question.kind}):`);
       parts.push(`  Subject: ${question.subjectId}`);
@@ -76,15 +90,24 @@ Output format: JSON array of answers matching the question order.`;
         parts.push(`    Check: ${state.checkId}`);
         parts.push(`    Left claim: ${state.left.predicate}`);
         parts.push(`    Right claim: ${state.right.predicate}`);
+        // Exact evidence only when the run opted out of redaction; otherwise
+        // the text is redacted, never dropped silently and never sent raw.
         if (state.left.evidence !== undefined) {
-          parts.push(`    Left evidence: ${state.left.evidence.exactText}`);
+          parts.push(`    Left evidence: ${this.evidence(state.left.evidence.exactText, plan)}`);
         }
         if (state.right.evidence !== undefined) {
-          parts.push(`    Right evidence: ${state.right.evidence.exactText}`);
+          parts.push(`    Right evidence: ${this.evidence(state.right.evidence.exactText, plan)}`);
         }
         if (state.diff.differences.length > 0) {
           parts.push(`    Differences: ${state.diff.differences.length}`);
         }
+      }
+
+      // Expanded context retrieved for this candidate, if any.
+      const expanded = expandedByCandidate.get(question.subjectId);
+      if (expanded !== undefined && expanded.length > 0) {
+        parts.push("  Expanded context:");
+        expanded.forEach((line) => parts.push(line));
       }
 
       parts.push("");
@@ -93,5 +116,10 @@ Output format: JSON array of answers matching the question order.`;
     parts.push("Answer as JSON array: [{questionId, answer, confidence, reasoning?}]");
 
     return parts.join("\n");
+  }
+
+  /** Exact evidence when unredacted is allowed, redacted text otherwise. */
+  private evidence(text: string, plan: DecisionPlan): string {
+    return plan.allowUnredacted ? text : redactSensitiveText(text);
   }
 }

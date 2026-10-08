@@ -55,6 +55,7 @@ function state(records: ProfileRecord[], activeProfileId: string | null = null):
       autoScan: true,
       consistencyReviewConsent: false,
       semanticOptIn: false,
+      decisionFallbackPolicy: "unresolved",
     },
   };
 }

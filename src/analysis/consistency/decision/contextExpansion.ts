@@ -15,18 +15,15 @@
 import type { ConsistencyIndices } from "../indices/buildIndices";
 import type { NormalisedClaim } from "../normalisation";
 import type { ConsistencyCandidate } from "../contracts";
+import type { ContextRequestKind } from "../contracts/plan";
 
-/** Context request types (original §23). */
-export type ContextRequestType =
-  | "CTX-SURROUNDING-PARAGRAPHS"
-  | "CTX-EVENT-HISTORY"
-  | "CTX-PROGRAMME-HISTORY"
-  | "CTX-TERM-DEFINITION"
-  | "CTX-RELATED-CLAIMS"
-  | "CTX-VALUATION-BASIS"
-  | "CTX-MEASUREMENT-BASIS"
-  | "CTX-REFERENCE-CONTENT"
-  | "CTX-SECTION-SUMMARY";
+/**
+ * Context request types (original §23).
+ *
+ * Aliased to the plan contract's enum so the vocabulary has one source. The
+ * plan owns what a question may ask for; this module owns how it is retrieved.
+ */
+export type ContextRequestType = ContextRequestKind;
 
 /** A context request from the decision model. */
 export interface ContextRequest {

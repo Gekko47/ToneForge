@@ -19,6 +19,7 @@
 
 import { hashText } from "../../../shared/utils/text";
 import { LlmError, type LlmProvider, type LlmRequest } from "../../../ai/providers/LlmProvider";
+import { parseModelJson } from "../../../ai/providers/modelJson";
 import { withRetry } from "../../../ai/providers/retry";
 import {
   ExpertReportClaimSchema,
@@ -80,6 +81,14 @@ type ParsedResponse = { ok: true; response: ExtractionResponse } | { ok: false; 
  * record is diagnosable on its own.
  */
 function parseExtractionResponse(text: string): ParsedResponse {
+  // The shared parser tolerates fences and surrounding prose, so a valid
+  // response wrapped in ```json is accepted rather than quarantined.
+  const tolerant = parseModelJson(text, ExtractionResponseSchema);
+  if (tolerant !== null) {
+    return { ok: true, response: tolerant };
+  }
+  // It did not parse. Re-run the strict path to name the first offending
+  // field, so the quarantine record stays diagnosable on its own.
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -90,10 +99,7 @@ function parseExtractionResponse(text: string): ParsedResponse {
     };
   }
   const parsed = ExtractionResponseSchema.safeParse(json);
-  if (parsed.success) {
-    return { ok: true, response: parsed.data };
-  }
-  const firstIssue = parsed.error.issues.at(0);
+  const firstIssue = parsed.success ? undefined : parsed.error.issues.at(0);
   const detail =
     firstIssue === undefined
       ? "no issues were reported"

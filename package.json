@@ -30,6 +30,7 @@
     "release:package:check": "node scripts/check-release-package.mjs",
     "clean-install:check": "node scripts/clean-install-check.mjs",
     "skills:validate": "node scripts/validate-skills.mjs",
+    "smoke:llm": "node scripts/llm-smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

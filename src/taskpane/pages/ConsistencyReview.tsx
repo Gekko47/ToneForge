@@ -3,8 +3,11 @@ import AiReviewSection, { type AiReviewStage } from "../components/AiReviewSecti
 import { getStructuredSnapshot } from "../../word/documentReader";
 import { loadState } from "../../core/state/persistence";
 import {
-  createRegistryFromSettings,
-  isRemoteProviderConfigured,
+  decisionModelFromState,
+  decisionProviderFromState,
+  generalModelFromState,
+  generalProviderFromState,
+  isGeneralRoleConfigured,
 } from "../settings/providerComposition";
 import {
   CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS,
@@ -168,26 +171,34 @@ export default function ConsistencyReview({
         throw new Error("Cross-report consistency review consent is required in Settings.");
       }
       const { text, sections, revision } = preflight;
-      const active = createRegistryFromSettings(
-        state.settings,
-        state.providerConnections,
-      ).activeProvider;
+      /*
+       * Two roles, two providers. The general role extracts claims and runs the
+       * pre-model gates; the decision role adjudicates the resolver's unresolved
+       * residue. They are resolved from the v15 role bindings, so a run can
+       * extract with one model and adjudicate with another. The offline stub is
+       * passed as no provider at all, so the engine reports a deterministic-only
+       * run rather than pretending a model was consulted.
+       */
+      const generalProvider = generalProviderFromState(state);
+      const decisionProvider = decisionProviderFromState(state);
+      const generalModel = generalModelFromState(state);
+      const decisionModel = decisionModelFromState(state);
       const report = await runConsistencyReview(
         {
           consistencyConsent: true,
           document: { revision, text, sections },
-          model: state.settings.openAiModel ?? "",
+          model: generalModel ?? "",
           // The live toggle value, not the frozen disclosure snapshot: the user
           // may have toggled redaction off after the preflight opened, and the
           // run must honour their final choice.
           allowUnredacted,
         },
         {
-          // Reused, never re-selected: the consistency engine has no provider
-          // picker of its own. The offline stub is passed as no provider at all
-          // so the engine reports a deterministic-only run rather than
-          // pretending a model was consulted.
-          ...(active.name === "mock" ? {} : { provider: active }),
+          ...(generalProvider === undefined ? {} : { provider: generalProvider }),
+          ...(decisionProvider === undefined ? {} : { decisionProvider }),
+          decisionFallbackPolicy: state.settings.decisionFallbackPolicy,
+          ...(generalModel === undefined ? {} : { generalModel }),
+          ...(decisionModel === undefined ? {} : { decisionModel }),
           signal: controller.signal,
           onProgress: setProgress,
           // The engine discards its own report if the document moved underneath
@@ -221,7 +232,7 @@ export default function ConsistencyReview({
         // directly called a provider configured whenever one was typed, even with
         // no key stored, and called it unconfigured when the key was brokered — so
         // the section refused a run the rest of the product considers possible.
-        providerConfigured={isRemoteProviderConfigured(state.settings, state.providerConnections)}
+        providerConfigured={isGeneralRoleConfigured(state)}
         hasConsent={settings.consistencyReviewConsent}
         providerName={settings.llmProvider}
         preflight={

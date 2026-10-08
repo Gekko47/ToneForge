@@ -7,21 +7,28 @@ security posture and known limitations.
 ## Data handling
 
 - **Credentials**: API keys are not ordinary settings, are not accepted by the
-  Settings form, and are not compiled into Webpack browser assets. State v5
-  removes legacy `openAiApiKey` values and purges v1-v4 storage records while
+  Settings form, and are not compiled into Webpack browser assets. State v15
+  removes legacy `openAiApiKey` values and purges v1-v14 storage records while
   preserving user consent. Settings includes a clear-legacy-credential action
   that selects the offline mock provider.
-- **Development broker**: the local Webpack HTTPS server exposes
-  `/__toneforge/llm/v1/chat/completions` only during `npm run dev`. The Node
+- **Development gateway**: the local Webpack HTTPS server exposes
+  `/__toneforge/gateway/v1/*` routes only during `npm run dev`. The Node
   process reads `.env`; the browser bundle receives no key or full environment
-  object. The broker requires a loopback same-origin request or a session
+  object. The gateway requires a loopback same-origin request or a session
   nonce, accepts only `application/json`, validates the bounded chat-completion
   schema, and does not log prompts, document text, request/response bodies, or
-  authorization headers.
+  authorization headers. The development gateway holds a deployment-managed
+  credential in memory; no user API key is required.
 - **Production custody**: this repository does not claim an approved production
-  browser-credential model. A deployed service broker, identity model, and
+  browser-credential model. A deployed gateway, identity model, and
   formal threat model remain release decisions; unsupported production live-AI
   use must stay disabled rather than falling back to a browser-held key.
+- **Dual-role LLM bindings**: the `llmRoleBindings` persisted in state v15
+  contain only opaque connection identifiers (`connectionId`) and model names
+  (`selectedModel`). No credential, token, or key material is stored. A
+  reflection test (`assertRoleSchemasAreSecretFree` in
+  `src/core/domain/LlmRole.ts`) enforces this at the schema level — any new
+  string field that is not in the known-safe set causes the test to fail.
 - **Document text**: read locally for deterministic analysis. It is sent to an
   LLM only after the user explicitly enables the corresponding review consent.
 - **Spot review consent**: selection and paragraph review share the explicit

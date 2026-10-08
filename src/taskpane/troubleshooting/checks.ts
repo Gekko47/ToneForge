@@ -22,6 +22,7 @@
  * any surface can call it, and a check cannot disagree with itself.
  */
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
+import type { DecisionFallbackPolicy } from "../../core/domain/LlmRole";
 import { MAX_REVIEW_SELECTION_CHARS } from "../semantic/gates";
 
 /**
@@ -117,7 +118,39 @@ export interface TroubleshootingInput {
     complete: boolean;
     /** The engine's own limitation sentences, verbatim. */
     limitations: readonly string[];
+    /**
+     * Candidates the decision model left unresolved, or that had no model to
+     * ask. The honest residue: a run can be complete and still carry it, so it
+     * is reported separately from `complete`.
+     */
+    unresolved: number;
+    /**
+     * True when the decision model's output could not be read as JSON at all.
+     *
+     * Distinct from `unresolved`: a partial answer leaves some questions
+     * unresolved, while an unreadable response means the model ignored the
+     * output contract. Both are residue, but only the second is a parse failure
+     * the user can act on.
+     */
+    decisionParseFailed: boolean;
   } | null;
+  /**
+   * Whether the consistency decision role has a usable connection.
+   *
+   * The decision role is a separate binding from the general role. When it is
+   * unbound, the deterministic engine still produces its provable outcomes, but
+   * the ambiguous residue is left unresolved — a different situation from a run
+   * that consulted no model at all.
+   */
+  decisionRoleConfigured: boolean;
+  /**
+   * What happens when no decision model is bound.
+   *
+   * `unresolved` leaves the residue unresolved; `general_model` reuses the
+   * general provider as a degraded fallback. The two produce the same
+   * `unresolved` count for different reasons, so the remedy differs.
+   */
+  decisionFallbackPolicy: DecisionFallbackPolicy;
   /**
    * Whether `Office.contextMenu.requestUpdate` was reachable in the last probe.
    *
@@ -369,6 +402,52 @@ const CHECKS: readonly TroubleshootingCheck[] = [
       input.consistency?.usedModel === false && modelBlockedBySettings(input)
         ? { label: "Settings → Provider and privacy → Provider, then enter the key" }
         : { label: "Consistency Review → Results → the coverage line above the findings" },
+  },
+  {
+    id: "decision-role-unbound",
+    appliesTo: (input) =>
+      input.consistency !== null &&
+      input.consistency.unresolved > 0 &&
+      input.decisionRoleConfigured === false &&
+      input.decisionFallbackPolicy === "unresolved",
+    situation: "The consistency review left some comparisons unresolved",
+    cause:
+      "No decision model is bound and the fallback policy is 'unresolved', so the comparisons the deterministic engine could not settle were reported as unresolved rather than adjudicated. The deterministic results are complete and unaffected.",
+    remedy:
+      "Bind a decision model on the AI roles dashboard, or set the fallback policy to reuse the general model. Binding a dedicated model is the intended path: the general model was not prompted for adjudication.",
+    remedyTarget: {
+      label: "Settings → AI roles → Consistency decision → Connect a provider",
+    },
+  },
+  {
+    id: "decision-fallback-general",
+    appliesTo: (input) =>
+      input.consistency !== null &&
+      input.consistency.unresolved > 0 &&
+      input.decisionRoleConfigured === false &&
+      input.decisionFallbackPolicy === "general_model",
+    situation:
+      "The consistency review adjudicated with the general model and still left comparisons unresolved",
+    cause:
+      "No decision model is bound, so the fallback policy reused the general model for adjudication. The general model was not prompted for that purpose, and it did not settle every comparison it was asked about.",
+    remedy:
+      "Bind a dedicated decision model. The general model stays in use for extraction and semantic review; the decision role is a separate binding with its own prompt.",
+    remedyTarget: {
+      label: "Settings → AI roles → Consistency decision → Connect a provider",
+    },
+  },
+  {
+    id: "decision-parse-failed",
+    appliesTo: (input) =>
+      input.consistency !== null && input.consistency.decisionParseFailed === true,
+    situation: "The decision model's answers could not be read",
+    cause:
+      "The decision model returned output that was not valid JSON, so none of its answers could be used and every comparison it was asked about stayed unresolved. This is a model or prompt problem, not a document problem.",
+    remedy:
+      "Try a different decision model, or run the review again. The deterministic comparisons ran and are unaffected.",
+    remedyTarget: {
+      label: "Settings → AI roles → Consistency decision → Model",
+    },
   },
   {
     id: "context-menu-api-absent",

@@ -14,6 +14,7 @@ describe("R5 decision: SystemOneCompiler", () => {
           id: "E-VALUE-INCOMPATIBLE",
           prompt: "Are the values incompatible after unit conversion?",
           subjectId: "cand-1",
+          requestedContext: [],
         },
         {
           kind: "choice",
@@ -21,11 +22,13 @@ describe("R5 decision: SystemOneCompiler", () => {
           prompt: "Are the term definitions incompatible?",
           subjectId: "cand-1",
           options: ["compatible", "incompatible", "unclear"],
+          requestedContext: [],
         },
       ],
       projectedStates: [],
       budget: { maxQuestions: 60, maxExpansions: 20 },
       allowUnredacted: false,
+      expandedContext: [],
       ...overrides,
     };
   }

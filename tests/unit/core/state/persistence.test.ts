@@ -58,6 +58,7 @@ describe("persistence", () => {
         autoScan: true,
         consistencyReviewConsent: false,
         semanticOptIn: false,
+        decisionFallbackPolicy: "unresolved",
       },
       governanceProfiles: {},
       governanceHistory: {},

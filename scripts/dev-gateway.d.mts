@@ -4,10 +4,19 @@ export interface UpstreamClassification {
 }
 
 export interface StoredConnection {
-  apiKey: string;
+  apiKey: string | null;
   baseUrl: string;
   classification?: string;
   createdAt?: string;
+}
+
+export interface DeploymentManagedCredential {
+  apiKey: string;
+  baseUrl: string;
+}
+
+export interface AuthorizeStub {
+  authorizationUrl?: string;
 }
 
 export interface GatewayModelEntry {
@@ -36,6 +45,8 @@ export declare function createDevGatewayBroker(options?: {
   expectedNonce?: string;
   connections?: Map<string, StoredConnection>;
   now?: () => Date;
+  deploymentManaged?: DeploymentManagedCredential | null;
+  authorize?: AuthorizeStub | ((provider: string) => string) | null;
 }): (req: unknown, res: unknown, next: () => void) => Promise<void>;
 
 export declare function normalizeModelEntry(raw: unknown): GatewayModelEntry | null;

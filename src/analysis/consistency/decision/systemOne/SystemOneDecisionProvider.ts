@@ -75,7 +75,8 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
 
-    // Map the response back to typed answers
+    // Map the response back to typed answers. The mapper records whether the
+    // output was unreadable, which is a different failure from a partial answer.
     const answers = this.mapper.map(response, plan);
 
     const latencyMs = Date.now() - startTime;
@@ -87,6 +88,7 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
       latencyMs,
       tokensIn: response.usage?.inputTokens ?? 0,
       tokensOut: response.usage?.outputTokens ?? 0,
+      parseFailed: this.mapper.parseFailed,
     };
 
     return {

@@ -56,6 +56,8 @@ vi.mock("../../../../src/word/documentReader", () => ({
 
 vi.mock("../../../../src/taskpane/settings/providerComposition", () => ({
   isRemoteProviderConfigured: mocks.isRemoteProviderConfigured,
+  isGeneralRoleConfigured: () => true,
+  generalRegistryFromState: () => ({ name: "test-registry" }),
   createRegistryFromSettings: () => ({ name: "test" }),
 }));
 

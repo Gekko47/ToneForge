@@ -137,6 +137,52 @@ kind. Every remote provider - OpenAI, Anthropic, OpenRouter - is routed through
 the same connection contract; the only difference between them is the request
 and response shape.
 
+### Dual-role LLM architecture (v15)
+
+The LLM layer supports two independent roles, each bound to its own connection:
+
+- **`general`** — semantic review, style profiling, and consistency extraction.
+  This is the primary LLM the user configures.
+- **`consistency_decision`** — bounded-ambiguity adjudication for the
+  consistency engine. Receives a `DecisionPlan` with typed questions and
+  returns structured answers.
+
+The two roles are bound separately in `core/domain/LlmRole.ts`. Each role
+resolves to a `ProviderConnection` through `taskpane/settings/llmRoles.ts`,
+which reads the persisted `llmRoleBindings` from state v15. The resolution
+logic is pure: state in, binding out.
+
+**Reuse toggle.** The decision role can reuse the general connection's
+credential with a different model from the same provider. This works for any
+auth mode (`oauth`, `deploymentManaged`, `brokerApiKey`) because the model is a
+per-request parameter, not a connection-level setting. The toggle is stored as
+`reuseGeneral` on the binding and is only visible when both roles are bound to
+connections from the same provider.
+
+**Provider composition.** `taskpane/settings/providerComposition.ts` builds an
+`LlmRegistry` for each role from the persisted state. `createRegistryForRole`
+registers only the adapter for the resolved connection's provider; if no
+connection is bound or the connection is not `connected`, the registry falls
+back to the offline mock. `generalRegistryFromState` and
+`decisionProviderFromState` are the two entry points the task pane uses.
+
+**Gateway-routed credentials.** No adapter holds a credential. Every remote
+request carries an opaque `connectionId` and is routed through the external
+gateway (`ai/gateway/gatewayClient.ts`). The gateway holds the credential,
+validates the request, forwards it to the provider, and returns the response.
+The browser never sees the key.
+
+**Connection lifecycle.** Connections are created through the gateway
+(`submitBrokerApiKey`, `completeAuthorization`, or deployment-managed),
+persisted in `providerConnections` keyed by `connectionId`, and tested on
+demand (`testConnection`). Disconnecting clears the local session token and
+removes the server-side connection.
+
+**Model catalog.** Each connection has a role-aware model catalog fetched
+through the gateway (`fetchModelCatalog`). The catalog is normalized to a
+`ModelDescriptor[]` the UI renders, and validated against the connection that
+produced it.
+
 ### Consistency engine boundary (Phase 5)
 
 `analysis/consistency` is the **single sanctioned exception** to
@@ -348,12 +394,12 @@ helpers are not rendered in the production taskpane.
 ## Security and privacy posture
 
 - Ordinary application state contains provider/model/broker configuration and
-  consent, never API keys. State v5 migrates v0-v4 records, removes legacy
+  consent, never API keys. State v15 migrates v0-v14 records, removes legacy
   credential fields, and purges legacy storage keys while preserving consent.
 - Webpack compiles only an explicit non-secret environment allowlist. Local
   development reads `.env` only in the Node process and exposes a loopback
-  same-origin or session-nonce LLM broker; browser requests do not include an
-  authorization header. The broker validates content type, request schema, and
+  same-origin or session-nonce LLM gateway; browser requests do not include an
+  authorization header. The gateway validates content type, request schema, and
   bounded body size.
 - Prompt builders require explicit raw-text opt-in.
 - Provider errors and recursive logger context redact credential fields,
@@ -362,3 +408,6 @@ helpers are not rendered in the production taskpane.
 - Production broker authentication/custody, the formal threat model, and live
   browser/host evidence remain open. Browser-held production API keys are not a
   supported release decision in this repository.
+- The LLM role bindings (`llmRoleBindings`) contain only opaque connection
+  identifiers and model names, never credentials. A reflection test
+  (`assertRoleSchemasAreSecretFree`) enforces this at the schema level.

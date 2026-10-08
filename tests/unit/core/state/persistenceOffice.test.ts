@@ -104,6 +104,7 @@ describe("persistence with Office roamingSettings", () => {
         autoScan: true,
         consistencyReviewConsent: false,
         semanticOptIn: false,
+        decisionFallbackPolicy: "unresolved" as const,
       },
     });
 

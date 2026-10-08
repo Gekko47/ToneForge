@@ -1537,6 +1537,8 @@ function DashboardWithProfile({
                       usedModel: consistencyResult.usedModel,
                       complete: consistencyResult.coverage.complete,
                       limitations: consistencyResult.coverage.limitations,
+                      unresolved: consistencyResult.coverage.unresolved,
+                      decisionParseFailed: consistencyResult.coverage.decisionParseFailed,
                     }
               }
               // `null` for "not established" and `false` for "read and found

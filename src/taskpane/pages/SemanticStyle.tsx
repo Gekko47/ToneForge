@@ -14,10 +14,7 @@ import {
   setActiveSemanticProfile,
 } from "../../core/state/persistence";
 import { selectKindRecordList } from "../../core/state/profileSelectors";
-import {
-  createRegistryFromSettings,
-  isRemoteProviderConfigured,
-} from "../settings/providerComposition";
+import { generalRegistryFromState, isGeneralRoleConfigured } from "../settings/providerComposition";
 import type { CapturedSample } from "../../style/sampleCapture";
 import { learnStyleDraft } from "../../style/learnStyle";
 import { updateDraft, effectiveProfile, type ProfileRecord } from "../../core/domain/ProfileRecord";
@@ -180,14 +177,11 @@ export default function SemanticStyle({
     setLearnStatus(null);
     setRecordAnnouncement(null);
     try {
-      const includeSemantic =
-        settings.semanticOptIn && isRemoteProviderConfigured(settings, state.providerConnections);
+      const includeSemantic = settings.semanticOptIn && isGeneralRoleConfigured(state);
       const result = await learnStyleDraft(sample, {
         name: "Learned semantic style",
         includeSemantic,
-        ...(includeSemantic
-          ? { registry: createRegistryFromSettings(settings, state.providerConnections) }
-          : {}),
+        ...(includeSemantic ? { registry: generalRegistryFromState(state) } : {}),
       });
       const created = createSemanticProfileRecord(
         result.draft.name,
@@ -237,7 +231,7 @@ export default function SemanticStyle({
 
   const gateInput: SemanticGateInput = {
     consent: settings.semanticOptIn === true,
-    providerConfigured: isRemoteProviderConfigured(settings, state.providerConnections),
+    providerConfigured: isGeneralRoleConfigured(state),
     hasProfile: profile !== null,
     hasSelection: false,
     reviewing: false,

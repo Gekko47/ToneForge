@@ -20,6 +20,7 @@
  */
 
 import type { LlmProvider } from "../../ai/providers/LlmProvider";
+import type { DecisionFallbackPolicy } from "../../core/domain/LlmRole";
 import {
   CONSISTENCY_ACTIONABLE_CONFIDENCE,
   CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS,
@@ -58,6 +59,9 @@ import {
 import { buildIssue } from "./issues";
 import { compileDecisionPlanWithCandidates } from "./decision/DecisionPlanCompiler";
 import { SystemOneDecisionProvider } from "./decision/systemOne/SystemOneDecisionProvider";
+import { unansweredQuestions } from "./decision/systemOne/SystemOneContextPolicy";
+import { expandContext } from "./decision/contextExpansion";
+import type { DecisionPlan } from "./contracts/plan";
 import type { ConsistencyDecisionEvaluation } from "./decision/ConsistencyDecisionProvider";
 import { buildAuditRecord, buildProvenance, type ConsistencySessionStore } from "./persistence";
 
@@ -73,7 +77,29 @@ export class ConsistencyRunCancelled extends Error {
 }
 
 export interface ConsistencyRunOptions {
+  /**
+   * The general role's provider: extraction and the pre-model gates.
+   *
+   * This is the only provider that ever sees the document for extraction. The
+   * decision role is a separate binding (see `decisionProvider`) so a run can
+   * extract with one model and adjudicate with another.
+   */
   provider?: LlmProvider;
+  /**
+   * The decision role's provider: bounded-ambiguity adjudication only.
+   *
+   * When omitted, `decisionFallbackPolicy` decides what happens to the
+   * resolver's unresolved residue: `unresolved` leaves it unresolved (the
+   * default, and the honest answer), while `general_model` reuses `provider`.
+   * There is no silent cross-role fallback — the policy is explicit.
+   */
+  decisionProvider?: LlmProvider;
+  /** What to do when no decision provider is bound. Defaults to `unresolved`. */
+  decisionFallbackPolicy?: DecisionFallbackPolicy;
+  /** The general role's model, for provenance. Falls back to the request model. */
+  generalModel?: string;
+  /** The decision role's model, for provenance. Falls back to the request model. */
+  decisionModel?: string;
   signal?: AbortSignal;
   onProgress?: (progress: {
     phase:
@@ -171,6 +197,7 @@ function coverage(
     budgetExceeded: number;
     adjudicationsUsed: number;
     modelAdjudicated: number;
+    decisionParseFailed: boolean;
   } = {
     deterministicResolved: 0,
     decisionAdjudicated: 0,
@@ -180,6 +207,7 @@ function coverage(
     budgetExceeded: 0,
     adjudicationsUsed: 0,
     modelAdjudicated: 0,
+    decisionParseFailed: false,
   },
 ): ConsistencyCoverage {
   return ConsistencyCoverageSchema.parse({
@@ -210,6 +238,7 @@ function coverage(
     gated: work.gated,
     reviewBandSuppressed: work.reviewBandSuppressed,
     budgetExceeded: work.budgetExceeded,
+    decisionParseFailed: work.decisionParseFailed,
   });
 }
 
@@ -269,6 +298,14 @@ export async function runConsistencyReview(
   const maxPerSubject = request.maxPerSubject ?? CONSISTENCY_DEFAULT_MAX_PER_SUBJECT;
   const maxAdjudications = request.maxAdjudications ?? CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS;
 
+  // The decision role is a distinct binding. It is only ever the general
+  // provider when the fallback policy explicitly says so — never by default,
+  // because a silent cross-role fallback would adjudicate with a model the user
+  // did not choose for that purpose.
+  const decisionProvider: LlmProvider | undefined =
+    options.decisionProvider ??
+    (options.decisionFallbackPolicy === "general_model" ? options.provider : undefined);
+
   // Genuine limitations that make the run incomplete.
   const blockers: string[] = [];
   const issues: ConsistencyIssue[] = [];
@@ -290,6 +327,7 @@ export async function runConsistencyReview(
     budgetExceeded: 0,
     adjudicationsUsed: 0,
     modelAdjudicated: 0,
+    decisionParseFailed: false,
   };
 
   if (options.provider === undefined) {
@@ -472,7 +510,7 @@ export async function runConsistencyReview(
       consistentCount + conflictCount + notComparableCount + pendingModel.length;
 
     // R5: DecisionPlan compilation and decision adjudication
-    if (pendingModel.length > 0 && options.provider !== undefined) {
+    if (pendingModel.length > 0 && decisionProvider !== undefined) {
       options.onProgress?.({
         phase: "adjudicating",
         fraction: 0.85,
@@ -480,7 +518,7 @@ export async function runConsistencyReview(
       });
       await assertCurrent(options, request.document.revision);
 
-      const decisionProvider = new SystemOneDecisionProvider(options.provider);
+      const systemOne = new SystemOneDecisionProvider(decisionProvider);
       const plan = compileDecisionPlanWithCandidates(
         resolutions,
         retrieved.candidates,
@@ -498,12 +536,66 @@ export async function runConsistencyReview(
         work.adjudicationsUsed = plan.questions.length;
         let evaluation: ConsistencyDecisionEvaluation | null = null;
         try {
-          evaluation = await decisionProvider.evaluate(plan, options.signal);
+          evaluation = await systemOne.evaluate(plan, options.signal);
         } catch {
           if (options.signal?.aborted === true) {
             throw new ConsistencyRunCancelled("cancelled");
           }
           blockers.push("Decision adjudication failed: the decision provider threw an error.");
+        }
+
+        // One bounded expansion pass (original §23): rerun only the questions
+        // the model left unanswered, and only with the context those questions
+        // asked for. There is no loop — a second pass that still comes back
+        // unclear is insufficient evidence, not another call. Expansion
+        // retrieves document text, so it is gated on the same redaction opt-out
+        // as extraction: with redaction on, the residue stays unresolved.
+        if (evaluation !== null && request.allowUnredacted && plan.budget.maxExpansions > 0) {
+          const unanswered = unansweredQuestions(plan, evaluation.answers);
+          const requests = unanswered.flatMap((question) =>
+            question.requestedContext.map((kind) => ({
+              type: kind,
+              candidateId: question.subjectId,
+              parameters: {},
+            })),
+          );
+          if (requests.length > 0) {
+            const expanded = expandContext(
+              requests,
+              indices,
+              normalised,
+              retrieved.candidates,
+              request.document.text,
+            );
+            const rerunPlan: DecisionPlan = {
+              ...plan,
+              questions: unanswered,
+              expandedContext: expanded.map((result) => ({
+                candidateId: result.request.candidateId,
+                kind: result.request.type,
+                content: result.content,
+              })),
+            };
+            try {
+              const rerun = await systemOne.evaluate(rerunPlan, options.signal);
+              const merged = new Map(evaluation.answers.map((a) => [a.question, a]));
+              rerun.answers.forEach((answer) => merged.set(answer.question, answer));
+              evaluation = { ...evaluation, answers: [...merged.values()] };
+            } catch {
+              if (options.signal?.aborted === true) {
+                throw new ConsistencyRunCancelled("cancelled");
+              }
+              // A failed expansion pass is not fatal: the first pass's answers
+              // stand, and the questions it left unclear stay unresolved.
+            }
+          }
+        }
+
+        // Record whether the decision model's output was unreadable. The first
+        // pass's metadata is authoritative: the expansion rerun only fills gaps
+        // and keeps the first pass's provider metadata.
+        if (evaluation !== null) {
+          work.decisionParseFailed = evaluation.providerMetadata.parseFailed === true;
         }
 
         // R6: D-derivation, post-model gates, and confidence with intervals
@@ -652,6 +744,14 @@ export async function runConsistencyReview(
         });
       }
     } else {
+      // No decision provider bound and the policy is `unresolved`: the residue
+      // stays unresolved, and the run says so rather than reporting a clean
+      // bill of health it did not earn.
+      if (pendingModel.length > 0) {
+        blockers.push(
+          "Decision adjudication was skipped: no decision model is bound and the fallback policy is 'unresolved', so the unresolved comparisons were left unresolved.",
+        );
+      }
       pendingModel.forEach(() => {
         unresolvedCount++;
       });
@@ -686,9 +786,13 @@ export async function runConsistencyReview(
       documentFingerprint: request.document.revision,
       claimGraphSchemaVersion: String(CONSISTENCY_STORE_VERSION),
       extractionPromptVersion: "extraction-v1",
-      generalModel: request.model,
-      decisionProvider: options.provider?.name ?? "none",
-      decisionModel: request.model,
+      // Provenance keeps the two roles separate: which model extracted, and
+      // which provider/model adjudicated. A run that fell back to the general
+      // model records the general provider's name here, so the audit trail
+      // never claims a decision model that was not consulted.
+      generalModel: options.generalModel ?? request.model,
+      decisionProvider: decisionProvider?.name ?? "none",
+      decisionModel: options.decisionModel ?? request.model,
       questionSetVersion: "1.0",
       confidenceProfileVersion: "1.0",
       createdAt: startedAt,

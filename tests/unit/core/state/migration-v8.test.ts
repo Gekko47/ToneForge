@@ -22,7 +22,8 @@ describe("migration v7 to v8", () => {
       v7({ llmProvider: "openai", openAiBaseUrl: "http://127.0.0.1:8787/__toneforge/llm" }),
     );
 
-    const connection = result.providerConnections?.openai;
+    const connection =
+      result.providerConnections?.["migrated:openai:http://127.0.0.1:8787/__toneforge/llm"];
     expect(connection).toBeDefined();
     expect(connection?.provider).toBe("openai");
     expect(connection?.status).toBe("connected");
@@ -40,7 +41,9 @@ describe("migration v7 to v8", () => {
       }),
     );
 
-    expect(result.providerConnections?.openai?.selectedModel).toBe("gpt-4o-mini");
+    expect(
+      result.providerConnections?.["migrated:openai:http://localhost:8787"]?.selectedModel,
+    ).toBe("gpt-4o-mini");
   });
 
   it("classifies an OpenRouter connection as a broker-held API key", () => {
@@ -51,7 +54,11 @@ describe("migration v7 to v8", () => {
       }),
     );
 
-    expect(result.providerConnections?.openrouter?.authMode).toBe("brokerApiKey");
+    expect(
+      result.providerConnections?.[
+        "migrated:openrouter:http://127.0.0.1:8787/__toneforge/gateway/v1"
+      ]?.authMode,
+    ).toBe("brokerApiKey");
   });
 
   it("derives a connection for a non-OpenAI remote provider", () => {
@@ -59,7 +66,9 @@ describe("migration v7 to v8", () => {
       v7({ llmProvider: "anthropic", openAiBaseUrl: "http://127.0.0.1:8787" }),
     );
 
-    expect(result.providerConnections?.anthropic?.provider).toBe("anthropic");
+    expect(result.providerConnections?.["migrated:anthropic:http://127.0.0.1:8787"]?.provider).toBe(
+      "anthropic",
+    );
   });
 
   it("derives nothing when the provider was the offline mock", () => {
@@ -150,7 +159,7 @@ describe("migration v7 to v8", () => {
     expect(result.providerConnections).toEqual({});
   });
 
-  it("drops a connection filed under the wrong provider", () => {
+  it("re-keys a connection filed under the wrong provider to its connectionId", () => {
     const result = migrate({
       version: 8,
       profileRecords: {},
@@ -166,13 +175,12 @@ describe("migration v7 to v8", () => {
       },
     });
 
-    // The record claims to be `openai` while filed under `openrouter`. Accepting
-    // it would let the registry build an adapter for a provider the user never
-    // selected, so the mismatched pair is dropped entirely.
-    expect(result.providerConnections).toEqual({});
+    // The record claims to be `openai` while filed under `openrouter`. The
+    // connectionId is the canonical key, so it is re-keyed, not dropped.
+    expect(result.providerConnections?.["or_abc"]?.provider).toBe("openai");
   });
 
-  it("keeps a well-formed connection whose key matches its provider", () => {
+  it("keeps a well-formed connection, re-keyed to its connectionId", () => {
     const result = migrate({
       version: 8,
       profileRecords: {},
@@ -188,7 +196,7 @@ describe("migration v7 to v8", () => {
       },
     });
 
-    expect(result.providerConnections?.openrouter?.connectionId).toBe("or_abc");
+    expect(result.providerConnections?.["or_abc"]?.connectionId).toBe("or_abc");
   });
 
   it("drops a structurally invalid connection", () => {

@@ -332,7 +332,7 @@ Phase 2 workflow state and navigation complete.
    - Terminology and policy.
    - History.
    - Shared reducer and validation.
-3. Split [`SettingsForm`](../src/taskpane/components/SettingsForm.tsx) before provider/privacy redesign into:
+3. Split [`SettingsDashboard`](../src/taskpane/components/SettingsDashboard.tsx) before provider/privacy redesign into:
    - Styling settings.
    - AI/provider settings.
    - Privacy/consent settings.

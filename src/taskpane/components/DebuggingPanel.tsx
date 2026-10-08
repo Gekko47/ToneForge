@@ -3,7 +3,10 @@ import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import { isTrackedEditingEnabled, prepareReformatHost } from "../../reformat";
 import { formatDiagnostics, probeOfficeRuntime } from "../../shared/office/diagnostics";
 import { loadState } from "../../core/state/persistence";
-import { isRemoteProviderConfigured } from "../settings/providerComposition";
+import {
+  isDecisionRoleConfigured,
+  isRemoteProviderConfigured,
+} from "../settings/providerComposition";
 import { diagnoseSituation, type TroubleshootingInput } from "../troubleshooting/checks";
 
 /**
@@ -30,6 +33,8 @@ interface DebuggingPanelProps {
     usedModel: boolean;
     complete: boolean;
     limitations: readonly string[];
+    unresolved: number;
+    decisionParseFailed: boolean;
   } | null;
   /**
    * Whether Semantic Review is holding a selection, `null` if it has not been
@@ -64,7 +69,13 @@ function currentInput(input: {
   coverage: CoverageReport | null;
   plannedCount: number;
   reviewedCount: number;
-  consistency: { usedModel: boolean; complete: boolean; limitations: readonly string[] } | null;
+  consistency: {
+    usedModel: boolean;
+    complete: boolean;
+    limitations: readonly string[];
+    unresolved: number;
+    decisionParseFailed: boolean;
+  } | null;
   semanticSelectionCaptured: boolean | null;
   semanticSelectionChars: number | null;
   semanticPreservationRefused: boolean;
@@ -82,6 +93,8 @@ function currentInput(input: {
     plannedCount: input.plannedCount,
     reviewedCount: input.reviewedCount,
     consistency: input.consistency,
+    decisionRoleConfigured: isDecisionRoleConfigured(state),
+    decisionFallbackPolicy: state.settings.decisionFallbackPolicy,
     semanticSelectionCaptured: input.semanticSelectionCaptured,
     semanticSelectionChars: input.semanticSelectionChars,
     semanticPreservationRefused: input.semanticPreservationRefused,

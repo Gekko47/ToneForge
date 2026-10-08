@@ -1,6 +1,8 @@
 export {
   GatewayError,
   type GatewayErrorKind,
+  type ConnectionTestResult,
+  describeGatewayError,
   isValidGatewayOrigin,
   normalizeGatewayOrigin,
   SessionTokenStore,

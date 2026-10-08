@@ -57,6 +57,8 @@ vi.mock("../../../../src/core/state/persistence", () => ({
 
 vi.mock("../../../../src/taskpane/settings/providerComposition", () => ({
   isRemoteProviderConfigured: () => true,
+  isGeneralRoleConfigured: () => true,
+  generalRegistryFromState: () => ({ name: "test-registry" }),
   createRegistryFromSettings: () => ({ name: "test" }),
 }));
 

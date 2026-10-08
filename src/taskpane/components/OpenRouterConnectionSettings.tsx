@@ -103,8 +103,8 @@ export default function OpenRouterConnectionSettings({
     const connections: NonNullable<PersistedState["providerConnections"]> = {
       ...(current.providerConnections ?? {}),
     };
-    if (next) connections.openrouter = next;
-    else delete connections.openrouter;
+    if (next) connections[next.connectionId] = next;
+    else if (connection) delete connections[connection.connectionId];
     saveState({ ...current, providerConnections: connections });
     onConnectionChange?.(next);
   }

@@ -29,6 +29,10 @@ export interface LlmRegistryOptions {
   connection?: ProviderConnection;
   mock?: ConstructorParameters<typeof MockAdapter>[0];
   fetchImpl?: typeof fetch;
+  /** Request timeout in milliseconds. Defaults to 30s when omitted. */
+  timeoutMs?: number;
+  /** Maximum retry attempts for transient failures. Defaults to 2 when omitted. */
+  maxRetries?: number;
 }
 
 function disconnectedFor(provider: ProviderId): ProviderConnection {
@@ -53,6 +57,8 @@ export class LlmRegistry {
             gatewayBaseUrl,
             connection,
             ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+            ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+            ...(opts.maxRetries !== undefined ? { maxRetries: opts.maxRetries } : {}),
           })
         : null;
     const anthropic =
@@ -61,6 +67,8 @@ export class LlmRegistry {
             gatewayBaseUrl,
             connection,
             ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+            ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+            ...(opts.maxRetries !== undefined ? { maxRetries: opts.maxRetries } : {}),
           })
         : null;
     const openrouter =
@@ -69,6 +77,8 @@ export class LlmRegistry {
             gatewayBaseUrl,
             connection,
             ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+            ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+            ...(opts.maxRetries !== undefined ? { maxRetries: opts.maxRetries } : {}),
           })
         : null;
 

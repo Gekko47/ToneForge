@@ -402,7 +402,7 @@ preserved for traceability. The key current decisions are:
   persist separately from the provider it authorizes.
 - **Evidence**: `src/taskpane/settings/settingsModel.ts`,
   `src/taskpane/settings/useAnnouncement.ts`,
-  `src/taskpane/components/ProviderPrivacySettingsSection.tsx`,
+  `src/taskpane/components/RedactionSettingsSection.tsx`,
   `src/taskpane/components/StylingSettingsSection.tsx`,
   `src/taskpane/components/TelemetrySettingsSection.tsx`, and
   `tests/unit/taskpane/settings/settingsModel.test.ts`.
@@ -1032,7 +1032,7 @@ change that lets one consent enable another would contradict ADR-0052, not this 
   [`Dashboard.tsx`](../src/taskpane/pages/Dashboard.tsx),
   [`taskpaneNavigation.ts`](../src/shared/office/taskpaneNavigation.ts),
   [`commandDefinitions.json`](../src/commands/commandDefinitions.json),
-  [`ProviderPrivacySettingsSection.tsx`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx),
+  [`RedactionSettingsSection.tsx`](../src/taskpane/components/RedactionSettingsSection.tsx),
   and `tests/unit/taskpane/components/AiReviewSection.test.tsx`.
 
 ## ADR-0056 — Analysis acquisition is gated on probed capabilities and degrades to text
@@ -5110,3 +5110,46 @@ asserted a reconciliation the code did not perform.
 - **Not claimed:** every finding is repository-side evidence (static analysis
   plus the jsdom/mocked suite). Nothing here ran in a real Word host;
   `word-host-evidence` stays `pending`.
+
+## ADR-0127 — Dual-role LLM with gateway-routed credentials
+
+- **Status**: Accepted (2026-10-08)
+- **Context**: The LLM connector review found that the existing single-role
+  provider model could not cleanly separate semantic/consistency operations
+  from decision operations. The consistency engine needs a bounded-ambiguity
+  adjudication model that is independent from the general semantic review
+  model. A single shared connection forced a trade-off: either the decision
+  model inherited the general model's provider (coupling two different
+  responsibilities to one credential), or the user configured a separate
+  provider (adding complexity for the common case where one provider serves
+  both roles well).
+- **Decision**: Implement a dual-role LLM architecture with gateway-routed
+  connections. Two roles — `general` and `consistency_decision` — are bound
+  separately in `llmRoleBindings` (state v15). Each role resolves to its own
+  `ProviderConnection` through `llmRoles.ts`. A `reuseGeneral` toggle lets the
+  decision role reuse the general connection's credential with a different
+  model from the same provider. All remote requests are routed through the
+  external gateway (`gatewayClient.ts`); no adapter holds a credential. The
+  gateway client supports four auth modes: `oauth`, `deploymentManaged`,
+  `brokerApiKey`, and `none`.
+- **Consequences**:
+  - Positive: the two roles are independent. The user can bind different
+    providers, or reuse one provider with different models.
+  - Positive: the reuse toggle works for any auth mode because the model is
+    a per-request parameter, not a connection-level setting.
+  - Positive: no credential is stored in persisted state. The
+    `assertRoleSchemasAreSecretFree` reflection test enforces this.
+  - Positive: the gateway is the single point of credential custody. The
+    browser never sees a key.
+  - Cost: two registries are built per session (one per role). This is a
+    trivial overhead.
+  - Cost: the `providerConnections` map is keyed by `connectionId`, requiring
+    a migration from the old array-based storage (handled in v15 migration).
+  - **Not claimed:** the OAuth flow is not exercised against a real provider.
+    The development gateway stubs the callback. Live provider verification
+    remains a human step.
+- **Evidence**: `src/core/domain/LlmRole.ts`,
+  `src/taskpane/settings/llmRoles.ts`,
+  `src/taskpane/settings/providerComposition.ts`,
+  `src/ai/gateway/gatewayClient.ts`, `src/ai/providers/registry.ts`,
+  `scripts/dev-gateway.mjs`, `scripts/llm-smoke.mjs`.

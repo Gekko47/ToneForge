@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   isTrackedEditingEnabled: vi.fn(() => true),
   prepareReformatHost: vi.fn(),
   probeOfficeRuntime: vi.fn(() => ({}) as Record<string, unknown>),
+  isDecisionRoleConfigured: vi.fn(() => true),
 }));
 
 vi.mock("../../../../src/core/state/persistence", () => ({
@@ -31,14 +32,16 @@ vi.mock("../../../../src/shared/office/diagnostics", () => ({
 
 vi.mock("../../../../src/taskpane/settings/providerComposition", () => ({
   isRemoteProviderConfigured: () => true,
+  isDecisionRoleConfigured: mocks.isDecisionRoleConfigured,
 }));
 
 /** A state with nothing standing in the way, so only the asked-for note shows. */
 function healthyState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    settings: { autoScan: true, semanticOptIn: true },
+    settings: { autoScan: true, semanticOptIn: true, decisionFallbackPolicy: "unresolved" },
     activeSemanticProfileId: "rec-1",
     providerConnections: {},
+    llmRoleBindings: {},
     ...overrides,
   };
 }
@@ -46,6 +49,7 @@ function healthyState(overrides: Record<string, unknown> = {}): Record<string, u
 beforeEach(() => {
   mocks.loadState.mockReturnValue(healthyState());
   mocks.isTrackedEditingEnabled.mockReturnValue(true);
+  mocks.isDecisionRoleConfigured.mockReturnValue(true);
 });
 
 describe("DebuggingPanel", () => {
@@ -128,7 +132,7 @@ describe("DebuggingPanel", () => {
     // one the user has already resolved.
     mocks.loadState.mockReturnValue(
       healthyState({
-        settings: { autoScan: true, semanticOptIn: false },
+        settings: { autoScan: true, semanticOptIn: false, decisionFallbackPolicy: "unresolved" },
       }),
     );
     render(<DebuggingPanel onBack={vi.fn()} />);
@@ -137,5 +141,65 @@ describe("DebuggingPanel", () => {
       screen.getByText(/sending your text to a provider is switched off/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/Allow semantic analysis/i)).toBeInTheDocument();
+  });
+
+  it("reports unresolved comparisons when no decision model is bound", () => {
+    mocks.isDecisionRoleConfigured.mockReturnValue(false);
+    mocks.loadState.mockReturnValue(
+      healthyState({
+        settings: { autoScan: true, semanticOptIn: true, decisionFallbackPolicy: "unresolved" },
+        llmRoleBindings: {},
+      }),
+    );
+
+    render(
+      <DebuggingPanel
+        onBack={vi.fn()}
+        consistency={{
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 3,
+          decisionParseFailed: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/left some comparisons unresolved/i)).toBeInTheDocument();
+  });
+
+  it("reports a parse failure when the decision model returns unreadable output", () => {
+    render(
+      <DebuggingPanel
+        onBack={vi.fn()}
+        consistency={{
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 5,
+          decisionParseFailed: true,
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/answers could not be read/i)).toBeInTheDocument();
+  });
+
+  it("says nothing about the decision role when the run left nothing unresolved", () => {
+    render(
+      <DebuggingPanel
+        onBack={vi.fn()}
+        consistency={{
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 0,
+          decisionParseFailed: false,
+        }}
+      />,
+    );
+
+    expect(screen.queryByText(/left some comparisons unresolved/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/answers could not be read/i)).not.toBeInTheDocument();
   });
 });

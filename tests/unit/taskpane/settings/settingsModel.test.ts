@@ -21,6 +21,7 @@ const SETTINGS: PersistedState["settings"] = {
   // and proving the projection is narrower than the stored shape is one of the
   // things this file checks.
   autoScan: true,
+  decisionFallbackPolicy: "unresolved",
 };
 
 const DRAFT: LlmSettingsDraft = {

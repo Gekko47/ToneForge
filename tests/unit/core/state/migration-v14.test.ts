@@ -109,7 +109,7 @@ function outcome(
 describe("migration v13 to v14", () => {
   it("lands on the current version", () => {
     expect(migrate(v13()).version).toBe(CURRENT_STATE_VERSION);
-    expect(CURRENT_STATE_VERSION).toBe(14);
+    expect(CURRENT_STATE_VERSION).toBe(15);
   });
 
   it("upgrades a V1 semantic block on a semantic record", () => {

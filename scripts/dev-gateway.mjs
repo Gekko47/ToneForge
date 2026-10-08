@@ -11,6 +11,12 @@
  * requires a loopback same-origin request or the per-session nonce, the key
  * lives only in this Node process's memory, and only an opaque connection
  * reference travels back to the add-in.
+ *
+ * Routes: `POST /connections/api-key` (user key), `POST /connections/authorize`
+ * and `POST /connections/callback` (OAuth handshake stubs), `POST
+ * /connections/deployment` (deployment-managed credential), `GET
+ * /connections/:id/models`, `GET /connections/:id/test`, `POST
+ * /connections/:id/chat/completions`, and `DELETE /connections/:id`.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
@@ -117,6 +123,15 @@ export function createDevGatewayBroker({
   expectedNonce = randomBytes(32).toString("hex"),
   connections = new Map(),
   now = () => new Date(),
+  // Deployment-managed credential. When present, `POST /connections/deployment`
+  // issues a connection that reuses it, so the add-in can exercise the
+  // deployment-managed auth mode without a user-supplied key.
+  deploymentManaged = null,
+  // OAuth handshake stub. Either `{ authorizationUrl }` or a
+  // `(provider) => string` function. The development gateway cannot complete a
+  // real provider exchange, so the callback issues a connection whose upstream
+  // credential is the deployment-managed key when one is configured.
+  authorize = null,
 } = {}) {
   const newConnectionId = () => `or_${randomBytes(16).toString("hex")}`;
 
@@ -147,10 +162,26 @@ export function createDevGatewayBroker({
         await handleApiKey(req, res);
         return;
       }
+      if (route === "/connections/authorize" && req.method === "POST") {
+        await handleAuthorize(req, res);
+        return;
+      }
+      if (route === "/connections/callback" && req.method === "POST") {
+        await handleCallback(req, res);
+        return;
+      }
+      if (route === "/connections/deployment" && req.method === "POST") {
+        await handleDeployment(req, res);
+        return;
+      }
       if (segments[0] === "connections" && segments.length >= 2) {
         const connectionId = decodeURIComponent(segments[1]);
         if (segments[2] === "models" && segments.length === 3 && req.method === "GET") {
           await handleModels(connectionId, res);
+          return;
+        }
+        if (segments[2] === "test" && segments.length === 3 && req.method === "GET") {
+          await handleTest(connectionId, res);
           return;
         }
         if (
@@ -216,22 +247,183 @@ export function createDevGatewayBroker({
       }
 
       const connectionId = newConnectionId();
-      connections.set(connectionId, { apiKey, ...classified, createdAt: now().toISOString() });
-
-      // The response carries only non-secret metadata. The key is not echoed.
-      sendJson(response, 200, {
-        connectionId,
+      connections.set(connectionId, {
+        apiKey,
         provider: "openrouter",
         authMode: "brokerApiKey",
+        ...classified,
+        createdAt: now().toISOString(),
+      });
+
+      // The response carries only non-secret metadata. The key is not echoed.
+      sendJson(
+        response,
+        200,
+        connectionResponse(connectionId, "openrouter", "brokerApiKey", classified),
+      );
+    }
+
+    /** Build the non-secret connection response the add-in validates. */
+    function connectionResponse(connectionId, provider, authMode, classified) {
+      return {
+        connectionId,
+        provider,
+        authMode,
         status: "connected",
         baseOrigin: { origin: classified.baseUrl, classification: classified.classification },
+        lastVerifiedAt: now().toISOString(),
+      };
+    }
+
+    /** Resolve the authorization URL the add-in should open. */
+    function resolveAuthorizationUrl(provider) {
+      if (typeof authorize === "function") return authorize(provider);
+      if (authorize && typeof authorize.authorizationUrl === "string") {
+        return authorize.authorizationUrl;
+      }
+      // A relative loopback URL. The development gateway cannot complete a real
+      // provider exchange, so the user copies this URL back into the callback
+      // field to finish the handshake.
+      return `${GATEWAY_PATH_PREFIX}/connections/callback?code=dev-authorization-code&state=dev`;
+    }
+
+    async function handleAuthorize(request, response) {
+      if (!isJsonContentType(request.headers)) {
+        sendJson(response, 415, { error: "Content-Type must be application/json" });
+        return;
+      }
+      const body = await readJsonBody(request);
+      if (!isRemoteProvider(body?.provider)) {
+        sendJson(response, 400, { error: "Unsupported provider for authorization" });
+        return;
+      }
+      sendJson(response, 200, { authorizationUrl: resolveAuthorizationUrl(body.provider) });
+    }
+
+    async function handleCallback(request, response) {
+      if (!isJsonContentType(request.headers)) {
+        sendJson(response, 415, { error: "Content-Type must be application/json" });
+        return;
+      }
+      const body = await readJsonBody(request);
+      if (!isRemoteProvider(body?.provider)) {
+        sendJson(response, 400, { error: "Unsupported provider for authorization" });
+        return;
+      }
+      const callbackUrl = typeof body.callbackUrl === "string" ? body.callbackUrl.trim() : "";
+      if (callbackUrl.length === 0) {
+        sendJson(response, 400, { error: "A callback URL is required" });
+        return;
+      }
+      const classified = classifyUpstreamBaseUrl(
+        deploymentManaged?.baseUrl ?? OPENROUTER_DEFAULT_BASE_URL,
+      );
+      if (!classified) {
+        sendJson(response, 400, { error: "Base URL must be an HTTPS origin without credentials" });
+        return;
+      }
+      const connectionId = newConnectionId();
+      connections.set(connectionId, {
+        // The development gateway cannot exchange a real authorization code, so
+        // the upstream credential is the deployment-managed key when present.
+        apiKey: deploymentManaged?.apiKey ?? null,
+        provider: body.provider,
+        authMode: "oauth",
+        ...classified,
+        createdAt: now().toISOString(),
       });
+      sendJson(response, 200, connectionResponse(connectionId, body.provider, "oauth", classified));
+    }
+
+    async function handleDeployment(request, response) {
+      if (!isJsonContentType(request.headers)) {
+        sendJson(response, 415, { error: "Content-Type must be application/json" });
+        return;
+      }
+      const body = await readJsonBody(request);
+      if (!isRemoteProvider(body?.provider)) {
+        sendJson(response, 400, {
+          error: "Unsupported provider for a deployment-managed connection",
+        });
+        return;
+      }
+      if (!hasUsableCredential(deploymentManaged)) {
+        sendJson(response, 503, { error: "Deployment-managed provider is not configured" });
+        return;
+      }
+      const classified = classifyUpstreamBaseUrl(
+        deploymentManaged.baseUrl ?? OPENROUTER_DEFAULT_BASE_URL,
+      );
+      if (!classified) {
+        sendJson(response, 400, { error: "Base URL must be an HTTPS origin without credentials" });
+        return;
+      }
+      const connectionId = newConnectionId();
+      connections.set(connectionId, {
+        apiKey: deploymentManaged.apiKey,
+        provider: body.provider,
+        authMode: "deploymentManaged",
+        ...classified,
+        createdAt: now().toISOString(),
+      });
+      sendJson(
+        response,
+        200,
+        connectionResponse(connectionId, body.provider, "deploymentManaged", classified),
+      );
+    }
+
+    async function handleTest(connectionId, response) {
+      const connection = connections.get(connectionId);
+      if (!connection) {
+        sendJson(response, 404, { error: "Unknown connection" });
+        return;
+      }
+      if (!hasUsableCredential(connection)) {
+        // A reachable gateway with an unusable credential is a failed test, not
+        // a transport error: the client renders `ok: false` as a message.
+        sendJson(response, 200, {
+          ok: false,
+          detail: "This connection has no usable credential in the development gateway.",
+        });
+        return;
+      }
+      const started = Date.now();
+      try {
+        const upstream = await fetchImpl(`${connection.baseUrl}/models`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${connection.apiKey}`,
+            "HTTP-Referer": "https://github.com/Gekko47/ToneForge",
+            "X-Title": "ToneForge",
+          },
+        });
+        const latencyMs = Date.now() - started;
+        if (upstream.ok) {
+          sendJson(response, 200, { ok: true, latencyMs, detail: "Connection is reachable." });
+          return;
+        }
+        sendJson(response, 200, {
+          ok: false,
+          latencyMs,
+          detail: `The provider refused the probe with status ${upstream.status}.`,
+        });
+      } catch {
+        sendJson(response, 200, {
+          ok: false,
+          detail: "Could not reach the provider from the development gateway.",
+        });
+      }
     }
 
     async function handleModels(connectionId, response) {
       const connection = connections.get(connectionId);
       if (!connection) {
         sendJson(response, 404, { error: "Unknown connection" });
+        return;
+      }
+      if (!hasUsableCredential(connection)) {
+        sendJson(response, 502, { error: "Connection has no usable credential" });
         return;
       }
       const upstream = await fetchImpl(`${connection.baseUrl}/models`, {
@@ -269,6 +461,10 @@ export function createDevGatewayBroker({
         sendJson(response, 404, { error: "Unknown connection" });
         return;
       }
+      if (!hasUsableCredential(connection)) {
+        sendJson(response, 502, { error: "Connection has no usable credential" });
+        return;
+      }
       if (!isJsonContentType(request.headers)) {
         sendJson(response, 415, { error: "Content-Type must be application/json" });
         return;
@@ -301,6 +497,18 @@ function isJsonContentType(headers) {
     .split(";", 1)[0]
     .trim();
   return value.toLowerCase() === "application/json";
+}
+
+/** Providers the development gateway can issue a remote connection for. */
+const REMOTE_PROVIDERS = new Set(["openai", "anthropic", "openrouter"]);
+
+function isRemoteProvider(value) {
+  return typeof value === "string" && REMOTE_PROVIDERS.has(value);
+}
+
+/** Whether a stored connection carries a credential the gateway can forward. */
+function hasUsableCredential(connection) {
+  return typeof connection?.apiKey === "string" && connection.apiKey.length > 0;
 }
 
 /** Reuse the bounded chat-completion schema shape the existing broker enforces. */

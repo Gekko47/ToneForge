@@ -24,7 +24,15 @@ function healthy(overrides: Partial<TroubleshootingInput> = {}): Troubleshooting
     semanticSelectionCaptured: true,
     semanticSelectionChars: 240,
     semanticPreservationRefused: false,
-    consistency: { usedModel: true, complete: true, limitations: [] },
+    consistency: {
+      usedModel: true,
+      complete: true,
+      limitations: [],
+      unresolved: 0,
+      decisionParseFailed: false,
+    },
+    decisionRoleConfigured: true,
+    decisionFallbackPolicy: "unresolved",
     contextMenuApi: true,
     rangedReplacementSupported: true,
     ...overrides,
@@ -161,7 +169,13 @@ describe("the troubleshooting registry", () => {
         semanticSelectionCaptured: false,
         semanticSelectionChars: 41_000,
         semanticPreservationRefused: true,
-        consistency: { usedModel: false, complete: true, limitations: [] },
+        consistency: {
+          usedModel: false,
+          complete: true,
+          limitations: [],
+          unresolved: 0,
+          decisionParseFailed: false,
+        },
         contextMenuApi: false,
         rangedReplacementSupported: false,
       }),
@@ -301,7 +315,13 @@ describe("the troubleshooting registry", () => {
     // setting that cannot change the answer.
     const noModel = diagnoseSituation(
       healthy({
-        consistency: { usedModel: false, complete: true, limitations: [] },
+        consistency: {
+          usedModel: false,
+          complete: true,
+          limitations: [],
+          unresolved: 0,
+          decisionParseFailed: false,
+        },
         providerConfigured: false,
       }),
     );
@@ -319,6 +339,8 @@ describe("the troubleshooting registry", () => {
           limitations: [
             "Compared 200 statements in windows, so 18,100 pair comparisons were not made.",
           ],
+          unresolved: 0,
+          decisionParseFailed: false,
         },
       }),
     );
@@ -337,7 +359,15 @@ describe("the troubleshooting registry", () => {
      * limitation instead.
      */
     const notes = diagnoseSituation(
-      healthy({ consistency: { usedModel: false, complete: true, limitations: [] } }),
+      healthy({
+        consistency: {
+          usedModel: false,
+          complete: true,
+          limitations: [],
+          unresolved: 0,
+          decisionParseFailed: false,
+        },
+      }),
     );
     expect(notes[0]?.id).toBe("consistency-review-partial");
     expect(notes[0]?.remedyTarget.label).toBe(
@@ -350,6 +380,92 @@ describe("the troubleshooting registry", () => {
     expect(diagnoseSituation(healthy({ consistency: null })).map((note) => note.id)).not.toContain(
       "consistency-review-partial",
     );
+  });
+
+  it("explains unresolved comparisons when no decision model is bound", () => {
+    // The decision role is a separate binding. An unbound role with the default
+    // `unresolved` policy leaves the residue unresolved, and the remedy is to
+    // bind a model — not to change a provider that is already configured.
+    const notes = diagnoseSituation(
+      healthy({
+        decisionRoleConfigured: false,
+        consistency: {
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 3,
+          decisionParseFailed: false,
+        },
+      }),
+    );
+    const note = notes.find((n) => n.id === "decision-role-unbound");
+    expect(note).toBeDefined();
+    expect(note?.remedyTarget.label).toBe(
+      "Settings → AI roles → Consistency decision → Connect a provider",
+    );
+    // The deterministic results are complete; the note must not imply otherwise.
+    expect(note?.cause).toMatch(/deterministic results are complete/i);
+  });
+
+  it("distinguishes the general-model fallback from an unbound role", () => {
+    // Same unresolved count, different cause: the fallback reused the general
+    // model, which was not prompted for adjudication. Collapsing the two would
+    // name the wrong situation.
+    const notes = diagnoseSituation(
+      healthy({
+        decisionRoleConfigured: false,
+        decisionFallbackPolicy: "general_model",
+        consistency: {
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 3,
+          decisionParseFailed: false,
+        },
+      }),
+    );
+    expect(notes.map((n) => n.id)).toContain("decision-fallback-general");
+    expect(notes.map((n) => n.id)).not.toContain("decision-role-unbound");
+  });
+
+  it("says nothing about the decision role when the run left nothing unresolved", () => {
+    // An unbound decision role is only a situation when there was residue to
+    // adjudicate. A run that settled everything deterministically is not
+    // blocked by the missing binding.
+    const notes = diagnoseSituation(
+      healthy({
+        decisionRoleConfigured: false,
+        consistency: {
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 0,
+          decisionParseFailed: false,
+        },
+      }),
+    );
+    expect(notes.map((n) => n.id)).not.toContain("decision-role-unbound");
+    expect(notes.map((n) => n.id)).not.toContain("decision-fallback-general");
+  });
+
+  it("reports an unreadable decision response as a parse failure, not a missing model", () => {
+    // The role is bound and the model answered; it just did not answer in JSON.
+    // The remedy is a different model or a retry, not a connection.
+    const notes = diagnoseSituation(
+      healthy({
+        consistency: {
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 3,
+          decisionParseFailed: true,
+        },
+      }),
+    );
+    const note = notes.find((n) => n.id === "decision-parse-failed");
+    expect(note).toBeDefined();
+    expect(note?.remedyTarget.label).toBe("Settings → AI roles → Consistency decision → Model");
+    expect(note?.cause).toMatch(/not valid JSON/i);
   });
 
   it("says nothing about the context menu before the probe has run", () => {
@@ -402,6 +518,9 @@ describe("the troubleshooting registry", () => {
       "semantic-selection-too-long",
       "semantic-preservation-refused",
       "consistency-review-partial",
+      "decision-role-unbound",
+      "decision-fallback-general",
+      "decision-parse-failed",
       "context-menu-api-absent",
       "semantic-ranged-replace-unsupported",
     ]);
@@ -432,7 +551,13 @@ describe("the troubleshooting registry", () => {
         semanticSelectionCaptured: false,
         semanticSelectionChars: 41_000,
         semanticPreservationRefused: true,
-        consistency: { usedModel: false, complete: true, limitations: [] },
+        consistency: {
+          usedModel: false,
+          complete: true,
+          limitations: [],
+          unresolved: 0,
+          decisionParseFailed: false,
+        },
         contextMenuApi: false,
         rangedReplacementSupported: false,
       }),
@@ -441,7 +566,56 @@ describe("the troubleshooting registry", () => {
       healthy({ semanticProfileActive: false, providerConfigured: false, rawTextConsent: false }),
     );
     const consentWithdrawn = diagnoseSituation(healthy({ rawTextConsent: false }));
-    const reached = new Set([...all, ...noProfile, ...consentWithdrawn].map((note) => note.id));
+    // The decision checks are mutually exclusive by construction: an unbound
+    // role with the `unresolved` policy, the same role with the `general_model`
+    // policy, and a parse failure with the role bound. One input cannot reach
+    // all three, so each gets its own.
+    const decisionUnbound = diagnoseSituation(
+      healthy({
+        decisionRoleConfigured: false,
+        consistency: {
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 3,
+          decisionParseFailed: false,
+        },
+      }),
+    );
+    const decisionFallback = diagnoseSituation(
+      healthy({
+        decisionRoleConfigured: false,
+        decisionFallbackPolicy: "general_model",
+        consistency: {
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 3,
+          decisionParseFailed: false,
+        },
+      }),
+    );
+    const decisionParseFailed = diagnoseSituation(
+      healthy({
+        consistency: {
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 3,
+          decisionParseFailed: true,
+        },
+      }),
+    );
+    const reached = new Set(
+      [
+        ...all,
+        ...noProfile,
+        ...consentWithdrawn,
+        ...decisionUnbound,
+        ...decisionFallback,
+        ...decisionParseFailed,
+      ].map((note) => note.id),
+    );
 
     expect([...troubleshootingCheckIds()].filter((id) => !reached.has(id))).toEqual([]);
   });

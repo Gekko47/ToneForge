@@ -97,12 +97,12 @@ Legend:
 | **Governance policy editing**                                                         | **N**             | `GovernanceProfile` carries `rules`, `terminology`, `scope`, `protection`, `editorial` ([`GovernanceProfile.ts`](src/core/domain/GovernanceProfile.ts)) but `saveProfileRecord` only ever overwrites `style` ([`persistence.ts`](src/core/state/persistence.ts)). No UI can author a `GovernanceRule`, set a protection override, or set scope. The whole normative half of `resolveResolvedPolicy` is authored by nobody. |
 | `activeGovernanceProfileId`                                                           | **X**             | Persisted ([`persistence.ts`](src/core/state/persistence.ts)) and read as a fallback ([`Dashboard.tsx`](src/taskpane/pages/Dashboard.tsx), `ReformatPanel.tsx`) but **never written** anywhere outside v0-v2 migration ([`migration.ts`](src/core/state/migration.ts)). Always `null` at runtime.                                                                                                                          |
 | State v9 + migration from v0-v8, legacy key purge                                     | F                 | [`core/state/migration.ts`](src/core/state/migration.ts), [`persistence.ts`](src/core/state/persistence.ts)                                                                                                                                                                                                                                                                                                                |
-| Settings section isolation (Styling / Provider+privacy / Tracked editing / Telemetry) | F                 | [`SettingsForm.tsx`](src/taskpane/components/SettingsForm.tsx)                                                                                                                                                                                                                                                                                                                                                             |
+| Settings section isolation (Styling / Provider+privacy / Tracked editing / Telemetry) | F                 | [`SettingsDashboard.tsx`](src/taskpane/components/SettingsDashboard.tsx)                                                                                                                                                                                                                                                                                                                                                   |
 | Theme preference persistence                                                          | F                 | [`theme.tsx`](src/taskpane/theme.tsx)                                                                                                                                                                                                                                                                                                                                                                                      |
-| `spotReviewConsent` / `fullDocumentReviewConsent`                                     | **U**             | Persisted ([`persistence.ts`](src/core/state/persistence.ts)) and carried in the LLM draft ([`settingsModel.ts`](src/taskpane/settings/settingsModel.ts)) but **no UI control exists** and no engine reads them. Only `consistencyReviewConsent` is exposed ([`ProviderPrivacySettingsSection.tsx`](src/taskpane/components/ProviderPrivacySettingsSection.tsx)).                                                          |
+| `spotReviewConsent` / `fullDocumentReviewConsent`                                     | **U**             | Persisted ([`persistence.ts`](src/core/state/persistence.ts)) and carried in the LLM draft ([`settingsModel.ts`](src/taskpane/settings/settingsModel.ts)) but **no UI control exists** and no engine reads them. Only `consistencyReviewConsent` is exposed ([`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx)).                                                                      |
 | `telemetryDisabled`                                                                   | **U**             | Fully wired UI (`TelemetrySettingsSection.tsx`) that controls nothing. The MessageBar at line 47 admits no endpoint is configured.                                                                                                                                                                                                                                                                                         |
-| `semanticOptIn`                                                                       | **U**             | Wired to a toggle ([`ProviderPrivacySettingsSection.tsx`](src/taskpane/components/ProviderPrivacySettingsSection.tsx)) and read by ReformatPanel line 53 — but with no registry the semantic engine falls back to `MockAdapter` (`deviationEngine.ts`). Enabling it can only produce mock output.                                                                                                                          |
-| `clearPersistedCredentials` button                                                    | F but mislabelled | [`ProviderPrivacySettingsSection.tsx`](src/taskpane/components/ProviderPrivacySettingsSection.tsx) labelled "Clear legacy stored credential"; it actually resets the provider to `mock` and empties all connections ([`persistence.ts`](src/core/state/persistence.ts)).                                                                                                                                                   |
+| `semanticOptIn`                                                                       | **U**             | Wired to a toggle ([`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx)) and read by ReformatPanel line 53 — but with no registry the semantic engine falls back to `MockAdapter` (`deviationEngine.ts`). Enabling it can only produce mock output.                                                                                                                                      |
+| `clearPersistedCredentials` button                                                    | F but mislabelled | [`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx) labelled "Clear legacy stored credential"; it actually resets the provider to `mock` and empties all connections ([`persistence.ts`](src/core/state/persistence.ts)).                                                                                                                                                               |
 
 ### 1.6 Navigation and commands
 
@@ -131,7 +131,7 @@ does not deliver.
 
 4. **Semantic findings are unreachable in practice.** The observer hard-codes `includeRawText: false` ([`documentObserver.ts`](src/word/documentObserver.ts)). Only Reformat preview can set it true, and it never passes a registry (`ReformatPanel.tsx`). So the `semanticOptIn` toggle governs a code path that can only ever hit the offline mock.
 
-5. **"Allow semantic analysis" and "AI Review consent" look like one permission family but produce very different risk.** [`ProviderPrivacySettingsSection.tsx`](src/taskpane/components/ProviderPrivacySettingsSection.tsx) separates them correctly in copy, but the semantic toggle's real effect (mock output) is nowhere stated.
+5. **"Allow semantic analysis" and "AI Review consent" look like one permission family but produce very different risk.** [`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx) separates them correctly in copy, but the semantic toggle's real effect (mock output) is nowhere stated.
 
 6. **Ribbon implies five actions; runtime provides one.** Scan Now, Findings, Pending Changes open views; Review Selection/Review Document both open the same whole-document review; Active Profile and Edit Profile open the same page. Only the drawer navigation is honest.
 
@@ -359,7 +359,7 @@ status)` to the observer, which is the owner of `state.findings`, so `reviewed`
     for a host outage. Introduce a distinct `hostUnavailable` flag so
     [`StaleBanner.tsx`](src/taskpane/components/StaleBanner.tsx) does not
     claim the document changed.
-  - [`ProviderPrivacySettingsSection.tsx`](src/taskpane/components/ProviderPrivacySettingsSection.tsx)
+  - [`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx)
     "Clear legacy stored credential" also resets the provider. Either rename to
     "Reset provider to offline stub" or split the two actions.
   - [`docs/ux-state-matrix.md`](docs/ux-state-matrix.md) rows for
@@ -426,7 +426,7 @@ edits: a reviewer receiving a tracked-changes document needs the list.
 
 [`oauthState.ts`](src/ai/gateway/oauthState.ts) resolves Anthropic to `"oauth"`
 and OpenAI to `"featureGated"`, while
-[`ProviderPrivacySettingsSection.tsx`](src/taskpane/components/ProviderPrivacySettingsSection.tsx)
+[`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx)
 tells the user both are "Deployment-managed. The gateway holds the credential."
 One of these is wrong.
 
@@ -459,7 +459,7 @@ as a full Settings section with a save/cancel transaction.
   ([`settingsModel.ts`](src/taskpane/settings/settingsModel.ts)), the
   migration normaliser ([`migration.ts`](src/core/state/migration.ts)), and
   the fixtures. Retire `TelemetrySettingsSection.tsx`
-  and [`SettingsForm.tsx`](src/taskpane/components/SettingsForm.tsx); do not
+  and [`SettingsDashboard.tsx`](src/taskpane/components/SettingsDashboard.tsx); do not
   reintroduce it until an endpoint exists.
 - **Risk:** medium — state schema change. Add a v10 migration rather than editing
   v9, per ADR-0015.

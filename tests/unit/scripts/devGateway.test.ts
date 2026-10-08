@@ -404,4 +404,176 @@ describe("createDevGatewayBroker", () => {
     );
     expect(res.statusCode).toBe(404);
   });
+
+  it("returns an authorization URL for a remote provider", async () => {
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE })(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/authorize`,
+        body: { provider: "openai" },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(typeof res.json().authorizationUrl).toBe("string");
+    expect(res.json().authorizationUrl.length).toBeGreaterThan(0);
+  });
+
+  it("refuses authorization for the offline provider", async () => {
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE })(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/authorize`,
+        body: { provider: "mock" },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("issues an OAuth connection on callback without echoing a credential", async () => {
+    const connections = new Map();
+    const res = response();
+    await createDevGatewayBroker({
+      expectedNonce: NONCE,
+      connections,
+      deploymentManaged: { apiKey: "sk-or-deploy-secret", baseUrl: OPENROUTER_DEFAULT_BASE_URL },
+    })(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/callback`,
+        body: { provider: "openai", callbackUrl: "https://localhost:3000/callback?code=abc" },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json().authMode).toBe("oauth");
+    expect(res.json().status).toBe("connected");
+    expect(res.json().connectionId).toMatch(/^or_[0-9a-f]{32}$/);
+    expect(res.body()).not.toContain("sk-or-deploy-secret");
+  });
+
+  it("refuses a callback with no callback URL", async () => {
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE })(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/callback`,
+        body: { provider: "openai" },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("refuses a deployment-managed connection when none is configured", async () => {
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE })(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/deployment`,
+        body: { provider: "openai" },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(503);
+  });
+
+  it("issues a deployment-managed connection when one is configured", async () => {
+    const connections = new Map();
+    const res = response();
+    await createDevGatewayBroker({
+      expectedNonce: NONCE,
+      connections,
+      deploymentManaged: { apiKey: "sk-or-deploy-secret", baseUrl: OPENROUTER_DEFAULT_BASE_URL },
+    })(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/deployment`,
+        body: { provider: "openai" },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json().authMode).toBe("deploymentManaged");
+    expect(res.json().status).toBe("connected");
+    expect(res.body()).not.toContain("sk-or-deploy-secret");
+  });
+
+  it("reports a reachable connection as ok with a latency", async () => {
+    const fetchImpl = asFetch(vi.fn(async () => okJson({ data: [] })));
+    const connections = new Map([
+      ["or_1", { apiKey: "sk-or-secret", baseUrl: OPENROUTER_DEFAULT_BASE_URL }],
+    ]);
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE, fetchImpl, connections })(
+      request({ method: "GET", url: `${GATEWAY_PATH_PREFIX}/connections/or_1/test` }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(typeof res.json().latencyMs).toBe("number");
+    expect(res.body()).not.toContain("sk-or-secret");
+  });
+
+  it("reports a refused probe as not ok without a transport error", async () => {
+    const fetchImpl = asFetch(vi.fn(async () => ({ ok: false, status: 401 })));
+    const connections = new Map([
+      ["or_1", { apiKey: "sk-or-secret", baseUrl: OPENROUTER_DEFAULT_BASE_URL }],
+    ]);
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE, fetchImpl, connections })(
+      request({ method: "GET", url: `${GATEWAY_PATH_PREFIX}/connections/or_1/test` }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(false);
+    expect(res.json().detail).toContain("401");
+  });
+
+  it("reports a connection with no credential as not ok", async () => {
+    const connections = new Map([["or_1", { apiKey: null, baseUrl: OPENROUTER_DEFAULT_BASE_URL }]]);
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE, connections })(
+      request({ method: "GET", url: `${GATEWAY_PATH_PREFIX}/connections/or_1/test` }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(false);
+  });
+
+  it("returns 404 for a test on an unknown connection", async () => {
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE, connections: new Map() })(
+      request({
+        method: "GET",
+        url: `${GATEWAY_PATH_PREFIX}/connections/or_missing/test`,
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("refuses a model list for a connection with no credential", async () => {
+    const connections = new Map([["or_1", { apiKey: null, baseUrl: OPENROUTER_DEFAULT_BASE_URL }]]);
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE, connections })(
+      request({ method: "GET", url: `${GATEWAY_PATH_PREFIX}/connections/or_1/models` }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(502);
+  });
 });

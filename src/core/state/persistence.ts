@@ -14,7 +14,8 @@
 import { z } from "zod";
 import { logger } from "../../shared/utils/logger";
 import { type StyleProfile } from "../domain/StyleProfile";
-import { ProviderConnectionSchema, ProviderIdSchema } from "../domain/ProviderConnection";
+import { ProviderConnectionSchema } from "../domain/ProviderConnection";
+import { DecisionFallbackPolicySchema, LlmRoleBindingsSchema } from "../domain/LlmRole";
 import {
   createGovernanceProfile,
   GovernanceProfileSchema,
@@ -171,23 +172,53 @@ const StateSchema = z.object({
        */
       consistencyReviewConsent: z.boolean().default(false),
       semanticOptIn: z.boolean().default(false),
+      /**
+       * v15. What happens when the consistency decision LLM is unavailable.
+       *
+       * - `unresolved` (default): adjudicated candidates are reported as
+       *   unresolved. The deterministic engine still produces its provable
+       *   outcomes; the ambiguous residue is surfaced honestly.
+       * - `general_model`: the general LLM is asked to adjudicate. This is a
+       *   degraded mode and is only offered when the general connection is
+       *   independently configured.
+       */
+      decisionFallbackPolicy: DecisionFallbackPolicySchema.default("unresolved"),
     })
     .default({}),
   /**
-   * Provider-neutral, non-secret connection records keyed by provider id.
-   * This is the only provider structure that may be persisted, and it has no
-   * field capable of holding a credential.
+   * v15. LLM role bindings: which connection and model serve the general LLM
+   * (semantic review + consistency extraction) and the consistency decision LLM
+   * (bounded-ambiguity adjudication).
+   *
+   * Each role is optional. An unbound role means that responsibility has no
+   * LLM available and must report itself as unconfigured rather than silently
+   * borrowing another role's connection.
+   *
+   * Optional rather than defaulted: a pre-v15 record has no such field, and
+   * making it required in the inferred type would break every existing state
+   * fixture. `migrate()` always populates it, so callers never see `undefined`
+   * at runtime.
+   */
+  llmRoleBindings: LlmRoleBindingsSchema.optional(),
+  /**
+   * Provider-neutral, non-secret connection records keyed by connection id.
+   *
+   * Keyed by `connectionId` (not by provider id) so two separate connections to
+   * the same provider can coexist — one for the general LLM, one for the
+   * consistency decision LLM. This is the only provider structure that may be
+   * persisted, and it has no field capable of holding a credential.
    */
   // Optional rather than defaulted: a v7 record has no such field, and making it
   // required in the inferred type would break every existing state fixture.
   // `migrate()` always populates it, so callers never see `undefined` at runtime.
-  providerConnections: z.record(ProviderIdSchema, ProviderConnectionSchema).optional(),
+  providerConnections: z.record(z.string().min(1), ProviderConnectionSchema).optional(),
 });
 
 export type PersistedState = z.infer<typeof StateSchema>;
 
-const STORAGE_KEY = "ToneForge.State.v14";
+const STORAGE_KEY = "ToneForge.State.v15";
 const LEGACY_STORAGE_KEYS = [
+  "ToneForge.State.v14",
   "ToneForge.State.v13",
   "ToneForge.State.v12",
   "ToneForge.State.v11",

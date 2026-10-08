@@ -15,6 +15,15 @@ export interface DecisionProviderMetadata {
   readonly latencyMs: number;
   readonly tokensIn: number;
   readonly tokensOut: number;
+  /**
+   * True when the model's output could not be read as JSON at all.
+   *
+   * Distinct from a partial answer: a response that answers some questions and
+   * omits others is a partial answer, while a response that is not JSON means
+   * the model ignored the output contract. Both leave questions unresolved, but
+   * only the second is a parse failure worth surfacing to the user.
+   */
+  readonly parseFailed?: boolean;
 }
 
 /** The evaluation returned by a decision provider. */

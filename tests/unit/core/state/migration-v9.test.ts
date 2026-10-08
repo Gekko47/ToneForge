@@ -85,7 +85,7 @@ describe("migration v8 to v9", () => {
     expect(result.settings.openAiModel).toBe("gpt-4o");
   });
 
-  it("preserves a stored provider connection", () => {
+  it("preserves a stored provider connection, re-keyed to its connectionId", () => {
     const result = migrate({
       ...v8(),
       providerConnections: {
@@ -98,7 +98,9 @@ describe("migration v8 to v9", () => {
         },
       },
     });
-    expect(result.providerConnections?.openai?.status).toBe("connected");
+    expect(result.providerConnections?.["local:openai:http://127.0.0.1:8787"]?.status).toBe(
+      "connected",
+    );
   });
 
   it("reads a current v9 state without resetting the consent", () => {

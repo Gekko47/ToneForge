@@ -354,7 +354,7 @@ OpenRouter component already documents the same trap it hit
   `restoreMocks`/`clearMocks`, so module state must be resettable.
 
 **Files to edit.** The three call sites above, plus
-`src/taskpane/components/ProviderPrivacySettingsSection.tsx` and
+`src/taskpane/components/RedactionSettingsSection.tsx` and
 `src/taskpane/components/TelemetrySettingsSection.tsx` can drop their
 `loadState()`-then-`useState` pattern (lines 51-53 and 13-15 respectively).
 
@@ -429,7 +429,7 @@ the correct active page. No governance action is enabled without a profile.
    stale banner. `stale` keeps its meaning.
 
 3. **A mislabelled destructive action.**
-   [`ProviderPrivacySettingsSection.tsx:154`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx)
+   [`RedactionSettingsSection.tsx`](../src/taskpane/components/RedactionSettingsSection.tsx)
    is labelled "Clear legacy stored credential", but
    [`persistence.ts:280`](../src/core/state/persistence.ts) also resets the
    provider to `mock` and empties every connection. Either rename to "Reset
@@ -577,7 +577,7 @@ between the pure serialiser and the download is load-bearing, not stylistic.
 **The contradiction.** [`oauthState.ts:80`](../src/ai/gateway/oauthState.ts)
 `resolveAuthMode("anthropic") === "oauth"` and OpenAI is `"featureGated"`. The
 Provider dropdown at
-[`ProviderPrivacySettingsSection.tsx:37`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx)
+[`RoleConnectionCard.tsx`](../src/taskpane/components/RoleConnectionCard.tsx)
 tells the user both are "Deployment-managed. The gateway holds the credential;
 the add-in never sees it." One is wrong.
 
@@ -662,7 +662,7 @@ same content.
 **Files.** `src/core/state/persistence.ts`, `src/core/config/env.ts` if it is
 referenced, `src/taskpane/settings/settingsModel.ts`,
 `src/core/state/migration.ts`, `src/taskpane/components/TelemetrySettingsSection.tsx`
-(delete), `src/taskpane/components/SettingsForm.tsx:25` (remove the import), plus
+(delete), `src/taskpane/components/SettingsDashboard.tsx` (remove the import), plus
 every state fixture under `tests/fixtures/` and the state tests.
 
 **Migration.** Per ADR-0015 and the rule in
@@ -892,7 +892,7 @@ match; refuse when ambiguous and say so. Only an anchored finding may be
 `src/ai/review/responseValidator.ts`.
 
 **Outcome B — withdraw.** Remove the `semanticOptIn` toggle from
-[`ProviderPrivacySettingsSection.tsx:171`](../src/taskpane/components/ProviderPrivacySettingsSection.tsx),
+[`RedactionSettingsSection.tsx`](../src/taskpane/components/RedactionSettingsSection.tsx),
 remove the semantic branch from the checker, and document that ToneForge's
 governance path is deterministic with AI reserved for the opt-in consistency
 review — which is exactly what the product's own positioning says.

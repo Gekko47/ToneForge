@@ -75,6 +75,7 @@ export function buildQuestionRegistry(): QuestionRegistry {
       id: eq,
       prompt: binaryPrompt(eq),
       subjectId: "",
+      requestedContext: [],
     });
   }
 
@@ -92,6 +93,7 @@ export function buildQuestionRegistry(): QuestionRegistry {
       prompt: choicePrompt(eq),
       subjectId: "",
       options: choiceOptions(eq),
+      requestedContext: [],
     });
   }
 

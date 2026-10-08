@@ -1,11 +1,19 @@
 import React from "react";
-import SettingsForm from "../components/SettingsForm";
+import { loadState, saveState, type PersistedState } from "../../core/state/index";
+import { SettingsDashboard } from "../components/SettingsDashboard";
 
 export interface SettingsProps {
   onBack: () => void;
 }
 
 export default function Settings({ onBack }: SettingsProps): React.ReactNode {
+  const [state, setState] = React.useState<PersistedState>(() => loadState());
+
+  function handleStateChange(next: PersistedState): void {
+    setState(next);
+    saveState(next);
+  }
+
   return (
     <div className="tf-card" data-page="settings">
       <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
@@ -13,7 +21,8 @@ export default function Settings({ onBack }: SettingsProps): React.ReactNode {
           Back to Deterministic Review
         </button>
       </nav>
-      <SettingsForm />
+      <h2 className="tf-title">Settings</h2>
+      <SettingsDashboard state={state} onStateChange={handleStateChange} />
     </div>
   );
 }

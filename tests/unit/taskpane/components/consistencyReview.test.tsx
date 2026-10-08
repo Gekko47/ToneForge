@@ -44,6 +44,7 @@ function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
       gated: 0,
       reviewBandSuppressed: 0,
       budgetExceeded: 0,
+      decisionParseFailed: false,
     },
     ...overrides,
   };
@@ -472,6 +473,7 @@ describe("consistency results", () => {
             gated: 0,
             reviewBandSuppressed: 0,
             budgetExceeded: 0,
+            decisionParseFailed: false,
           },
         })}
         onDismiss={() => undefined}
@@ -507,6 +509,7 @@ describe("consistency results", () => {
             unresolved: 0,
             gated: 0,
             reviewBandSuppressed: 0,
+            decisionParseFailed: false,
             budgetExceeded: 0,
           },
         })}

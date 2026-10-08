@@ -115,6 +115,15 @@ export const ConsistencyCoverageSchema = z.object({
   gated: z.number().int().min(0).default(0),
   reviewBandSuppressed: z.number().int().min(0).default(0),
   budgetExceeded: z.number().int().min(0).default(0),
+  /**
+   * True when the decision model's output could not be read as JSON at all.
+   *
+   * Distinct from `unresolved`: a partial answer leaves some questions
+   * unresolved, while an unreadable response means the model ignored the output
+   * contract. Both are honest residue, but only the second is a parse failure
+   * the user can act on (a different model, or a retry).
+   */
+  decisionParseFailed: z.boolean().default(false),
 });
 
 export type ConsistencyCoverage = z.infer<typeof ConsistencyCoverageSchema>;

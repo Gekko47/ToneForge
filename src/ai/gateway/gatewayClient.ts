@@ -65,6 +65,49 @@ export type GatewayErrorKind =
   | "aborted"
   | "invalidResponse";
 
+/**
+ * The result of a connection test.
+ *
+ * `ok` is the gateway's own verdict. `detail` is a human-readable sentence the
+ * dashboard can show verbatim; it never contains a credential or a token.
+ */
+export interface ConnectionTestResult {
+  ok: boolean;
+  /** Round-trip time in milliseconds, when the gateway reported one. */
+  latencyMs?: number;
+  detail: string;
+}
+
+/**
+ * Map a `GatewayErrorKind` to a sentence the user can act on.
+ *
+ * The kind is a stable machine value; the sentence is what the dashboard and
+ * the troubleshooting panel show. Keeping the mapping here means every surface
+ * describes the same failure the same way.
+ */
+export function describeGatewayError(kind: GatewayErrorKind): string {
+  switch (kind) {
+    case "notConfigured":
+      return "No provider gateway is configured for this deployment.";
+    case "unauthorized":
+      return "The gateway rejected the session. Reconnect to refresh it.";
+    case "forbidden":
+      return "The gateway refused the request. The connection may have been revoked.";
+    case "rateLimited":
+      return "The gateway rate limit was reached. Wait a moment and try again.";
+    case "serverError":
+      return "The gateway encountered a server error. Try again shortly.";
+    case "network":
+      return "Could not reach the provider gateway. Check that the local broker is running.";
+    case "timeout":
+      return "The gateway request timed out. Try again.";
+    case "aborted":
+      return "The request was cancelled.";
+    case "invalidResponse":
+      return "The gateway returned an unexpected response.";
+  }
+}
+
 function isLoopbackHostname(hostname: string): boolean {
   return (
     hostname === "localhost" ||
@@ -167,6 +210,13 @@ const GatewayConnectionResponseSchema = z.object({
   allowCustomModel: z.boolean().optional(),
 });
 
+/** Schema for a gateway-issued connection-test response. */
+const GatewayTestResponseSchema = z.object({
+  ok: z.boolean(),
+  latencyMs: z.number().int().nonnegative().optional(),
+  detail: z.string().trim().min(1).optional(),
+});
+
 /** Schema for a gateway-issued model catalog response. */
 const GatewayModelCatalogResponseSchema = z.object({
   connectionId: z.string().trim().min(1),
@@ -215,6 +265,17 @@ export interface ProviderGatewayClient {
   ): Promise<ProviderConnection>;
   /** Fetch and normalize the provider's current model catalog. */
   fetchModelCatalog(connection: ProviderConnection, signal?: AbortSignal): Promise<ModelCatalog>;
+  /**
+   * Test whether the connection can currently serve a request.
+   *
+   * A lightweight probe the dashboard runs on demand. It never sends document
+   * text and never mutates the connection; it only asks the gateway to confirm
+   * the credential is live.
+   */
+  testConnection(
+    connection: ProviderConnection,
+    signal?: AbortSignal,
+  ): Promise<ConnectionTestResult>;
   /** End the server-side connection and invalidate the local reference. */
   disconnect(connection: ProviderConnection, signal?: AbortSignal): Promise<void>;
 }
@@ -383,6 +444,35 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
       throw new GatewayError("Gateway model catalog failed validation", "invalidResponse", false);
     }
     return result.data;
+  }
+
+  async testConnection(
+    connection: ProviderConnection,
+    signal?: AbortSignal,
+  ): Promise<ConnectionTestResult> {
+    const body = await this.request(
+      "GET",
+      `/v1/connections/${encodeURIComponent(connection.connectionId)}/test`,
+      undefined,
+      signal,
+      connection.connectionId,
+    );
+    const parsed = GatewayTestResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new GatewayError(
+        "Gateway returned an unreadable connection test result",
+        "invalidResponse",
+        false,
+      );
+    }
+    const detail =
+      parsed.data.detail ??
+      (parsed.data.ok ? "Connection is reachable." : "Connection test failed.");
+    return {
+      ok: parsed.data.ok,
+      ...(parsed.data.latencyMs !== undefined ? { latencyMs: parsed.data.latencyMs } : {}),
+      detail,
+    };
   }
 
   async disconnect(connection: ProviderConnection, signal?: AbortSignal): Promise<void> {

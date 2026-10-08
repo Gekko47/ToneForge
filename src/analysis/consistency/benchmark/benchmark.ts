@@ -91,6 +91,7 @@ function planFor(fixture: CorpusFixture): DecisionPlan {
           id: answer.question,
           prompt: answer.question,
           subjectId: fixture.id,
+          requestedContext: [],
         };
       }
       return {
@@ -101,6 +102,7 @@ function planFor(fixture: CorpusFixture): DecisionPlan {
     projectedStates: [],
     budget: { maxQuestions: fixture.expertAnswers.length, maxExpansions: 0 },
     allowUnredacted: false,
+    expandedContext: [],
   };
 }
 

@@ -13,7 +13,7 @@ import {
   type ProfileRevision,
   type PublishedVersion,
 } from "../domain/ProfileRecord";
-import { ProviderConnectionSchema, type ProviderConnection } from "../domain/ProviderConnection";
+import { ProviderConnectionSchema } from "../domain/ProviderConnection";
 import {
   IgnoredFindingSchema,
   ReviewedFindingSchema,
@@ -28,9 +28,10 @@ import {
   type SemanticReviewOutcome,
   type SemanticSampleEvidence,
 } from "../domain/SemanticReviewSession";
+import { LlmRoleBindingsSchema, createEmptyRoleBindings } from "../domain/LlmRole";
 import { type PersistedState } from "./persistence";
 
-export const CURRENT_STATE_VERSION = 14;
+export const CURRENT_STATE_VERSION = 15;
 
 const DEFAULT_SETTINGS: PersistedState["settings"] = {
   llmProvider: "mock",
@@ -38,6 +39,7 @@ const DEFAULT_SETTINGS: PersistedState["settings"] = {
   consistencyReviewConsent: false,
   semanticOptIn: false,
   autoScan: true,
+  decisionFallbackPolicy: "unresolved",
 };
 
 const DEFAULT_GOVERNANCE_PROFILES: Record<string, GovernanceProfile> = {};
@@ -103,6 +105,8 @@ export function migrate(raw: unknown): PersistedState {
       return migrateV12ToV13(obj);
     case 13:
       return migrateV13ToV14(obj);
+    case 14:
+      return migrateV14ToV15(obj);
     case CURRENT_STATE_VERSION:
       return readCurrentState(obj);
     default:
@@ -126,6 +130,7 @@ function defaultState(): PersistedState {
     governanceHistory: DEFAULT_GOVERNANCE_HISTORY,
     activeGovernanceProfileId: null,
     settings: { ...DEFAULT_SETTINGS },
+    llmRoleBindings: createEmptyRoleBindings(),
     providerConnections: {},
   };
 }
@@ -161,6 +166,32 @@ function migrateV13ToV14(obj: Record<string, unknown>): PersistedState {
     version: CURRENT_STATE_VERSION,
     semanticSampleEvidence: {},
     semanticReviewOutcomes: [],
+  };
+}
+
+/**
+ * v14 -> v15: dual LLM role bindings and connection-id keying.
+ *
+ * Two changes:
+ *
+ * 1. `providerConnections` is re-keyed from provider id to connection id. A v14
+ *    store has at most one connection per provider; v15 allows two (one for the
+ *    general LLM, one for the decision LLM). The re-key is mechanical: the key
+ *    becomes the record's own `connectionId`.
+ *
+ * 2. `llmRoleBindings` starts empty and `decisionFallbackPolicy` defaults to
+ *    `"unresolved"`. No binding is inferred from the v14 single-connection
+ *    layout: a v14 user had one connection serving both roles, and promoting
+ *    it to a general-only binding without a decision binding would silently
+ *    disable adjudication. The user configures the decision role explicitly.
+ */
+function migrateV14ToV15(obj: Record<string, unknown>): PersistedState {
+  const current = readCurrentState(obj);
+  return {
+    ...current,
+    version: CURRENT_STATE_VERSION,
+    llmRoleBindings: createEmptyRoleBindings(),
+    settings: { ...current.settings, decisionFallbackPolicy: "unresolved" },
   };
 }
 
@@ -364,7 +395,7 @@ function deriveConnectionsFromV7(raw: unknown): PersistedState["providerConnecti
       ? { selectedModel: settings.openAiModel }
       : {}),
   });
-  return connection.success ? { [provider]: connection.data } : {};
+  return connection.success ? { [connection.data.connectionId]: connection.data } : {};
 }
 
 /** Accept only a loopback origin from legacy settings. */
@@ -384,17 +415,44 @@ function normalizeLegacyOrigin(value: string): string | null {
 }
 
 /**
- * Keep only well-formed connection records, and only those whose key matches
- * the record's own provider. A record filed under the wrong provider would let
- * the registry construct an adapter for a provider the user did not select.
+ * Keep only well-formed connection records, keyed by their own `connectionId`.
+ *
+ * v14 and earlier keyed by provider id; v15 keys by connection id so two
+ * connections to the same provider can coexist. A record whose key does not
+ * match its own `connectionId` is dropped: a mis-keyed record would let the
+ * registry construct an adapter for a connection the user did not configure.
  */
 function normalizeProviderConnections(raw: unknown): PersistedState["providerConnections"] {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const result: PersistedState["providerConnections"] = {};
-  for (const [provider, connection] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [_key, connection] of Object.entries(raw as Record<string, unknown>)) {
     const parsed = ProviderConnectionSchema.safeParse(connection);
-    if (parsed.success && parsed.data.provider === provider) {
-      result[provider as ProviderConnection["provider"]] = parsed.data;
+    if (parsed.success) {
+      result[parsed.data.connectionId] = parsed.data;
+    }
+  }
+  return result;
+}
+
+/**
+ * Keep only well-formed role bindings.
+ *
+ * A binding whose `connectionId` does not exist in the normalized connections
+ * map is dropped: a binding to a deleted connection would silently disable
+ * the role while appearing configured.
+ */
+function normalizeRoleBindings(
+  raw: unknown,
+  connections: PersistedState["providerConnections"],
+): PersistedState["llmRoleBindings"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return createEmptyRoleBindings();
+  const parsed = LlmRoleBindingsSchema.safeParse(raw);
+  if (!parsed.success) return createEmptyRoleBindings();
+  const result = createEmptyRoleBindings();
+  for (const role of ["general", "consistency_decision"] as const) {
+    const binding = parsed.data[role];
+    if (binding && connections && connections[binding.connectionId] !== undefined) {
+      result[role] = binding;
     }
   }
   return result;
@@ -438,6 +496,10 @@ function readCurrentState(obj: Record<string, unknown>): PersistedState {
     activeGovernanceProfileId: normalizeActiveGovernanceProfileId(obj.activeGovernanceProfileId),
     settings: normalizeSettings(obj.settings),
     providerConnections: normalizeProviderConnections(obj.providerConnections),
+    llmRoleBindings: normalizeRoleBindings(
+      obj.llmRoleBindings,
+      normalizeProviderConnections(obj.providerConnections),
+    ),
   };
 }
 

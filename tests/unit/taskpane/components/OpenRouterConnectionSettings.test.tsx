@@ -195,7 +195,7 @@ describe("OpenRouterConnectionSettings", () => {
     const saved = mocks.saveState.mock.calls[0]?.[0] as {
       providerConnections: Record<string, ProviderConnection>;
     };
-    expect(saved.providerConnections.openrouter?.connectionId).toBe(
+    expect(saved.providerConnections["or_0123456789abcdef0123456789abcdef"]?.connectionId).toBe(
       "or_0123456789abcdef0123456789abcdef",
     );
   });

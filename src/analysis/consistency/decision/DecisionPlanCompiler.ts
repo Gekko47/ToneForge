@@ -19,6 +19,7 @@ import type {
 } from "../comparison/deterministicEvaluationResolver";
 import { evaluationProfile } from "../comparison/evaluationProfiles";
 import { QUESTION_REGISTRY } from "./questionRegistry";
+import { contextRequestsForQuestion } from "./systemOne/SystemOneContextPolicy";
 import { type ClaimPairDiff } from "../comparison/claimPairDiff";
 import { attributionKey } from "../checks/primitives";
 
@@ -171,11 +172,14 @@ export function compileDecisionPlanWithCandidates(
       // Make the question ID unique per candidate by prefixing with candidateId
       const uniqueId = `${state.candidateId}:${decisionQuestion.id}`;
 
-      // Fill in the subjectId
+      // Fill in the subjectId and the context this question may ask for. The
+      // context is declared up front so the engine knows what a single
+      // expansion pass would retrieve before it spends a model call.
       const questionWithSubject: DecisionQuestion = {
         ...decisionQuestion,
         id: uniqueId,
         subjectId: state.candidateId,
+        requestedContext: [...contextRequestsForQuestion(unresolved.question)],
       };
 
       questions.push(questionWithSubject);
@@ -192,5 +196,8 @@ export function compileDecisionPlanWithCandidates(
       maxExpansions: options.maxExpansions,
     },
     allowUnredacted: options.allowUnredacted,
+    // The first pass carries no expanded context; the engine fills this in for
+    // the single rerun of unanswered questions.
+    expandedContext: [],
   };
 }

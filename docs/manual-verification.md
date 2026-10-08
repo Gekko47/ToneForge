@@ -933,3 +933,55 @@ substitution is a judgement that has not been reviewed by anyone but the author.
 open. Every dropdown there is a native `EnumSelect`; converting Typography alone
 would make it the one section that looks different, which is the complaint that
 started this work.
+
+## LLM connectivity smoke harness
+
+The automated test suite proves the gateway client, the registry, and the
+provider adapters against mocks. It cannot prove that a real provider responds.
+The live smoke harness closes that gap.
+
+### What it proves
+
+[`scripts/llm-smoke.mjs`](../scripts/llm-smoke.mjs) starts the development
+gateway on a loopback port, then exercises the full path a request takes when
+the add-in talks to a provider:
+
+1. Issues a deployment-managed connection through the gateway.
+2. Fetches the model catalog.
+3. Tests the connection.
+4. Sends a chat completion (a 50-token prompt).
+5. Disconnects.
+
+Each step is a pass/fail check. The harness exits 0 only when all five pass.
+
+### Running it
+
+```text
+npm run smoke:llm
+```
+
+Options:
+
+- `--port <number>` — override the default port (3777).
+- `--provider <name>` — override the default provider (`openrouter`).
+
+The harness uses the development gateway's deployment-managed credential. It
+never reads a user API key, never touches production, and never sends document
+text.
+
+### What a pass means
+
+A pass means the development gateway is reachable, the provider accepted the
+credential, the model catalog was returned, the connection test succeeded, and a
+chat completion produced a non-empty response. It does not mean the add-in's
+own UI can reach the gateway — that requires a live Word host, recorded above.
+
+### What it does not prove
+
+- It does not exercise the browser's `fetch` path (the harness runs in Node).
+- It does not prove the add-in's gateway origin configuration is correct.
+- It does not prove the OAuth flow (the harness uses deployment-managed).
+- It does not send document text or exercise the semantic/consistency engines.
+
+Those gaps are closed by the unit suite (for the client and registry code) and
+by manual Word verification (for the full add-in-to-provider path).

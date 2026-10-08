@@ -11,6 +11,35 @@ import { z } from "zod";
  * different review wearing this one's provenance.
  */
 
+/**
+ * The context a question may ask for (original §23).
+ *
+ * A question requests context by name; the engine retrieves only what was
+ * requested, index-first, and never appends the whole report. The vocabulary
+ * lives here so the plan contract owns it and the decision layer maps to it.
+ */
+export const ContextRequestSchema = z.enum([
+  "CTX-SURROUNDING-PARAGRAPHS",
+  "CTX-EVENT-HISTORY",
+  "CTX-PROGRAMME-HISTORY",
+  "CTX-TERM-DEFINITION",
+  "CTX-RELATED-CLAIMS",
+  "CTX-VALUATION-BASIS",
+  "CTX-MEASUREMENT-BASIS",
+  "CTX-REFERENCE-CONTENT",
+  "CTX-SECTION-SUMMARY",
+]);
+
+/**
+ * The context-request kind.
+ *
+ * Named `ContextRequestKind`, not `ContextRequest`, because
+ * `decision/contextExpansion.ts` already owns a `ContextRequest` — the
+ * retrieval request that pairs a kind with a candidate and parameters. This is
+ * the vocabulary; that is the retrieval instruction.
+ */
+export type ContextRequestKind = z.infer<typeof ContextRequestSchema>;
+
 /** One typed question: binary, choice, or score. */
 export const DecisionQuestionSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -18,6 +47,7 @@ export const DecisionQuestionSchema = z.discriminatedUnion("kind", [
     id: z.string().trim().min(1),
     prompt: z.string().trim().min(1),
     subjectId: z.string().trim().min(1),
+    requestedContext: z.array(ContextRequestSchema).default([]),
   }),
   z.object({
     kind: z.literal("choice"),
@@ -25,6 +55,7 @@ export const DecisionQuestionSchema = z.discriminatedUnion("kind", [
     prompt: z.string().trim().min(1),
     subjectId: z.string().trim().min(1),
     options: z.array(z.string().trim().min(1)).min(2),
+    requestedContext: z.array(ContextRequestSchema).default([]),
   }),
   z.object({
     kind: z.literal("score"),
@@ -33,6 +64,7 @@ export const DecisionQuestionSchema = z.discriminatedUnion("kind", [
     subjectId: z.string().trim().min(1),
     min: z.number(),
     max: z.number(),
+    requestedContext: z.array(ContextRequestSchema).default([]),
   }),
 ]);
 
@@ -87,6 +119,20 @@ export const ProjectedCandidateStateSchema = z.object({
 
 export type ProjectedCandidateState = z.infer<typeof ProjectedCandidateStateSchema>;
 
+/**
+ * Context retrieved for one candidate during the single expansion pass.
+ *
+ * Populated only on the second pass, and only with what the unanswered
+ * questions asked for — never the whole report (original §23 rule 3).
+ */
+export const ExpandedContextSchema = z.object({
+  candidateId: z.string().trim().min(1),
+  kind: ContextRequestSchema,
+  content: z.string(),
+});
+
+export type ExpandedContext = z.infer<typeof ExpandedContextSchema>;
+
 /** The compiled plan for one run. */
 export const DecisionPlanSchema = z.object({
   revision: z.string().trim().min(1),
@@ -100,6 +146,8 @@ export const DecisionPlanSchema = z.object({
   }),
   /** Whether exact statement text may be sent (D13 opt-out, per-run). */
   allowUnredacted: z.boolean().default(false),
+  /** Context retrieved for the single expansion pass. Empty on the first pass. */
+  expandedContext: z.array(ExpandedContextSchema).default([]),
 });
 
 export type DecisionPlan = z.infer<typeof DecisionPlanSchema>;

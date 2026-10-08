@@ -73,7 +73,7 @@ describe("migration v9 to v10", () => {
     expect(result.settings.openAiBaseUrl).toBe("https://openrouter.ai/api/v1");
   });
 
-  it("preserves a stored provider connection", () => {
+  it("preserves a stored provider connection, re-keyed to its connectionId", () => {
     const result = migrate({
       ...v9(),
       providerConnections: {
@@ -86,7 +86,9 @@ describe("migration v9 to v10", () => {
         },
       },
     });
-    expect(result.providerConnections?.openrouter?.status).toBe("connected");
+    expect(
+      result.providerConnections?.["broker:openrouter:https://openrouter.ai/api/v1"]?.status,
+    ).toBe("connected");
   });
 
   it("leaves a v10 store alone", () => {
