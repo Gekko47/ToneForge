@@ -17,9 +17,9 @@ The windowed pairwise engine is gone; retrieval is indexed by subject.
 - [`grouping.ts`](grouping.ts:1) — collapses repeats of one disagreement for
   the results surface. Replaces the old grouping.
 - [`checks/`](checks/) — the ten check identities with their
-  deterministic-first flags. Indexed retrieval lands here in R3.
+  deterministic-first flags and the shared pure primitives.
 
-## What lands in R1–R7
+## What R1–R7 delivered
 
 - `extraction/` — prompt, schema, batch extractor, global resolver, evidence
   validator (R2).
@@ -33,6 +33,7 @@ The windowed pairwise engine is gone; retrieval is indexed by subject.
   question registry, `systemOne/` adapter triple (R5).
 - `persistence/` — `ConsistencyStore` interface, `IndexedDbStore`,
   `MemoryStore`, schema versioning, WebCrypto field encryption, TTL wipe (R7).
+- `benchmark/` — expert-labelled corpus and the decision-model benchmark (R7).
 
 ## Properties this engine holds to
 

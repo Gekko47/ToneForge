@@ -17,6 +17,7 @@ import type { ConsistencyCheckId } from "../contracts";
 import type { ClaimPairDiff } from "./claimPairDiff";
 import { evaluationProfile } from "./evaluationProfiles";
 import { runComparabilityGates } from "./deterministicEvaluationResolver";
+import { attributionKey } from "../checks/primitives";
 
 /** Result of running the pre-model hard gates. */
 export interface PreModelGateResult {
@@ -146,11 +147,7 @@ function gateApplies(gate: string, claims: readonly NormalisedClaim[]): boolean 
     case "different-attribution-domain": {
       const leftAttribution = attributionKey(left.claim);
       const rightAttribution = attributionKey(right.claim);
-      return (
-        leftAttribution !== null &&
-        rightAttribution !== null &&
-        leftAttribution !== rightAttribution
-      );
+      return leftAttribution !== rightAttribution;
     }
     case "different-valuation-period": {
       const leftValuation = left.claim.quantum?.valuationPeriod;
@@ -214,13 +211,4 @@ function isConflictQuestion(question: string): boolean {
     "E-CRITICALITY-INCOMPATIBLE",
     "E-SUBSTANTIVE-CONFLICT",
   ].includes(question);
-}
-
-/** Attribution key from speaker and attributedTo. */
-function attributionKey(claim: NormalisedClaim["claim"]): string | null {
-  const parts = [claim.speaker.name];
-  if (claim.attributedTo !== undefined) {
-    parts.push(`attributedTo:${claim.attributedTo.name}`);
-  }
-  return parts.join(" | ");
 }

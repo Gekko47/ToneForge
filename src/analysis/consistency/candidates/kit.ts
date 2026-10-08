@@ -26,6 +26,11 @@ export interface RetrievalContext {
   readonly indices: ConsistencyIndices;
   readonly aliases: AliasIndex;
   readonly maxPerSubject: number;
+  /**
+   * The checks to run. Absent or empty means all ten, so a caller that does not
+   * select still runs the full set rather than silently running nothing.
+   */
+  readonly checks?: readonly ConsistencyCheckId[];
 }
 
 /** What one check's retrieval produces. */

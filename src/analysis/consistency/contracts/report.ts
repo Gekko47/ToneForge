@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConsistencyCheckIdSchema } from "./checkIds";
 import { ConsistencyVerdictSchema } from "./verdict";
 
 /**
@@ -14,7 +15,7 @@ import { ConsistencyVerdictSchema } from "./verdict";
  * planner produces nothing from it.
  */
 export const ConsistencyIssueSchema = z.object({
-  checkId: z.string().trim().min(1),
+  checkId: ConsistencyCheckIdSchema,
   fingerprint: z.string().trim().min(1),
   title: z.string().trim().min(1),
   detail: z.string().trim().min(1),

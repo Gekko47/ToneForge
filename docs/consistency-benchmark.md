@@ -59,3 +59,28 @@ precision at or above the presentation bar (0.75).
 ## Selection
 
 Selected: **oracle** (precision 100%, recall 100%).
+
+## How to use this
+
+The benchmark is a **repository-side comparison harness**, not a live model
+evaluation. It runs identical `DecisionPlan`s through candidate
+`ConsistencyDecisionProvider`s and scores each on precision, recall,
+D-accuracy, E-calibration, false-positive and false-negative rates, stability,
+latency, and token counts. Selection prioritises precision at or above the
+presentation bar (0.75), because a check that fires on everything is
+worse than one that fires on nothing.
+
+- **Regenerate** by calling the exported `runBenchmark` /
+  `renderBenchmarkReport` from `benchmark.ts` and writing the result to this
+  file. There is no dedicated npm script; the harness is exercised by
+  `tests/unit/analysis/consistency/benchmark/benchmark.test.ts` and
+  `report.test.ts`.
+- **The candidates are synthetic.** `oracle`, `over-eager`, `under-eager`, and
+  `definition-blind` are deterministic doubles over the expert-labelled corpus
+  in `corpus.ts`. They prove the harness discriminates a good decision model
+  from a bad one; they are not measurements of any real provider.
+- **A real model is not yet scored.** Wiring a live provider into the harness
+  is the open calibration gate recorded in `docs/project-state.md`. Until then,
+  no release claim rests on these numbers.
+- **The report is byte-for-byte asserted** by `report.test.ts`, so a change to
+  the corpus or the scoring must be reflected here in the same commit.

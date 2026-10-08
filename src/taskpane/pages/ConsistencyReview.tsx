@@ -177,9 +177,10 @@ export default function ConsistencyReview({
           consistencyConsent: true,
           document: { revision, text, sections },
           model: state.settings.openAiModel ?? "",
-          // The value the preflight disclosed, not a fresh read: the user agreed
-          // to the run the disclosure described, so the run must be that one.
-          allowUnredacted: preflight.disclosure.allowUnredacted,
+          // The live toggle value, not the frozen disclosure snapshot: the user
+          // may have toggled redaction off after the preflight opened, and the
+          // run must honour their final choice.
+          allowUnredacted,
         },
         {
           // Reused, never re-selected: the consistency engine has no provider
@@ -230,7 +231,9 @@ export default function ConsistencyReview({
                 wordCount: preflight.disclosure.approximateWords,
                 statementCount: preflight.disclosure.statementCount,
                 storageNote: preflight.disclosure.storageNote,
-                allowUnredacted: preflight.disclosure.allowUnredacted,
+                // Live state, so the checkbox reflects the user's current choice
+                // rather than the value captured when the preflight opened.
+                allowUnredacted,
               }
         }
         progress={progress}

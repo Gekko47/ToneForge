@@ -81,13 +81,37 @@ export class IndexedDbStore implements ConsistencyStore {
 
   async wipeExpired(nowIso: string): Promise<number> {
     const db = await this.open();
-    const store = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME);
-    const all = await request<unknown[]>(store.getAll());
-    const expired = all
-      .map((raw) => ConsistencyStoreRecordSchema.safeParse(raw))
-      .filter((parsed) => parsed.success && isExpired(parsed.data.updatedAt, nowIso))
-      .map((parsed) => (parsed.success ? parsed.data.revision : ""));
-    await Promise.all(expired.map((revision) => request(store.delete(revision))));
-    return expired.length;
+    // Keep the entire wipe in a single transaction: getAll + delete must not
+    // yield to the event loop, or the transaction auto-commits and the deletes
+    // fail with TransactionInactiveError.
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const getAllReq = store.getAll();
+      getAllReq.onsuccess = () => {
+        const all = getAllReq.result as unknown[];
+        const expired = all
+          .map((raw) => ConsistencyStoreRecordSchema.safeParse(raw))
+          .filter(
+            (parsed): parsed is { success: true; data: ConsistencyStoreRecord } =>
+              parsed.success && isExpired(parsed.data.updatedAt, nowIso),
+          )
+          .map((parsed) => parsed.data.revision);
+        if (expired.length === 0) {
+          resolve(0);
+          return;
+        }
+        let completed = 0;
+        expired.forEach((revision) => {
+          const delReq = store.delete(revision);
+          delReq.onsuccess = () => {
+            completed += 1;
+            if (completed === expired.length) resolve(expired.length);
+          };
+          delReq.onerror = () => reject(delReq.error ?? new Error("IndexedDB delete failed."));
+        });
+      };
+      getAllReq.onerror = () => reject(getAllReq.error ?? new Error("IndexedDB getAll failed."));
+    });
   }
 }

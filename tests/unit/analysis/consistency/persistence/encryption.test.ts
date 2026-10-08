@@ -32,6 +32,18 @@ describe("encryption", () => {
       const payload = await encryptString("secret", keyA);
       await expect(decryptString(payload, keyB)).rejects.toThrow();
     });
+
+    it("rejects a tampered ciphertext", async () => {
+      const key = await generateDataKey();
+      const payload = await encryptString("authentic plaintext", key);
+      // Flip the first character of the ciphertext to simulate tampering
+      const tamperedCiphertext =
+        payload.ciphertext[0] === "A"
+          ? "B" + payload.ciphertext.slice(1)
+          : "A" + payload.ciphertext.slice(1);
+      const tampered = { ...payload, ciphertext: tamperedCiphertext };
+      await expect(decryptString(tampered, key)).rejects.toThrow();
+    });
   });
 
   describe("wrapDataKey / unwrapDataKey", () => {

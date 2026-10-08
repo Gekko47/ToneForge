@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConsistencyCheckIdSchema } from "./registry";
+import { ConsistencyCheckIdSchema } from "./checkIds";
 import { DecisionSubjectSchema } from "./subject";
 
 /**

@@ -359,3 +359,22 @@ export function isExclusiveStatePair(a: string, b: string): boolean {
 export function isNumericWord(word: string): boolean {
   return /\d/.test(word);
 }
+
+/**
+ * Build an attribution key from speaker and attributedTo.
+ *
+ * Shared rather than duplicated: the diff, the hard gates, the E-resolver,
+ * and the plan compiler all need the same key to decide whether two claims
+ * come from the same source. Four copies would drift, and a fifth caller
+ * would inherit the drift.
+ */
+export function attributionKey(claim: {
+  readonly speaker: { readonly name: string };
+  readonly attributedTo?: { readonly name: string } | undefined;
+}): string {
+  const parts = [claim.speaker.name];
+  if (claim.attributedTo !== undefined) {
+    parts.push(`attributedTo:${claim.attributedTo.name}`);
+  }
+  return parts.join(" | ");
+}

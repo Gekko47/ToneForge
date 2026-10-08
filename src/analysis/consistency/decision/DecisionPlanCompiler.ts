@@ -9,7 +9,7 @@
  * - Redaction toggle honoured (D13)
  */
 
-import type { ConsistencyCandidate, ConsistencyCheckId, ExpertReportClaim } from "../contracts";
+import type { ConsistencyCandidate, ConsistencyCheckId } from "../contracts";
 import type { NormalisedClaim } from "../normalisation";
 import type { DecisionPlan, DecisionQuestion } from "../contracts/plan";
 import type {
@@ -20,6 +20,7 @@ import type {
 import { evaluationProfile } from "../comparison/evaluationProfiles";
 import { QUESTION_REGISTRY } from "./questionRegistry";
 import { type ClaimPairDiff } from "../comparison/claimPairDiff";
+import { attributionKey } from "../checks/primitives";
 
 /** Projected state for one claim in a DecisionPlan. */
 export interface ProjectedClaimState {
@@ -51,95 +52,6 @@ export interface ProjectedCandidateState {
   readonly diff: ClaimPairDiff;
   readonly deterministicAnswers: readonly EAnswer[];
   readonly unresolvedQuestions: readonly EUnresolved[];
-}
-
-/** Compile a DecisionPlan from unresolved candidates. */
-export function compileDecisionPlan(
-  resolutions: readonly DeterministicResolution[],
-  claims: readonly NormalisedClaim[],
-  options: {
-    revision: string;
-    maxQuestions: number;
-    maxExpansions: number;
-    allowUnredacted: boolean;
-  },
-): DecisionPlan {
-  const byId = new Map(claims.map((c) => [c.claim.id, c]));
-
-  // Filter to only unresolved candidates
-  const unresolvedResolutions = resolutions.filter((r) => r.state === "unresolved");
-
-  // Build projected state for each unresolved candidate
-  const projectedStates: ProjectedCandidateState[] = [];
-  for (const resolution of unresolvedResolutions) {
-    const candidate = findCandidateById(resolution.candidateId);
-    if (candidate === undefined) continue;
-
-    const claimIds = candidate.claimIds;
-    const claimObjs = claimIds
-      .map((id) => byId.get(id))
-      .filter((c): c is NormalisedClaim => c !== undefined);
-
-    if (claimObjs.length < 2) continue;
-
-    const left = claimObjs[0]!;
-    const right = claimObjs[1]!;
-    const profile = evaluationProfile(resolution.checkId);
-
-    // Build projected state with only required facts for this check
-    const leftProjected = projectClaim(left, profile.requiredFacts);
-    const rightProjected = projectClaim(right, profile.requiredFacts);
-
-    projectedStates.push({
-      candidateId: resolution.candidateId,
-      checkId: resolution.checkId,
-      left: leftProjected,
-      right: rightProjected,
-      diff: resolution.diff ?? { matches: [], differences: [], unknowns: [] },
-      deterministicAnswers: resolution.answers,
-      unresolvedQuestions: resolution.unresolved,
-    });
-  }
-
-  // Compile questions from unresolved E-questions
-  const questions: DecisionQuestion[] = [];
-  let questionCount = 0;
-
-  for (const state of projectedStates) {
-    if (questionCount >= options.maxQuestions) break;
-
-    const profile = evaluationProfile(state.checkId);
-    const registry = QUESTION_REGISTRY;
-
-    for (const unresolved of state.unresolvedQuestions) {
-      if (questionCount >= options.maxQuestions) break;
-
-      // Only include questions that are relevant to this check
-      if (!profile.relevantEQuestions.includes(unresolved.question)) continue;
-
-      const decisionQuestion = registry.getQuestion(unresolved.question, state.checkId);
-      if (decisionQuestion === undefined) continue;
-
-      // Fill in the subjectId
-      const questionWithSubject: DecisionQuestion = {
-        ...decisionQuestion,
-        subjectId: state.candidateId,
-      };
-
-      questions.push(questionWithSubject);
-      questionCount++;
-    }
-  }
-
-  return {
-    revision: options.revision,
-    questions,
-    budget: {
-      maxQuestions: options.maxQuestions,
-      maxExpansions: options.maxExpansions,
-    },
-    allowUnredacted: options.allowUnredacted,
-  };
 }
 
 /** Project a claim to only the required facts for a check. */
@@ -182,22 +94,6 @@ function projectClaim(
       role: eb.role ?? "primary",
     })),
   };
-}
-
-/** Find a candidate by ID (placeholder - would come from retrieval context). */
-function findCandidateById(_candidateId: string): ConsistencyCandidate | undefined {
-  // This would be provided by the engine context
-  // For now, return undefined - the engine will pass the candidate map
-  return undefined;
-}
-
-/** Attribution key from speaker and attributedTo. */
-function attributionKey(claim: ExpertReportClaim): string {
-  const parts = [claim.speaker.name];
-  if (claim.attributedTo !== undefined) {
-    parts.push(`attributedTo:${claim.attributedTo.name}`);
-  }
-  return parts.join(" | ");
 }
 
 /**

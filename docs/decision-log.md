@@ -769,11 +769,29 @@ the coverage report.
 
 ### Evidence
 
-- `src/analysis/consistency/contracts.ts` — the ten check IDs and the consent gate
-- `src/analysis/consistency/checks/` — one pure module per check
-- `src/analysis/consistency/engine.ts` — the pipeline
+- `src/analysis/consistency/contracts/` — the ten check IDs, the consent gate, and
+  every shape the engine produces or consumes (replaces the old `contracts.ts`)
+- `src/analysis/consistency/checks/` — the ten check identities and their
+  deterministic-first flags
+- `src/analysis/consistency/indexedEngine.ts` — the indexed pipeline (replaces the
+  old `engine.ts`)
 - `eslint.config.mjs` — the documented `ai/providers` exception for this directory
 - `tests/unit/analysis/consistency/`
+
+### Amendment (2026-10-08) — the engine is the indexed replacement, R1–R7
+
+The windowed pairwise engine this ADR first described was replaced by the indexed
+engine in `plans/indexed-consistency-authoritative-plan.md`. The exception itself
+is unchanged; only the implementation moved. The replacement adds the full claim
+schema and evidence validation (R1), two-pass extraction with canonical
+resolution (R2), normalisation, nine blocking indices, and C1–C10 retrieval (R3),
+the claim-pair diff, deterministic E-resolver, and pre-model gates (R4), the
+`DecisionPlan` compiler, decision adapter, and bounded expansion (R5), 16-outcome
+D-derivation, post-model gates, and confidence with intervals (R6), and the
+encrypted `ConsistencyStore`, coverage V3, results UI, and decision-model
+benchmark (R7). The boundary rules in this ADR — never reached from the typing
+path, `ai/providers` allowed and nothing else, output is an ordinary `Finding` —
+still hold and are still enforced by `eslint.config.mjs`.
 
 ## ADR-0053 — Manifest validation reads Microsoft's published schema, not the CLI's converter
 

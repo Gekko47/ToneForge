@@ -8,7 +8,7 @@
  */
 
 import type { ExpertReportClaim, ClaimValue, DateValue } from "../contracts";
-import { compareDates } from "../checks/primitives";
+import { attributionKey, compareDates } from "../checks/primitives";
 import { compatibleUnits, toBaseUnit } from "../normalisation";
 
 /** One field the two claims agree on. */
@@ -242,15 +242,6 @@ function periodKey(temporal: ExpertReportClaim["temporal"]): string | null {
   if (start) return `${start}..`;
   if (end) return `..${end}`;
   return null;
-}
-
-/** Build an attribution key from speaker and attributedTo. */
-function attributionKey(claim: ExpertReportClaim): string {
-  const parts = [claim.speaker.name];
-  if (claim.attributedTo !== undefined) {
-    parts.push(`attributedTo:${claim.attributedTo.name}`);
-  }
-  return parts.join(" | ");
 }
 
 /**

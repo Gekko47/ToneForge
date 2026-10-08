@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConsistencyCheckIdSchema } from "./checkIds";
 
 /**
  * The document the engine reviews.
@@ -35,7 +36,7 @@ export const ConsistencyReviewRequestSchema = z.object({
   consistencyConsent: z.literal(true),
   document: ConsistencyDocumentSchema,
   model: z.string().default(""),
-  checks: z.array(z.string()).default([]),
+  checks: z.array(ConsistencyCheckIdSchema).default([]),
   maxPerSubject: z.number().int().min(1).max(2000).default(400),
   maxAdjudications: z.number().int().min(1).max(500).default(60),
   /** When true, exact statement text is sent to the provider (D13 opt-out). */

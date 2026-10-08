@@ -79,7 +79,13 @@ export function retrieveCandidates(ctx: RetrievalContext): {
   const candidates: ConsistencyCandidate[] = [];
   const perCheck: Record<string, number> = {};
   let blockOverflowSkipped = 0;
-  (Object.keys(RETRIEVERS) as ConsistencyCheckId[]).forEach((checkId) => {
+  // An empty or absent selection means all ten, so a caller that does not
+  // select still runs the full set rather than silently running nothing.
+  const selected =
+    ctx.checks === undefined || ctx.checks.length === 0
+      ? (Object.keys(RETRIEVERS) as ConsistencyCheckId[])
+      : ctx.checks;
+  selected.forEach((checkId) => {
     const retriever = RETRIEVERS[checkId];
     const retrieval =
       retriever === undefined ? { candidates: [], blockOverflowSkipped: 0 } : retriever(ctx);

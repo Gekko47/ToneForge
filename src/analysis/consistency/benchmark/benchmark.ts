@@ -397,5 +397,30 @@ export function renderBenchmarkReport(result: BenchmarkResult): string {
     );
   }
   lines.push("");
+  lines.push("## How to use this");
+  lines.push("");
+  lines.push("The benchmark is a **repository-side comparison harness**, not a live model");
+  lines.push("evaluation. It runs identical `DecisionPlan`s through candidate");
+  lines.push("`ConsistencyDecisionProvider`s and scores each on precision, recall,");
+  lines.push("D-accuracy, E-calibration, false-positive and false-negative rates, stability,");
+  lines.push(`latency, and token counts. Selection prioritises precision at or above the`);
+  lines.push(`presentation bar (${PRECISION_BAR}), because a check that fires on everything is`);
+  lines.push("worse than one that fires on nothing.");
+  lines.push("");
+  lines.push("- **Regenerate** by calling the exported `runBenchmark` /");
+  lines.push("  `renderBenchmarkReport` from `benchmark.ts` and writing the result to this");
+  lines.push("  file. There is no dedicated npm script; the harness is exercised by");
+  lines.push("  `tests/unit/analysis/consistency/benchmark/benchmark.test.ts` and");
+  lines.push("  `report.test.ts`.");
+  lines.push("- **The candidates are synthetic.** `oracle`, `over-eager`, `under-eager`, and");
+  lines.push("  `definition-blind` are deterministic doubles over the expert-labelled corpus");
+  lines.push("  in `corpus.ts`. They prove the harness discriminates a good decision model");
+  lines.push("  from a bad one; they are not measurements of any real provider.");
+  lines.push("- **A real model is not yet scored.** Wiring a live provider into the harness");
+  lines.push("  is the open calibration gate recorded in `docs/project-state.md`. Until then,");
+  lines.push("  no release claim rests on these numbers.");
+  lines.push("- **The report is byte-for-byte asserted** by `report.test.ts`, so a change to");
+  lines.push("  the corpus or the scoring must be reflected here in the same commit.");
+  lines.push("");
   return lines.join("\n");
 }

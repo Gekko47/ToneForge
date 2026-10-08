@@ -379,6 +379,22 @@ describe("dDerivation", () => {
       expect(vector.qualifiersCompatible).toBe(true);
     });
 
+    it("leaves valuesAgree undefined when the facet was never resolved", () => {
+      // Regression: absence of E-VALUE-INCOMPATIBLE used to collapse to false,
+      // which read as "values disagree" and fabricated a D-CONFLICT for every
+      // pair the resolver could not answer.
+      const deterministicAnswers = [
+        { question: "E-ENTITY-SAME", holds: true, reason: "shared entity IDs" },
+      ];
+
+      const vector = buildEvaluationVector(deterministicAnswers, []);
+
+      expect(vector.valuesAgree).toBeUndefined();
+      expect(getDerivationReasonCodes("C2", vector, "D-CONSISTENT")).not.toContain(
+        "values-disagree",
+      );
+    });
+
     it("builds a vector with false values when answers indicate disagreement", () => {
       const deterministicAnswers = [
         { question: "E-ENTITY-SAME", holds: false, reason: "disjoint entity IDs" },

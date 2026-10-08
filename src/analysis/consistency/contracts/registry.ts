@@ -1,5 +1,7 @@
-import { z } from "zod";
 import { ConsistencyReviewRequestSchema, type ConsistencyReviewRequest } from "./request";
+import type { ConsistencyCheckId } from "./checkIds";
+
+export { ConsistencyCheckIdSchema, type ConsistencyCheckId } from "./checkIds";
 
 /**
  * The ten check identities, with their deterministic-first flags.
@@ -11,7 +13,7 @@ import { ConsistencyReviewRequestSchema, type ConsistencyReviewRequest } from ".
  * reference points at, not about a value.
  */
 export interface ConsistencyCheckDescriptor {
-  readonly id: string;
+  readonly id: ConsistencyCheckId;
   readonly title: string;
   readonly question: string;
   readonly severity: "info" | "warning" | "error";
@@ -91,25 +93,9 @@ export const CONSISTENCY_CHECKS: readonly ConsistencyCheckDescriptor[] = Object.
   },
 ]);
 
-export const CONSISTENCY_CHECK_IDS: readonly string[] = Object.freeze(
+export const CONSISTENCY_CHECK_IDS: readonly ConsistencyCheckId[] = Object.freeze(
   CONSISTENCY_CHECKS.map((check) => check.id),
 );
-
-export const ConsistencyCheckIdSchema = z.enum([
-  "C1",
-  "C2",
-  "C3",
-  "C4",
-  "C5",
-  "C6",
-  "C7",
-  "C8",
-  "C9",
-  "C10",
-]);
-
-/** The ten check ids, as the runtime-validated contract types them. */
-export type ConsistencyCheckId = z.infer<typeof ConsistencyCheckIdSchema>;
 
 export function consistencyCheck(id: string): ConsistencyCheckDescriptor {
   const found = CONSISTENCY_CHECKS.find((check) => check.id === id);

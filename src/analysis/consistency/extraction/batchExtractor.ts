@@ -48,6 +48,8 @@ export interface ExtractionCallOptions {
   maxRetries?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  /** Maximum wait per provider call before it is abandoned. Default 30s. */
+  timeoutMs?: number;
 }
 
 /** What Pass A produces: resolved claims and the refusals. */
@@ -59,6 +61,7 @@ export interface ExtractionResult {
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BASE_DELAY_MS = 250;
 const DEFAULT_MAX_DELAY_MS = 4000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** Only transient provider failures are retryable. */
 function isRetryable(err: unknown): boolean {
@@ -172,6 +175,8 @@ export async function extractClaims(
   const quarantined: QuarantinedClaim[] = [];
   let provisional = 0;
 
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
   for (const batch of batches) {
     if (opts.signal?.aborted === true) {
       throw new LlmError("Extraction cancelled by caller", provider.name, false);
@@ -182,12 +187,30 @@ export async function extractClaims(
       temperature: 0,
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     };
-    const response = await withRetry(() => provider.complete(request), {
-      maxRetries: opts.maxRetries ?? DEFAULT_MAX_RETRIES,
-      baseDelayMs: opts.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
-      maxDelayMs: opts.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
-      isRetryable,
-    });
+    // Race the provider call against a timeout: a hung provider must not
+    // block the run indefinitely. The timeout is non-retryable — retrying a
+    // call that timed out would double the wait.
+    const response = await withRetry(
+      () =>
+        Promise.race([
+          provider.complete(request),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new LlmError(`Provider timed out after ${timeoutMs}ms`, provider.name, false),
+                ),
+              timeoutMs,
+            ),
+          ),
+        ]),
+      {
+        maxRetries: opts.maxRetries ?? DEFAULT_MAX_RETRIES,
+        baseDelayMs: opts.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
+        maxDelayMs: opts.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
+        isRetryable,
+      },
+    );
 
     const parsed = parseExtractionResponse(response.text);
     if (!parsed.ok) {

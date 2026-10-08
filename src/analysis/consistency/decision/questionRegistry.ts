@@ -95,9 +95,6 @@ export function buildQuestionRegistry(): QuestionRegistry {
     });
   }
 
-  // Score questions (none currently, but reserved for future)
-  // const scoreQuestions: EQuestion[] = [];
-
   // Build entries from all relevant E-questions
   for (const eq of allRelevantEQuestions()) {
     const base = questionMap.get(eq);

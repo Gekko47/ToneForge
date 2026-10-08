@@ -229,7 +229,12 @@ export function buildEvaluationVector(
     sameBasis: answerMap.get("E-BASIS-SAME") ?? answerMap.get("E-PROGRAMME-BASIS-SAME"),
     sameAttribution: answerMap.get("E-ATTRIBUTION-COMPATIBLE"),
     sameScope: answerMap.get("E-SCOPE-SAME") ?? answerMap.get("E-SCOPE-EXCEPTION"),
-    valuesAgree: answerMap.get("E-VALUE-INCOMPATIBLE") === false, // false means NOT incompatible = agree
+    // Tri-state: absent means the facet was never resolved, which is not the
+    // same as "values disagree". Collapsing absence to false fabricated a
+    // conflict for every pair the resolver could not answer.
+    valuesAgree: answerMap.has("E-VALUE-INCOMPATIBLE")
+      ? answerMap.get("E-VALUE-INCOMPATIBLE") === false
+      : undefined,
     unitsCompatible:
       answerMap.get("E-CURRENCY-COMPATIBLE") ?? answerMap.get("E-MEASUREMENT-BASIS-SAME"),
     qualifiersCompatible: answerMap.get("E-QUALIFIER-RECONCILES"),
@@ -260,7 +265,7 @@ export function getDerivationReasonCodes(
   if (!vector.sameAttribution) codes.push("different-attribution");
   if (!vector.sameScope) codes.push("different-scope");
   if (!vector.qualifiersCompatible) codes.push("different-qualifiers");
-  if (!vector.valuesAgree) codes.push("values-disagree");
+  if (vector.valuesAgree === false) codes.push("values-disagree");
   if (!vector.unitsCompatible) codes.push("units-incompatible");
 
   return codes;

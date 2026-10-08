@@ -157,6 +157,30 @@ becoming a precedent:
    planned, gated, and applied through exactly the same path as every other
    finding. It gains no privileged route to the document.
 
+The engine is the **indexed** replacement described in
+[`plans/indexed-consistency-authoritative-plan.md`](../plans/indexed-consistency-authoritative-plan.md),
+built in seven phases (R1–R7):
+
+- `contracts/` — every shape the engine produces or consumes, including the
+  full claim schema, the ten check IDs, and the consent gate.
+- `extraction/` — the extraction prompt, schema, batch extractor, global
+  resolver, and evidence validator (R2).
+- `normalisation/` and `index/` — dates, quantities, currencies, durations,
+  units, terminology, and aliases, plus nine blocking indices (R3).
+- `candidates/` — `c1` through `c10` retrieval plus the registry (R3).
+- `comparison/` — the claim-pair diff, deterministic E-resolver, evaluation
+  profiles, 16-outcome D-derivation, pre- and post-model hard gates, and the
+  confidence engine with intervals (R4, R6).
+- `decision/` — the provider interface, `DecisionPlan` compiler, context
+  expansion, question registry, and the `systemOne/` adapter (R5).
+- `persistence/` — the `ConsistencyStore` interface, `IndexedDbStore`,
+  `MemoryStore`, schema versioning, WebCrypto field encryption, and TTL wipe
+  (R7).
+- `benchmark/` — the expert-labelled corpus and the decision-model benchmark
+  (R7).
+- `indexedEngine.ts` — orchestration; `bridge.ts` — the only boundary into the
+  rest of ToneForge.
+
 ## Data flow and compatibility
 
 1. `style/sampleCapture` and `style/sampleQuality` produce sample DTOs.

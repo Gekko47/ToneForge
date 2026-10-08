@@ -6,7 +6,7 @@
  * translate between the typed DecisionPlan and the model's native format.
  */
 
-import type { LlmProvider, LlmRequest } from "@/ai/providers/LlmProvider";
+import { LlmError, type LlmProvider, type LlmRequest } from "@/ai/providers/LlmProvider";
 import type {
   ConsistencyDecisionProvider,
   ConsistencyDecisionEvaluation,
@@ -15,6 +15,9 @@ import type {
 import type { DecisionPlan } from "@/analysis/consistency/contracts/plan";
 import { SystemOneCompiler } from "@/analysis/consistency/decision/systemOne/SystemOneCompiler";
 import { SystemOneResponseMapper } from "@/analysis/consistency/decision/systemOne/SystemOneResponseMapper";
+import { QUESTION_SET_VERSION } from "@/analysis/consistency/decision/questionRegistry";
+
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** System One decision provider implementation. */
 export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
@@ -32,7 +35,8 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
     // Compile the plan into a model request
     const request = this.compiler.compile(plan);
 
-    // Call the provider
+    // Call the provider, racing against a timeout so a hung provider cannot
+    // block the run indefinitely.
     const llmRequest: LlmRequest = {
       prompt: request.prompt,
       systemPrompt: request.systemPrompt,
@@ -42,7 +46,22 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
     if (signal !== undefined) {
       llmRequest.signal = signal;
     }
-    const response = await this.provider.complete(llmRequest);
+    const response = await Promise.race([
+      this.provider.complete(llmRequest),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new LlmError(
+                `Decision provider timed out after ${DEFAULT_TIMEOUT_MS}ms`,
+                this.provider.name,
+                false,
+              ),
+            ),
+          DEFAULT_TIMEOUT_MS,
+        ),
+      ),
+    ]);
 
     // Map the response back to typed answers
     const answers = this.mapper.map(response, plan);
@@ -50,9 +69,9 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
     const latencyMs = Date.now() - startTime;
 
     const metadata: DecisionProviderMetadata = {
-      provider: this.provider.constructor.name,
-      model: "system-one",
-      questionSetVersion: "1.0",
+      provider: this.provider.name,
+      model: response.model,
+      questionSetVersion: QUESTION_SET_VERSION,
       latencyMs,
       tokensIn: response.usage?.inputTokens ?? 0,
       tokensOut: response.usage?.outputTokens ?? 0,

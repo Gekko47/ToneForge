@@ -482,6 +482,55 @@ describe("retrieval registry", () => {
     });
   });
 
+  it("runs only the selected checks when a selection is given", () => {
+    const claims = [
+      claim({
+        id: "c-1",
+        subjectIds: ["entity-works"],
+        predicate: { text: "the works were delayed" },
+      }),
+      claim({
+        id: "c-2",
+        subjectIds: ["entity-works"],
+        predicate: { text: "the works suffered disruption" },
+      }),
+    ];
+    const normalised = normaliseClaims(claims);
+    const aliases = buildAliasIndex(collectAliasEntries(claims));
+    const indices = buildIndices(normalised);
+    const result = retrieveCandidates({
+      indices,
+      aliases,
+      maxPerSubject: 400,
+      checks: ["C1"],
+    });
+    expect(result.perCheck.C1).toBe(1);
+    // A check that was not selected did not run, so it has no entry at all —
+    // not a zero, which would claim it ran and found nothing.
+    expect(result.perCheck.C2).toBeUndefined();
+    expect(result.candidates.every((candidate) => candidate.checkId === "C1")).toBe(true);
+  });
+
+  it("treats an empty selection as all ten, so a caller that does not select still runs the full set", () => {
+    const claims = [
+      claim({
+        id: "c-1",
+        subjectIds: ["entity-works"],
+        predicate: { text: "the works were delayed" },
+      }),
+      claim({
+        id: "c-2",
+        subjectIds: ["entity-works"],
+        predicate: { text: "the works suffered disruption" },
+      }),
+    ];
+    const normalised = normaliseClaims(claims);
+    const aliases = buildAliasIndex(collectAliasEntries(claims));
+    const indices = buildIndices(normalised);
+    const result = retrieveCandidates({ indices, aliases, maxPerSubject: 400, checks: [] });
+    expect(result.perCheck.C1).toBe(1);
+  });
+
   it("is deterministic: the same claims retrieve the same candidates", () => {
     const claims = [
       claim({

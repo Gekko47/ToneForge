@@ -1,5 +1,38 @@
 # ToneForge — Changelog
 
+## Unreleased — Indexed consistency engine (2026-10-08)
+
+- **The consistency engine is replaced by the indexed engine (R1–R7).** The
+  windowed pairwise engine is gone; retrieval is now indexed by subject, per
+  [`plans/indexed-consistency-authoritative-plan.md`](../plans/indexed-consistency-authoritative-plan.md).
+  The seven phases land as: the full claim schema and evidence validation (R1),
+  two-pass extraction with canonical resolution (R2), normalisation, nine
+  blocking indices, and C1–C10 retrieval (R3), the claim-pair diff,
+  deterministic E-resolver, and pre-model gates (R4), the `DecisionPlan`
+  compiler, decision adapter, and bounded expansion (R5), 16-outcome
+  D-derivation, post-model gates, and confidence with intervals (R6), and the
+  encrypted `ConsistencyStore`, coverage V3, results UI, and decision-model
+  benchmark (R7). The engine remains the single sanctioned exception to
+  deterministic-first (ADR-0052); the boundary rules are unchanged.
+- **The store is encrypted and time-limited.** `persistence/` adds a
+  `ConsistencyStore` interface with an `IndexedDbStore` and a `MemoryStore`,
+  WebCrypto AES-GCM field encryption (a per-document data key wrapped by a
+  PBKDF2 device key), and a 7-day TTL wipe. The store is **not yet wired into
+  the production run path**; the device-key strategy is an open decision.
+- **Coverage V3 separates what the engine did from what it could not.** A run
+  now reports deterministic, decision, unresolved, gated, review-band, and
+  budget-exceeded work separately, so a clean partial result is not read as a
+  clean document.
+- **A decision-model benchmark scores candidate providers.** `benchmark/` runs
+  identical `DecisionPlan`s through candidate `ConsistencyDecisionProvider`s and
+  selects on precision above the presentation bar. The candidates are synthetic
+  doubles over an expert-labelled corpus; no real model is scored yet. See
+  [`consistency-benchmark.md`](consistency-benchmark.md).
+
+Repository-complete; **host-unverified**. The full suite passes with 221 files
+and 2 956 tests. Per ADR-0051 that is not a release claim, and
+`npm run release:check` stays blocked.
+
 ## Unreleased — Semantic review (2026-10-02)
 
 - **Fixed: reading the Word selection failed in a real document.** _Use current

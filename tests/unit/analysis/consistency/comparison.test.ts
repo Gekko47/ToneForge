@@ -337,6 +337,118 @@ describe("R4 comparison: deterministicEvaluationResolver", () => {
     expect(result?.state).toBe("not_comparable");
     expect(result?.reasonCodes.some((r) => r.includes("different-scenario"))).toBe(true);
   });
+
+  it("compares every shared temporal role, not only the first", () => {
+    const sameEventDate = {
+      raw: "1 April 2026",
+      iso: "2026-04-01",
+      year: 2026,
+      month: 4,
+      day: 1,
+      coarse: false,
+    };
+    const left = normalisedClaim({
+      id: "c-1",
+      subjectIds: ["entity-works"],
+      dates: [
+        { role: "eventDate", date: sameEventDate },
+        {
+          role: "reportingDate",
+          date: {
+            raw: "1 May 2026",
+            iso: "2026-05-01",
+            year: 2026,
+            month: 5,
+            day: 1,
+            coarse: false,
+          },
+        },
+      ],
+    });
+    const right = normalisedClaim({
+      id: "c-2",
+      subjectIds: ["entity-works"],
+      dates: [
+        { role: "eventDate", date: sameEventDate },
+        {
+          role: "reportingDate",
+          date: {
+            raw: "1 June 2026",
+            iso: "2026-06-01",
+            year: 2026,
+            month: 6,
+            day: 1,
+            coarse: false,
+          },
+        },
+      ],
+    });
+
+    const candidate = {
+      id: "C3-0001",
+      checkId: "C3" as const,
+      subject: { kind: "event" as const, description: "event-handover" },
+      fingerprint: "test",
+      claimIds: ["c-1", "c-2"],
+      retrieval: {
+        reasonCodes: [],
+        sharedEntityIds: [],
+        sharedEventIds: [],
+        sharedProgrammeIds: [],
+        sharedMetricIds: [],
+      },
+      evidenceIds: [],
+      state: "pending" as const,
+    };
+
+    const resolution = resolveCandidate(candidate, [left, right]);
+    const temporal = resolution.answers.find((a) => a.question === "E-TEMPORAL-COMPARABLE");
+    // The event dates agree, but the reporting dates conflict. Comparing only
+    // the first shared role would have reported the facet as comparable.
+    expect(temporal?.holds).toBe(false);
+  });
+
+  it("compares every value pair, not only the first", () => {
+    const left = normalisedClaim({
+      id: "c-1",
+      subjectIds: ["entity-works"],
+      values: [
+        { raw: "100 days", normalized: 100, unit: "days" },
+        { raw: "5 kg", normalized: 5, unit: "kg" },
+      ],
+    });
+    const right = normalisedClaim({
+      id: "c-2",
+      subjectIds: ["entity-works"],
+      values: [
+        { raw: "100 days", normalized: 100, unit: "days" },
+        { raw: "7 kg", normalized: 7, unit: "kg" },
+      ],
+    });
+
+    const candidate = {
+      id: "C2-0001",
+      checkId: "C2" as const,
+      subject: { kind: "entity" as const, name: "entity-works", aliases: [] },
+      fingerprint: "test",
+      claimIds: ["c-1", "c-2"],
+      retrieval: {
+        reasonCodes: [],
+        sharedEntityIds: [],
+        sharedEventIds: [],
+        sharedProgrammeIds: [],
+        sharedMetricIds: [],
+      },
+      evidenceIds: [],
+      state: "pending" as const,
+    };
+
+    const resolution = resolveCandidate(candidate, [left, right]);
+    const value = resolution.answers.find((a) => a.question === "E-VALUE-INCOMPATIBLE");
+    // The first values agree, but the second pair differs. Comparing only the
+    // first value would have reported the facet as equivalent.
+    expect(value?.holds).toBe(true);
+  });
 });
 
 describe("R4 comparison: hardGates", () => {

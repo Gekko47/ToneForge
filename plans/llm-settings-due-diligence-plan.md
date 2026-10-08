@@ -46,7 +46,7 @@ flowchart TD
 ### D2 — Proposed indexed decision path does not exist
 
 - Proposal says: create `BrokerDecisionProvider.ts` at `src/analysis/consistency/decision/BrokerDecisionProvider.ts` (planned, R0 skeleton).
-- Repo shows: [`src`](src:1) contains [`analysis/consistency/engine.ts`](src/analysis/consistency/indexedEngine.ts), [`contracts.ts`](src/analysis/consistency/contracts/), [`bridge.ts`](src/analysis/consistency/bridge.ts:21), [`checks/primitives.ts`](src/analysis/consistency/checks/primitives.ts:1), [`batching.ts`](src/analysis/consistency/index/). No [`indexed`](src/analysis/consistency/indexedEngine.ts) directory.
+- Repo shows: [`src`](src:1) contains [`analysis/consistency/engine.ts`](src/analysis/consistency/indexedEngine.ts), [`contracts.ts`](src/analysis/consistency/contracts/), [`bridge.ts`](src/analysis/consistency/bridge.ts:21), [`checks/primitives.ts`](src/analysis/consistency/checks/primitives.ts:1), [`batching.ts`](src/analysis/consistency/indices/). No [`indexed`](src/analysis/consistency/indexedEngine.ts) directory.
 - Alternative: place seam in [`analysis/consistency/decision.ts`](src/analysis/consistency/contracts/) or [`analysis/consistency/adjudicator.ts`](src/analysis/consistency/indexedEngine.ts). Justification: minimal diff per Ponytail; respects [`architecture.md`](docs/architecture.md:89) allowed imports for [`analysis/consistency`](docs/architecture.md:89).
 
 ### D3 — Status enum collides with shipped lifecycle

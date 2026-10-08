@@ -10,7 +10,7 @@
  * resolution out. It never calls a provider.
  */
 
-import type { ConsistencyCandidate, ConsistencyCheckId, ExpertReportClaim } from "../contracts";
+import type { ConsistencyCandidate, ConsistencyCheckId } from "../contracts";
 import type { NormalisedClaim } from "../normalisation";
 import {
   buildClaimPairDiff,
@@ -18,6 +18,7 @@ import {
   compareValues,
   type ClaimPairDiff,
 } from "./claimPairDiff";
+import { attributionKey } from "../checks/primitives";
 import { isExclusiveStatePair } from "../checks/primitives";
 
 /**
@@ -269,21 +270,14 @@ function answerEQuestions(
   // E-ATTRIBUTION-COMPATIBLE: speaker and attributedTo
   const leftAttribution = attributionKey(left.claim);
   const rightAttribution = attributionKey(right.claim);
-  if (leftAttribution !== null && rightAttribution !== null) {
-    answers.push({
-      question: "E-ATTRIBUTION-COMPATIBLE",
-      holds: leftAttribution === rightAttribution,
-      reason:
-        leftAttribution === rightAttribution
-          ? "same attribution"
-          : `attribution differs: ${leftAttribution} vs ${rightAttribution}`,
-    });
-  } else {
-    unresolved.push({
-      question: "E-ATTRIBUTION-COMPATIBLE",
-      reason: "one or both claims lack attribution",
-    });
-  }
+  answers.push({
+    question: "E-ATTRIBUTION-COMPATIBLE",
+    holds: leftAttribution === rightAttribution,
+    reason:
+      leftAttribution === rightAttribution
+        ? "same attribution"
+        : `attribution differs: ${leftAttribution} vs ${rightAttribution}`,
+  });
 
   // E-MODALITY-COMPATIBLE: modality
   const leftModality = left.claim.modality;
@@ -612,20 +606,33 @@ function answerTemporalComparability(
   const rightRoles = new Map(right.dates.map((d) => [d.role, d.date]));
   const sharedRoles = [...leftRoles.keys()].filter((role) => rightRoles.has(role));
   if (sharedRoles.length === 0) return null;
-  // Compare the first shared role
-  const role = sharedRoles[0]!;
-  const leftDate = leftRoles.get(role)!;
-  const rightDate = rightRoles.get(role)!;
-  const comparison = compareDatesByRole(leftDate, rightDate);
+  // Every shared role is compared, not just the first: a conflict in any role
+  // is a conflict, and a role that cannot be compared only makes the facet
+  // incomparable when no role actually conflicts.
+  const comparisons = sharedRoles.map((role) => ({
+    role,
+    comparison: compareDatesByRole(leftRoles.get(role)!, rightRoles.get(role)!),
+  }));
+  const conflict = comparisons.find((entry) => entry.comparison === "conflict");
+  if (conflict !== undefined) {
+    return {
+      question: "E-TEMPORAL-COMPARABLE",
+      holds: false,
+      reason: `dates in role ${conflict.role} conflict`,
+    };
+  }
+  const incomparable = comparisons.find((entry) => entry.comparison === "incomparable");
+  if (incomparable !== undefined) {
+    return {
+      question: "E-TEMPORAL-COMPARABLE",
+      holds: true,
+      reason: `dates in role ${incomparable.role} are incomparable (coarse vs precise)`,
+    };
+  }
   return {
     question: "E-TEMPORAL-COMPARABLE",
-    holds: comparison !== "conflict",
-    reason:
-      comparison === "same"
-        ? `dates in role ${role} are the same`
-        : comparison === "conflict"
-          ? `dates in role ${role} conflict`
-          : `dates in role ${role} are incomparable (coarse vs precise)`,
+    holds: true,
+    reason: `dates in shared roles (${sharedRoles.join(", ")}) are the same`,
   };
 }
 
@@ -747,20 +754,35 @@ function answerScopeException(left: NormalisedClaim, right: NormalisedClaim): EA
 
 /** Answer E-VALUE-INCOMPATIBLE from normalised values with unit conversion. */
 function answerValueIncompatibility(left: NormalisedClaim, right: NormalisedClaim): EAnswer | null {
-  const leftValue = left.values.find((v) => v.normalized !== undefined);
-  const rightValue = right.values.find((v) => v.normalized !== undefined);
-  if (leftValue === undefined || rightValue === undefined) return null;
-  const comparison = compareValues(leftValue, rightValue);
-  if (comparison === "unrelated") return null;
+  const leftValues = left.values.filter((v) => v.normalized !== undefined);
+  const rightValues = right.values.filter((v) => v.normalized !== undefined);
+  if (leftValues.length === 0 || rightValues.length === 0) return null;
+  // Every comparable pair is examined, not just the first: a difference in any
+  // pair is a difference, and incompatible units only make the facet
+  // incomparable when no pair actually differs.
+  const comparisons = leftValues.flatMap((leftValue) =>
+    rightValues.map((rightValue) => compareValues(leftValue, rightValue)),
+  );
+  const comparable = comparisons.filter((comparison) => comparison !== "unrelated");
+  if (comparable.length === 0) return null;
+  if (comparable.includes("differs")) {
+    return {
+      question: "E-VALUE-INCOMPATIBLE",
+      holds: true,
+      reason: "values differ after unit conversion",
+    };
+  }
+  if (comparable.includes("incomparable")) {
+    return {
+      question: "E-VALUE-INCOMPATIBLE",
+      holds: false,
+      reason: "values are incomparable (incompatible units)",
+    };
+  }
   return {
     question: "E-VALUE-INCOMPATIBLE",
-    holds: comparison === "differs",
-    reason:
-      comparison === "same"
-        ? "values are equivalent after unit conversion"
-        : comparison === "differs"
-          ? "values differ after unit conversion"
-          : "values are incomparable (incompatible units)",
+    holds: false,
+    reason: "values are equivalent after unit conversion",
   };
 }
 
@@ -792,11 +814,7 @@ export function runComparabilityGates(
   // Gate: different attribution domain → not comparable
   const leftAttribution = attributionKey(left.claim);
   const rightAttribution = attributionKey(right.claim);
-  if (
-    leftAttribution !== null &&
-    rightAttribution !== null &&
-    leftAttribution !== rightAttribution
-  ) {
+  if (leftAttribution !== rightAttribution) {
     return {
       state: "not_comparable",
       reasonCodes: ["different-attribution-domain"],
@@ -962,13 +980,4 @@ function contentWords(text: string): string[] {
     .split(/\s+/)
     .map((word) => word.replace(/^-+|-+$/g, ""))
     .filter((word) => word.length > 2);
-}
-
-/** Attribution key from speaker and attributedTo. */
-function attributionKey(claim: ExpertReportClaim): string | null {
-  const parts = [claim.speaker.name];
-  if (claim.attributedTo !== undefined) {
-    parts.push(`attributedTo:${claim.attributedTo.name}`);
-  }
-  return parts.join(" | ");
 }

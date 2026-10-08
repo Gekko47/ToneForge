@@ -11,7 +11,7 @@
 - D2 accepted with answer below: encrypted per-document store is mandatory because content is confidential and document-specific. JSON can handle the complex schema via IndexedDB object stores plus WebCrypto, without native SQLite.
 - D3 accepted: separate decision LLM role is key to low token rate — only a typed decision is requested once the document is parsed.
 - D4 agreed: General-model fallback never consumes a DecisionPlan.
-- D5 accepted: existing engine is replaced, not strangled. Delete [`engine.ts`](src/analysis/consistency/indexedEngine.ts), [`contracts.ts`](src/analysis/consistency/contracts/), [`batching.ts`](src/analysis/consistency/index/), [`grouping.ts`](src/analysis/consistency/grouping.ts:1) pair logic and sentence-pair checks outright.
+- D5 accepted: existing engine is replaced, not strangled. Delete [`engine.ts`](src/analysis/consistency/indexedEngine.ts), [`contracts.ts`](src/analysis/consistency/contracts/), [`batching.ts`](src/analysis/consistency/indices/), [`grouping.ts`](src/analysis/consistency/grouping.ts:1) pair logic and sentence-pair checks outright.
 - D6: indexed retrieval replaces windowing entirely. No windows, no `crossWindowPairsSkipped`. Blocking keys plus per-block caps bound the work; overflow is counted as `blockOverflowSkipped`.
 - D7 agreed: versioned confidence with explicit intervals derived from the pipeline.
 - D8 accepted: all 16 D-outcomes retained. A single delay-expert claim has many facets and must be cross-checked on every axis.

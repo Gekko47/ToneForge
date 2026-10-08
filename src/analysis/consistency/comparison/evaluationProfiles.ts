@@ -55,7 +55,7 @@ export const EVALUATION_PROFILES: Record<ConsistencyCheckId, EvaluationProfile> 
     hardGates: ["different-scenario", "different-attribution-domain", "insufficient-evidence"],
     deriveDOutcome: (vector) => {
       if (!vector.sameSubject) return "D-NOT-COMPARABLE";
-      if (vector.sameSubject && !vector.valuesAgree) return "D-CONFLICT";
+      if (vector.sameSubject && vector.valuesAgree === false) return "D-CONFLICT";
       return null; // needs model for definition incompatibility
     },
     allowedContextRequests: ["CTX-DEFINITION", "CTX-USAGE"],
@@ -127,7 +127,7 @@ export const EVALUATION_PROFILES: Record<ConsistencyCheckId, EvaluationProfile> 
       if (!vector.sameScenario) return "D-DIFFERENT-SCENARIO";
       if (!vector.sameBasis) return "D-DIFFERENT-BASIS";
       if (!vector.sameAttribution) return "D-DIFFERENT-ATTRIBUTION";
-      if (!vector.valuesAgree) {
+      if (vector.valuesAgree === false) {
         if (vector.unitsCompatible) return "D-CONFLICT";
         return "D-DIFFERENT-MEASUREMENT-BASIS";
       }
@@ -177,7 +177,7 @@ export const EVALUATION_PROFILES: Record<ConsistencyCheckId, EvaluationProfile> 
     deriveDOutcome: (vector) => {
       if (!vector.sameSubject) return "D-NOT-COMPARABLE";
       if (!vector.samePeriod) return "D-DIFFERENT-PERIOD";
-      if (!vector.valuesAgree) return "D-CONFLICT";
+      if (vector.valuesAgree === false) return "D-CONFLICT";
       return "D-CONSISTENT";
     },
     allowedContextRequests: ["CTX-TEMPORAL", "CTX-EVENT"],
@@ -210,7 +210,7 @@ export const EVALUATION_PROFILES: Record<ConsistencyCheckId, EvaluationProfile> 
     deriveDOutcome: (vector) => {
       if (!vector.sameSubject) return "D-NOT-COMPARABLE";
       if (!vector.sameScenario) return "D-DIFFERENT-SCENARIO";
-      if (!vector.valuesAgree) return "D-CONFLICT";
+      if (vector.valuesAgree === false) return "D-CONFLICT";
       return null; // needs model for attribute incompatibility
     },
     allowedContextRequests: ["CTX-ATTRIBUTE", "CTX-ENTITY"],
@@ -278,7 +278,7 @@ export const EVALUATION_PROFILES: Record<ConsistencyCheckId, EvaluationProfile> 
     deriveDOutcome: (vector) => {
       if (!vector.sameSubject) return "D-NOT-COMPARABLE";
       if (!vector.unitsCompatible) return "D-DIFFERENT-MEASUREMENT-BASIS";
-      if (!vector.valuesAgree) return "D-CONFLICT";
+      if (vector.valuesAgree === false) return "D-CONFLICT";
       return "D-CONSISTENT";
     },
     allowedContextRequests: ["CTX-UNIT", "CTX-CURRENCY"],
@@ -319,7 +319,7 @@ export const EVALUATION_PROFILES: Record<ConsistencyCheckId, EvaluationProfile> 
       if (!vector.sameSubject) return "D-NOT-COMPARABLE";
       if (!vector.samePeriod) return "D-DIFFERENT-PERIOD";
       if (!vector.sameBasis) return "D-DIFFERENT-BASIS";
-      if (!vector.valuesAgree) return "D-CONFLICT";
+      if (vector.valuesAgree === false) return "D-CONFLICT";
       return "D-CONSISTENT";
     },
     allowedContextRequests: ["CTX-STATUS", "CTX-PROGRAMME"],

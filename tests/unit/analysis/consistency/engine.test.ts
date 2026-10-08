@@ -139,6 +139,10 @@ describe("R2 extraction wiring", () => {
     expect(
       report.coverage.limitations.some((l) => l.startsWith("Deterministic resolution complete:")),
     ).toBe(true);
+    // Regression: the informational summary above is a note, not a limitation.
+    // Nothing was skipped and nothing was left unreviewed, so the run is
+    // complete — the note must not force `complete` false.
+    expect(report.coverage.complete).toBe(true);
   });
 
   it("counts a claim whose quoted evidence is not in the document", async () => {

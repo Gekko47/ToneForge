@@ -154,7 +154,8 @@ export function segmentDocument(text: string, sections: readonly string[]): Cons
 function coverage(
   statementsTotal: number,
   maxAdjudications: number,
-  limitations: string[],
+  blockers: string[],
+  notes: string[],
   quarantinedClaims: number,
   retrieval: {
     comparisonsMade: number;
@@ -182,7 +183,17 @@ function coverage(
   },
 ): ConsistencyCoverage {
   return ConsistencyCoverageSchema.parse({
-    complete: limitations.length === 0,
+    // `complete` is a discovery claim (ADR-0066): true only when nothing was
+    // skipped and nothing was left unreviewed. Informational summaries are
+    // notes, not limitations, so they must not force `complete` false — only a
+    // genuine blocker, unresolved work, a hit budget, a skipped comparison, or
+    // a quarantined claim does.
+    complete:
+      blockers.length === 0 &&
+      work.unresolved === 0 &&
+      work.budgetExceeded === 0 &&
+      retrieval.blockOverflowSkipped === 0 &&
+      quarantinedClaims === 0,
     statementsConsidered: statementsTotal,
     statementsTotal,
     comparisonsMade: retrieval.comparisonsMade,
@@ -190,7 +201,7 @@ function coverage(
     adjudicationsUsed: work.adjudicationsUsed,
     adjudicationsAvailable: maxAdjudications,
     perCheck: { ...retrieval.perCheck },
-    limitations,
+    limitations: [...blockers, ...notes],
     modelAdjudicated: work.modelAdjudicated,
     quarantinedClaims,
     deterministicResolved: work.deterministicResolved,
@@ -258,7 +269,10 @@ export async function runConsistencyReview(
   const maxPerSubject = request.maxPerSubject ?? CONSISTENCY_DEFAULT_MAX_PER_SUBJECT;
   const maxAdjudications = request.maxAdjudications ?? CONSISTENCY_DEFAULT_MAX_ADJUDICATIONS;
 
-  const limitations: string[] = [];
+  // Genuine limitations that make the run incomplete, kept apart from the
+  // informational summaries below so `complete` is not forced false by a note.
+  const blockers: string[] = [];
+  const notes: string[] = [];
   const issues: ConsistencyIssue[] = [];
   const evidenceHashes = new Set<string>();
   let quarantinedClaims = 0;
@@ -281,11 +295,11 @@ export async function runConsistencyReview(
   };
 
   if (options.provider === undefined) {
-    limitations.push(
+    blockers.push(
       "No provider was configured for the run, so no claims were extracted and nothing was compared.",
     );
   } else if (!request.allowUnredacted) {
-    limitations.push(
+    blockers.push(
       "Extraction was skipped: the run did not opt out of redaction, so document text was not sent to the provider and nothing was compared.",
     );
   } else {
@@ -356,6 +370,8 @@ export async function runConsistencyReview(
       indices,
       aliases,
       maxPerSubject,
+      // The request's check selection, honoured rather than parsed and dropped.
+      checks: request.checks,
     });
     retrieval = {
       comparisonsMade: retrieved.candidates.length,
@@ -370,6 +386,13 @@ export async function runConsistencyReview(
       message: "Running deterministic resolution…",
     });
     await assertCurrent(options, request.document.revision);
+
+    // Build a claim lookup once — O(C) — instead of filtering all claims per
+    // candidate — O(C×N). The same Map serves both the gate loop and the
+    // adjudication loop below.
+    const claimsById = new Map<string, (typeof normalised)[number]>();
+    normalised.forEach((nc) => claimsById.set(nc.claim.id, nc));
+    const candidateById = new Map(retrieved.candidates.map((c) => [c.id, c]));
 
     const resolutions = retrieved.candidates.map((candidate) =>
       resolveCandidate(candidate, normalised),
@@ -387,9 +410,9 @@ export async function runConsistencyReview(
 
     resolutions.forEach((resolution, i) => {
       const candidate = retrieved.candidates[i]!;
-      const claimsForCandidate = normalised.filter((nc) =>
-        candidate.claimIds.includes(nc.claim.id),
-      );
+      const claimsForCandidate = candidate.claimIds
+        .map((id) => claimsById.get(id))
+        .filter((nc) => nc !== undefined);
       const gateResult = runPreModelGates(
         claimsForCandidate,
         resolution.checkId,
@@ -488,12 +511,12 @@ export async function runConsistencyReview(
         const adjudicated = new Set(plan.questions.map((q) => q.subjectId));
 
         for (const resolution of pendingModel) {
-          const candidate = retrieved.candidates.find((c) => c.id === resolution.candidateId);
+          const candidate = candidateById.get(resolution.candidateId);
           if (candidate === undefined) continue;
 
-          const claimsForCandidate = normalised.filter((nc) =>
-            candidate.claimIds.includes(nc.claim.id),
-          );
+          const claimsForCandidate = candidate.claimIds
+            .map((id) => claimsById.get(id))
+            .filter((nc) => nc !== undefined);
           if (claimsForCandidate.length < 2) continue;
 
           // A candidate the budget left unasked is unresolved, and counted as
@@ -511,8 +534,13 @@ export async function runConsistencyReview(
           const candidateQuestions = plan.questions.filter(
             (q) => q.subjectId === resolution.candidateId,
           );
-          const modelAnswers = candidateQuestions.map((q, idx) => {
-            const answer = evaluation.answers[idx];
+          // Map by question ID, not index: candidateQuestions is a filtered
+          // subset of plan.questions, so evaluation.answers[idx] would use the
+          // wrong answer when a candidate's questions are not at the start of
+          // the plan.
+          const answersByQuestionId = new Map(evaluation.answers.map((a) => [a.question, a]));
+          const modelAnswers = candidateQuestions.map((q) => {
+            const answer = answersByQuestionId.get(q.id);
             return {
               question: q.id,
               holds:
@@ -600,7 +628,7 @@ export async function runConsistencyReview(
           }
         }
 
-        limitations.push(
+        notes.push(
           `Decision adjudication complete: ${work.decisionAdjudicated} candidate(s) judged by the model.`,
         );
       } else {
@@ -617,7 +645,7 @@ export async function runConsistencyReview(
 
     work.unresolved = unresolvedCount;
 
-    limitations.push(
+    notes.push(
       `Deterministic resolution complete: ${consistentCount} consistent, ${conflictCount} conflict, ${notComparableCount} not comparable, ${unresolvedCount} unresolved.`,
     );
   }
@@ -630,7 +658,8 @@ export async function runConsistencyReview(
     coverage: coverage(
       statements.length,
       maxAdjudications,
-      limitations,
+      blockers,
+      notes,
       quarantinedClaims,
       retrieval,
       work,

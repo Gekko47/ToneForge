@@ -20,6 +20,7 @@ export {
   type ConsistencyDocument,
   type ConsistencyReviewRequest,
 } from "./request";
+export { ConsistencyCheckIdSchema, type ConsistencyCheckId } from "./checkIds";
 export {
   ConsistencyStatementSchema,
   ConsistencyCandidateSchema,
@@ -43,8 +44,6 @@ export {
   CONSISTENCY_CONSENT_ERROR,
   CONSISTENCY_CHECK_IDS,
   CONSISTENCY_CHECKS,
-  ConsistencyCheckIdSchema,
-  type ConsistencyCheckId,
   type ConsistencyCheckDescriptor,
   consistencyCheck,
   parseConsistencyReviewRequest,
