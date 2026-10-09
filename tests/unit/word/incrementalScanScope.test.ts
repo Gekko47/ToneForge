@@ -25,6 +25,7 @@ vi.mock("../../../src/analysis/deterministic/deterministicReviewEngine", () => (
 
 import { createDocumentObserver } from "../../../src/word/documentObserver";
 import { createEmptyProfile } from "../../../src/core/domain/StyleProfile";
+import { createGovernanceProfile } from "../../../src/core/domain/GovernanceProfile";
 import type { WordParagraphChange } from "../../../src/word/wordParagraphEvents";
 
 const NODE_IDS = ["n1", "n2", "n3"];
@@ -41,6 +42,7 @@ function nodes() {
 }
 
 function context() {
+  const text = "Body of n1. Body of n2. Body of n3.";
   return {
     identity: {
       documentId: "doc-1",
@@ -48,12 +50,80 @@ function context() {
       contentHash: "hash-1",
       structuralHash: "struct-1",
       capturedAt: new Date().toISOString(),
-      fullText: "Body of n1. Body of n2. Body of n3.",
-      analysisText: "Body of n1. Body of n2. Body of n3.",
+      fullText: text,
+      analysisText: text,
     },
-    text: "Body of n1. Body of n2. Body of n3.",
+    text,
     nodes: nodes(),
-    acquisition: { unsupported: [] as string[], structuralCoverage: "bodyText" },
+    /*
+     * `policy` is present because the observer reads `context.policy.version` to
+     * bind the review-session identity (§16); a fixture without it fails every
+     * scan with a `TypeError` that has nothing to do with incremental scope.
+     */
+    policy: createGovernanceProfile(createEmptyProfile("Test")),
+    /*
+     * The `acquisition` block is *complete*, and that is load bearing.
+     * `buildCoverage` parses it into a `CoverageReport`, so a fixture missing
+     * `analyzedCharacterCount` throws a `ZodError` and every scan the observer
+     * runs reports `failed` -- which is what happened here, and why the scan
+     * under test never actually completed. A partial fixture tests the failure
+     * path, which is a different test.
+     */
+    acquisition: {
+      structuralCoverage: "complete" as const,
+      unsupported: [] as string[],
+      analyzedCharacterCount: text.length,
+      completeDocumentCharacterCount: text.length,
+    },
+  };
+}
+
+/**
+ * A report shaped like the one the engine returns.
+ *
+ * Complete rather than partial, for the same reason as the acquisition block:
+ * the observer reads `report.documentIdentity`, `report.profileId`,
+ * `report.profileRevision`, `report.groups` and `report.coverage` to build the
+ * review-session identity, so a fixture missing any of them throws and every
+ * scan reports `failed` while the assertions below still pass against the
+ * earlier `runDeterministicReview` call.
+ */
+function report() {
+  return {
+    documentIdentity: {
+      documentId: "doc-1",
+      documentVersion: "v1",
+      contentHash: "hash-1",
+      structuralHash: "struct-1",
+    },
+    profileId: "11111111-1111-4111-8111-111111111111",
+    profileRevision: 1,
+    findings: [],
+    groups: [],
+    coverage: {
+      requestedScopes: ["body"],
+      examinedScopes: ["body"],
+      unsupportedScopes: [],
+      excludedScopes: [],
+      protectedScopes: [],
+      textCharactersExamined: 33,
+      paragraphsExamined: NODE_IDS.length,
+      headingsExamined: 0,
+      listsExamined: 0,
+      tablesExamined: 0,
+      sectionsExamined: 0,
+      headersFootersExamined: 0,
+      complete: true,
+      blockers: [],
+      coverageFingerprint: "body|p3|t0|s0|h0",
+    },
+    summary: {
+      total: 0,
+      actionable: 0,
+      reportedOnly: 0,
+      bySeverity: { info: 0, warning: 0, error: 0 },
+      byCategoryGroup: { language: 0, formatting: 0, structure: 0 },
+    },
   };
 }
 
@@ -114,21 +184,7 @@ describe("incremental scan scope", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.acquireAnalysisContext.mockImplementation(async () => context());
-    mocks.runDeterministicReview.mockImplementation(async () => ({
-      findings: [],
-      coverage: {
-        complete: true,
-        examinedNodeIds: NODE_IDS,
-        counts: [],
-        processedCharacterCount: 0,
-        revisedCharacterCount: 0,
-        excluded: [],
-        unprocessed: [],
-        plannedChangeCount: 0,
-        appliedChangeCount: 0,
-        changedNodeIds: [],
-      },
-    }));
+    mocks.runDeterministicReview.mockImplementation(async () => report());
   });
 
   it("examines only the paragraph Word reported as changed", async () => {
