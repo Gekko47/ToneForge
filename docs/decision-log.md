@@ -5153,3 +5153,47 @@ asserted a reconciliation the code did not perform.
   `src/taskpane/settings/providerComposition.ts`,
   `src/ai/gateway/gatewayClient.ts`, `src/ai/providers/registry.ts`,
   `scripts/dev-gateway.mjs`, `scripts/llm-smoke.mjs`.
+
+## ADR-0128 — The developer toolchain moves to Node 26 LTS
+
+- **Status**: Accepted (2026-10-09)
+- **Context**: The repository pinned Node 20.18.1 via `.nvmrc`,
+  `package.json` engines, and CI/release workflows. Node 20 entered
+  maintenance-only in April 2026 and exits maintenance entirely in
+  April 2027. The user asked whether the toolchain could move to a newer
+  Node line, and specifically whether 26.x would be the better long-term
+  choice over 24.x.
+- **Decision**: Migrate the developer/CI/toolchain baseline to Node 26.
+  A spike on the already-active Node 26.7.0 / npm 12.0.2 runtime proved
+  the full verification graph passes (13/13 stages: typecheck, lint,
+  format, secret-scan, docs, skills, test, coverage, build-artifacts,
+  built-secret-scan, manifest, package, package-check), the sideload
+  smoke test passes (the add-in loads in WebView2, serves all chunks,
+  and navigates every page), and stderr shows zero EBADENGINE, zero
+  DEP0040, zero DEP0169, zero ExperimentalWarning, and zero removed-API
+  failures. The bare `localStorage` access in `src/core/state/persistence.ts`
+  and `tests/setup.ts` was already guarded (getSafeStorage checks
+  `typeof window !== "undefined"` and falls back to an in-memory Map;
+  tests/setup.ts installs a polyfill when no browser storage is available),
+  so the Node 22+ ExperimentalWarning is resolved at the source rather
+  than suppressed. The clean-install check fails at the docs stage due to
+  pre-existing dead links in `plans/*.md` referencing non-existent
+  `plans/systematic review/` files; this is Node-version-independent and
+  would fail identically on Node 20 or 24.
+- **Consequences**:
+  - Positive: Node 26 is Active LTS (October 2026) and will receive
+    security fixes through April 2031, giving a longer support runway
+    than Node 24 (Active LTS October 2025, maintenance April 2028).
+  - Positive: the full graph passes with zero warnings on Node 26,
+    proving no toolchain regression.
+  - Positive: the add-in runtime is Word's WebView2 (browser), not Node —
+    this migration affects only the developer/CI toolchain.
+  - Cost: developers must have Node 26 installed; `.nvmrc` and engines
+    now enforce this.
+  - **Not claimed**: the clean-install check does not pass; it fails on
+    pre-existing dead links in `plans/*.md`, not on anything Node-version
+    specific.
+- **Evidence**: `.nvmrc` → `26.7.0`; `package.json` engines →
+  `>=26.0.0`; `@types/node` → `^26.0.0`; `.github/workflows/ci.yml`
+  matrix → `[26.x]`; `.github/workflows/release.yml` → `26.x`;
+  `docs/onboarding.md` prerequisites updated; spike run 2026-10-09.

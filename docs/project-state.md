@@ -304,3 +304,7 @@ Recorded under ADR-0055, ADR-0056, and ADR-0057. Full suite: 1308 tests pass.
 - **Tracked editing is a Settings control and can be armed.** See the Troubleshooting row above.
 
 Open limitation: the capability-gated acquisition and the retired review surfaces are verified by unit tests and `MockAdapter`. A live re-probe of Desktop Word and the full host matrix remain external gates in [`manual-verification.md`](manual-verification.md).
+
+## Runtime migration (2026-10-09)
+
+The developer/CI/toolchain baseline moved from Node 20.18.1 to Node 26.7.0 / npm 12.0.2. The full verification graph passes (13/13 stages) with zero deprecation warnings, and the sideload smoke test passes. Recorded as ADR-0128 in [`decision-log.md`](decision-log.md). The add-in runtime is Word's WebView2 (browser), not Node — this affects only the developer/CI toolchain.

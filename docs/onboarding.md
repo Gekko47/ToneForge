@@ -5,8 +5,8 @@ This guide covers setup, development, verification, and troubleshooting.
 
 ## Prerequisites
 
-- Node.js 20.x LTS as pinned by `.nvmrc` and `package.json`.
-- npm 10.x or newer.
+- Node.js 26.x LTS as pinned by `.nvmrc` and `package.json`.
+- npm 12.x or newer.
 - Microsoft Word desktop or Microsoft 365 web access for host verification.
 - Visual Studio Code or another editor.
 
@@ -54,7 +54,7 @@ debugging a Word add-in against the Edge WebView2 runtime.
 
 Prerequisites:
 
-1. Windows 10/11, Node `20.18.1`, and a Word installation that uses Edge
+1. Windows 10/11, Node `26.7.0`, and a Word installation that uses Edge
    WebView2.
 2. Install Microsoft's **Microsoft Debugger for Edge** Visual Studio Code
    extension.
