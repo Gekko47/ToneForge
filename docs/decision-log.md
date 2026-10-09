@@ -5176,10 +5176,14 @@ asserted a reconciliation the code did not perform.
   `typeof window !== "undefined"` and falls back to an in-memory Map;
   tests/setup.ts installs a polyfill when no browser storage is available),
   so the Node 22+ ExperimentalWarning is resolved at the source rather
-  than suppressed. The clean-install check fails at the docs stage due to
-  pre-existing dead links in `plans/*.md` referencing non-existent
-  `plans/systematic review/` files; this is Node-version-independent and
-  would fail identically on Node 20 or 24.
+  than suppressed. The clean-install check initially failed at the docs
+  stage due to pre-existing dead links in `plans/*.md` referencing
+  non-existent `plans/systematic review/` files (Node-version-independent,
+  and would have failed identically on Node 20 or 24). Those links are now
+  rewritten as code spans/prose, and the typecheck stage's
+  `Array.prototype.at` usage (ES2022) is satisfied by raising
+  `tsconfig.json` `target`/`lib` from ES2020 to ES2022; the clean-install
+  check now passes.
 - **Consequences**:
   - Positive: Node 26 is planned to become Active LTS in October 2026 and will receive
     security fixes through April 2031, giving a longer support runway
@@ -5190,10 +5194,15 @@ asserted a reconciliation the code did not perform.
     this migration affects only the developer/CI toolchain.
   - Cost: developers must have Node 26 installed; `.nvmrc` and engines
     now enforce this.
-  - **Not claimed**: the clean-install check does not pass; it fails on
-    pre-existing dead links in `plans/*.md`, not on anything Node-version
-    specific.
+  - **Not claimed**: the Word-host gate remains open; a green automated
+    clean-install run is not a release (ADR-0051).
 - **Evidence**: `.nvmrc` → `26.7.0`; `package.json` engines →
   `>=26.0.0`; `@types/node` → `^26.0.0`; `.github/workflows/ci.yml`
   matrix → `[26.x]`; `.github/workflows/release.yml` → `26.x`;
-  `docs/onboarding.md` prerequisites updated; spike run 2026-10-09.
+  `docs/onboarding.md` prerequisites updated; `tsconfig.json`
+  `target`/`lib` → ES2022; dead links removed from
+  `plans/indexed-consistency-authoritative-plan.md`,
+  `plans/llm-connector-revised-implementation-plan.md`,
+  `plans/llm-settings-due-diligence-plan.md`, and
+  `plans/semantic-review-systematic-implementation-plan.md`; spike run
+  2026-10-09.

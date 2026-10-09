@@ -152,7 +152,7 @@
 > review and are marked **Corrected after review** at each site.
 
 Source specification:
-[`<systematic review/ToneForge_SEMANTIC_REVIEW_SYSTEMATIC_IMPLEMENTATION.md>`](<../systematic review/ToneForge_SEMANTIC_REVIEW_SYSTEMATIC_IMPLEMENTATION.md>)
+`systematic review/ToneForge_SEMANTIC_REVIEW_SYSTEMATIC_IMPLEMENTATION.md`
 (40 sections, §0–§40).
 
 This plan was written by reading the specification in full **and** auditing the
@@ -266,17 +266,17 @@ governance invariant or remove a safety check that currently works.
 
 The three sibling documents are not independent:
 
-- [`ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md`](<../systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md>)
+- `ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md` (in the untracked `systematic review/` folder)
   rewrites the provider/settings contract this plan calls
   [`createRegistryFromSettings()`](../src/taskpane/settings/providerComposition.ts:118).
-- [`ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md`](<../systematic review/ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md>)
+- `ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md` (in the untracked `systematic review/` folder)
   §19 retires the consistency-to-`Finding` bridge, and its §28 hands work to
   "Semantic Review". **Renamed and revised in flight**, from
   `ToneForge_INDEXED_CONSISTENCY_SYSTEMATIC_IMPLEMENTATION.md`, which is now
   prefixed `.SS.` on disk. §0.1 is about _decisions_ changing under a fixed
   specification; this is the other half of the same hazard, a _source_ moving
   under a plan that cites it \u2014 and the doc-link check is what caught it.
-- [`ToneForge_HOME_AND_UNIFIED_FLUENT_UX_IMPLEMENTATION.md`](<../systematic review/ToneForge_HOME_AND_UNIFIED_FLUENT_UX_IMPLEMENTATION.md>)
+- `ToneForge_HOME_AND_UNIFIED_FLUENT_UX_IMPLEMENTATION.md` (in the untracked `systematic review/` folder)
   renames navigation and the Home page.
 
 Required order across all four: **LLM settings → Semantic Review → Indexed

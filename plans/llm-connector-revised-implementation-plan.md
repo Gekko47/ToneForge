@@ -1,6 +1,6 @@
 # Revised LLM Connector — Implementation Plan (Codebase-Authoritative)
 
-> **Method.** Reconciled [`ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md`](<../systematic review/ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md:1>)
+> **Method.** Reconciled `ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md` (in the untracked `systematic review/` folder)
 > and [`plans/llm-settings-due-diligence-plan.md`](llm-settings-due-diligence-plan.md:1)
 > against the current source. Where they disagree, the source wins. The
 > superseding owner plan is [`plans/indexed-consistency-authoritative-plan.md`](indexed-consistency-authoritative-plan.md:1).

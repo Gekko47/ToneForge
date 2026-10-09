@@ -308,3 +308,5 @@ Open limitation: the capability-gated acquisition and the retired review surface
 ## Runtime migration (2026-10-09)
 
 The developer/CI/toolchain baseline moved from Node 20.18.1 to Node 26.7.0 / npm 12.0.2. The full verification graph passes (13/13 stages) with zero deprecation warnings, and the sideload smoke test passes. Recorded as ADR-0128 in [`decision-log.md`](decision-log.md). The add-in runtime is Word's WebView2 (browser), not Node — this affects only the developer/CI toolchain.
+
+The clean-install check (`npm run clean-install:check`) now passes. Two pre-existing blockers were fixed: dead links in `plans/*.md` into the untracked `systematic review/` folder were rewritten as code spans/prose, and `tsconfig.json` `target`/`lib` were raised from ES2020 to ES2022 to satisfy the `Array.prototype.at` usage the code already relies on. The Word-host gate remains open and is unaffected.

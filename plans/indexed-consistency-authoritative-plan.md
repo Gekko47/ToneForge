@@ -1,6 +1,6 @@
 # Indexed Consistency — Authoritative Plan v2 (Owner-Revised)
 
-> **Authority:** This v2 supersedes both [`ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md`](systematic review/ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md:1) and v1 of this plan.
+> **Authority:** This v2 supersedes both `ToneForge_INDEXED_CONSISTENCY_SYSTEM_ONE_REVISED_IMPLEMENTATION.md` (in the untracked `systematic review/` folder) and v1 of this plan.
 > Owner decisions 2026-10-05 incorporated. Senior decision: best final product is a full delay-expert-report consistency engine with complete claim schema, encrypted per-document store, and token-efficient decision LLM — built as a clean replacement with no migration burden.
 > Standing constraint: there are no users. No migration code is written. Old engine, old state keys, and old fixtures may be deleted outright.
 
