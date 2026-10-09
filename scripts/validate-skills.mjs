@@ -81,9 +81,12 @@ export function parseFrontmatter(text, file) {
     const key = line.slice(0, idx).trim();
     const value = line.slice(idx + 1).trim();
     if (BLOCK_SCALAR_RE.test(value)) {
-      // Fold the continuation lines into one value. A blank line is skipped
-      // rather than treated as the end of the value, so a paragraph break does
-      // not truncate the description.
+      // Fold the continuation lines into one value. A blank line is a paragraph
+      // break, not the end of the value, so it is retained rather than skipped.
+      // The indicator decides how lines join: `|` keeps newlines, `>` folds them
+      // to spaces (a blank line still becomes a newline). Retaining the breaks
+      // matters because the description length check counts them.
+      const literal = value.startsWith("|");
       const parts = [];
       while (i + 1 < lines.length) {
         const next = lines[i + 1];
@@ -93,12 +96,19 @@ export function parseFrontmatter(text, file) {
           continue;
         }
         if (next.trim() === "") {
+          parts.push("");
           i += 1;
           continue;
         }
         break;
       }
-      data[key] = parts.join(" ");
+      while (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+      data[key] = literal
+        ? parts.join("\n")
+        : parts
+            .map((p) => (p === "" ? "\n" : p))
+            .join(" ")
+            .replace(/ ?\n ?/g, "\n");
       continue;
     }
     data[key] = value;

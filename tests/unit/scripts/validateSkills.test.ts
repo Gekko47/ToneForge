@@ -34,8 +34,19 @@ describe("parseFrontmatter", () => {
       skill("name: ponytail\ndescription: |\n  First line.\n  Second line."),
       "test/SKILL.md",
     );
-    expect(parsed?.data.description).toBe("First line. Second line.");
+    expect(parsed?.data.description).toBe("First line.\nSecond line.");
     expect(parsed?.data.description).not.toBe("|");
+  });
+
+  it("retains blank lines so they count toward the description length limit", () => {
+    const filler = "a".repeat(1020);
+    const parsed = parseFrontmatter(
+      skill(`name: ponytail\ndescription: >-\n  ${filler}\n\n\n\n\n  b`),
+      "test/SKILL.md",
+    );
+    const description = parsed?.data.description ?? "";
+    expect(description).toContain("\n");
+    expect(description.length).toBeGreaterThan(1024);
   });
 
   it("stops folding at the first line that is not indented", () => {

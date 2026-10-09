@@ -5181,7 +5181,7 @@ asserted a reconciliation the code did not perform.
   `plans/systematic review/` files; this is Node-version-independent and
   would fail identically on Node 20 or 24.
 - **Consequences**:
-  - Positive: Node 26 is Active LTS (October 2026) and will receive
+  - Positive: Node 26 is planned to become Active LTS in October 2026 and will receive
     security fixes through April 2031, giving a longer support runway
     than Node 24 (Active LTS October 2025, maintenance April 2028).
   - Positive: the full graph passes with zero warnings on Node 26,

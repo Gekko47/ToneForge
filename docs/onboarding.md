@@ -5,7 +5,7 @@ This guide covers setup, development, verification, and troubleshooting.
 
 ## Prerequisites
 
-- Node.js 26.x LTS as pinned by `.nvmrc` and `package.json`.
+- Node.js 26.x (Current, not yet LTS) as pinned by `.nvmrc` and `package.json`.
 - npm 12.x or newer.
 - Microsoft Word desktop or Microsoft 365 web access for host verification.
 - Visual Studio Code or another editor.
