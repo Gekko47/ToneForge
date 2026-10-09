@@ -135,6 +135,81 @@ export function createDevGatewayBroker({
 } = {}) {
   const newConnectionId = () => `or_${randomBytes(16).toString("hex")}`;
 
+  // Pending OAuth authorization states. Maps state → { provider, createdAt }.
+  // A callback must present a state that was issued by handleAuthorize and not
+  // yet consumed, so a callback cannot be forged by guessing a state value.
+  const pendingAuthorizeStates = new Map();
+  const AUTHORIZE_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+  /** Reject a self-hosted origin unless the caller explicitly approved it. */
+  function rejectUnapprovedSelfHosted(classified, response) {
+    if (classified.classification === "userApprovedSelfHosted") {
+      sendJson(response, 403, {
+        error: "This base URL requires explicit self-hosted approval",
+      });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Build the authorization URL with a fresh state parameter.
+   *
+   * The state is generated here, retained in `pendingAuthorizeStates`, and
+   * embedded in the URL so the callback can be bound to this authorization
+   * request. A caller-supplied `authorize` URL has its `state` parameter
+   * replaced; the default relative callback URL embeds the generated state.
+   */
+  function buildAuthorizationUrl(provider) {
+    const state = randomBytes(16).toString("hex");
+    pendingAuthorizeStates.set(state, { provider, createdAt: now().getTime() });
+
+    let baseUrl;
+    if (typeof authorize === "function") {
+      baseUrl = authorize(provider);
+    } else if (authorize && typeof authorize.authorizationUrl === "string") {
+      baseUrl = authorize.authorizationUrl;
+    } else {
+      baseUrl = `${GATEWAY_PATH_PREFIX}/connections/callback?code=dev-authorization-code`;
+    }
+
+    // Parse with a base so relative URLs work, then set/replace the state param.
+    const url = new URL(baseUrl, "http://localhost");
+    url.searchParams.set("state", state);
+    return url.toString();
+  }
+
+  /**
+   * Validate the callback URL's state against the pending authorization states.
+   *
+   * Returns the matched provider, or null when the state is missing, unknown,
+   * or expired. A matched state is consumed so it cannot be replayed.
+   */
+  function consumeAuthorizeState(callbackUrl) {
+    let url;
+    try {
+      url = new URL(callbackUrl, "http://localhost");
+    } catch {
+      return null;
+    }
+    const state = url.searchParams.get("state") ?? "";
+    const code = url.searchParams.get("code") ?? "";
+    if (state.length === 0 || code.length === 0) return null;
+
+    const pending = pendingAuthorizeStates.get(state);
+    if (!pending) return null;
+
+    const elapsed = now().getTime() - pending.createdAt;
+    if (elapsed > AUTHORIZE_STATE_TTL_MS) {
+      pendingAuthorizeStates.delete(state);
+      return null;
+    }
+
+    // Consume the state so it cannot be replayed.
+    pendingAuthorizeStates.delete(state);
+    return pending.provider;
+  }
+
   return async (req, res, next) => {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     if (!pathname.startsWith(GATEWAY_PATH_PREFIX)) {
@@ -275,18 +350,6 @@ export function createDevGatewayBroker({
       };
     }
 
-    /** Resolve the authorization URL the add-in should open. */
-    function resolveAuthorizationUrl(provider) {
-      if (typeof authorize === "function") return authorize(provider);
-      if (authorize && typeof authorize.authorizationUrl === "string") {
-        return authorize.authorizationUrl;
-      }
-      // A relative loopback URL. The development gateway cannot complete a real
-      // provider exchange, so the user copies this URL back into the callback
-      // field to finish the handshake.
-      return `${GATEWAY_PATH_PREFIX}/connections/callback?code=dev-authorization-code&state=dev`;
-    }
-
     async function handleAuthorize(request, response) {
       if (!isJsonContentType(request.headers)) {
         sendJson(response, 415, { error: "Content-Type must be application/json" });
@@ -297,7 +360,7 @@ export function createDevGatewayBroker({
         sendJson(response, 400, { error: "Unsupported provider for authorization" });
         return;
       }
-      sendJson(response, 200, { authorizationUrl: resolveAuthorizationUrl(body.provider) });
+      sendJson(response, 200, { authorizationUrl: buildAuthorizationUrl(body.provider) });
     }
 
     async function handleCallback(request, response) {
@@ -315,6 +378,13 @@ export function createDevGatewayBroker({
         sendJson(response, 400, { error: "A callback URL is required" });
         return;
       }
+      const authorizedProvider = consumeAuthorizeState(callbackUrl);
+      if (authorizedProvider === null) {
+        sendJson(response, 400, {
+          error: "Callback URL must contain a valid, unconsumed state and code",
+        });
+        return;
+      }
       const classified = classifyUpstreamBaseUrl(
         deploymentManaged?.baseUrl ?? OPENROUTER_DEFAULT_BASE_URL,
       );
@@ -322,6 +392,7 @@ export function createDevGatewayBroker({
         sendJson(response, 400, { error: "Base URL must be an HTTPS origin without credentials" });
         return;
       }
+      if (rejectUnapprovedSelfHosted(classified, response)) return;
       const connectionId = newConnectionId();
       connections.set(connectionId, {
         // The development gateway cannot exchange a real authorization code, so
@@ -358,6 +429,7 @@ export function createDevGatewayBroker({
         sendJson(response, 400, { error: "Base URL must be an HTTPS origin without credentials" });
         return;
       }
+      if (rejectUnapprovedSelfHosted(classified, response)) return;
       const connectionId = newConnectionId();
       connections.set(connectionId, {
         apiKey: deploymentManaged.apiKey,

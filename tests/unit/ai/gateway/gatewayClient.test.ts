@@ -338,6 +338,21 @@ describe("HttpProviderGatewayClient", () => {
     expect(calls).toBe(2);
   });
 
+  it("does not retry a retryable failure during a connection probe", async () => {
+    // `testConnection` is a one-shot check: a transient 503 must surface as a
+    // failed test, not be silently re-run, or a flaky gateway would make a
+    // broken connection look healthy.
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      return jsonResponse({}, 503, "Unavailable");
+    }) as unknown as typeof fetch;
+    const store = new SessionTokenStore();
+    const gateway = new HttpProviderGatewayClient({ origin: ORIGIN, tokenStore: store, fetchImpl });
+    await expect(gateway.testConnection(connection())).rejects.toThrow(GatewayError);
+    expect(calls).toBe(1);
+  });
+
   it("forgets the local token on disconnect so a failed call cannot leave it usable", async () => {
     const store = new SessionTokenStore();
     store.set("conn_abc123", "opaque-session-token");

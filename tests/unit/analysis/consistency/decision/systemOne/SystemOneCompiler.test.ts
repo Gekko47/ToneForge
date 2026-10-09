@@ -106,4 +106,37 @@ describe("R5 decision: SystemOneCompiler", () => {
     expect(request.prompt).toContain("binary");
     expect(request.prompt).toContain("choice");
   });
+
+  it("redacts expanded-context content when unredacted is not allowed", () => {
+    const plan = createPlan({
+      allowUnredacted: false,
+      expandedContext: [
+        {
+          candidateId: "cand-1",
+          kind: "CTX-RELATED-CLAIMS",
+          content: "Contact the author at author@example.com for the basis.",
+        },
+      ],
+    });
+    const request = compiler.compile(plan);
+
+    expect(request.prompt).toContain("[REDACTED_EMAIL]");
+    expect(request.prompt).not.toContain("author@example.com");
+  });
+
+  it("keeps expanded-context content exact when unredacted is allowed", () => {
+    const plan = createPlan({
+      allowUnredacted: true,
+      expandedContext: [
+        {
+          candidateId: "cand-1",
+          kind: "CTX-RELATED-CLAIMS",
+          content: "Contact the author at author@example.com for the basis.",
+        },
+      ],
+    });
+    const request = compiler.compile(plan);
+
+    expect(request.prompt).toContain("author@example.com");
+  });
 });

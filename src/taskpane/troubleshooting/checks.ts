@@ -408,6 +408,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     appliesTo: (input) =>
       input.consistency !== null &&
       input.consistency.unresolved > 0 &&
+      input.consistency.decisionParseFailed === false &&
       input.decisionRoleConfigured === false &&
       input.decisionFallbackPolicy === "unresolved",
     situation: "The consistency review left some comparisons unresolved",
@@ -424,6 +425,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     appliesTo: (input) =>
       input.consistency !== null &&
       input.consistency.unresolved > 0 &&
+      input.consistency.decisionParseFailed === false &&
       input.decisionRoleConfigured === false &&
       input.decisionFallbackPolicy === "general_model",
     situation:

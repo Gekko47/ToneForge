@@ -458,9 +458,10 @@ as a full Settings section with a save/cancel transaction.
   [`StateSchema`](src/core/state/persistence.ts), the draft
   ([`settingsModel.ts`](src/taskpane/settings/settingsModel.ts)), the
   migration normaliser ([`migration.ts`](src/core/state/migration.ts)), and
-  the fixtures. Retire `TelemetrySettingsSection.tsx`
-  and [`SettingsDashboard.tsx`](src/taskpane/components/SettingsDashboard.tsx); do not
-  reintroduce it until an endpoint exists.
+  the fixtures. Retire `TelemetrySettingsSection.tsx`; do not reintroduce it until
+  an endpoint exists. Keep
+  [`SettingsDashboard.tsx`](src/taskpane/components/SettingsDashboard.tsx), which is
+  now the load-bearing LLM roles and privacy surface.
 - **Risk:** medium — state schema change. Add a v10 migration rather than editing
   v9, per ADR-0015.
 

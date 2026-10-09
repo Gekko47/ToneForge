@@ -13,6 +13,9 @@
  */
 
 import type { ConsistencyIndices } from "../indices/buildIndices";
+import { predicateTerms } from "../indices/TerminologyIndex";
+import { claimCitations } from "../indices/ReferenceIndex";
+import { sectionKey } from "../indices/SectionIndex";
 import type { NormalisedClaim } from "../normalisation";
 import type { ConsistencyCandidate } from "../contracts";
 import type { ContextRequestKind } from "../contracts/plan";
@@ -79,6 +82,62 @@ function claimsForCandidate(
   if (candidate === undefined) return [];
   const ids = new Set(candidate.claimIds);
   return claims.filter((c) => ids.has(c.claim.id));
+}
+
+/**
+ * The parameters a request kind needs, resolved from the candidate's claims.
+ *
+ * The plan contract carries only the *vocabulary* of a context request (the
+ * kind); the retrieval instruction — kind + candidate + parameters — is owned
+ * here. A kind that reads the candidate's own claims needs no parameter and
+ * resolves to `{}`. A kind that reads an index keyed by something else
+ * (an event, a programme, a term, a citation, a section) resolves that key
+ * from the candidate's claims, so the expander is never handed a parameterless
+ * request that can only answer "No … provided".
+ *
+ * Returns `null` when a required key cannot be resolved from the candidate —
+ * the caller drops the request rather than issuing one that cannot be answered.
+ */
+export function resolveContextParameters(
+  type: ContextRequestType,
+  candidateId: string,
+  candidates: readonly ConsistencyCandidate[],
+  claims: readonly NormalisedClaim[],
+): Record<string, unknown> | null {
+  const candidateClaims = claimsForCandidate(candidateId, candidates, claims);
+  if (candidateClaims.length === 0) return null;
+
+  switch (type) {
+    case "CTX-EVENT-HISTORY": {
+      const eventId = candidateClaims.flatMap((c) => c.claim.eventIds)[0];
+      return eventId === undefined ? null : { eventId };
+    }
+    case "CTX-PROGRAMME-HISTORY": {
+      const programmeId = candidateClaims.flatMap((c) => c.claim.programmeIds)[0];
+      return programmeId === undefined ? null : { programmeId };
+    }
+    case "CTX-TERM-DEFINITION": {
+      const term = candidateClaims.flatMap((c) => predicateTerms(c.claim.predicate.text))[0];
+      return term === undefined ? null : { term };
+    }
+    case "CTX-REFERENCE-CONTENT": {
+      const reference = candidateClaims.flatMap((c) => claimCitations(c.claim))[0];
+      return reference === undefined ? null : { reference };
+    }
+    case "CTX-SECTION-SUMMARY": {
+      const section = candidateClaims.map((c) => sectionKey(c.claim.evidence))[0];
+      return section === undefined ? null : { section };
+    }
+    // Candidate-derived kinds read the candidate's own claims, so they need no
+    // parameter and are always resolvable.
+    case "CTX-SURROUNDING-PARAGRAPHS":
+    case "CTX-RELATED-CLAIMS":
+    case "CTX-VALUATION-BASIS":
+    case "CTX-MEASUREMENT-BASIS":
+      return {};
+    default:
+      return null;
+  }
 }
 
 /** Expand a single context request. */

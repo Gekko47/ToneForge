@@ -448,6 +448,27 @@ describe("the troubleshooting registry", () => {
     expect(notes.map((n) => n.id)).not.toContain("decision-fallback-general");
   });
 
+  it("reports only the parse failure when an unbound role also failed to parse", () => {
+    // A parse failure is the situation, not the missing binding: the model was
+    // asked and its answer could not be read, so blaming the binding would name
+    // the wrong cause and send the user to the wrong control.
+    const notes = diagnoseSituation(
+      healthy({
+        decisionRoleConfigured: false,
+        consistency: {
+          usedModel: true,
+          complete: true,
+          limitations: [],
+          unresolved: 3,
+          decisionParseFailed: true,
+        },
+      }),
+    );
+    expect(notes.map((n) => n.id)).toContain("decision-parse-failed");
+    expect(notes.map((n) => n.id)).not.toContain("decision-role-unbound");
+    expect(notes.map((n) => n.id)).not.toContain("decision-fallback-general");
+  });
+
   it("reports an unreadable decision response as a parse failure, not a missing model", () => {
     // The role is bound and the model answered; it just did not answer in JSON.
     // The remedy is a different model or a retry, not a connection.

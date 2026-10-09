@@ -90,3 +90,40 @@ export function parseModelJsonArray<T extends z.ZodTypeAny>(
   }
   return null;
 }
+
+/**
+ * Parse a model response into an array, keeping the items that validate and
+ * dropping the ones that do not.
+ *
+ * `parseModelJsonArray` is all-or-nothing: one malformed element discards the
+ * whole array. That is the right contract for extraction, where a partial
+ * result is worse than a clear refusal. It is the wrong contract for a
+ * question-answering response, where one unreadable answer should not throw
+ * away the answers the model did give.
+ *
+ * Returns `null` only when the payload is not a JSON array (directly or wrapped
+ * in an object), so the caller can still tell "not a response" from "a response
+ * with some unreadable items". Never throws.
+ */
+export function parseModelJsonArrayLoose<T extends z.ZodTypeAny>(
+  text: string,
+  itemSchema: T,
+): z.infer<T>[] | null {
+  const body = extractJsonBody(text);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  const array = Array.isArray(raw)
+    ? raw
+    : raw !== null && typeof raw === "object"
+      ? Object.values(raw as Record<string, unknown>).find((value) => Array.isArray(value))
+      : undefined;
+  if (!Array.isArray(array)) return null;
+  return array.flatMap((item) => {
+    const result = itemSchema.safeParse(item);
+    return result.success ? [result.data] : [];
+  });
+}

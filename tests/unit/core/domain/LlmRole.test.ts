@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   DEFAULT_ROLE_PURPOSE,
   DecisionFallbackPolicySchema,
@@ -9,6 +10,7 @@ import {
   assertRoleSchemasAreSecretFree,
   createEmptyRoleBindings,
   isBindingUsable,
+  schemaCouldHoldSecret,
 } from "../../../../src/core/domain/LlmRole";
 
 describe("LlmRoleSchema", () => {
@@ -195,5 +197,26 @@ describe("assertRoleSchemasAreSecretFree", () => {
     // `connectionId` and `selectedModel` are identifiers, not credentials.
     // Any OTHER string field would fail the reflection test.
     expect(() => assertRoleSchemasAreSecretFree()).not.toThrow();
+  });
+});
+
+describe("schemaCouldHoldSecret", () => {
+  it("flags a bare string", () => {
+    expect(schemaCouldHoldSecret(z.string())).toBe(true);
+  });
+
+  it("flags a string wrapped in optional, default, or nullable", () => {
+    // A wrapper must not hide the string: an optional credential field is
+    // still a credential field.
+    expect(schemaCouldHoldSecret(z.string().optional())).toBe(true);
+    expect(schemaCouldHoldSecret(z.string().default(""))).toBe(true);
+    expect(schemaCouldHoldSecret(z.string().nullable())).toBe(true);
+    expect(schemaCouldHoldSecret(z.string().optional().nullable())).toBe(true);
+  });
+
+  it("does not flag a non-string schema", () => {
+    expect(schemaCouldHoldSecret(z.boolean())).toBe(false);
+    expect(schemaCouldHoldSecret(z.enum(["a", "b"]))).toBe(false);
+    expect(schemaCouldHoldSecret(z.boolean().optional())).toBe(false);
   });
 });

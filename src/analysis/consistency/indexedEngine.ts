@@ -60,7 +60,7 @@ import { buildIssue } from "./issues";
 import { compileDecisionPlanWithCandidates } from "./decision/DecisionPlanCompiler";
 import { SystemOneDecisionProvider } from "./decision/systemOne/SystemOneDecisionProvider";
 import { unansweredQuestions } from "./decision/systemOne/SystemOneContextPolicy";
-import { expandContext } from "./decision/contextExpansion";
+import { expandContext, resolveContextParameters } from "./decision/contextExpansion";
 import type { DecisionPlan } from "./contracts/plan";
 import type { ConsistencyDecisionEvaluation } from "./decision/ConsistencyDecisionProvider";
 import { buildAuditRecord, buildProvenance, type ConsistencySessionStore } from "./persistence";
@@ -544,6 +544,14 @@ export async function runConsistencyReview(
           blockers.push("Decision adjudication failed: the decision provider threw an error.");
         }
 
+        // The first pass's parse-failure flag is captured before the expansion
+        // rerun, which replaces `evaluation` with merged answers. Whether the
+        // rerun resolved the failure is decided from its question-level results,
+        // not from the first pass's provider metadata.
+        const firstPassParseFailed = evaluation?.providerMetadata.parseFailed === true;
+        let rerunPlan: DecisionPlan | null = null;
+        let rerunSucceeded = false;
+
         // One bounded expansion pass (original §23): rerun only the questions
         // the model left unanswered, and only with the context those questions
         // asked for. There is no loop — a second pass that still comes back
@@ -552,12 +560,22 @@ export async function runConsistencyReview(
         // as extraction: with redaction on, the residue stays unresolved.
         if (evaluation !== null && request.allowUnredacted && plan.budget.maxExpansions > 0) {
           const unanswered = unansweredQuestions(plan, evaluation.answers);
+          // Resolve each requested kind's parameters from the candidate's own
+          // claims, and drop any request whose required key cannot be resolved:
+          // a parameterless request can only answer "No … provided", so issuing
+          // it would spend a rerun on a question that cannot be settled.
           const requests = unanswered.flatMap((question) =>
-            question.requestedContext.map((kind) => ({
-              type: kind,
-              candidateId: question.subjectId,
-              parameters: {},
-            })),
+            question.requestedContext.flatMap((kind) => {
+              const parameters = resolveContextParameters(
+                kind,
+                question.subjectId,
+                retrieved.candidates,
+                normalised,
+              );
+              return parameters === null
+                ? []
+                : [{ type: kind, candidateId: question.subjectId, parameters }];
+            }),
           );
           if (requests.length > 0) {
             const expanded = expandContext(
@@ -567,7 +585,7 @@ export async function runConsistencyReview(
               retrieved.candidates,
               request.document.text,
             );
-            const rerunPlan: DecisionPlan = {
+            rerunPlan = {
               ...plan,
               questions: unanswered,
               expandedContext: expanded.map((result) => ({
@@ -581,6 +599,7 @@ export async function runConsistencyReview(
               const merged = new Map(evaluation.answers.map((a) => [a.question, a]));
               rerun.answers.forEach((answer) => merged.set(answer.question, answer));
               evaluation = { ...evaluation, answers: [...merged.values()] };
+              rerunSucceeded = true;
             } catch {
               if (options.signal?.aborted === true) {
                 throw new ConsistencyRunCancelled("cancelled");
@@ -592,10 +611,16 @@ export async function runConsistencyReview(
         }
 
         // Record whether the decision model's output was unreadable. The first
-        // pass's metadata is authoritative: the expansion rerun only fills gaps
-        // and keeps the first pass's provider metadata.
+        // pass's metadata is authoritative, unless a successful expansion rerun
+        // answered every question the first pass left unanswered — then the
+        // parse failure is resolved and the flag clears. A first pass that threw
+        // leaves the flag false.
         if (evaluation !== null) {
-          work.decisionParseFailed = evaluation.providerMetadata.parseFailed === true;
+          const resolvedByRerun =
+            rerunSucceeded &&
+            rerunPlan !== null &&
+            unansweredQuestions(rerunPlan, evaluation.answers).length === 0;
+          work.decisionParseFailed = firstPassParseFailed && !resolvedByRerun;
         }
 
         // R6: D-derivation, post-model gates, and confidence with intervals
@@ -792,7 +817,12 @@ export async function runConsistencyReview(
       // never claims a decision model that was not consulted.
       generalModel: options.generalModel ?? request.model,
       decisionProvider: decisionProvider?.name ?? "none",
-      decisionModel: options.decisionModel ?? request.model,
+      // A run with no decision provider consulted no decision model, so the
+      // provenance says "none" rather than borrowing the extraction model's
+      // name — the audit trail must not claim a decision model that was never
+      // asked.
+      decisionModel:
+        decisionProvider === undefined ? "none" : (options.decisionModel ?? request.model),
       questionSetVersion: "1.0",
       confidenceProfileVersion: "1.0",
       createdAt: startedAt,

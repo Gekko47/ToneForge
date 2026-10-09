@@ -450,12 +450,16 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
     connection: ProviderConnection,
     signal?: AbortSignal,
   ): Promise<ConnectionTestResult> {
+    // A probe is a one-shot check, not a retrying operation: a transient failure
+    // must surface as a failed test, not silently re-run, or a flaky gateway would
+    // make a broken connection look healthy.
     const body = await this.request(
       "GET",
       `/v1/connections/${encodeURIComponent(connection.connectionId)}/test`,
       undefined,
       signal,
       connection.connectionId,
+      0,
     );
     const parsed = GatewayTestResponseSchema.safeParse(body);
     if (!parsed.success) {
@@ -504,6 +508,7 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
     payload: unknown,
     signal?: AbortSignal,
     connectionId?: string,
+    maxRetriesOverride?: number,
   ): Promise<unknown> {
     if (!this.origin) {
       throw new GatewayError(
@@ -518,7 +523,9 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
 
     const token = connectionId ? this.tokenStore.get(connectionId) : undefined;
     const retryOptions: RetryOptions = {
-      maxRetries: this.maxRetries,
+      // A per-call override lets a caller that must not retry (a connection
+      // probe) opt out without changing the client's default for every request.
+      maxRetries: maxRetriesOverride ?? this.maxRetries,
       baseDelayMs: 500,
       maxDelayMs: 4000,
       isRetryable: (err: unknown) => err instanceof GatewayError && err.retryable,

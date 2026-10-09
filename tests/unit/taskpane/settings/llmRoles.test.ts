@@ -15,7 +15,6 @@ import type { PersistedState } from "../../../../src/core/state/persistence";
 import {
   connectionsById,
   effectivePurpose,
-  isRoleConfigured,
   isValidPurpose,
   removeRoleBinding,
   resolveRoleBinding,
@@ -106,33 +105,6 @@ describe("resolveRoleBinding", () => {
     const result = resolveRoleBinding(bindings, "consistency_decision");
     expect(result).toBeDefined();
     expect(result?.connectionId).toBe("c2");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// isRoleConfigured
-// ---------------------------------------------------------------------------
-
-describe("isRoleConfigured", () => {
-  it("returns false when binding is undefined", () => {
-    expect(isRoleConfigured(undefined, {})).toBe(false);
-  });
-
-  it("returns false when the connection does not exist", () => {
-    const b = binding("general", "missing");
-    expect(isRoleConfigured(b, {})).toBe(false);
-  });
-
-  it("returns false when the connection is disconnected", () => {
-    const b = binding("general", "c1");
-    const conns = { c1: connection("c1", "openai", { status: "disconnected" }) };
-    expect(isRoleConfigured(b, conns)).toBe(false);
-  });
-
-  it("returns true when the connection exists and is connected", () => {
-    const b = binding("general", "c1");
-    const conns = { c1: connection("c1", "openai") };
-    expect(isRoleConfigured(b, conns)).toBe(true);
   });
 });
 

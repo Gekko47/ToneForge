@@ -65,10 +65,12 @@ Output format: JSON array of answers matching the question order.`;
     const stateByCandidate = new Map(plan.projectedStates.map((s) => [s.candidateId, s]));
 
     // Expanded context, keyed by candidate, from the single expansion pass.
+    // Routed through `evidence()` like claim evidence, so the compiler is never
+    // a raw-text path even though expansion only runs when unredacted is allowed.
     const expandedByCandidate = new Map<string, string[]>();
     plan.expandedContext.forEach((entry) => {
       const list = expandedByCandidate.get(entry.candidateId) ?? [];
-      list.push(`    [${entry.kind}] ${entry.content}`);
+      list.push(`    [${entry.kind}] ${this.evidence(entry.content, plan)}`);
       expandedByCandidate.set(entry.candidateId, list);
     });
 

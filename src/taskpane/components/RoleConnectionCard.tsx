@@ -37,6 +37,11 @@ export function RoleConnectionCard({
   const label = ROLE_LABELS[role];
   const configured = connection !== undefined && connection.status === "connected";
   const canReuseGeneral = role === "consistency_decision" && generalBindingExists;
+  // The toggle is shown whenever the decision role has a binding to hold the
+  // flag, even if its connection is missing or disconnected — otherwise a stale
+  // binding could not be switched to reuse the general connection. With no
+  // binding there is no record to hold `reuseGeneral`, so the toggle is omitted.
+  const showReuseToggle = canReuseGeneral && binding !== undefined;
 
   return (
     <section className="tf-role-connection-card" aria-label={label.title}>
@@ -49,7 +54,7 @@ export function RoleConnectionCard({
             {binding?.selectedModel ?? connection.selectedModel ?? "default model"}
           </MessageBar>
           <ConnectionTestButton connection={connection} gatewayOrigin={gatewayOrigin} />
-          {canReuseGeneral ? (
+          {showReuseToggle ? (
             <Toggle
               label="Reuse general connection (different model)"
               checked={binding?.reuseGeneral === true}
@@ -68,9 +73,20 @@ export function RoleConnectionCard({
           <DefaultButton text="Disconnect" onClick={onDisconnect} />
         </>
       ) : (
-        <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
-          Not configured. Connect a provider to enable this role.
-        </MessageBar>
+        <>
+          <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
+            Not configured. Connect a provider to enable this role.
+          </MessageBar>
+          {showReuseToggle ? (
+            <Toggle
+              label="Reuse general connection (different model)"
+              checked={binding?.reuseGeneral === true}
+              onChange={(_event, value) => onReuseGeneralChange(value ?? false)}
+              onText="Reusing"
+              offText="Separate"
+            />
+          ) : null}
+        </>
       )}
     </section>
   );

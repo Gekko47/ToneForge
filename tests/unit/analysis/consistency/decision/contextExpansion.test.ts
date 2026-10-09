@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { expandContext } from "@/analysis/consistency/decision/contextExpansion";
+import {
+  expandContext,
+  resolveContextParameters,
+} from "@/analysis/consistency/decision/contextExpansion";
 import type { ContextRequest } from "@/analysis/consistency/decision/contextExpansion";
 import type { ConsistencyIndices } from "@/analysis/consistency/indices/buildIndices";
 import type { NormalisedClaim } from "@/analysis/consistency/normalisation";
@@ -200,5 +203,79 @@ describe("R5 decision: contextExpansion", () => {
     ];
     const result = expandContext(requests, indices, claims, candidates, documentText);
     expect(result[0]?.content).toBe("Candidate not found");
+  });
+});
+
+describe("R5 decision: resolveContextParameters", () => {
+  it("resolves an event id from the candidate's claims", () => {
+    const claims = [normalisedClaim({ id: "claim-1", eventIds: ["event-1"] })];
+    const candidates = [candidate(["claim-1"])];
+    expect(resolveContextParameters("CTX-EVENT-HISTORY", "cand-1", candidates, claims)).toEqual({
+      eventId: "event-1",
+    });
+  });
+
+  it("resolves a programme id from the candidate's claims", () => {
+    const claims = [normalisedClaim({ id: "claim-1", programmeIds: ["prog-1"] })];
+    const candidates = [candidate(["claim-1"])];
+    expect(resolveContextParameters("CTX-PROGRAMME-HISTORY", "cand-1", candidates, claims)).toEqual(
+      { programmeId: "prog-1" },
+    );
+  });
+
+  it("resolves a term from the candidate's predicate", () => {
+    const claims = [normalisedClaim({ id: "claim-1" })];
+    const candidates = [candidate(["claim-1"])];
+    const parameters = resolveContextParameters(
+      "CTX-TERM-DEFINITION",
+      "cand-1",
+      candidates,
+      claims,
+    );
+    expect(typeof parameters?.term).toBe("string");
+    expect((parameters?.term as string).length).toBeGreaterThan(0);
+  });
+
+  it("resolves a reference from the candidate's citations", () => {
+    const claims = [normalisedClaim({ id: "claim-1", documentRefIds: ["clause-12.3"] })];
+    const candidates = [candidate(["claim-1"])];
+    const parameters = resolveContextParameters(
+      "CTX-REFERENCE-CONTENT",
+      "cand-1",
+      candidates,
+      claims,
+    );
+    expect(typeof parameters?.reference).toBe("string");
+    expect((parameters?.reference as string).length).toBeGreaterThan(0);
+  });
+
+  it("resolves a section from the candidate's evidence anchor", () => {
+    const claims = [normalisedClaim({ id: "claim-1" })];
+    const candidates = [candidate(["claim-1"])];
+    expect(resolveContextParameters("CTX-SECTION-SUMMARY", "cand-1", candidates, claims)).toEqual({
+      section: "Programme",
+    });
+  });
+
+  it("returns no parameters for a candidate-derived kind", () => {
+    const claims = [normalisedClaim({ id: "claim-1" })];
+    const candidates = [candidate(["claim-1"])];
+    expect(
+      resolveContextParameters("CTX-SURROUNDING-PARAGRAPHS", "cand-1", candidates, claims),
+    ).toEqual({});
+  });
+
+  it("returns null when the candidate is unknown", () => {
+    const claims = [normalisedClaim({ id: "claim-1" })];
+    const candidates = [candidate(["claim-1"])];
+    expect(
+      resolveContextParameters("CTX-EVENT-HISTORY", "cand-missing", candidates, claims),
+    ).toBeNull();
+  });
+
+  it("returns null when a required key cannot be resolved", () => {
+    const claims = [normalisedClaim({ id: "claim-1" })];
+    const candidates = [candidate(["claim-1"])];
+    expect(resolveContextParameters("CTX-EVENT-HISTORY", "cand-1", candidates, claims)).toBeNull();
   });
 });

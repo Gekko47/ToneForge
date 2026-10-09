@@ -128,6 +128,26 @@ export function isBindingUsable(
 const KNOWN_SAFE_STRING_FIELDS = new Set(["connectionId", "selectedModel"]);
 
 /**
+ * Whether a schema could hold a credential: a plain string, once any
+ * optional/default/nullable wrapper is unwrapped.
+ *
+ * A string field wrapped in `.optional()`, `.default()`, or `.nullable()` is
+ * still a string field, so the wrapper must be peeled before the check — a
+ * bare `instanceof z.ZodString` would let an optional string slip past.
+ */
+export function schemaCouldHoldSecret(schema: z.ZodTypeAny): boolean {
+  let current = schema;
+  while (
+    current instanceof z.ZodOptional ||
+    current instanceof z.ZodDefault ||
+    current instanceof z.ZodNullable
+  ) {
+    current = (current._def as { innerType: z.ZodTypeAny }).innerType;
+  }
+  return current instanceof z.ZodString;
+}
+
+/**
  * Reflection test: the binding and fallback-policy schemas have no field
  * capable of holding a credential.
  *
@@ -139,7 +159,7 @@ export function assertRoleSchemasAreSecretFree(): void {
   for (const key of Object.keys(bindingShape)) {
     if (KNOWN_SAFE_STRING_FIELDS.has(key)) continue;
     const value = bindingShape[key as keyof typeof bindingShape];
-    if (value instanceof z.ZodString) {
+    if (schemaCouldHoldSecret(value)) {
       throw new Error(`LlmRoleBinding.${key} is a string and could hold a secret`);
     }
   }

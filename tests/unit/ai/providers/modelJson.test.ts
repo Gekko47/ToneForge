@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { parseModelJson, parseModelJsonArray } from "../../../../src/ai/providers/modelJson";
+import {
+  parseModelJson,
+  parseModelJsonArray,
+  parseModelJsonArrayLoose,
+} from "../../../../src/ai/providers/modelJson";
 
 const claimSchema = z.object({
   subject: z.string(),
@@ -161,6 +165,48 @@ describe("parseModelJsonArray", () => {
 
   it("handles an empty wrapped array", () => {
     const result = parseModelJsonArray('{"items":[]}', itemSchema);
+    expect(result).toEqual([]);
+  });
+});
+
+describe("parseModelJsonArrayLoose", () => {
+  it("keeps the valid items and drops the invalid ones", () => {
+    const text = '[{"id":"1","text":"hello"},{"id":"2"},{"id":"3","text":"world"}]';
+    const result = parseModelJsonArrayLoose(text, itemSchema);
+    expect(result).toEqual([
+      { id: "1", text: "hello" },
+      { id: "3", text: "world" },
+    ]);
+  });
+
+  it("keeps the valid items in a wrapped array", () => {
+    const text = '{"items":[{"id":"1","text":"hello"},{"wrong":"shape"}]}';
+    const result = parseModelJsonArrayLoose(text, itemSchema);
+    expect(result).toEqual([{ id: "1", text: "hello" }]);
+  });
+
+  it("returns an empty array when every item is invalid", () => {
+    const result = parseModelJsonArrayLoose('[{"id":"1"},{"id":"2"}]', itemSchema);
+    expect(result).toEqual([]);
+  });
+
+  it("returns null for invalid JSON", () => {
+    const result = parseModelJsonArrayLoose("not json", itemSchema);
+    expect(result).toBeNull();
+  });
+
+  it("returns null for an object with no array values", () => {
+    const result = parseModelJsonArrayLoose('{"foo":"bar"}', itemSchema);
+    expect(result).toBeNull();
+  });
+
+  it("returns null for an empty string", () => {
+    const result = parseModelJsonArrayLoose("", itemSchema);
+    expect(result).toBeNull();
+  });
+
+  it("handles an empty array", () => {
+    const result = parseModelJsonArrayLoose("[]", itemSchema);
     expect(result).toEqual([]);
   });
 });

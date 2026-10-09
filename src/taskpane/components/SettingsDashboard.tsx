@@ -5,8 +5,10 @@ import type { PersistedState } from "../../core/state/persistence";
 import type { LlmRole } from "../../core/domain/LlmRole";
 import type { ProviderConnection } from "../../core/domain/ProviderConnection";
 import { logger } from "../../shared/utils/logger";
-import { setReuseGeneral, setRoleBinding } from "../settings/llmRoles";
+import { removeRoleBinding, setReuseGeneral, setRoleBinding } from "../settings/llmRoles";
 import { buildRoleConnectionViews } from "../settings/llmDashboardModel";
+import { connectionForRole } from "../settings/providerComposition";
+import { createProviderGatewayClient, SessionTokenStore } from "../../ai/gateway";
 import { RoleConnectionCard } from "./RoleConnectionCard";
 import { RedactionSettingsSection } from "./RedactionSettingsSection";
 import OpenRouterConnectionSettings from "./OpenRouterConnectionSettings";
@@ -65,23 +67,63 @@ export function SettingsDashboard({
   function handleDisconnect(role: LlmRole): void {
     const binding = state.llmRoleBindings?.[role];
     if (!binding) return;
+    const connectionId = binding.connectionId;
+    const nextBindings = removeRoleBinding(state.llmRoleBindings, role);
     const current = state.providerConnections ?? {};
-    const next = { ...current };
-    delete next[binding.connectionId];
-    onStateChange({ ...state, providerConnections: next });
+    // Delete the connection only when no remaining binding references it. A
+    // decision binding with `reuseGeneral` resolves through the general binding,
+    // so "referenced" is computed the same way `connectionForRole` resolves it —
+    // otherwise disconnecting one role would delete a connection another shares.
+    const stillReferenced = (["general", "consistency_decision"] as LlmRole[]).some(
+      (other) => connectionForRole(other, nextBindings, current)?.connectionId === connectionId,
+    );
+    const nextConnections = { ...current };
+    if (!stillReferenced) {
+      delete nextConnections[connectionId];
+    }
+    onStateChange({
+      ...state,
+      llmRoleBindings: nextBindings,
+      providerConnections: nextConnections,
+    });
+    // Best-effort gateway disconnect: the local state change stays synchronous so
+    // the UI reflects the disconnect immediately, and a gateway failure is logged
+    // rather than thrown.
+    const connection = current[connectionId];
+    if (connection !== undefined) {
+      const client = createProviderGatewayClient({
+        origin: gatewayOrigin,
+        tokenStore: new SessionTokenStore(),
+      });
+      void client.disconnect(connection).catch((caught: unknown) => {
+        logger.warn("Could not disconnect connection at the gateway", {
+          reason: caught instanceof Error ? caught.message : "unknown",
+        });
+      });
+    }
   }
 
   function handleConnect(role: LlmRole, connection: ProviderConnection): void {
     try {
-      updateBindings((bindings) =>
-        setRoleBinding(bindings, {
+      // The connection is merged into `providerConnections` in the same
+      // `onStateChange` call as the binding. `OpenRouterConnectionSettings`
+      // persists the connection before calling back, so the `state` prop is stale
+      // by the time this runs — setting only the binding would drop the
+      // just-persisted connection.
+      onStateChange({
+        ...state,
+        llmRoleBindings: setRoleBinding(state.llmRoleBindings, {
           role,
           provider: connection.provider,
           connectionId: connection.connectionId,
           reuseGeneral: false,
           ...(connection.selectedModel ? { selectedModel: connection.selectedModel } : {}),
         }),
-      );
+        providerConnections: {
+          ...(state.providerConnections ?? {}),
+          [connection.connectionId]: connection,
+        },
+      });
     } catch (caught: unknown) {
       logger.warn("Could not bind role to connection", {
         reason: caught instanceof Error ? caught.message : "unknown",

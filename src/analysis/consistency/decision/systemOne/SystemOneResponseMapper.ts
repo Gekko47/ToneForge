@@ -5,14 +5,15 @@
  * Handles binary, choice, and score question types.
  * Malformed output becomes "unclear" at confidence 0.
  *
- * Parsing goes through the shared `parseModelJsonArray`, so a fenced or
- * prose-wrapped response is read the same way here as everywhere else, and a
- * response that is not JSON at all becomes "unclear" rather than a crash.
+ * Parsing goes through the shared `parseModelJsonArrayLoose`, so a fenced or
+ * prose-wrapped response is read the same way here as everywhere else, a
+ * response that is not JSON at all becomes "unclear" rather than a crash, and a
+ * single unreadable answer does not discard the answers the model did give.
  */
 
 import { z } from "zod";
 import type { LlmResponse } from "@/ai/providers/LlmProvider";
-import { parseModelJsonArray } from "@/ai/providers/modelJson";
+import { parseModelJsonArrayLoose } from "@/ai/providers/modelJson";
 import type { DecisionPlan, DecisionQuestion } from "@/analysis/consistency/contracts/plan";
 import type { EvaluationAnswer } from "@/analysis/consistency/contracts/evaluation";
 
@@ -65,10 +66,12 @@ export class SystemOneResponseMapper {
    *
    * Returns `null` — not an empty array — when the text is not JSON at all, so
    * the caller can tell "the model answered nothing" from "the model answered
-   * in a shape we cannot read".
+   * in a shape we cannot read". A JSON array with some unreadable items is
+   * readable: the valid answers are kept and only the malformed items fall
+   * through to the "Missing from model response" path.
    */
   private parseResponse(text: string): RawAnswer[] | null {
-    return parseModelJsonArray(text, RawAnswerSchema);
+    return parseModelJsonArrayLoose(text, RawAnswerSchema);
   }
 
   /** Map a raw answer to a typed EvaluationAnswer. */

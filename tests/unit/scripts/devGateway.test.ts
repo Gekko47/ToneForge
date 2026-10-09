@@ -437,16 +437,36 @@ describe("createDevGatewayBroker", () => {
 
   it("issues an OAuth connection on callback without echoing a credential", async () => {
     const connections = new Map();
-    const res = response();
-    await createDevGatewayBroker({
+    const broker = createDevGatewayBroker({
       expectedNonce: NONCE,
       connections,
       deploymentManaged: { apiKey: "sk-or-deploy-secret", baseUrl: OPENROUTER_DEFAULT_BASE_URL },
-    })(
+    });
+
+    const authorizeRes = response();
+    await broker(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/authorize`,
+        body: { provider: "openai" },
+      }) as never,
+      authorizeRes as never,
+      vi.fn(),
+    );
+    const state = new URL(
+      authorizeRes.json().authorizationUrl,
+      "http://localhost",
+    ).searchParams.get("state");
+
+    const res = response();
+    await broker(
       request({
         method: "POST",
         url: `${GATEWAY_PATH_PREFIX}/connections/callback`,
-        body: { provider: "openai", callbackUrl: "https://localhost:3000/callback?code=abc" },
+        body: {
+          provider: "openai",
+          callbackUrl: `https://localhost:3000/callback?code=abc&state=${state}`,
+        },
       }) as never,
       res as never,
       vi.fn(),
@@ -456,6 +476,59 @@ describe("createDevGatewayBroker", () => {
     expect(res.json().status).toBe("connected");
     expect(res.json().connectionId).toMatch(/^or_[0-9a-f]{32}$/);
     expect(res.body()).not.toContain("sk-or-deploy-secret");
+  });
+
+  it("refuses a callback whose state was never issued", async () => {
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE })(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/callback`,
+        body: {
+          provider: "openai",
+          callbackUrl: "https://localhost:3000/callback?code=abc&state=forged",
+        },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("refuses a callback for an unapproved self-hosted origin", async () => {
+    const broker = createDevGatewayBroker({
+      expectedNonce: NONCE,
+      deploymentManaged: { apiKey: "sk-or-deploy-secret", baseUrl: "https://llm.internal/v1" },
+    });
+    const authorizeRes = response();
+    await broker(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/authorize`,
+        body: { provider: "openai" },
+      }) as never,
+      authorizeRes as never,
+      vi.fn(),
+    );
+    const state = new URL(
+      authorizeRes.json().authorizationUrl,
+      "http://localhost",
+    ).searchParams.get("state");
+
+    const res = response();
+    await broker(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/callback`,
+        body: {
+          provider: "openai",
+          callbackUrl: `https://localhost:3000/callback?code=abc&state=${state}`,
+        },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(403);
   });
 
   it("refuses a callback with no callback URL", async () => {
@@ -506,6 +579,23 @@ describe("createDevGatewayBroker", () => {
     expect(res.json().authMode).toBe("deploymentManaged");
     expect(res.json().status).toBe("connected");
     expect(res.body()).not.toContain("sk-or-deploy-secret");
+  });
+
+  it("refuses a deployment-managed connection for an unapproved self-hosted origin", async () => {
+    const res = response();
+    await createDevGatewayBroker({
+      expectedNonce: NONCE,
+      deploymentManaged: { apiKey: "sk-or-deploy-secret", baseUrl: "https://llm.internal/v1" },
+    })(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/deployment`,
+        body: { provider: "openai" },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(403);
   });
 
   it("reports a reachable connection as ok with a latency", async () => {

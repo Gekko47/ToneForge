@@ -32,23 +32,6 @@ export function resolveRoleBinding(
 }
 
 /**
- * Whether a role has a usable connection.
- *
- * A binding is usable when its connection exists in the connections map and
- * the connection status is `connected`. A binding to a deleted or disconnected
- * connection is not usable.
- */
-export function isRoleConfigured(
-  binding: LlmRoleBinding | undefined,
-  connections: Readonly<Record<string, ProviderConnection>>,
-): boolean {
-  if (!binding) return false;
-  const connection = connections[binding.connectionId];
-  if (!connection) return false;
-  return connection.status === "connected";
-}
-
-/**
  * The effective purpose for a role, defaulting when unspecified.
  */
 export function effectivePurpose(role: LlmRole, purpose: LlmPurpose | undefined): LlmPurpose {

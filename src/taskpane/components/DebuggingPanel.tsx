@@ -3,10 +3,7 @@ import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import { isTrackedEditingEnabled, prepareReformatHost } from "../../reformat";
 import { formatDiagnostics, probeOfficeRuntime } from "../../shared/office/diagnostics";
 import { loadState } from "../../core/state/persistence";
-import {
-  isDecisionRoleConfigured,
-  isRemoteProviderConfigured,
-} from "../settings/providerComposition";
+import { isDecisionRoleConfigured, isGeneralRoleConfigured } from "../settings/providerComposition";
 import { diagnoseSituation, type TroubleshootingInput } from "../troubleshooting/checks";
 
 /**
@@ -88,7 +85,7 @@ function currentInput(input: {
     trackedEditing: input.trackedEditing,
     coverage: input.coverage,
     semanticProfileActive: state.activeSemanticProfileId !== null,
-    providerConfigured: isRemoteProviderConfigured(state.settings, state.providerConnections),
+    providerConfigured: isGeneralRoleConfigured(state),
     rawTextConsent: state.settings.semanticOptIn,
     plannedCount: input.plannedCount,
     reviewedCount: input.reviewedCount,

@@ -31,7 +31,7 @@ vi.mock("../../../../src/shared/office/diagnostics", () => ({
 }));
 
 vi.mock("../../../../src/taskpane/settings/providerComposition", () => ({
-  isRemoteProviderConfigured: () => true,
+  isGeneralRoleConfigured: () => true,
   isDecisionRoleConfigured: mocks.isDecisionRoleConfigured,
 }));
 

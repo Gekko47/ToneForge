@@ -937,8 +937,12 @@ started this work.
 ## LLM connectivity smoke harness
 
 The automated test suite proves the gateway client, the registry, and the
-provider adapters against mocks. It cannot prove that a real provider responds.
-The live smoke harness closes that gap.
+provider adapters against mocks. [`scripts/llm-smoke.mjs`](../scripts/llm-smoke.mjs)
+exercises the same path end to end against the development gateway, but its
+upstream provider is a **mock fetch implementation, not a real API call**. It
+proves the gateway plumbing works; it does not prove that a specific provider
+accepts a specific credential. That requires a real key and a real provider,
+which is a human step recorded in this file.
 
 ### What it proves
 
@@ -953,6 +957,9 @@ the add-in talks to a provider:
 5. Disconnects.
 
 Each step is a pass/fail check. The harness exits 0 only when all five pass.
+Because the upstream is mocked, a pass proves the gateway's own plumbing —
+connection issue, catalog normalization, connection test, chat forwarding, and
+disconnect — not that any real provider responded.
 
 ### Running it
 
@@ -971,17 +978,22 @@ text.
 
 ### What a pass means
 
-A pass means the development gateway is reachable, the provider accepted the
-credential, the model catalog was returned, the connection test succeeded, and a
-chat completion produced a non-empty response. It does not mean the add-in's
-own UI can reach the gateway — that requires a live Word host, recorded above.
+A pass means the development gateway is reachable and its plumbing works: the
+connection was issued, the model catalog was returned, the connection test
+succeeded, and a chat completion produced a non-empty response from the mock
+upstream. It does **not** mean a real provider accepted a credential — that is
+the human step below — and it does not mean the add-in's own UI can reach the
+gateway, which requires a live Word host, recorded above.
 
 ### What it does not prove
 
+- It does not prove a real provider accepts a real credential (the upstream is a
+  mock fetch).
 - It does not exercise the browser's `fetch` path (the harness runs in Node).
 - It does not prove the add-in's gateway origin configuration is correct.
 - It does not prove the OAuth flow (the harness uses deployment-managed).
 - It does not send document text or exercise the semantic/consistency engines.
 
 Those gaps are closed by the unit suite (for the client and registry code) and
-by manual Word verification (for the full add-in-to-provider path).
+by manual Word verification with a real key and provider (for the full
+add-in-to-provider path).

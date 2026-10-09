@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsDashboard } from "../../../../src/taskpane/components/SettingsDashboard";
 import type { PersistedState } from "../../../../src/core/state/persistence";
@@ -172,6 +172,25 @@ describe("SettingsDashboard", () => {
     expect(screen.queryByText(/reuse general connection/i)).not.toBeInTheDocument();
   });
 
+  it("shows the reuse-general toggle for a stale decision binding when general is bound", () => {
+    // The decision binding's connection is gone, but the binding itself still
+    // exists — the toggle must be reachable so the user can switch to reusing
+    // the general connection instead of being stuck with a dead binding.
+    const bindings = LlmRoleBindingsSchema.parse({
+      general: { role: "general", provider: "openai", connectionId: "c1" },
+      consistency_decision: {
+        role: "consistency_decision",
+        provider: "anthropic",
+        connectionId: "c2",
+      },
+    });
+    const conns = { c1: makeConnection("c1", "openai") };
+    const state = makeState({ llmRoleBindings: bindings, providerConnections: conns });
+    render(<SettingsDashboard state={state} onStateChange={vi.fn()} />);
+
+    expect(screen.getByText(/reuse general connection/i)).toBeInTheDocument();
+  });
+
   it("connects a new binding when the connect section reports a connection", async () => {
     const onStateChange = vi.fn();
     const state = makeState();
@@ -182,9 +201,12 @@ describe("SettingsDashboard", () => {
     const nextState = firstStateChangeArg(onStateChange);
     expect(nextState.llmRoleBindings?.general).toBeDefined();
     expect(nextState.llmRoleBindings?.general?.connectionId).toBe("conn-openrouter-1");
+    // The connection must be merged into providerConnections in the same call,
+    // or the just-persisted connection is dropped by the stale state prop.
+    expect(nextState.providerConnections?.["conn-openrouter-1"]).toBeDefined();
   });
 
-  it("disconnects a role by removing its connection", async () => {
+  it("disconnects a role by removing its binding and unreferenced connection", async () => {
     const onStateChange = vi.fn();
     const bindings = LlmRoleBindingsSchema.parse({
       general: { role: "general", provider: "openai", connectionId: "c1" },
@@ -196,7 +218,34 @@ describe("SettingsDashboard", () => {
     await userEvent.click(screen.getByText("Disconnect"));
 
     const nextState = firstStateChangeArg(onStateChange);
+    expect(nextState.llmRoleBindings?.general).toBeUndefined();
     expect(nextState.providerConnections?.["c1"]).toBeUndefined();
+  });
+
+  it("keeps a shared connection when another binding still references it", async () => {
+    // The decision role reuses the general connection, so disconnecting the
+    // decision role must not delete the connection the general role still uses.
+    const onStateChange = vi.fn();
+    const bindings = LlmRoleBindingsSchema.parse({
+      general: { role: "general", provider: "openai", connectionId: "c1" },
+      consistency_decision: {
+        role: "consistency_decision",
+        provider: "openai",
+        connectionId: "c1",
+        reuseGeneral: true,
+      },
+    });
+    const conns = { c1: makeConnection("c1", "openai") };
+    const state = makeState({ llmRoleBindings: bindings, providerConnections: conns });
+    render(<SettingsDashboard state={state} onStateChange={onStateChange} />);
+
+    // Both roles render a Disconnect button; disconnect the decision role.
+    const decisionCard = screen.getByLabelText("Consistency decision LLM");
+    await userEvent.click(within(decisionCard).getByText("Disconnect"));
+
+    const nextState = firstStateChangeArg(onStateChange);
+    expect(nextState.llmRoleBindings?.consistency_decision).toBeUndefined();
+    expect(nextState.providerConnections?.["c1"]).toBeDefined();
   });
 
   it("toggles reuse-general for the decision role", async () => {
