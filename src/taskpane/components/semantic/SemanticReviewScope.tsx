@@ -128,7 +128,7 @@ export default function SemanticReviewScope({
       {!reviewGate.allowed && reviewGate.blocker !== null && (
         <p className="tf-debug-warning">
           {reviewGate.blocker}
-          {reviewGate.remedy?.destination === "settings" && (
+          {reviewGate.remedy?.destination === "llm-settings" && (
             <>
               {" "}
               <button className="tf-native-button" type="button" onClick={onOpenSettings}>

@@ -59,7 +59,7 @@ export type SetupItemId = "deterministicProfile" | "semanticProfile" | "llmProvi
  * stops matching. P10 splits the capability this item gates; the destination
  * itself is settled here.
  */
-export type SetupDestination = "profile" | "semantic-style" | "settings";
+export type SetupDestination = "profile" | "semantic-style" | "llm-settings";
 
 export interface SetupStatus {
   items: readonly SetupItem[];
@@ -115,8 +115,8 @@ export function setupStatus(state: PersistedState, providerUsable: boolean): Set
         ? null
         : "The consistency check and semantic review are unavailable until a provider is " +
           "connected. Deterministic review, scanning, and applying corrections are unaffected.",
-      destination: "settings",
-      control: "Settings → Provider and privacy → Provider",
+      destination: "llm-settings",
+      control: "LLM Settings → LLM connections → Connect a provider",
     },
   ];
 

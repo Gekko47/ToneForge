@@ -74,14 +74,28 @@ describe("Dashboard first-run state", () => {
     expect(screen.getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
   });
 
-  it("reaches Settings from the first-run state", async () => {
+  it("reaches LLM Settings from the first-run state", async () => {
     render(<Dashboard />);
     await screen.findByTestId("tf-setup-deterministicProfile");
 
     await userEvent.click(screen.getByRole("button", { name: "Open navigation" }));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "LLM Settings" }));
 
-    expect(await screen.findByRole("heading", { name: "Settings" }, LAZY_PAGE)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "LLM Settings" }, LAZY_PAGE),
+    ).toBeInTheDocument();
+  });
+
+  it("reaches General Settings from the first-run state", async () => {
+    render(<Dashboard />);
+    await screen.findByTestId("tf-setup-deterministicProfile");
+
+    await userEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    await userEvent.click(screen.getByRole("button", { name: "General Settings" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "General Settings" }, LAZY_PAGE),
+    ).toBeInTheDocument();
   });
 
   /**

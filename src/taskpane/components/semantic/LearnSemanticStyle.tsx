@@ -252,7 +252,7 @@ export default function LearnSemanticStyle({
       {!gate.allowed && gate.blocker !== null && (
         <p className="tf-debug-warning">
           {gate.blocker}
-          {gate.remedy?.destination === "settings" && (
+          {gate.remedy?.destination === "llm-settings" && (
             <>
               {" "}
               <button className="tf-native-button" type="button" onClick={onOpenSettings}>

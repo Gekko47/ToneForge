@@ -210,10 +210,15 @@ For each host:
 2. Confirm the task pane loads with compact Office/Fluent styling; the hamburger
    opens navigation at the narrowest task-pane width, Escape/overlay dismissal
    works, and the active profile/version remains in the fixed header.
-3. In Settings, change and save Styling, LLM, and Telemetry independently. Reload
-   and confirm the committed Styling choice restores the matching Fluent/CSS
-   palette. Confirm Settings offers no API-key entry, legacy credentials can be
-   cleared, and no credential or document text appears in logs.
+3. On **General Settings**, change and save Styling, Scanning, and Tracked
+   editing independently. Reload and confirm the committed Styling choice
+   restores the matching Fluent/CSS palette, and that the Scanning and Tracked
+   editing choices survive the reload. On **LLM Settings**, change and save the
+   provider connections and consent independently. Confirm neither page offers
+   an API-key entry, legacy credentials can be cleared, and no credential or
+   document text appears in logs. Confirm the two pages are reachable from the
+   drawer and that a consent/provider blocker opens LLM Settings while a
+   tracked-editing/host-readiness blocker opens General Settings.
 4. In Troubleshooting, turn **Enable tracked editing** off and confirm Apply is
    refused while Preview still works. Turn it on, confirm the fresh host probe,
    then perform the host capability probe and record the full JSON.

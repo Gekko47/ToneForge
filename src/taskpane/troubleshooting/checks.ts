@@ -39,7 +39,7 @@ import { MAX_REVIEW_SELECTION_CHARS } from "../semantic/gates";
 export interface RemedyTarget {
   /**
    * The full path as the user walks it, e.g.
-   * "Settings → Scanning → Scan automatically as the document changes".
+   * "General Settings → Scanning → Scan automatically as the document changes".
    */
   label: string;
 }
@@ -241,7 +241,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     remedy:
       "Switch it back on, or press Re-scan now on Deterministic Review. The manual scan is not affected by this setting, and the findings and pending changes you already have are not affected either.",
     remedyTarget: {
-      label: "Settings → Scanning → Scan automatically as the document changes",
+      label: "General Settings → Scanning → Scan automatically as the document changes",
     },
   },
   {
@@ -253,7 +253,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     remedy:
       "Enable it. The host probe runs as part of the change, so this one also tells you whether this Word can support tracked changes at all.",
     remedyTarget: {
-      label: "Settings → Tracked editing → Allow ToneForge to apply tracked changes",
+      label: "General Settings → Tracked editing → Allow ToneForge to apply tracked changes",
     },
   },
   {
@@ -294,7 +294,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     remedy:
       "Add a provider and a key. Nothing is sent anywhere until you also allow it — the two permissions are separate and both are yours to grant.",
     remedyTarget: {
-      label: "Settings → Provider and privacy → Provider, then enter the key",
+      label: "LLM Settings → LLM connections → Connect a provider",
     },
   },
   {
@@ -307,7 +307,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     remedy:
       "Turn it on. Nothing is sent anywhere until you do, and you can withdraw it again in Settings at any time.",
     remedyTarget: {
-      label: "Settings → Provider and privacy → Allow semantic analysis",
+      label: "LLM Settings → Redaction and consent → Allow semantic analysis",
     },
   },
   {
@@ -394,13 +394,13 @@ const CHECKS: readonly TroubleshootingCheck[] = [
         // A provider is configured and consent is granted, so there is no setting
         // to change. Saying so is the useful half; the other half is that the
         // review still carries a limit, and reading it is what the run offers.
-        return "A provider is configured and sending your text is already allowed, so nothing in Settings accounts for this run consulting no model. The cross-report checks were left unadjudicated on this pass; the deterministic comparisons ran and are unaffected. Read the limitation stated with the results before treating the review as a clean bill of health.";
+        return "A provider is configured and sending your text is already allowed, so nothing in LLM Settings accounts for this run consulting no model. The cross-report checks were left unadjudicated on this pass; the deterministic comparisons ran and are unaffected. Read the limitation stated with the results before treating the review as a clean bill of health.";
       }
       return "This is a bound on the engine, not a setting you can raise. Every statement was still examined — what was skipped is a counted set of comparisons between statements in different windows, and the exact count is stated above the findings.";
     },
     remedyTarget: (input) =>
       input.consistency?.usedModel === false && modelBlockedBySettings(input)
-        ? { label: "Settings → Provider and privacy → Provider, then enter the key" }
+        ? { label: "LLM Settings → LLM connections → Connect a provider" }
         : { label: "Consistency Review → Results → the coverage line above the findings" },
   },
   {
@@ -417,7 +417,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     remedy:
       "Bind a decision model on the AI roles dashboard, or set the fallback policy to reuse the general model. Binding a dedicated model is the intended path: the general model was not prompted for adjudication.",
     remedyTarget: {
-      label: "Settings → AI roles → Consistency decision → Connect a provider",
+      label: "LLM Settings → LLM connections → Consistency decision LLM → Connect a provider",
     },
   },
   {
@@ -435,7 +435,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     remedy:
       "Bind a dedicated decision model. The general model stays in use for extraction and semantic review; the decision role is a separate binding with its own prompt.",
     remedyTarget: {
-      label: "Settings → AI roles → Consistency decision → Connect a provider",
+      label: "LLM Settings → LLM connections → Consistency decision LLM → Connect a provider",
     },
   },
   {
@@ -448,7 +448,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     remedy:
       "Try a different decision model, or run the review again. The deterministic comparisons ran and are unaffected.",
     remedyTarget: {
-      label: "Settings → AI roles → Consistency decision → Model",
+      label: "LLM Settings → LLM connections → Consistency decision LLM → Model",
     },
   },
   {

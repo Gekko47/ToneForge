@@ -10,7 +10,7 @@ Adopt the security and UX intent. Reject the sequence and the server scope as wr
 Governing rules preserved:
 
 - Word task pane is a public client; it never owns long-lived credentials — see [`gatewayClient.ts`](src/ai/gateway/gatewayClient.ts:1).
-- Collapsed settings show health; expanded settings explain and offer controls — proposal §0 mandate, compatible with [`Settings.tsx`](src/taskpane/pages/Settings.tsx:1) and [`SettingsDashboard.tsx`](src/taskpane/components/SettingsDashboard.tsx:1).
+- Collapsed settings show health; expanded settings explain and offer controls — proposal §0 mandate, compatible with [`LlmSettings.tsx`](src/taskpane/pages/LlmSettings.tsx:1) and [`SettingsDashboard.tsx`](src/taskpane/components/SettingsDashboard.tsx:1).
 - Deterministic work never requires AI — see [`setupStatus.ts`](src/taskpane/setupStatus.ts:18).
 - Consent is separate per feature — see [`persistence.ts`](src/core/state/persistence.ts:162).
 
@@ -82,7 +82,7 @@ flowchart TD
 ### D8 — Settings IA invents storage that does not exist
 
 - Proposal says: §26 IA with STORAGE Consistency analysis storage plus §58 7-day device TTL.
-- Repo shows: [`Settings.tsx`](src/taskpane/pages/Settings.tsx:1) composes [`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx), [`ScanningSettingsSection.tsx`](src/taskpane/components/ScanningSettingsSection.tsx:1), [`TrackedEditingSettingsSection.tsx`](src/taskpane/components/TrackedEditingSettingsSection.tsx:1), diagnostics; [`persistence.ts`](src/core/state/persistence.ts:46) has no consistency DB and no TTL.
+- Repo shows: [`LlmSettings.tsx`](src/taskpane/pages/LlmSettings.tsx:1) composes [`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx), [`ScanningSettingsSection.tsx`](src/taskpane/components/ScanningSettingsSection.tsx:1), [`TrackedEditingSettingsSection.tsx`](src/taskpane/components/TrackedEditingSettingsSection.tsx:1), diagnostics; [`persistence.ts`](src/core/state/persistence.ts:46) has no consistency DB and no TTL.
 - Alternative: incremental IA. Keep existing sections; add two accordions under Provider and privacy. Do not add STORAGE section until consistency persistence exists. Justification: avoids shipping UI that describes behaviour the engine does not implement.
 
 ### D9 — General-model fallback violates purpose separation
@@ -136,7 +136,7 @@ flowchart TD
 ### Phase C — Fluent accordion UI — shared component only
 
 - Create [`src/taskpane/components/settings/ModelSettingsAccordion.tsx`](src/taskpane/components/SettingsDashboard.tsx:1), [`ModelConnectionStatus.tsx`](src/taskpane/components/SettingsDashboard.tsx:1), [`ProviderSelector.tsx`](src/taskpane/components/ModelPicker.tsx:1), [`ModelSelector.tsx`](src/taskpane/components/ModelPicker.tsx:1), [`ApiKeyConnectionForm.tsx`](src/taskpane/components/OpenRouterConnectionSettings.tsx:85), [`OAuthConnectionPanel.tsx`](src/taskpane/components/RedactionSettingsSection.tsx).
-- Modify [`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx) to render two accordions; modify [`OpenRouterConnectionSettings.tsx`](src/taskpane/components/OpenRouterConnectionSettings.tsx:85) to use transient submit via [`submitBrokerApiKey()`](src/ai/gateway/gatewayClient.ts:316) then clear; modify [`Settings.tsx`](src/taskpane/pages/Settings.tsx:1) IA minimally.
+- Modify [`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx) to render two accordions; modify [`OpenRouterConnectionSettings.tsx`](src/taskpane/components/OpenRouterConnectionSettings.tsx:85) to use transient submit via [`submitBrokerApiKey()`](src/ai/gateway/gatewayClient.ts:316) then clear; modify [`LlmSettings.tsx`](src/taskpane/pages/LlmSettings.tsx:1) IA minimally.
 - Behaviour: collapsed shows [`Connected`](src/core/domain/ProviderConnection.ts:67) plus model; `not_configured` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:218) neutral; `connection_failed` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:248) red with `Test again` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:1330); no show-key control; `Replace key` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:1368) validates before swapping; `Disconnect` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:1389) confirms then calls [`disconnect()`](src/ai/gateway/gatewayClient.ts:388) plus [`clear()`](src/ai/gateway/gatewayClient.ts:136).
 - Tests: [`SettingsDashboard.test.tsx`](tests/unit/taskpane/components/SettingsDashboard.test.tsx:1), [`OpenRouterConnectionSettings.test.tsx`](tests/unit/taskpane/components/OpenRouterConnectionSettings.test.tsx:1), axe keyboard, dark plus high-contrast, narrow pane.
 - Depends on: Phase B. Gates: Fluent v8 theme via [`fluentTheme.ts`](src/taskpane/fluentTheme.ts:1).

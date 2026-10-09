@@ -5206,3 +5206,53 @@ asserted a reconciliation the code did not perform.
   `plans/llm-settings-due-diligence-plan.md`, and
   `plans/semantic-review-systematic-implementation-plan.md`; spike run
   2026-10-09.
+
+## ADR-0129 — Settings is two pages, because it answers two questions
+
+- **Status**: Accepted (2026-10-09)
+- **Context**: ADR-0047 made Settings a composition shell over independently
+  saved sections. Commit `147237af` ("feat(ai): dual-role llm connector with
+  gateway-routed credentials") then replaced that composed page with a
+  single-purpose LLM dashboard. The three project-wide sections —
+  `ScanningSettingsSection`, `TrackedEditingSettingsSection`, and
+  `StylingSettingsSection` — were left in the tree but no longer mounted, so
+  auto-scan, tracked editing, and the theme preference became unreachable from
+  the pane. The single `settings` destination also carried one overloaded
+  `onOpenSettings` callback, so a consent/provider blocker and a
+  tracked-editing/host-readiness blocker both pointed at the same page even
+  though they are resolved by different controls.
+- **Decision**: Split the one destination into two, and keep the composition
+  shell. `llm-settings` mounts the existing `SettingsDashboard` unchanged
+  (provider connections, redaction and consent, model pickers); `general-settings`
+  mounts the three orphaned sections unchanged. `TaskPaneDestination` and
+  `TASKPANE_DESTINATIONS` gain both keys, and `Dashboard` branches on each in
+  both the no-profile and profiled paths. `onOpenSettings` is split by blocker
+  type: consent and provider blockers navigate to `llm-settings`, while
+  tracked-editing and host-readiness blockers navigate to `general-settings`.
+  Remedy labels in `setupStatus.ts`, `semantic/gates.ts`, and
+  `troubleshooting/checks.ts` name the page and the on-screen control. This
+  **extends** ADR-0047's composition-shell decision rather than reversing it:
+  the sections remain independently saved, and each is still mounted once at a
+  time. Telemetry is **not** restored (ADR-0059).
+- **Consequences**:
+  - Positive: the three project-wide settings are reachable again, each on the
+    page whose question it answers.
+  - Positive: a blocker's remedy now names the page that actually resolves it,
+    so the pane stops sending a tracked-editing problem to the provider page.
+  - Positive: no persisted-state change. `autoScan` is already in the schema;
+    theme and tracked editing already persist to `localStorage`. No
+    `CURRENT_STATE_VERSION` bump and no migration.
+  - Cost: two destinations and two page components where there was one; the
+    destination-enumeration test in `DashboardNoProfile.test.tsx` is the guard
+    that keeps a new drawer entry honest.
+  - **Not claimed**: the Word-host gate remains open; a green automated run is
+    not a release (ADR-0051).
+- **Evidence**: `src/taskpane/pages/LlmSettings.tsx`;
+  `src/taskpane/pages/GeneralSettings.tsx`;
+  `src/taskpane/components/TaskPaneHeader.tsx`;
+  `src/taskpane/pages/Dashboard.tsx`; `src/taskpane/setupStatus.ts`;
+  `src/taskpane/semantic/gates.ts`;
+  `src/taskpane/troubleshooting/checks.ts`;
+  `tests/unit/taskpane/pages/LlmSettings.test.tsx`;
+  `tests/unit/taskpane/pages/GeneralSettings.test.tsx`;
+  `tests/unit/taskpane/pages/DashboardNoProfile.test.tsx`.

@@ -266,7 +266,7 @@ export default function PendingChanges({
           <p>{applyDisabledReason}</p>
           {onOpenSettings && (
             <button className="tf-native-button" type="button" onClick={onOpenSettings}>
-              Open Settings
+              Open General Settings
             </button>
           )}
         </div>

@@ -75,7 +75,8 @@ import type { ChangePlan } from "../../core/domain/ChangePlan";
 import type { PersistedState } from "../../core/state/persistence";
 import type { SemanticReviewSession } from "../../core/domain/SemanticReviewSession";
 
-const Settings = lazy(() => import("./Settings"));
+const LlmSettings = lazy(() => import("./LlmSettings"));
+const GeneralSettings = lazy(() => import("./GeneralSettings"));
 const Profile = lazy(() => import("./Profile"));
 const GovernancePolicy = lazy(() => import("./GovernancePolicy"));
 const ConsistencyReview = lazy(() => import("./ConsistencyReview"));
@@ -327,12 +328,23 @@ function DashboardWithoutProfile({
     navigate("landing");
   }
 
-  if (page === "settings") {
+  if (page === "llm-settings") {
     return (
       <main className="tf-card" tabIndex={0}>
         {header}
         <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
-          <Settings onBack={back} />
+          <LlmSettings onBack={back} />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (page === "general-settings") {
+    return (
+      <main className="tf-card" tabIndex={0}>
+        {header}
+        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+          <GeneralSettings onBack={back} />
         </Suspense>
       </main>
     );
@@ -376,7 +388,7 @@ function DashboardWithoutProfile({
         <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
           <SemanticStyle
             onBack={() => navigate("semantic-review")}
-            onOpenSettings={() => navigate("settings")}
+            onOpenSettings={() => navigate("llm-settings")}
           />
         </Suspense>
       </main>
@@ -400,7 +412,7 @@ function DashboardWithoutProfile({
              * `navigate("review")` here; this branch now says the same thing.
              */
             onBack={() => navigate("review")}
-            onOpenSettings={() => navigate("settings")}
+            onOpenSettings={() => navigate("llm-settings")}
             onOpenSemanticStyle={() => navigate("semantic-style")}
             session={null}
             onSession={() => undefined}
@@ -440,7 +452,7 @@ function DashboardWithoutProfile({
         <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
           <ConsistencyReview
             onBack={back}
-            onOpenSettings={() => navigate("settings")}
+            onOpenSettings={() => navigate("llm-settings")}
             result={null}
             onResult={() => undefined}
           />
@@ -1459,7 +1471,8 @@ function DashboardWithProfile({
    * cannot be pruned before the first scan of this one has looked.
    */
   if (
-    page === "settings" ||
+    page === "llm-settings" ||
+    page === "general-settings" ||
     page === "profile" ||
     page === "governance-policy" ||
     page === "consistency" ||
@@ -1477,8 +1490,10 @@ function DashboardWithProfile({
           onNavigate={navigate}
         />
         <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
-          {page === "settings" ? (
-            <Settings onBack={back} />
+          {page === "llm-settings" ? (
+            <LlmSettings onBack={back} />
+          ) : page === "general-settings" ? (
+            <GeneralSettings onBack={back} />
           ) : page === "profile" ? (
             <Profile onBack={back} capabilities={caps} />
           ) : page === "governance-policy" ? (
@@ -1486,19 +1501,19 @@ function DashboardWithProfile({
           ) : page === "consistency" ? (
             <ConsistencyReview
               onBack={back}
-              onOpenSettings={() => navigate("settings")}
+              onOpenSettings={() => navigate("llm-settings")}
               result={consistencyResult}
               onResult={setConsistencyResult}
             />
           ) : page === "semantic-style" ? (
             <SemanticStyle
               onBack={() => navigate("semantic-review")}
-              onOpenSettings={() => navigate("settings")}
+              onOpenSettings={() => navigate("llm-settings")}
             />
           ) : page === "semantic-review" ? (
             <SemanticReview
               onBack={back}
-              onOpenSettings={() => navigate("settings")}
+              onOpenSettings={() => navigate("llm-settings")}
               onOpenSemanticStyle={() => navigate("semantic-style")}
               onReviewStatus={setSemanticReviewStatus}
               /*
@@ -1869,9 +1884,9 @@ function DashboardWithProfile({
                 <button
                   className="tf-native-button"
                   type="button"
-                  onClick={() => setPage("settings")}
+                  onClick={() => setPage("general-settings")}
                 >
-                  Open Settings
+                  Open General Settings
                 </button>
               )}
             </p>
@@ -2031,7 +2046,7 @@ function DashboardWithProfile({
             coverage={pendingPlan?.coverage ?? null}
             exportCoverage={reformatResult?.sharedCoverage ?? null}
             applyDisabledReason={readiness.reason}
-            onOpenSettings={() => setPage("settings")}
+            onOpenSettings={() => setPage("general-settings")}
             onApply={() => applyPendingPlan(pendingPlan)}
             onReject={() => {
               setReformatResult(null);

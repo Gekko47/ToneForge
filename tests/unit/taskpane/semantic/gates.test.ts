@@ -31,12 +31,12 @@ const READY: SemanticGateInput = {
 
 describe("semanticGate", () => {
   describe("consent and provider", () => {
-    it("blocks every sending action without consent, and points at Settings", () => {
+    it("blocks every sending action without consent, and points at LLM Settings", () => {
       (["review", "regenerate", "apply", "keep-original", "learn"] as const).forEach((action) => {
         const gate = semanticGate({ ...READY, consent: false }, action);
         expect(gate.allowed).toBe(false);
         expect(gate.blocker).toMatch(/consent/i);
-        expect(gate.remedy).toEqual({ destination: "settings", label: "Open Settings" });
+        expect(gate.remedy).toEqual({ destination: "llm-settings", label: "Open LLM Settings" });
       });
     });
 
@@ -44,7 +44,7 @@ describe("semanticGate", () => {
       const gate = semanticGate({ ...READY, providerConfigured: false }, "review");
       expect(gate.allowed).toBe(false);
       expect(gate.blocker).toMatch(/provider/i);
-      expect(gate.remedy?.destination).toBe("settings");
+      expect(gate.remedy?.destination).toBe("llm-settings");
     });
 
     it("still lets a selection be read without consent, because it sends nothing", () => {

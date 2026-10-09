@@ -187,16 +187,16 @@ describe("the troubleshooting registry", () => {
       expect(note.remedyTarget.label).toMatch(/→/);
     });
     expect(notes.map((note) => note.remedyTarget.label)).toEqual([
-      "Settings → Scanning → Scan automatically as the document changes",
-      "Settings → Tracked editing → Allow ToneForge to apply tracked changes",
+      "General Settings → Scanning → Scan automatically as the document changes",
+      "General Settings → Tracked editing → Allow ToneForge to apply tracked changes",
       "Deterministic Review → Findings → Review on each finding you want applied",
       "Semantic Style → Semantic profiles → Create empty profile",
-      "Settings → Provider and privacy → Provider, then enter the key",
+      "LLM Settings → LLM connections → Connect a provider",
       "Troubleshooting → Analysis coverage diagnostics",
       "Semantic Review → Use current selection",
       "Semantic Review → Use current selection, then narrow the selection in Word",
       "Semantic Review → Regenerate review",
-      "Settings → Provider and privacy → Provider, then enter the key",
+      "LLM Settings → LLM connections → Connect a provider",
       "Add-ins ribbon → Deterministic Review group",
       "Semantic Review → Use current selection, then select the whole paragraph in Word",
     ]);
@@ -328,7 +328,7 @@ describe("the troubleshooting registry", () => {
     // Selected by id: a missing provider is its own note and is reported first.
     const noModelNote = noModel.find((note) => note.id === "consistency-review-partial");
     expect(noModelNote?.remedyTarget.label).toBe(
-      "Settings → Provider and privacy → Provider, then enter the key",
+      "LLM Settings → LLM connections → Connect a provider",
     );
 
     const bounded = diagnoseSituation(
@@ -401,7 +401,7 @@ describe("the troubleshooting registry", () => {
     const note = notes.find((n) => n.id === "decision-role-unbound");
     expect(note).toBeDefined();
     expect(note?.remedyTarget.label).toBe(
-      "Settings → AI roles → Consistency decision → Connect a provider",
+      "LLM Settings → LLM connections → Consistency decision LLM → Connect a provider",
     );
     // The deterministic results are complete; the note must not imply otherwise.
     expect(note?.cause).toMatch(/deterministic results are complete/i);
@@ -485,7 +485,9 @@ describe("the troubleshooting registry", () => {
     );
     const note = notes.find((n) => n.id === "decision-parse-failed");
     expect(note).toBeDefined();
-    expect(note?.remedyTarget.label).toBe("Settings → AI roles → Consistency decision → Model");
+    expect(note?.remedyTarget.label).toBe(
+      "LLM Settings → LLM connections → Consistency decision LLM → Model",
+    );
     expect(note?.cause).toMatch(/not valid JSON/i);
   });
 

@@ -31,7 +31,7 @@ export const MAX_REVIEW_SELECTION_CHARS = 20_000;
 
 /** What a blocked action needs the user to do, and where that lives. */
 export type SemanticRemedy =
-  { destination: "settings"; label: string } | { destination: "semantic-style"; label: string };
+  { destination: "llm-settings"; label: string } | { destination: "semantic-style"; label: string };
 
 export type SemanticAction =
   "read-selection" | "review" | "regenerate" | "apply" | "keep-original" | "learn";
@@ -87,7 +87,7 @@ function blocked(blocker: string, remedy: SemanticRemedy | null): SemanticGate {
 }
 
 const CONSENT_BLOCKER =
-  "Semantic review sends the text you select to your configured provider, which needs its own consent in Settings. It is not covered by the other review permissions.";
+  "Semantic review sends the text you select to your configured provider, which needs its own consent in LLM Settings. It is not covered by the other review permissions.";
 const PROVIDER_BLOCKER = "No AI provider is configured, so there is nothing to ask.";
 const PROFILE_BLOCKER = "There is no semantic style to review against yet.";
 const SELECTION_BLOCKER = "Select the paragraph or text you want ToneForge to review.";
@@ -118,18 +118,18 @@ export function semanticGate(input: SemanticGateInput, action: SemanticAction): 
 
   if (action === "learn") {
     if (!input.consent)
-      return blocked(CONSENT_BLOCKER, { destination: "settings", label: "Open Settings" });
+      return blocked(CONSENT_BLOCKER, { destination: "llm-settings", label: "Open LLM Settings" });
     if (!input.providerConfigured) {
-      return blocked(PROVIDER_BLOCKER, { destination: "settings", label: "Open Settings" });
+      return blocked(PROVIDER_BLOCKER, { destination: "llm-settings", label: "Open LLM Settings" });
     }
     return ALLOWED;
   }
 
   if (!input.consent) {
-    return blocked(CONSENT_BLOCKER, { destination: "settings", label: "Open Settings" });
+    return blocked(CONSENT_BLOCKER, { destination: "llm-settings", label: "Open LLM Settings" });
   }
   if (!input.providerConfigured) {
-    return blocked(PROVIDER_BLOCKER, { destination: "settings", label: "Open Settings" });
+    return blocked(PROVIDER_BLOCKER, { destination: "llm-settings", label: "Open LLM Settings" });
   }
   if (action === "review" || action === "regenerate") {
     if (!input.hasProfile) {

@@ -81,14 +81,14 @@ export function aiReviewBlocker(input: {
   if (!input.hasConsent) {
     return {
       message:
-        "AI Review needs its own consent in Settings before any document text can be sent. It is separate from the other review permissions and is not covered by them.",
-      action: "Open Settings",
+        "AI Review needs its own consent in LLM Settings before any document text can be sent. It is separate from the other review permissions and is not covered by them.",
+      action: "Open LLM Settings",
     };
   }
   if (!input.providerConfigured) {
     return {
       message: "No AI provider is configured, so there is nothing to run the review.",
-      action: "Open Settings",
+      action: "Open LLM Settings",
     };
   }
   return null;

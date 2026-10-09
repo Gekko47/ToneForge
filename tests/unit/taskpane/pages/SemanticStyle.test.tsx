@@ -216,11 +216,11 @@ describe("the Semantic Style page", () => {
       mocks.state = semanticState(false);
       renderPage();
 
-      expect(screen.getByText(/needs its own consent in Settings/i)).toBeInTheDocument();
+      expect(screen.getByText(/needs its own consent in LLM Settings/i)).toBeInTheDocument();
       // ADR-0069: a disabled control with no visible reason is indistinguishable
       // from a broken one.
       expect(screen.getByRole("button", { name: /learn style/i })).toBeDisabled();
-      expect(screen.getByRole("button", { name: /open settings/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /open llm settings/i })).toBeInTheDocument();
     });
   });
 

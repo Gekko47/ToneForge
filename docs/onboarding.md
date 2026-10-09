@@ -240,7 +240,7 @@ receives an opaque connection reference and non-secret metadata, and stores
 only that. See `src/ai/gateway/oauthState.ts` and ADR-0049/ADR-0050.
 
 Three endpoints, all relative to the broker base URL configured in
-**Settings → Provider and privacy**:
+**LLM Settings → LLM connections**:
 
 | Endpoint                    | Method | Request                         | Response                    |
 | --------------------------- | ------ | ------------------------------- | --------------------------- |

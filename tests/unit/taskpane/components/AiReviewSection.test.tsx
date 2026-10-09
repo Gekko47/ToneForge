@@ -41,15 +41,17 @@ describe("AiReviewSection", () => {
     expect(screen.getAllByRole("button", { name: "Check Consistency" })).toHaveLength(1);
   });
 
-  it("states the missing consent once and links to Settings", () => {
+  it("states the missing consent once and links to LLM Settings", () => {
     const onOpenSettings = vi.fn();
     renderSection({ hasConsent: false, onOpenSettings });
     const blocker = screen.getByTestId("ai-review-blocker");
     expect(blocker).toHaveTextContent(/needs its own consent/i);
     expect(
-      screen.getAllByText(/needs its own consent in Settings before any document text can be sent/),
+      screen.getAllByText(
+        /needs its own consent in LLM Settings before any document text can be sent/,
+      ),
     ).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Open Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open LLM Settings" })).toBeInTheDocument();
   });
 
   it("disables the action while a prerequisite is missing", () => {

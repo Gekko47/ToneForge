@@ -28,8 +28,8 @@ describe("TaskPaneHeader", () => {
     ).toHaveAttribute("aria-current", "page");
     expect(trigger).toHaveAttribute("aria-expanded", "true");
 
-    await user.click(within(navigation).getByRole("button", { name: "Settings" }));
-    expect(onNavigate).toHaveBeenCalledWith("settings");
+    await user.click(within(navigation).getByRole("button", { name: "LLM Settings" }));
+    expect(onNavigate).toHaveBeenCalledWith("llm-settings");
     await vi.waitFor(() => expect(trigger).toHaveAttribute("aria-expanded", "false"));
   });
 
@@ -115,7 +115,7 @@ describe("TaskPaneHeader", () => {
       // there would be a claim about a scan that never happened.
       rerender(
         <TaskPaneHeader
-          activePage="settings"
+          activePage="llm-settings"
           profileName="Corporate editorial"
           profileRevision={7}
           onNavigate={vi.fn()}

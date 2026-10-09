@@ -216,7 +216,7 @@ describe("PendingChanges apply readiness", () => {
         onOpenSettings={onOpenSettings}
       />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Open Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open General Settings" }));
     expect(onOpenSettings).toHaveBeenCalledOnce();
   });
 

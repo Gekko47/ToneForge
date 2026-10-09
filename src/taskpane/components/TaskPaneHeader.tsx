@@ -23,7 +23,18 @@ export type TaskPaneDestination =
   | "semantic-review"
   | "semantic-style"
   | "governance-policy"
-  | "settings"
+  /**
+   * Two settings pages, because they answer two different questions.
+   *
+   * `llm-settings` is the provider and consent surface: the two LLM roles, the
+   * connect-a-provider card, and the redaction/consent section. `general-settings`
+   * is the project-wide surface: scanning, tracked editing, and styling. They were
+   * one page until the LLM connector change replaced the composed Settings page
+   * with the LLM dashboard and left the general sections unmounted; the split
+   * restores them and names each page for what it holds.
+   */
+  | "llm-settings"
+  | "general-settings"
   | "troubleshooting";
 
 interface TaskPaneHeaderProps {
@@ -73,7 +84,8 @@ export const TASKPANE_DESTINATIONS: readonly {
   { key: "semantic-review", label: "Semantic Review" },
   { key: "semantic-style", label: "Semantic Style" },
   { key: "governance-policy", label: "Governance Policy" },
-  { key: "settings", label: "Settings" },
+  { key: "llm-settings", label: "LLM Settings" },
+  { key: "general-settings", label: "General Settings" },
   { key: "troubleshooting", label: "Troubleshooting" },
 ];
 
