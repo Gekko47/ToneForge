@@ -265,11 +265,20 @@ decision, not routine dependency remediation.
 
 #### UUID
 
-`uuid@9.0.1` is used by many production modules and is not removable as a warning-only action. First identify the maintained release line and API compatibility. If a minimum safe upgrade is a major migration, create a separate change with tests for UUID generation, plan IDs, finding IDs, request IDs, and bundled behavior. Only after that migration may the direct dependency be changed. If no safe version is available, retain `9.x` and document the lifecycle warning rather than forcing `14.x` across the graph.
+**Resolved (2026-10-09).** `uuid` was upgraded from `^9.0.0` to `14.0.2` (pinned).
+The v14 API is a superset of v9 for the functions ToneForge uses (`v4`, `v5`,
+`validate`, `version`, `parse`, `stringify`, `NIL`, `MAX`). All 13 modules that
+import `uuid` were typechecked and tested against v14. `@types/uuid` was removed
+because uuid 14 ships its own type declarations. The full verify chain passes.
 
 #### ESLint
 
-Keep ESLint 9 unless the maintained release line and plugin compatibility are confirmed. Validate [`eslint.config.mjs`](../eslint.config.mjs:1), the TypeScript ESLint plugin, `eslint-config-prettier`, zero-warning lint, and all import-boundary checks. Do not upgrade to a new major as part of Office dependency cleanup.
+**Resolved (2026-10-09).** ESLint was upgraded from `^9.14.0` to `10.12.0`
+(pinned). `eslint-config-prettier` was upgraded from `^9.1.0` to `10.1.8`
+(pinned). The flat config in [`eslint.config.mjs`](../eslint.config.mjs:1) is
+compatible with ESLint 10. `@typescript-eslint/eslint-plugin@^8.12.0` and
+`@typescript-eslint/parser@^8.12.0` remain compatible. Lint passes with
+`--max-warnings 0`. The full verify chain passes.
 
 #### Glob/tar/rimraf/npmlog/inflight and related packages
 
@@ -370,19 +379,25 @@ implemented, by maintainer instruction.
 
 ### 7.1 Changes applied
 
-| Package                  | Before    | After    | Reason                                                                                        |
-| ------------------------ | --------- | -------- | --------------------------------------------------------------------------------------------- |
-| `office-addin-debugging` | `^4.0.0`  | `^5.1.6` | First release line whose `office-addin-dev-settings` dependency is free of TeamsFx/Azure MSAL |
-| `@playwright/test`       | `^1.48.0` | removed  | No import in `src/`, `tests/`, `scripts/`, `.github/`, config, or docs                        |
-| `esbuild`                | `^0.24.0` | removed  | Root declaration unused; Vite carries its own nested `esbuild@0.21.5`                         |
+| Package                           | Before    | After     | Reason                                                                                        |
+| --------------------------------- | --------- | --------- | --------------------------------------------------------------------------------------------- |
+| `office-addin-debugging`          | `^4.0.0`  | `^5.1.6`  | First release line whose `office-addin-dev-settings` dependency is free of TeamsFx/Azure MSAL |
+| `@playwright/test`                | `^1.48.0` | removed   | No import in `src/`, `tests/`, `scripts/`, `.github/`, config, or docs                        |
+| `esbuild`                         | `^0.24.0` | removed   | Root declaration unused; Vite carries its own nested `esbuild@0.21.5`                         |
+| `uuid`                            | `^9.0.0`  | `14.0.2`  | Latest stable; v14 API is a superset for ToneForge's usage; ships own types                   |
+| `@types/uuid`                     | `^9.0.2`  | removed   | uuid 14 ships its own `.d.ts`; `@types/uuid` no longer needed                                 |
+| `eslint`                          | `^9.14.0` | `10.12.0` | Latest stable; flat config compatible; `@typescript-eslint@^8` works                          |
+| `eslint-config-prettier`          | `^9.1.0`  | `10.1.8`  | Latest stable; peer-compatible with ESLint 10                                                 |
+| `jsdom`                           | `^25.0.1` | `27.4.0`  | Latest stable; used only in test environment                                                  |
+| `@commitlint/cli`                 | `^19.5.0` | `21.2.3`  | Latest stable; config-conventional 21 compatible                                              |
+| `@commitlint/config-conventional` | `^19.5.0` | `21.2.3`  | Latest stable; matches `@commitlint/cli` 21                                                   |
 
-`package-lock.json` was regenerated with `npm install --package-lock-only`. It was
-not hand-edited. `lockfileVersion` remains **3**.
+`package-lock.json` was regenerated with `npm install`. It was not hand-edited.
+`lockfileVersion` remains **3**.
 
-**`@types/uuid` was deliberately kept.** The plan listed it as a candidate, but
-`uuid@9.0.1` ships no `.d.ts` files and declares no `types` field; the only
-declaration available is `@types/uuid`. Removing it breaks typecheck for the 13
-modules that import `uuid`. This finding invalidates the original assumption.
+**`@types/uuid` was removed.** The original plan kept it because `uuid@9.0.1`
+ships no `.d.ts` files. After upgrading to `uuid@14.0.2`, which ships its own
+type declarations, `@types/uuid` is no longer needed and was removed.
 
 ### 7.2 Why 5.1.6 and not 6.x/7.x
 
@@ -422,17 +437,48 @@ No override, no `resolutions` block, and no nested package edit was introduced.
 
 ### 7.4 Measured results
 
-| Signal                           | Before | After    | Change     |
-| -------------------------------- | ------ | -------- | ---------- |
-| `EBADENGINE` warnings on install | 10     | **0**    | Eliminated |
-| Deprecated warning lines         | 42     | **13**   | −69%       |
-| Lockfile entries                 | 1600   | **1341** | −259       |
-| `npm audit` total                | 44     | **25**   | −43%       |
-| `npm audit` critical             | 3      | **2**    | −1         |
+| Signal                           | Before | After    | Change         |
+| -------------------------------- | ------ | -------- | -------------- |
+| `EBADENGINE` warnings on install | 10     | **0**    | Eliminated     |
+| Deprecated package entries       | 13     | **14**   | +1 (see below) |
+| Lockfile entries                 | 1600   | **1302** | −298           |
+| `npm audit` total                | 44     | **36**   | −18%           |
+| `npm audit` critical             | 3      | **5**    | +2 (see below) |
 
 The `@azure/msal-node@1.18.4` `EBADENGINE` warning is gone because that package
 exited the graph entirely, along with `@azure/ms-rest-js`,
 `@azure/ms-rest-azure-js`, `@azure/core-http`, and the legacy `msal` package.
+
+**Direct deprecations eliminated:**
+
+- `uuid@9.0.1` → `14.0.2` — no longer deprecated; v14 is the maintained line.
+- `eslint@9.39.5` → `10.12.0` — no longer deprecated; v10 is the maintained line.
+- `eslint-config-prettier@9.x` → `10.1.8` — no longer deprecated.
+- `jsdom@25.x` → `27.4.0` — no longer deprecated.
+- `@commitlint/cli` and `@commitlint/config-conventional` `19.x` → `21.2.3` —
+  no longer deprecated.
+- `@types/uuid` — removed (uuid 14 ships its own types).
+- `git-raw-commits`, `whatwg-encoding` — exited the graph as transitive deps of
+  the upgraded commitlint.
+
+**Remaining deprecated packages (all transitive, dev-only):**
+
+| Package                         | Parent path                                                                                                                                                          | Scope                     |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `uuid@8.3.2` (×7)               | `office-addin-debugging`, `office-addin-dev-settings`, `office-addin-project`, `office-addin-node-debugger`, `@microsoft/teamsfx-core`, `@azure/msal-node`, `sockjs` | Office tooling transitive |
+| `@microsoft/teamsapp-cli@3.0.2` | `office-addin-dev-settings`                                                                                                                                          | Office tooling transitive |
+| `glob@7.2.3`                    | `office-addin-debugging`                                                                                                                                             | Office tooling transitive |
+| `glob@10.5.0`                   | `test-exclude`                                                                                                                                                       | Test tooling transitive   |
+| `inflight@1.0.6`                | `office-addin-debugging`                                                                                                                                             | Office tooling transitive |
+| `prebuild-install@7.1.3`        | `office-addin-debugging`                                                                                                                                             | Office tooling transitive |
+| `node-domexception@1.0.0`       | `office-addin-debugging`                                                                                                                                             | Office tooling transitive |
+| `@types/strip-bom@4.0.1`        | `office-addin-debugging`                                                                                                                                             | Stub types                |
+
+None of these are reachable from production runtime dependencies. The `uuid@8.3.2`
+instances are nested inside Office tooling packages that have not yet released
+versions using `uuid@10+`. The `@microsoft/teamsapp-cli@3.0.2` deprecation is
+the same one documented in [Section 7.2](#72-why-516-and-not-6x7x) — the only
+fix is `office-addin-debugging@7.0.1`, which is rejected.
 
 **Remaining audit findings are classified, not dismissed:**
 
@@ -446,19 +492,6 @@ exited the graph entirely, along with `@azure/ms-rest-js`,
 - No remaining finding is reachable from production runtime dependencies
   (`react`, `react-dom`, `@fluentui/react`, `react-error-boundary`, `uuid`,
   `zod`).
-
-**Retained deprecations, with exact parent paths:**
-
-- `uuid@9.0.1` (direct) and `uuid@8.3.2` (Office tooling) — retained per
-  [Phase 4](#phase-4--handle-direct-deprecations-individually); a UUID major
-  migration is a code migration, not a dependency bump.
-- `eslint@9.39.5` (direct) — retained; flat config and TypeScript plugin
-  compatibility are proven and lint passes with `--max-warnings 0`.
-- `@microsoft/teamsapp-cli@3.0.2` — transitive via `office-addin-dev-settings`.
-  This is the single remaining Office-chain deprecation. It is development-only.
-- `glob`, `tar`, `inflight`, `prebuild-install`, `whatwg-encoding`,
-  `node-domexception`, `git-raw-commits` — transitive build/test tooling,
-  retained per Phase 4.
 
 ### 7.5 Verification performed
 

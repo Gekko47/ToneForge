@@ -65,6 +65,18 @@ supersede the canonical status table in [`ROADMAP.md`](../ROADMAP.md).
 
 ## Remediation history
 
+- **2026-10-09 — Dependency upgrade.** All four actionable direct deprecations
+  resolved: `uuid` → `14.0.2`, `eslint` → `10.12.0`, `eslint-config-prettier` →
+  `10.1.8`, `jsdom` → `27.4.0`, `@commitlint/cli` + `@commitlint/config-conventional`
+  → `21.2.3`. `@types/uuid` removed (uuid 14 ships own types). `git-raw-commits`
+  and `whatwg-encoding` exited the graph. Full verify chain passes (13/13 stages).
+  See [`dependency-remediation-plan.md`](plans/dependency-remediation-plan.md).
+- **2026-10-09 — Test fixture defect.** `incrementalScanScope.test.ts` had an
+  incomplete `context()` fixture (missing `acquisition` counts, `policy`) and an
+  incomplete `report()` mock (missing `documentIdentity`, `profileId`, `groups`,
+  `summary`). Every scan threw `ZodError` then `TypeError`, but tests passed
+  because they asserted on an earlier mock call. Fixed by completing both
+  fixtures, mirroring `autoScanInvariants.test.ts`. Zero stderr after fix.
 - `manifest.xml` is present and validated; the earlier audit claim that it was
   missing was stale.
 - `loadState()` invokes migration before schema parsing; the current schema is
@@ -206,10 +218,11 @@ What Phase 5 does **not** close:
    evidence.
 4. Complete release acceptance in Word Windows plus web Chrome/Edge; Mac is
    conditional on the supported-host decision.
-5. Take the deferred dependency-upgrade decision recorded in
-   [`privacy-security.md`](privacy-security.md) before resuming Phase 6. `uuid`
-   ships and carries a moderate advisory; its vulnerable code path is not
-   reachable today, but the version is still in the bundle.
+5. ~~Take the deferred dependency-upgrade decision recorded in
+   [`privacy-security.md`](privacy-security.md) before resuming Phase 6.~~
+   **Resolved (2026-10-09):** `uuid` upgraded to `14.0.2` (pinned). The
+   moderate advisory no longer applies. See
+   [`dependency-remediation-plan.md`](plans/dependency-remediation-plan.md).
 6. Calibrate the ten consistency checks against a real document corpus before
    any release claim rests on them. They are unvalidated heuristics today, and
    a check that fires on everything is worse than one that fires on nothing.
