@@ -89,10 +89,10 @@ describe("taskpane navigation instructions", () => {
     const otherDocument = new BroadcastChannel("ToneForge.TaskpaneNavigation.live");
     try {
       otherDocument.postMessage({ target: "findings" });
-      // Broadcast delivery is asynchronous by specification, so the listener is
-      // given a turn before the assertion rather than being raced.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(seen).toEqual([{ target: "findings" }]);
+      // Broadcast delivery is asynchronous by specification, and one macrotask
+      // is not enough under the parallel load of a full coverage run, so the
+      // assertion is retried until the message arrives rather than raced.
+      await vi.waitFor(() => expect(seen).toEqual([{ target: "findings" }]));
     } finally {
       otherDocument.close();
       unsubscribe();
@@ -127,8 +127,10 @@ describe("taskpane navigation instructions", () => {
       channel.postMessage({ target: "semantic", action: "read-selection" });
       channel.postMessage({ target: "semantic-review", action: "delete-document" });
       channel.postMessage("not-an-object");
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(seen).toEqual([{ target: "semantic-review" }]);
+      // Retried for the same reason as the live-channel test above: the valid
+      // message is the only one that survives validation, so waiting for it is
+      // waiting for the channel, not for a fixed number of ticks.
+      await vi.waitFor(() => expect(seen).toEqual([{ target: "semantic-review" }]));
       channel.close();
     } finally {
       unsubscribe();
