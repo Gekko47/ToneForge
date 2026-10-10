@@ -1,5 +1,7 @@
 import React from "react";
+import { Button } from "@fluentui/react-components";
 import SemanticProfileEditor from "../components/SemanticProfileEditor";
+import { Breadcrumb } from "../shell";
 import SemanticProfilePicker from "../components/SemanticProfilePicker";
 import ProfileRecordSection from "../components/ProfileRecordSection";
 import LearnSemanticStyle from "../components/semantic/LearnSemanticStyle";
@@ -258,12 +260,8 @@ export default function SemanticStyle({
   const isActive = record !== null && activeId === record.id;
 
   return (
-    <div className="tf-card" data-page="semantic-style">
-      <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button className="tf-native-button" type="button" onClick={onBack}>
-          Back to Semantic Review
-        </button>
-      </nav>
+    <div data-page="semantic-style">
+      <Breadcrumb label="Back to Semantic Review" onBack={onBack} />
 
       <h1 className="tf-title">Semantic Style</h1>
       <p className="tf-sub">
@@ -304,7 +302,7 @@ export default function SemanticStyle({
       />
 
       {record === null || profile === null ? (
-        <section aria-labelledby="no-profile-heading" className="tf-card">
+        <section aria-labelledby="no-profile-heading">
           <h2 id="no-profile-heading">No semantic profile is active</h2>
           <p className="tf-sub">
             There is nothing to review against yet. A semantic profile says how the writing should
@@ -339,26 +337,21 @@ export default function SemanticStyle({
           */}
           <SemanticProfileEditor semantic={profile.semantic} onSave={persistSemantic} />
 
-          <section aria-labelledby="draft-actions-heading" className="tf-card">
+          <section aria-labelledby="draft-actions-heading">
             <h2 id="draft-actions-heading">Use this style</h2>
             <p className="tf-sub">
               Saving keeps it as a draft. Making it active changes what every Semantic Review is
               measured against, so it is a separate press.
             </p>
             <div className="tf-actions">
-              <button
-                className="tf-native-button"
-                type="button"
-                disabled={isActive}
-                onClick={activateDraft}
-              >
+              <Button appearance="primary" disabled={isActive} onClick={activateDraft}>
                 {isActive ? "Active" : "Make this active"}
-              </button>
+              </Button>
             </div>
           </section>
 
           {evidence !== null && (
-            <section aria-labelledby="evidence-heading" className="tf-card">
+            <section aria-labelledby="evidence-heading">
               <h2 id="evidence-heading">Where this style came from</h2>
               <p className="tf-sub">
                 {evidence.wordCount} {evidence.wordCount === 1 ? "word" : "words"} from{" "}
@@ -385,20 +378,20 @@ export default function SemanticStyle({
             do not govern Semantic Review and a reader who has to pass them to
             reach the editor has been told they matter (D9, ADR-0076).
           */}
-          <section aria-labelledby="diagnostics-heading" className="tf-card">
+          <section aria-labelledby="diagnostics-heading">
             <h2 id="diagnostics-heading">Sample diagnostics</h2>
             <p className="tf-sub">
               Measured from your writing on every scan. These numbers do not control Semantic
               Review; they are here so you can see what the measured half of this profile holds.
             </p>
-            <button
-              type="button"
-              className="tf-native-button tf-collapsible-header"
+            <Button
+              appearance="subtle"
+              className="tf-collapsible-header"
               aria-expanded={diagnosticsOpen}
               onClick={() => setDiagnosticsOpen((open) => !open)}
             >
               {diagnosticsOpen ? "Hide diagnostics" : "Show diagnostics"}
-            </button>
+            </Button>
             {diagnosticsOpen && (
               <dl>
                 <dt>Average sentence length</dt>

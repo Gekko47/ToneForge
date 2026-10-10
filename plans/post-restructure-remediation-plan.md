@@ -258,7 +258,7 @@ display; give the editor a single page-owned heading.
   styles are not automatically one.
 - Fluent `Dropdown` and `TextField` render light-on-dark on the Profile tab.
   Theme construction is confirmed correct
-  ([`createDefaultTheme`](../src/taskpane/fluentTheme.ts:21) sets `isInverted`),
+  ([`createDefaultTheme`](../src/taskpane/theme/toneForgeTheme.ts:21) sets `isInverted`),
   and the unscoped `input, select, textarea` rule at
   [`taskpane.css:231`](../src/taskpane/taskpane.css:231) is a plausible
   contributor, but the rendered cascade in Word has not been inspected. jsdom
@@ -335,7 +335,7 @@ range.start` alone satisfies neither, and `nodeId` can be absent.
       `PersistedState` and a separate `useState` plus effect, or the pane will need a
       second re-render path.
 - [ ] Add a colour-literal guard scoped to active taskpane UI, with the token file
-      and `fluentTheme.ts` as the only exceptions.
+      and `toneForgeTheme.ts` as the only exceptions.
 - [ ] Record the settled decisions S1–S9 in `docs/decision-log.md` before
       implementation starts, so each workstream's ADR has a baseline to cite.
 
@@ -491,7 +491,7 @@ range.start` alone satisfies neither, and `nodeId` can be absent.
 
 - [ ] Define the complete token set in `taskpane.css` — surface, subtle surface,
       text, muted text, accent, border, warning, danger, success, focus — for both
-      themes, and forbid raw hex outside that file and `fluentTheme.ts`.
+      themes, and forbid raw hex outside that file and `toneForgeTheme.ts`.
 - [ ] Scope the native `input, select, textarea` rule so it cannot override
       Fluent's class-based styling.
 - [ ] Convert colour-bearing inline styles to token-backed classes, starting with

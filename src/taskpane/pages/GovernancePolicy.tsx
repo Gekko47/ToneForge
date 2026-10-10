@@ -1,5 +1,6 @@
 import React from "react";
 import GovernancePolicySection from "../components/GovernancePolicySection";
+import { Breadcrumb } from "../shell";
 import { readActiveGovernanceContext } from "../activeGovernance";
 import type { GovernanceProfile } from "../../core/domain/GovernanceProfile";
 
@@ -40,12 +41,8 @@ export default function GovernancePolicy({ onBack }: GovernancePolicyProps): Rea
   const [policy, setPolicy] = React.useState<GovernanceProfile | null>(context.policy);
 
   return (
-    <div className="tf-card" data-page="governance-policy">
-      <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button className="tf-native-button" type="button" onClick={onBack}>
-          Back to Deterministic Review
-        </button>
-      </nav>
+    <div data-page="governance-policy">
+      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
       <h1 className="tf-title">Governance Policy</h1>
       <p className="tf-sub">
         How strict each check is, and which corrections ToneForge may apply without asking.

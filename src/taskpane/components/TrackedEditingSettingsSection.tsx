@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { MessageBar, MessageBarType, Toggle } from "@fluentui/react";
+import { MessageBar, Switch } from "@fluentui/react-components";
+import { Button } from "@fluentui/react-components";
 import {
   isTrackedEditingEnabled,
   prepareReformatHost,
@@ -90,39 +91,28 @@ export default function TrackedEditingSettingsSection(): React.ReactNode {
         never be bypassed.
       </p>
       <div className="tf-settings-fields">
-        <Toggle
+        <Switch
           label="Allow ToneForge to apply tracked changes"
           checked={enabled}
           disabled={busy}
-          onChange={(event, checked) => void change(event, checked ?? false)}
-          onText="Enabled"
-          offText="Disabled"
+          onChange={(event, data) => void change(event, data.checked)}
         />
         {message && (
-          <MessageBar
-            messageBarType={enabled ? MessageBarType.info : MessageBarType.warning}
-            role="status"
-            aria-live="polite"
-          >
+          <MessageBar intent={enabled ? "info" : "warning"} role="status" aria-live="polite">
             {message}
           </MessageBar>
         )}
         {capabilities !== null && capabilities.supportsRevisions === false && (
-          <MessageBar messageBarType={MessageBarType.error} role="alert">
+          <MessageBar intent="error" role="alert">
             This Word host does not expose the revision capability, so tracked editing cannot be
             armed here. Preview and review remain available.
           </MessageBar>
         )}
       </div>
       <div className="tf-settings-actions">
-        <button
-          className="tf-native-button"
-          type="button"
-          onClick={() => void probe()}
-          disabled={busy}
-        >
+        <Button onClick={() => void probe()} disabled={busy}>
           {busy ? "Checking this Word host…" : "Check this Word host"}
-        </button>
+        </Button>
       </div>
     </section>
   );

@@ -1,16 +1,15 @@
 /**
- * The token layer, asserted rather than assumed.
+ * The theme token layer, asserted rather than assumed.
  *
- * The reported symptom was drop boxes and input sections not following the
- * global theme. The palette itself was never wrong — `taskpane.css` declares a
- * complete token set under two theme classes and `createDefaultTheme` sets
- * `isInverted` correctly. What had gone wrong was everything *around* it: two
- * components with hardcoded hex, and an unscoped `input { background-color }`
- * that also landed on Fluent's own fields.
+ * The v9 provider owns theming through `FluentProvider`, which writes design
+ * tokens as CSS variables at the provider root. The `--tf-*` tokens in
+ * `taskpane.css` remain for components that have not yet migrated to v9 — they
+ * flip with the `tf-theme-dark`/`tf-theme-light` classes the provider applies
+ * to the document element.
  *
  * These tests pin the two things that can be checked without a browser. They
  * deliberately do **not** claim the rendering is correct: jsdom cannot compute
- * styles, so whether Word actually paints a Dropdown dark is a manual
+ * styles, so whether Word actually paints a component dark is a manual
  * verification step and is recorded as such in `docs/manual-verification.md`.
  */
 
@@ -54,68 +53,20 @@ describe("theme tokens", () => {
   });
 });
 
-describe("the native-control rule", () => {
-  /*
-   * These two assertions used to pin the *mechanism* — that the rule carried
-   * `:not([class*="ms-"])` — rather than the claim it protects, which is that
-   * Fluent's fields are never touched by our styling. Pinning the mechanism made
-   * the guard itself fail the day it was replaced by something better, which is
-   * how a real improvement gets reverted to satisfy a test.
-   *
-   * The mechanism is now `.tf-native`, a class we own (UX-4a). The claim is
-   * unchanged and is asserted against the selectors, so the prose explaining the
-   * change cannot satisfy or defeat it.
-   *
-   * `nativeFieldMarkers.test.ts` covers the other half: that every native control
-   * we actually render carries the marker. Between them, a control added without
-   * it fails, and a bare-element rule returning fails.
-   */
-  const selectors = css.replace(/\/\*[\s\S]*?\*\//g, "");
-
-  it("excludes Fluent's own inputs by scoping to our marker", () => {
-    expect(selectors).toContain(".tf-native {");
-    // The old deny-list is gone rather than kept alongside: two guards for one
-    // problem is two things to maintain, and the deny-list is the fragile one.
-    expect(selectors).not.toContain("ms-");
-  });
-
-  it("no longer groups the three elements into one unscoped rule", () => {
-    /*
-     * The shape that caused it: a bare `input,\nselect,\ntextarea` selector
-     * list carrying `background-color`. Prettier reflows selector lists, so
-     * this matches the declaration rather than the formatting — a colour rule
-     * applying to a bare element selector is the thing that must not return.
-     */
-    const bareGroup =
-      /(?:^|\n)\s*(?:input|select|textarea)\s*,\s*\n\s*(?:input|select|textarea)\s*\{/;
-    expect(selectors).not.toMatch(bareGroup);
-    expect(selectors).not.toMatch(/(?:^|\n)\s*input\s*\{/);
-  });
-});
-
 describe("components do not hardcode colours", () => {
-  it("has no colour literal outside the palette definition", () => {
-    /*
-     * The lint rule in `eslint.config.mjs` is the real gate — it fires at the
-     * line that adds one. This test is the belt to that braces: it fails if
-     * the rule is ever scoped away or the file list drifts, which is how a
-     * guard quietly stops guarding.
-     */
+  it("has no colour literal outside the theme definition", () => {
     const config = readFileSync(join(here, "../../../eslint.config.mjs"), "utf8");
     expect(config).toContain("src/taskpane/**/*.tsx");
-    expect(config).toContain("src/taskpane/fluentTheme.ts");
+    expect(config).toContain("src/taskpane/theme/toneForgeTheme.ts");
   });
 
-  it("keeps the palette in the stylesheet, where the theme classes can flip it", () => {
-    // `fluentTheme.ts` is the one place a literal belongs: it defines the
-    // values the tokens carry. Both themes must be present there too, or the
-    // Fluent components and the CSS disagree about the palette.
+  it("keeps the brand ramp in the theme module, where both themes are built", () => {
     const theme = readFileSync(
-      join(here, "../../../src/taskpane/fluentTheme.ts"),
+      join(here, "../../../src/taskpane/theme/toneForgeTheme.ts"),
       "utf8",
     ) as string;
-    expect(theme).toContain("isInverted");
-    expect(theme).toContain("#0078d4");
-    expect(theme).toContain("#4aaaf0");
+    expect(theme).toContain("#0078D4");
+    expect(theme).toContain("createLightTheme");
+    expect(theme).toContain("createDarkTheme");
   });
 });

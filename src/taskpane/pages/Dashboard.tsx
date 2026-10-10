@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Button } from "@fluentui/react-components";
 import { toAnalysisCapabilities, type WordCapabilities } from "../../word/capabilityProbe";
 import type { AnalysisCapabilities } from "../../analysis/analysisContext";
 import {
@@ -20,6 +21,8 @@ import {
 } from "../../shared/office/taskpaneNavigation";
 import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
+import { AppShell } from "../shell";
+import { LoadingState } from "../components/common/LoadingState";
 import ReviewWithoutProfile from "./ReviewWithoutProfile";
 import FindingsList from "../components/FindingsList";
 import FindingsToolbar from "../components/FindingsToolbar";
@@ -83,6 +86,7 @@ const ConsistencyReview = lazy(() => import("./ConsistencyReview"));
 const SemanticReview = lazy(() => import("./SemanticReview"));
 const SemanticStyle = lazy(() => import("./SemanticStyle"));
 const Home = lazy(() => import("./Home"));
+import type { HomeState } from "./homeState";
 
 /** Lets the findings toolbar's `aria-controls` point at the rendered list. */
 const FINDINGS_LIST_ID = "tf-findings-list";
@@ -330,45 +334,41 @@ function DashboardWithoutProfile({
 
   if (page === "llm-settings") {
     return (
-      <main className="tf-card" tabIndex={0}>
-        {header}
-        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+      <AppShell header={header}>
+        <Suspense fallback={<LoadingState label="Loading…" />}>
           <LlmSettings onBack={back} />
         </Suspense>
-      </main>
+      </AppShell>
     );
   }
 
   if (page === "general-settings") {
     return (
-      <main className="tf-card" tabIndex={0}>
-        {header}
-        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+      <AppShell header={header}>
+        <Suspense fallback={<LoadingState label="Loading…" />}>
           <GeneralSettings onBack={back} />
         </Suspense>
-      </main>
+      </AppShell>
     );
   }
 
   if (page === "troubleshooting") {
     return (
-      <main className="tf-card" tabIndex={0}>
-        {header}
-        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+      <AppShell header={header}>
+        <Suspense fallback={<LoadingState label="Loading…" />}>
           <DebuggingPanel onBack={back} coverage={null} />
         </Suspense>
-      </main>
+      </AppShell>
     );
   }
 
   if (page === "profile") {
     return (
-      <main className="tf-card" tabIndex={0}>
-        {header}
-        <Suspense fallback={<div role="status">Loading profile editorâ€¦</div>}>
+      <AppShell header={header}>
+        <Suspense fallback={<LoadingState label="Loading profile editor…" />}>
           <Profile onBack={leaveProfileEditor} />
         </Suspense>
-      </main>
+      </AppShell>
     );
   }
 
@@ -383,23 +383,21 @@ function DashboardWithoutProfile({
    */
   if (page === "semantic-style") {
     return (
-      <main className="tf-card" tabIndex={0}>
-        {header}
-        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+      <AppShell header={header}>
+        <Suspense fallback={<LoadingState label="Loading…" />}>
           <SemanticStyle
             onBack={() => navigate("semantic-review")}
             onOpenSettings={() => navigate("llm-settings")}
           />
         </Suspense>
-      </main>
+      </AppShell>
     );
   }
 
   if (page === "semantic-review") {
     return (
-      <main className="tf-card" tabIndex={0}>
-        {header}
-        <Suspense fallback={<div role="status">Loading</div>}>
+      <AppShell header={header}>
+        <Suspense fallback={<LoadingState label="Loading" />}>
           <SemanticReview
             /*
              * To Deterministic Review, not to the shared `back`.
@@ -418,7 +416,7 @@ function DashboardWithoutProfile({
             onSession={() => undefined}
           />
         </Suspense>
-      </main>
+      </AppShell>
     );
   }
 
@@ -437,19 +435,17 @@ function DashboardWithoutProfile({
    */
   if (page === "review") {
     return (
-      <main className="tf-card" tabIndex={0}>
-        {header}
-        <Suspense fallback={<div role="status">Loading</div>}>
+      <AppShell header={header}>
+        <Suspense fallback={<LoadingState label="Loading" />}>
           <ReviewWithoutProfile onBack={back} onOpenProfile={() => navigate("profile")} />
         </Suspense>
-      </main>
+      </AppShell>
     );
   }
   if (page === "consistency") {
     return (
-      <main className="tf-card" tabIndex={0}>
-        {header}
-        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+      <AppShell header={header}>
+        <Suspense fallback={<LoadingState label="Loading…" />}>
           <ConsistencyReview
             onBack={back}
             onOpenSettings={() => navigate("llm-settings")}
@@ -457,28 +453,41 @@ function DashboardWithoutProfile({
             onResult={() => undefined}
           />
         </Suspense>
-      </main>
+      </AppShell>
     );
   }
 
   if (page === "governance-policy") {
     return (
-      <main className="tf-card" tabIndex={0}>
-        {header}
-        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+      <AppShell header={header}>
+        <Suspense fallback={<LoadingState label="Loading…" />}>
           <GovernancePolicy onBack={back} />
         </Suspense>
-      </main>
+      </AppShell>
     );
   }
 
   return (
-    <main className="tf-card" tabIndex={0}>
-      {header}
-      <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
-        <Home setup={status} onNavigate={navigate} onProfileCreated={onProfileCreated} />
+    <AppShell header={header}>
+      <Suspense fallback={<LoadingState label="Loading…" />}>
+        <Home
+          state={{
+            setup: status,
+            deterministic: null,
+            semantic: null,
+            consistency: null,
+            activeDeterministicProfile: null,
+            activeSemanticProfile: selectActiveProfile(persisted, "semantic")
+              ? {
+                  name: selectActiveProfile(persisted, "semantic")!.name,
+                  revision: selectActiveProfile(persisted, "semantic")!.revision,
+                }
+              : null,
+          }}
+          onNavigate={navigate}
+        />
       </Suspense>
-    </main>
+    </AppShell>
   );
 }
 
@@ -505,9 +514,7 @@ function DashboardWithProfile({
    */
   const autoScan = persisted.settings.autoScan;
   const activeGovernanceProfile = resolveGovernanceProfile(persisted, activeProfile);
-  const [page, setPage] = useState<DashboardPage>(
-    initialPage === "landing" ? "review" : initialPage,
-  );
+  const [page, setPage] = useState<DashboardPage>(initialPage);
   /*
    * Open by default, and opened *for* the user when findings arrive.
    *
@@ -684,7 +691,12 @@ function DashboardWithProfile({
    * answered "not established", and the state had to survive being observed.
    */
   useEffect(() => {
-    if (page === "semantic-review" || page === "semantic-style" || page === "troubleshooting") {
+    if (
+      page === "semantic-review" ||
+      page === "semantic-style" ||
+      page === "troubleshooting" ||
+      page === "landing"
+    ) {
       return;
     }
     setSemanticReviewStatus(null);
@@ -1482,14 +1494,17 @@ function DashboardWithProfile({
   ) {
     const back = () => navigate("review");
     return (
-      <main className="tf-card" tabIndex={0}>
-        <TaskPaneHeader
-          activePage={page}
-          profileName={activeProfile.name}
-          profileRevision={activeProfile.revision}
-          onNavigate={navigate}
-        />
-        <Suspense fallback={<div role="status">Loadingâ€¦</div>}>
+      <AppShell
+        header={
+          <TaskPaneHeader
+            activePage={page}
+            profileName={activeProfile.name}
+            profileRevision={activeProfile.revision}
+            onNavigate={navigate}
+          />
+        }
+      >
+        <Suspense fallback={<LoadingState label="Loading…" />}>
           {page === "llm-settings" ? (
             <LlmSettings onBack={back} />
           ) : page === "general-settings" ? (
@@ -1572,7 +1587,42 @@ function DashboardWithProfile({
             />
           )}
         </Suspense>
-      </main>
+      </AppShell>
+    );
+  }
+
+  if (page === "landing") {
+    const homeState: HomeState = {
+      setup: setupStatusFromState(persisted),
+      deterministic: status,
+      semantic: semanticReviewStatus,
+      consistency: consistencyResult,
+      activeDeterministicProfile: {
+        name: activeProfile.name,
+        revision: activeProfile.revision,
+      },
+      activeSemanticProfile: selectActiveProfile(persisted, "semantic")
+        ? {
+            name: selectActiveProfile(persisted, "semantic")!.name,
+            revision: selectActiveProfile(persisted, "semantic")!.revision,
+          }
+        : null,
+    };
+    return (
+      <AppShell
+        header={
+          <TaskPaneHeader
+            activePage="landing"
+            profileName={activeProfile.name}
+            profileRevision={activeProfile.revision}
+            onNavigate={navigate}
+          />
+        }
+      >
+        <Suspense fallback={<LoadingState label="Loading…" />}>
+          <Home state={homeState} onNavigate={navigate} />
+        </Suspense>
+      </AppShell>
     );
   }
 
@@ -1704,41 +1754,30 @@ function DashboardWithProfile({
     changes: pendingPlan?.plan.changes ?? [],
   });
   return (
-    <main className="tf-card" tabIndex={0}>
-      {/* `page`, not a literal: the header reports the destination the user is
-          actually on. Hardcoding "home" here left "Deterministic Review"
-          highlighted while the AI Review page was open. */}
-      <TaskPaneHeader
-        activePage={page}
-        profileName={activeProfile.name}
-        profileRevision={activeProfile.revision}
-        onNavigate={navigate}
-        // Only where an observer is actually running. On the pages that have
-        // none, a "Last scan" reading the profile's own revision would be a
-        // claim about a scan that never happened.
-        lastScan={status === null ? undefined : (status.lastScan ?? null)}
-      />
-
-      {/*
-        The pane's only live region. Every message the Dashboard shows elsewhere
-        is also spoken from here, so the visible surfaces below are plain text:
-        two live regions updating in one tick is how a screen reader ends up
-        reading a scan result and an apply refusal in the wrong order.
-      */}
-      <p className="sr-only" role="status" aria-live="polite">
-        {announcement.message}
-      </p>
-
+    <AppShell
+      header={
+        <TaskPaneHeader
+          activePage={page}
+          profileName={activeProfile.name}
+          profileRevision={activeProfile.revision}
+          onNavigate={navigate}
+          // Only where an observer is actually running. On the pages that have
+          // none, a "Last scan" reading the profile's own revision would be a
+          // claim about a scan that never happened.
+          lastScan={status === null ? undefined : (status.lastScan ?? null)}
+        />
+      }
+      announcement={announcement.message ?? undefined}
+    >
       {page === "review" && findingsOpen && (
         <section className="tf-collapsible" aria-label="Findings section">
-          <button
-            type="button"
-            className="tf-native-button tf-collapsible-header"
+          <Button
+            appearance="subtle"
             onClick={() => setFindingsOpen((open) => !open)}
             aria-expanded={findingsOpen}
           >
             Findings <span>{findings.length}</span>
-          </button>
+          </Button>
           {findingsOpen && (
             <>
               {/*
@@ -1837,14 +1876,9 @@ function DashboardWithProfile({
         </section>
       )}
       {page === "review" && !findingsOpen && (
-        <button
-          type="button"
-          className="tf-native-button tf-collapsible-header"
-          onClick={() => setFindingsOpen(true)}
-          aria-expanded={false}
-        >
+        <Button appearance="subtle" onClick={() => setFindingsOpen(true)} aria-expanded={false}>
           Findings <span>{findings.length}</span>
-        </button>
+        </Button>
       )}
       {/*
        * The rest of the review page, in the order the work is done: findings,
@@ -1881,13 +1915,7 @@ function DashboardWithProfile({
             >
               {hostReadiness.message}{" "}
               {hostReadiness.verdict === "blocked" && (
-                <button
-                  className="tf-native-button"
-                  type="button"
-                  onClick={() => setPage("general-settings")}
-                >
-                  Open General Settings
-                </button>
+                <Button onClick={() => setPage("general-settings")}>Open General Settings</Button>
               )}
             </p>
           )}
@@ -1988,35 +2016,20 @@ function DashboardWithProfile({
             what "all" meant. One Apply, in the section that lists what it will
             do, is the only version a user can read before pressing it.
           */}
-          <button
-            className="tf-native-button"
-            type="button"
-            onClick={rescanNow}
-            disabled={status?.phase === "scanning"}
-          >
+          <Button onClick={rescanNow} disabled={status?.phase === "scanning"}>
             {status?.phase === "scanning" ? "Re-scanningâ€¦" : "Re-scan now"}
-          </button>
+          </Button>
         </div>
       )}
       {page === "review" && !pendingOpen ? (
-        <button
-          type="button"
-          className="tf-native-button tf-collapsible-header"
-          onClick={() => setPendingOpen(true)}
-          aria-expanded={false}
-        >
+        <Button appearance="subtle" onClick={() => setPendingOpen(true)} aria-expanded={false}>
           Pending changes <span>{totalPlannedChanges}</span>
-        </button>
+        </Button>
       ) : (
         <section className="tf-collapsible" aria-label="Pending changes section">
-          <button
-            type="button"
-            className="tf-native-button tf-collapsible-header"
-            onClick={() => setPendingOpen(false)}
-            aria-expanded
-          >
+          <Button appearance="subtle" onClick={() => setPendingOpen(false)} aria-expanded>
             Pending changes <span>{totalPlannedChanges}</span>
-          </button>
+          </Button>
           <PendingChanges
             plan={pendingPlan?.plan ?? null}
             emptyReason={pendingEmptyReason}
@@ -2059,6 +2072,6 @@ function DashboardWithProfile({
           {applyMessage && <p className="tf-readiness">{applyMessage}</p>}
         </section>
       )}
-    </main>
+    </AppShell>
   );
 }

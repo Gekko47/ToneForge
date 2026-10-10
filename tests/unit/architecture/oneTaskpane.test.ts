@@ -219,10 +219,20 @@ describe("one task pane for the whole add-in", () => {
     expect(extension).toBeDefined();
     if (extension === undefined) return;
 
+    // ADR-0134: pane-only commands are executeFunction in JSON (so they have a
+    // runtime action) but ShowTaskpane in XML (the fallback manifest navigates
+    // directly). They are deliberately absent from the XML FunctionName list.
+    const paneOnlyCommands = new Set([
+      "ToneForgeGovernancePolicy",
+      "ToneForgePendingChanges",
+      "ToneForgeTroubleshooting",
+    ]);
+
     const jsonExecuteFunctions = extension.runtimes
       .flatMap((runtime) => runtime.actions)
       .filter((action) => action.type === "executeFunction")
-      .map((action) => action.id);
+      .map((action) => action.id)
+      .filter((id) => !paneOnlyCommands.has(id));
     const xmlFunctions = new Set(
       [...xml.matchAll(/<FunctionName>(\w+)<\/FunctionName>/g)].map((match) => match[1] as string),
     );

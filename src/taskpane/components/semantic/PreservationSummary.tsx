@@ -1,4 +1,5 @@
 import React from "react";
+import { Checkbox } from "@fluentui/react-components";
 import type { PreservationReport } from "../../../analysis/semantic/preservationValidator";
 import type { MeaningPreservationAssessment } from "../../../analysis/semantic/contracts";
 
@@ -46,7 +47,7 @@ export default function PreservationSummary({
   ).filter((key) => meaning[key] === false);
 
   return (
-    <section aria-labelledby="tf-semantic-preservation" className="tf-card">
+    <section aria-labelledby="tf-semantic-preservation">
       <h2 id="tf-semantic-preservation">What this revision changes</h2>
 
       {report.warnings.length === 0 ? (
@@ -75,16 +76,12 @@ export default function PreservationSummary({
 
       {hard.length === 0 && soft.length > 0 && (
         <div>
-          <label htmlFor="tf-semantic-acknowledge">
-            <input
-              className="tf-native"
-              id="tf-semantic-acknowledge"
-              type="checkbox"
-              checked={acknowledged}
-              onChange={(event) => onAcknowledge(event.target.checked)}
-            />
-            I have read the differences above and want to apply this revision anyway.
-          </label>
+          <Checkbox
+            id="tf-semantic-acknowledge"
+            checked={acknowledged}
+            onChange={(_event, data) => onAcknowledge(data.checked === true)}
+            label="I have read the differences above and want to apply this revision anyway."
+          />
         </div>
       )}
 

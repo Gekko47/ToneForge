@@ -49,7 +49,7 @@ export default function SemanticAssessmentView({
   assessment,
 }: SemanticAssessmentViewProps): React.ReactNode {
   return (
-    <section aria-labelledby="tf-semantic-assessment" className="tf-card">
+    <section aria-labelledby="tf-semantic-assessment">
       <h2 id="tf-semantic-assessment">How this reads against your style</h2>
       <p className="tf-sub">{assessment.summary}</p>
       <dl className="tf-assessment-list">

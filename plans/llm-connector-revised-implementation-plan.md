@@ -283,7 +283,7 @@ flowchart TD
 ## 7. Modern Fluent settings dashboard
 
 Target stack: **Fluent UI v8** (`@fluentui/react` ^8.120.0) with the existing
-[`createDefaultTheme()`](src/taskpane/fluentTheme.ts:21) inverted/light themes. Reuse
+[`createDefaultTheme()`](src/taskpane/theme/toneForgeTheme.ts:21) inverted/light themes. Reuse
 [`SettingsSectionCard`](src/taskpane/components/SettingsSectionCard.tsx:1) rather than inventing
 a card primitive.
 

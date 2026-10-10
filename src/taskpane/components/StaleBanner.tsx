@@ -8,6 +8,13 @@
  */
 
 import React from "react";
+import {
+  Button,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
+  MessageBarTitle,
+} from "@fluentui/react-components";
 
 export interface StaleBannerProps {
   stale: boolean;
@@ -31,21 +38,14 @@ export default function StaleBanner({
     : "The document has changed since the last scan. Re-scan to get current findings.";
 
   return (
-    <section
-      aria-label={hostUnavailable ? "Word unavailable" : "Stale findings"}
-      className="tf-banner tf-banner-warning"
-    >
-      <h3 className="tf-banner-heading">{heading}</h3>
-      <p>{body}</p>
-      {/*
-        No scan time here. It moved to the pane header, which is on screen in
-        every state rather than only in this one, so the banner no longer has to
-        restate it to be self-explanatory — and two copies of a timestamp that
-        disagree after a rescan is worse than one.
-      */}
-      <button className="tf-native-button" type="button" onClick={onRescan}>
-        {hostUnavailable ? "Scan again" : "Re-scan now"}
-      </button>
-    </section>
+    <MessageBar intent="warning">
+      <MessageBarBody>
+        <MessageBarTitle>{heading}</MessageBarTitle>
+        {body}
+      </MessageBarBody>
+      <MessageBarActions>
+        <Button onClick={onRescan}>{hostUnavailable ? "Scan again" : "Re-scan now"}</Button>
+      </MessageBarActions>
+    </MessageBar>
   );
 }

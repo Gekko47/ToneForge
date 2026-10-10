@@ -110,6 +110,27 @@ describe("DebuggingPanel", () => {
     expect(container.querySelectorAll('[aria-live="polite"], [role="status"]')).toHaveLength(1);
   });
 
+  it("copies the diagnostics and confirms through the one live region", async () => {
+    // The confirmation reuses the panel's single live region rather than a
+    // toaster: the Fluent Toaster renders its own `aria-live` region, and a
+    // second one on this page is the defect the guard above exists to catch.
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    mocks.prepareReformatHost.mockResolvedValue({ supportsRevisions: true });
+    const { container } = render(<DebuggingPanel onBack={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /probe word capabilities/i }));
+    await waitFor(() => expect(container.querySelectorAll("pre")).toHaveLength(1));
+
+    await userEvent.click(screen.getByRole("button", { name: /copy diagnostics/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("status")).toHaveTextContent(/diagnostics copied to the clipboard/i);
+    expect(container.querySelectorAll('[aria-live="polite"], [role="status"]')).toHaveLength(1);
+  });
+
   it("announces the diagnostic that ran last, not the first one to leave output", async () => {
     /*
      * Both output blocks persist, so deciding the announcement from "is there

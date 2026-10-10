@@ -1,5 +1,6 @@
 import React from "react";
 import AiReviewSection, { type AiReviewStage } from "../components/AiReviewSection";
+import { Breadcrumb } from "../shell";
 import { getStructuredSnapshot } from "../../word/documentReader";
 import { loadState } from "../../core/state/persistence";
 import {
@@ -220,12 +221,8 @@ export default function ConsistencyReview({
   }
 
   return (
-    <div className="tf-card" data-page="consistency">
-      <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button className="tf-native-button" type="button" onClick={onBack}>
-          Back to Deterministic Review
-        </button>
-      </nav>
+    <div data-page="consistency">
+      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
       <AiReviewSection
         stage={stage}
         // The same check Settings and the setup status use. Reading the base URL

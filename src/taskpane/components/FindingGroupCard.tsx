@@ -35,6 +35,7 @@
  */
 
 import React from "react";
+import { Button } from "@fluentui/react-components";
 import type { DeterministicFindingGroup } from "../../analysis/deterministic/contracts";
 import { describeGroup, undecidedIn } from "../findingGroups";
 import type { Finding } from "../../core/domain/Finding";
@@ -131,32 +132,24 @@ export default function FindingGroupCard({
           reason is rendered as visible text too — a disabled control whose only
           explanation is inside an ARIA attribute is silent for everyone else.
         */}
-        <button
-          className="tf-native-button"
-          type="button"
+        <Button
           onClick={() => onApproveAll?.(group)}
           disabled={!approve.enabled || onApproveAll === undefined}
           aria-describedby={approve.enabled ? undefined : refusalId}
         >
           {approve.label}
-        </button>
-        <button
-          className="tf-native-button"
-          type="button"
-          onClick={() => onSkipAll?.(group)}
-          disabled={onSkipAll === undefined}
-        >
+        </Button>
+        <Button onClick={() => onSkipAll?.(group)} disabled={onSkipAll === undefined}>
           Decline all
-        </button>
-        <button
-          type="button"
-          className="tf-native-button tf-collapsible-header"
+        </Button>
+        <Button
+          appearance="subtle"
           onClick={() => setExpanded((open) => !open)}
           aria-expanded={expanded}
           aria-controls={`finding-group-body-${group.id}`}
         >
           {expanded ? "Hide occurrences" : `Show ${findings.length} occurrence(s)`}
-        </button>
+        </Button>
         {!approve.enabled && (
           <span id={refusalId} className="tf-sub">
             {group.batchRefusalReason ??

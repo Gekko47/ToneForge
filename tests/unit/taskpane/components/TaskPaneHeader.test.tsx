@@ -207,7 +207,7 @@ describe("TaskPaneHeader", () => {
       );
     });
 
-    it("puts them next to each other rather than among the policy pages", async () => {
+    it("groups the three review modes together and the two styles together", async () => {
       const user = userEvent.setup();
       render(
         <TaskPaneHeader
@@ -219,16 +219,66 @@ describe("TaskPaneHeader", () => {
       );
 
       await user.click(screen.getByRole("button", { name: "Open navigation" }));
-      const labels = within(screen.getByRole("navigation", { name: "Task pane navigation" }))
-        .getAllByRole("button")
-        .map((button) => button.textContent);
+      const navigation = screen.getByRole("navigation", { name: "Task pane navigation" });
 
+      // The unified IA (spec §6.1): the three review modes are primary and sit
+      // under Review; the two style editors are secondary and sit under Styles.
       // The style editor used to sit with the policy pages, which is where
-      // nobody found it. It belongs beside the review it feeds.
-      const review = labels.indexOf("Semantic Review");
-      const style = labels.indexOf("Semantic Style");
-      expect(review).toBeGreaterThanOrEqual(0);
-      expect(style).toBe(review + 1);
+      // nobody found it.
+      const reviewGroup = within(navigation).getByRole("group", { name: "Review" });
+      expect(
+        within(reviewGroup).getByRole("button", { name: "Deterministic Review" }),
+      ).toBeInTheDocument();
+      expect(
+        within(reviewGroup).getByRole("button", { name: "Semantic Review" }),
+      ).toBeInTheDocument();
+      expect(
+        within(reviewGroup).getByRole("button", { name: "Consistency Review" }),
+      ).toBeInTheDocument();
+
+      const stylesGroup = within(navigation).getByRole("group", { name: "Styles" });
+      expect(
+        within(stylesGroup).getByRole("button", { name: "Deterministic Style" }),
+      ).toBeInTheDocument();
+      expect(
+        within(stylesGroup).getByRole("button", { name: "Semantic Style" }),
+      ).toBeInTheDocument();
+    });
+
+    it("renames the two routes the unified UX renamed, and keeps the keys stable", async () => {
+      const user = userEvent.setup();
+      const onNavigate = vi.fn();
+      render(
+        <TaskPaneHeader
+          activePage="review"
+          profileName="Corporate editorial"
+          profileRevision={7}
+          onNavigate={onNavigate}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Open navigation" }));
+      const navigation = screen.getByRole("navigation", { name: "Task pane navigation" });
+
+      // The label changed; the key did not, so the ribbon arrival mapping and
+      // the persisted page keep working (ADR-0131).
+      expect(
+        within(navigation).queryByRole("button", { name: "Deterministic Style Profile" }),
+      ).toBeNull();
+      expect(within(navigation).queryByRole("button", { name: "Governance Policy" })).toBeNull();
+
+      await user.click(within(navigation).getByRole("button", { name: "Deterministic Style" }));
+      expect(onNavigate).toHaveBeenCalledWith("profile");
+      await user.click(screen.getByRole("button", { name: "Open navigation" }));
+      await user.click(
+        within(screen.getByRole("navigation", { name: "Task pane navigation" })).getByRole(
+          "button",
+          {
+            name: "Governance",
+          },
+        ),
+      );
+      expect(onNavigate).toHaveBeenCalledWith("governance-policy");
     });
 
     it("no longer offers the single 'Semantic' page the split replaced", async () => {

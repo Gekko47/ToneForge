@@ -1,4 +1,5 @@
-import { MessageBar, MessageBarType } from "@fluentui/react";
+import { MessageBar } from "@fluentui/react-components";
+import { Button } from "@fluentui/react-components";
 import React, { useId, useState } from "react";
 import { toRevisionsCsv } from "../../changes/exportAdapter";
 import type { Change } from "../../core/domain/Change";
@@ -65,15 +66,13 @@ export default function ExportChangesButton({
 
   return (
     <div className="tf-export">
-      <button
-        className="tf-native-button"
-        type="button"
+      <Button
         onClick={download}
         disabled={disabled}
         aria-describedby={blocked ? statusId : undefined}
       >
         Export changes as CSV
-      </button>
+      </Button>
       {blocked && (
         <p id={statusId} className="tf-sub" role="status" aria-live="polite">
           Export is unavailable until analysis coverage is complete. Unsupported:{" "}
@@ -82,12 +81,12 @@ export default function ExportChangesButton({
         </p>
       )}
       {status !== null && (
-        <MessageBar messageBarType={MessageBarType.success} role="status" aria-live="polite">
+        <MessageBar intent="success" role="status" aria-live="polite">
           {status}
         </MessageBar>
       )}
       {error !== null && (
-        <MessageBar messageBarType={MessageBarType.error} role="alert">
+        <MessageBar intent="error" role="alert">
           {error}
         </MessageBar>
       )}

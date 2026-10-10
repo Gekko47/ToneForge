@@ -63,29 +63,31 @@ describe("command entry points", () => {
       })),
     ).toEqual([
       {
+        // Relabelled in P10 to the Home command-centre vocabulary (spec §44).
+        // The id and destination are unchanged; only the user-visible label moved.
         id: "ToneForgeScan",
-        label: "Scan Now",
+        label: "Run review",
         jsonAction: "executeFunction",
         xmlAction: "ExecuteFunction",
         navigationTarget: "review",
       },
       {
         id: "ToneForgeFindings",
-        label: "Findings",
+        label: "Review issues",
         jsonAction: "executeFunction",
         xmlAction: "ExecuteFunction",
         navigationTarget: "findings",
       },
       {
         id: "ToneForgeReview",
-        label: "Review for Consistency",
+        label: "Consistency Check",
         jsonAction: "executeFunction",
         xmlAction: "ExecuteFunction",
         navigationTarget: "ai-review",
       },
       {
         id: "ToneForgeProfile",
-        label: "Style Profile",
+        label: "Manage style",
         jsonAction: "executeFunction",
         xmlAction: "ExecuteFunction",
         navigationTarget: "profile",

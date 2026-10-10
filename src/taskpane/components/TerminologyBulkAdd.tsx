@@ -24,6 +24,7 @@
  */
 
 import React from "react";
+import { Button, Textarea } from "@fluentui/react-components";
 
 import { buildBulkRules, planBulkTerms, type BulkTermOutcome } from "../terminologyRows";
 import { parseTerminology, TERMINOLOGY_NOUNS } from "../settings/terminologyText";
@@ -100,13 +101,12 @@ export default function TerminologyBulkAdd({
       <div className="tf-bulk-add-body">
         <label className="tf-field">
           <span id={`${id}-label`}>Paste terms, one per line</span>
-          <textarea
-            className="tf-native"
+          <Textarea
             rows={4}
             aria-describedby={`${id}-hint ${id}-summary`}
             placeholder={`colour: color\nprioritise: prioritize`}
             value={pasted}
-            onChange={(event) => setPasted(event.target.value)}
+            onChange={(_event, data) => setPasted(data.value)}
           />
         </label>
         <p className="tf-sub" id={`${id}-hint`}>
@@ -134,14 +134,9 @@ export default function TerminologyBulkAdd({
             ))}
           </ul>
         )}
-        <button
-          type="button"
-          className="tf-native-button"
-          onClick={apply}
-          disabled={!canApply || parse.error !== null}
-        >
+        <Button onClick={apply} disabled={!canApply || parse.error !== null}>
           {plan.added.length === 1 ? "Add 1 term" : `Add ${plan.added.length} terms`}
-        </button>
+        </Button>
       </div>
     </details>
   );

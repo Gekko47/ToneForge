@@ -12,7 +12,7 @@
  */
 
 import React from "react";
-import { Toggle } from "@fluentui/react";
+import { Switch } from "@fluentui/react-components";
 import { loadState, saveState } from "../../core/state/persistence";
 import {
   INITIAL_SECTION_STATUS,
@@ -58,13 +58,11 @@ export default function ScanningSettingsSection(): React.ReactNode {
         setStatus(INITIAL_SECTION_STATUS);
       }}
     >
-      <Toggle
+      <Switch
         label="Scan automatically as the document changes"
         checked={draft}
-        onText="On"
-        offText="Off"
-        onChange={(_event, checked) => {
-          setDraft(checked ?? false);
+        onChange={(_event, data) => {
+          setDraft(data.checked);
           setStatus(markDirty());
         }}
       />

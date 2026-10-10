@@ -154,7 +154,7 @@ describe("settings.autoScan", () => {
   it("starts the observer and subscribes to paragraph events when auto-scan is on", () => {
     mocks.loadState.mockReturnValue(stateWithProfile(true));
 
-    render(<Dashboard />);
+    render(<Dashboard initialPage="review" />);
 
     expect(mocks.startParagraphEvents).toHaveBeenCalled();
   });
@@ -163,7 +163,7 @@ describe("settings.autoScan", () => {
     // The stored intention the user set in Settings, honoured.
     mocks.loadState.mockReturnValue(stateWithProfile(false));
 
-    render(<Dashboard />);
+    render(<Dashboard initialPage="review" />);
 
     expect(mocks.startParagraphEvents).not.toHaveBeenCalled();
   });
@@ -173,7 +173,7 @@ describe("settings.autoScan", () => {
     // would remove the only way to get a findings list at all.
     mocks.loadState.mockReturnValue(stateWithProfile(false));
 
-    render(<Dashboard />);
+    render(<Dashboard initialPage="review" />);
 
     expect(screen.getByRole("button", { name: "Re-scan now" })).toBeEnabled();
   });
@@ -195,7 +195,7 @@ describe("the whole-document action row", () => {
      * thing. Two controls, two different meanings of "all", and the one outside
      * the list applied changes the user had not been shown.
      */
-    render(<Dashboard />);
+    render(<Dashboard initialPage="review" />);
 
     expect(screen.queryByRole("button", { name: /apply all/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Re-scan now" })).toBeEnabled();
@@ -208,7 +208,7 @@ describe("the whole-document action row", () => {
      * follow-up the previous plan just sat there describing text that no longer
      * existed, which is what "pending changes stopped updating" looked like.
      */
-    render(<Dashboard />);
+    render(<Dashboard initialPage="review" />);
     const before = mocks.createDocumentObserver.mock.results.length;
     const emit = mocks.emitStatus;
     expect(emit).not.toBeNull();
@@ -260,7 +260,7 @@ describe("the whole-document action row", () => {
      * why three states exist at all — "no preview" and "nothing reviewed" are
      * different facts and the user does something different about each.
      */
-    render(<Dashboard />);
+    render(<Dashboard initialPage="review" />);
     await userEvent.click(screen.getByRole("button", { name: /Pending changes/ }));
 
     expect(screen.getByText(/no preview has been built/i)).toBeInTheDocument();
@@ -278,7 +278,7 @@ describe("the whole-document action row", () => {
      * ordering rather than the behaviour: what matters is that pressing the
      * button makes the pane ask its observer for a scan.
      */
-    render(<Dashboard />);
+    render(<Dashboard initialPage="review" />);
     const before = mocks.createDocumentObserver.mock.results.length;
     await user.click(screen.getByRole("button", { name: "Re-scan now" }));
 
@@ -303,7 +303,7 @@ describe("the whole-document action row", () => {
       governancePolicyRevision: 1,
       coverageFingerprint: "coverage-1",
     };
-    render(<Dashboard />);
+    render(<Dashboard initialPage="review" />);
     const emit = mocks.emitStatus;
     expect(emit).not.toBeNull();
 

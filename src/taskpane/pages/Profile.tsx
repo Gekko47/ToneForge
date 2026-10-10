@@ -1,5 +1,6 @@
 import React from "react";
 import ProfileEditor from "../components/ProfileEditor";
+import { Breadcrumb } from "../shell";
 import ProfileRecordSection from "../components/ProfileRecordSection";
 import { readActiveGovernanceContext } from "../activeGovernance";
 import { saveProfileRecord } from "../../core/state/persistence";
@@ -49,12 +50,8 @@ export default function Profile({ onBack, capabilities = null }: ProfileProps): 
   }
 
   return (
-    <div className="tf-card" data-page="profile">
-      <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button className="tf-native-button" type="button" onClick={onBack}>
-          Back to Deterministic Review
-        </button>
-      </nav>
+    <div data-page="profile">
+      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
       <h1 className="tf-title">Deterministic Style Profile</h1>
       <p className="tf-sub">
         The rules ToneForge checks deterministically: typography and house style. Semantic style and

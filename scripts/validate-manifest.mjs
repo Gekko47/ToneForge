@@ -222,17 +222,31 @@ function validateCommandParity(manifest, xml, definitions, errors) {
   const actions = flattenJsonActions(manifest);
 
   for (const definition of definitions) {
+    /*
+     * A pane-only command is registered and wired but deliberately absent from
+     * the ribbon. Spec §42 keeps troubleshooting, governance and internal
+     * commands as secondary administration reached from the task pane, so the
+     * ribbon carries only the four product groups. Such a command still needs
+     * its runtime action — that is what keeps it reachable and its handler
+     * exercised — but it must NOT have a ribbon control, or the ribbon grows a
+     * group the product architecture does not have.
+     */
+    const paneOnly = definition.paneOnly === true;
     const control = [...controls.values()].find(
       (candidate) => candidate.actionId === definition.id,
     );
-    if (!control) {
-      errors.push(`manifest.json is missing ribbon control for command: ${definition.id}`);
-    } else {
-      if (control.label !== definition.label) {
+    if (paneOnly) {
+      if (control) {
         errors.push(
-          `manifest.json label mismatch for ${definition.id}: expected "${definition.label}", got "${control.label}"`,
+          `manifest.json exposes a ribbon control for pane-only command: ${definition.id}`,
         );
       }
+    } else if (!control) {
+      errors.push(`manifest.json is missing ribbon control for command: ${definition.id}`);
+    } else if (control.label !== definition.label) {
+      errors.push(
+        `manifest.json label mismatch for ${definition.id}: expected "${definition.label}", got "${control.label}"`,
+      );
     }
 
     const action = actions.get(definition.id);
@@ -248,6 +262,9 @@ function validateCommandParity(manifest, xml, definitions, errors) {
         errors.push(`${definition.id} must belong to CommandsRuntime, got ${action.runtimeId}`);
       }
     }
+
+    // A pane-only command has no ribbon control to check on either side.
+    if (paneOnly) continue;
 
     /*
      * Looked up by either the command id or the JSON control's own id, because

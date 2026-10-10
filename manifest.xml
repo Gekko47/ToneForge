@@ -177,7 +177,55 @@
                 </Control>
               </Group>
               <Group id="ToneForgeAIReviewGroup">
-                <Label resid="ToneForge.AIReviewGroupLabel" />
+                <Label resid="ToneForge.SemanticGroupLabel" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Control xsi:type="Button" id="ToneForgeSemanticControl">
+                  <Label resid="ToneForge.SemanticLabel" />
+                  <Supertip>
+                    <Title resid="ToneForge.SemanticLabel" />
+                    <Description resid="ToneForge.SemanticDesc" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <!--
+  Runs a function, not a ShowTaskpane action, so that this control and the
+  context-menu control address the SAME task pane. Two identities (this one
+  and the openPage default) made Word open a second blank pane beside the
+  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
+-->
+<Action xsi:type="ExecuteFunction">
+  <FunctionName>ToneForgeSemantic</FunctionName>
+</Action>
+                  <Enabled>false</Enabled>
+                </Control>
+              </Group>
+              <!--
+                The group and control ids below are the ones `syncSemanticRibbon`
+                addresses at runtime. They must match `SEMANTIC_RIBBON_GROUP` and
+                `SEMANTIC_RIBBON_CONTROL` in src/commands/ribbonState.ts exactly, or
+                the enable request targets a control the host does not have and the
+                button stays greyed out with nothing to explain why.
+
+                The group id is `ToneForgeProfileGroup`, not `ToneForgeProfile`.
+                Word requires every UI element id on a ribbon surface to be unique
+                across the whole surface, and this group contains a control called
+                `ToneForgeProfile`. Sharing the name made Word reject the entire
+                manifest with "Duplicate UI element id specified" and show only
+                "This add-in is no longer available" — the whole ribbon disappeared
+                over a two-word collision, and `npm run validate` was green
+                throughout because the parity check only compares the two manifests
+                against each other. Every other group here ends in `Group`; this
+                one now does too.
+              -->
+              <Group id="ToneForgeProfileGroup">
+                <Label resid="ToneForge.ConsistencyGroupLabel" />
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16" />
                   <bt:Image size="32" resid="Icon.32x32" />
@@ -205,26 +253,8 @@
 </Action>
                 </Control>
               </Group>
-              <!--
-                The group and control ids below are the ones `syncSemanticRibbon`
-                addresses at runtime. They must match `SEMANTIC_RIBBON_GROUP` and
-                `SEMANTIC_RIBBON_CONTROL` in src/commands/ribbonState.ts exactly, or
-                the enable request targets a control the host does not have and the
-                button stays greyed out with nothing to explain why.
-
-                The group id is `ToneForgeProfileGroup`, not `ToneForgeProfile`.
-                Word requires every UI element id on a ribbon surface to be unique
-                across the whole surface, and this group contains a control called
-                `ToneForgeProfile`. Sharing the name made Word reject the entire
-                manifest with "Duplicate UI element id specified" and show only
-                "This add-in is no longer available" — the whole ribbon disappeared
-                over a two-word collision, and `npm run validate` was green
-                throughout because the parity check only compares the two manifests
-                against each other. Every other group here ends in `Group`; this
-                one now does too.
-              -->
-              <Group id="ToneForgeProfileGroup">
-                <Label resid="ToneForge.ProfileGroupLabel" />
+              <Group id="ToneForgeChangesGroup">
+                <Label resid="ToneForge.StylesGroupLabel" />
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16" />
                   <bt:Image size="32" resid="Icon.32x32" />
@@ -249,106 +279,6 @@
 -->
 <Action xsi:type="ExecuteFunction">
   <FunctionName>ToneForgeProfile</FunctionName>
-</Action>
-                </Control>
-                <Control xsi:type="Button" id="ToneForgeGovernancePolicy">
-                  <Label resid="ToneForge.GovernancePolicyLabel" />
-                  <Supertip>
-                    <Title resid="ToneForge.GovernancePolicyLabel" />
-                    <Description resid="ToneForge.GovernancePolicyDesc" />
-                  </Supertip>
-                  <Icon>
-                    <bt:Image size="16" resid="Icon.16x16" />
-                    <bt:Image size="32" resid="Icon.32x32" />
-                    <bt:Image size="80" resid="Icon.80x80" />
-                  </Icon>
-                  <!--
-  Runs a function, not a ShowTaskpane action, so that this control and the
-  context-menu control address the SAME task pane. Two identities (this one
-  and the openPage default) made Word open a second blank pane beside the
-  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
--->
-<Action xsi:type="ExecuteFunction">
-  <FunctionName>ToneForgeGovernancePolicy</FunctionName>
-</Action>
-                </Control>
-                <!--
-                  Disabled here and enabled only by `syncSemanticRibbon`. A semantic
-                  review is meaningless without a semantic profile: the prompt sends
-                  the profile, so with none there is nothing to send. `Enabled`
-                  follows `Action` because that is the order the Button schema
-                  declares.
-                -->
-                <Control xsi:type="Button" id="ToneForgeSemanticControl">
-                  <Label resid="ToneForge.SemanticLabel" />
-                  <Supertip>
-                    <Title resid="ToneForge.SemanticLabel" />
-                    <Description resid="ToneForge.SemanticDesc" />
-                  </Supertip>
-                  <Icon>
-                    <bt:Image size="16" resid="Icon.16x16" />
-                    <bt:Image size="32" resid="Icon.32x32" />
-                    <bt:Image size="80" resid="Icon.80x80" />
-                  </Icon>
-                  <!--
-  Runs a function, not a ShowTaskpane action, so that this control and the
-  context-menu control address the SAME task pane. Two identities (this one
-  and the openPage default) made Word open a second blank pane beside the
-  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
--->
-<Action xsi:type="ExecuteFunction">
-  <FunctionName>ToneForgeSemantic</FunctionName>
-</Action>
-                  <Enabled>false</Enabled>
-                </Control>
-              </Group>
-              <Group id="ToneForgeChangesGroup">
-                <Label resid="ToneForge.ChangesGroupLabel" />
-                <Icon>
-                  <bt:Image size="16" resid="Icon.16x16" />
-                  <bt:Image size="32" resid="Icon.32x32" />
-                  <bt:Image size="80" resid="Icon.80x80" />
-                </Icon>
-                <Control xsi:type="Button" id="ToneForgePendingChanges">
-                  <Label resid="ToneForge.PendingChangesLabel" />
-                  <Supertip>
-                    <Title resid="ToneForge.PendingChangesLabel" />
-                    <Description resid="ToneForge.PendingChangesDesc" />
-                  </Supertip>
-                  <Icon>
-                    <bt:Image size="16" resid="Icon.16x16" />
-                    <bt:Image size="32" resid="Icon.32x32" />
-                    <bt:Image size="80" resid="Icon.80x80" />
-                  </Icon>
-                  <!--
-  Runs a function, not a ShowTaskpane action, so that this control and the
-  context-menu control address the SAME task pane. Two identities (this one
-  and the openPage default) made Word open a second blank pane beside the
-  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
--->
-<Action xsi:type="ExecuteFunction">
-  <FunctionName>ToneForgePendingChanges</FunctionName>
-</Action>
-                </Control>
-                <Control xsi:type="Button" id="ToneForgeTroubleshooting">
-                  <Label resid="ToneForge.TroubleshootingLabel" />
-                  <Supertip>
-                    <Title resid="ToneForge.TroubleshootingLabel" />
-                    <Description resid="ToneForge.TroubleshootingDesc" />
-                  </Supertip>
-                  <Icon>
-                    <bt:Image size="16" resid="Icon.16x16" />
-                    <bt:Image size="32" resid="Icon.32x32" />
-                    <bt:Image size="80" resid="Icon.80x80" />
-                  </Icon>
-                  <!--
-  Runs a function, not a ShowTaskpane action, so that this control and the
-  context-menu control address the SAME task pane. Two identities (this one
-  and the openPage default) made Word open a second blank pane beside the
-  live one. See ADR-0101, and ADR-0070 on editing both manifests together.
--->
-<Action xsi:type="ExecuteFunction">
-  <FunctionName>ToneForgeTroubleshooting</FunctionName>
 </Action>
                 </Control>
               </Group>
@@ -442,16 +372,13 @@
         <bt:String id="ToneForge.TaskpaneLabel" DefaultValue="ToneForge task pane" />
         <bt:String id="ToneForge.TabLabel" DefaultValue="ToneForge" />
         <bt:String id="ToneForge.DetReviewGroupLabel" DefaultValue="Deterministic Review" />
-        <bt:String id="ToneForge.AIReviewGroupLabel" DefaultValue="AI Review" />
-        <bt:String id="ToneForge.ProfileGroupLabel" DefaultValue="Profile" />
-        <bt:String id="ToneForge.ChangesGroupLabel" DefaultValue="Changes" />
-        <bt:String id="ToneForge.ScanLabel" DefaultValue="Scan Now" />
-        <bt:String id="ToneForge.FindingsLabel" DefaultValue="Findings" />
-        <bt:String id="ToneForge.ReviewLabel" DefaultValue="Review for Consistency" />
-        <bt:String id="ToneForge.ProfileLabel" DefaultValue="Style Profile" />
-        <bt:String id="ToneForge.GovernancePolicyLabel" DefaultValue="Governance Policy" />
-        <bt:String id="ToneForge.PendingChangesLabel" DefaultValue="Pending Changes" />
-        <bt:String id="ToneForge.TroubleshootingLabel" DefaultValue="Troubleshooting" />
+        <bt:String id="ToneForge.SemanticGroupLabel" DefaultValue="Semantic Review" />
+        <bt:String id="ToneForge.ConsistencyGroupLabel" DefaultValue="Consistency Check" />
+        <bt:String id="ToneForge.StylesGroupLabel" DefaultValue="Styles" />
+        <bt:String id="ToneForge.ScanLabel" DefaultValue="Run review" />
+        <bt:String id="ToneForge.FindingsLabel" DefaultValue="Review issues" />
+        <bt:String id="ToneForge.ReviewLabel" DefaultValue="Consistency Check" />
+        <bt:String id="ToneForge.ProfileLabel" DefaultValue="Manage style" />
         <bt:String id="ToneForge.SemanticLabel" DefaultValue="Semantic Review" />
       </bt:ShortStrings>
       <bt:LongStrings>
@@ -460,9 +387,6 @@
         <bt:String id="ToneForge.FindingsDescription" DefaultValue="Open the findings already recorded for this document." />
         <bt:String id="ToneForge.ReviewDesc" DefaultValue="Check whether different parts of this document disagree with each other. You choose when to run it, after seeing exactly what would be sent." />
         <bt:String id="ToneForge.ProfileDesc" DefaultValue="Open the deterministic style profile this document is checked against: typography, house style, and the measured metrics they came from." />
-        <bt:String id="ToneForge.GovernancePolicyDesc" DefaultValue="Open the policy that decides which checks are mandatory, which are advisory, and which corrections ToneForge may apply without asking." />
-        <bt:String id="ToneForge.PendingChangesDesc" DefaultValue="Open the proposed Word revisions waiting for your approval." />
-        <bt:String id="ToneForge.TroubleshootingDesc" DefaultValue="Inspect this Word host's capabilities and the coverage of the last scan. These checks never change the document." />
         <!--
           The approval sentence names the Semantic Review page, not Deterministic
           Review. It used to say Deterministic Review, which has been false since

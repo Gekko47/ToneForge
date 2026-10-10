@@ -1,4 +1,5 @@
 import React from "react";
+import { Button } from "@fluentui/react-components";
 import type { SelectionScope } from "../../../word/selectionScope";
 import type { SemanticGate } from "../../semantic/gates";
 
@@ -55,7 +56,7 @@ export default function SemanticReviewScope({
   onOpenSemanticStyle,
 }: SemanticReviewScopeProps): React.ReactNode {
   return (
-    <section aria-labelledby="tf-semantic-scope" className="tf-card">
+    <section aria-labelledby="tf-semantic-scope">
       <h2 id="tf-semantic-scope">Selection</h2>
 
       {scope === null ? (
@@ -94,22 +95,12 @@ export default function SemanticReviewScope({
       )}
 
       <div className="tf-actions">
-        <button
-          className="tf-native-button"
-          type="button"
-          onClick={onReadSelection}
-          disabled={!readGate.allowed}
-        >
+        <Button onClick={onReadSelection} disabled={!readGate.allowed}>
           Use current selection
-        </button>
-        <button
-          className="tf-native-button"
-          type="button"
-          onClick={onReview}
-          disabled={!reviewGate.allowed || reviewing}
-        >
+        </Button>
+        <Button appearance="primary" onClick={onReview} disabled={!reviewGate.allowed || reviewing}>
           {reviewing ? "Reviewing…" : "Review selection"}
-        </button>
+        </Button>
       </div>
 
       <p className="tf-sub" data-testid="tf-semantic-tracking">
@@ -131,17 +122,17 @@ export default function SemanticReviewScope({
           {reviewGate.remedy?.destination === "llm-settings" && (
             <>
               {" "}
-              <button className="tf-native-button" type="button" onClick={onOpenSettings}>
+              <Button appearance="subtle" onClick={onOpenSettings}>
                 {reviewGate.remedy.label}
-              </button>
+              </Button>
             </>
           )}
           {reviewGate.remedy?.destination === "semantic-style" && (
             <>
               {" "}
-              <button className="tf-native-button" type="button" onClick={onOpenSemanticStyle}>
+              <Button appearance="subtle" onClick={onOpenSemanticStyle}>
                 {reviewGate.remedy.label}
-              </button>
+              </Button>
             </>
           )}
         </p>

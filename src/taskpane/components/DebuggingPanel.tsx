@@ -1,5 +1,17 @@
 import React, { useState } from "react";
+import {
+  Accordion,
+  AccordionHeader,
+  AccordionItem,
+  AccordionPanel,
+  Button,
+  Card,
+  Text,
+  makeStyles,
+  tokens,
+} from "@fluentui/react-components";
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
+import { Breadcrumb } from "../shell";
 import { isTrackedEditingEnabled, prepareReformatHost } from "../../reformat";
 import { formatDiagnostics, probeOfficeRuntime } from "../../shared/office/diagnostics";
 import { loadState } from "../../core/state/persistence";
@@ -11,6 +23,47 @@ import { diagnoseSituation, type TroubleshootingInput } from "../troubleshooting
  * know that the registry moved out of this component.
  */
 export type { TroubleshootingNote } from "../troubleshooting/checks";
+
+const useStyles = makeStyles({
+  /*
+   * The raw diagnostic output. `Card` supplies the Fluent surface (border,
+   * radius, background); this only makes the block scrollable and monospaced,
+   * so a long capability dump cannot stretch the pane.
+   */
+  output: {
+    display: "block",
+    overflow: "auto",
+    maxHeight: "18rem",
+    margin: 0,
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
+    whiteSpace: "pre-wrap",
+  },
+  actions: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "8px",
+    marginTop: "0.5rem",
+  },
+  noteList: {
+    display: "grid",
+    gap: "12px",
+    margin: 0,
+    padding: 0,
+    listStyleType: "none",
+  },
+  note: {
+    padding: "10px 12px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderLeft: `3px solid ${tokens.colorStatusWarningBorder1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
+  noteTarget: {
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
+});
 
 interface DebuggingPanelProps {
   onBack: () => void;
@@ -108,6 +161,12 @@ function currentInput(input: {
  * because its enable path never persisted the flag before probing — made the
  * toggle impossible to arm. It is now a Settings section; this panel reports the
  * current armed state so the two surfaces cannot disagree.
+ *
+ * The engineering detail is grouped into one Fluent `Accordion` (spec §7.10,
+ * §32) so the page opens short and a reader expands only the section they came
+ * for. Every section is open by default: this is a diagnostics page, and a
+ * collapsed panel that hides the answer the user navigated here for is worse
+ * than a long page.
  */
 export default function DebuggingPanel({
   onBack,
@@ -119,6 +178,7 @@ export default function DebuggingPanel({
   semanticSelectionChars = null,
   semanticPreservationRefused = false,
 }: DebuggingPanelProps): React.ReactNode {
+  const styles = useStyles();
   const [capabilities, setCapabilities] = useState<Awaited<
     ReturnType<typeof prepareReformatHost>
   > | null>(null);
@@ -134,9 +194,12 @@ export default function DebuggingPanel({
    *
    * `probeFailed` is separate from both completed actions: a probe that threw
    * produced no capability result, and announcing it as a finished diagnosis
-   * reported a runtime diagnosis the user never ran.
+   * reported a runtime diagnosis the user never ran. `copied`/`copyFailed` are
+   * the clipboard outcome, announced through the same single region.
    */
-  const [lastAction, setLastAction] = useState<"probe" | "diagnose" | "probeFailed" | null>(null);
+  const [lastAction, setLastAction] = useState<
+    "probe" | "diagnose" | "probeFailed" | "copied" | "copyFailed" | null
+  >(null);
 
   async function probeCapabilities(): Promise<void> {
     setBusy(true);
@@ -156,6 +219,30 @@ export default function DebuggingPanel({
       // one that reports none.
       setTrackedEditing(isTrackedEditingEnabled());
       setBusy(false);
+    }
+  }
+
+  /*
+   * Copy whatever the panel is currently showing, so a user can paste it into a
+   * support request. The confirmation reuses the panel's single live region
+   * (ADR-0062) rather than a toaster: the Fluent Toaster renders its own
+   * `aria-live` region, and a second one on this page is exactly the defect the
+   * one-region test guards against.
+   */
+  async function copyDiagnostics(): Promise<void> {
+    const text = [capabilities ? JSON.stringify(capabilities, null, 2) : null, diagnostics]
+      .filter((part): part is string => part !== null)
+      .join("\n\n");
+    if (text.length === 0) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setLastAction("copied");
+    } catch {
+      // Do not clobber the output the user is trying to copy: announce the
+      // refusal and leave the text on screen to be selected by hand.
+      setLastAction("copyFailed");
     }
   }
 
@@ -183,160 +270,185 @@ export default function DebuggingPanel({
     }),
   );
 
+  const hasOutput = capabilities !== null || diagnostics !== null;
+
   return (
-    <div className="tf-card" data-page="debugging">
-      <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button className="tf-native-button" type="button" onClick={onBack}>
-          Back to Deterministic Review
-        </button>
-      </nav>
+    <div data-page="debugging">
+      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
       <h1 className="tf-title">Troubleshooting & diagnostics</h1>
       <p className="tf-sub">
         Technical inspection for the current Word host. These checks are not required for normal
         document governance and do not change the document.
       </p>
-      <section aria-label="Host inspection" className="tf-debug-section">
-        <h2>Host inspection</h2>
-        <button
-          className="tf-native-button"
-          type="button"
-          onClick={() => void probeCapabilities()}
-          disabled={busy}
-        >
-          {busy ? "Probing capabilities…" : "Probe Word capabilities"}
-        </button>
-        <button
-          className="tf-native-button"
-          type="button"
-          onClick={() => {
-            setDiagnostics(formatDiagnostics(probeOfficeRuntime()));
-            setLastAction("diagnose");
-          }}
-        >
-          Diagnose Office runtime
-        </button>
-        {/*
-          One live region, not one per output. Probing and then diagnosing
-          leaves both blocks on screen, and two polite regions updating in one
-          session read in DOM order rather than in the order they were run —
-          the same defect ADR-0062 fixed on the Dashboard. The text therefore
-          follows `lastAction`, so the announcement names the run that
-          actually happened last.
-        */}
-        <p className="sr-only" role="status" aria-live="polite">
-          {lastAction === "probe"
-            ? "Capability probe finished. The result is below."
-            : lastAction === "diagnose"
-              ? "Office runtime diagnosis finished. The result is below."
-              : lastAction === "probeFailed"
-                ? "Capability probe did not complete. The reason is below."
-                : ""}
-        </p>
-        {capabilities && (
-          <pre className="tf-debug-output">{JSON.stringify(capabilities, null, 2)}</pre>
-        )}
-        {diagnostics && <pre className="tf-debug-output">{diagnostics}</pre>}
-      </section>
-
-      {/*
-        What is actually wrong right now. Above this point the panel answers
-        "what does this host support"; this answers "why is the pane not doing
-        what I expect", which is the question a person arrives here with.
-
-        The section is titled for the question, not for a control: this is the one
-        place every surface's blockers are collected, so the user has somewhere
-        to look that is not the surface refusing them. The title was "What to
-        check", which named an action rather than the answer to the question.
-      */}
-      <section aria-label="Why something may not be working" className="tf-debug-section">
-        <h2>Why something may not be working</h2>
-        <p className="tf-sub">
-          Everything the other pages would refuse to do, and the setting behind each one. Only
-          situations that are true right now are listed.
-        </p>
-        {notes.length === 0 ? (
-          /*
-           * Enumerated rather than "nothing is wrong", because this registry
-           * only sees what it is given and a run of unchecked situations reads
-           * as a clean bill of health. Every situation below has a check above;
-           * adding one here is the cost of a new input field.
-           */
-          <p className="tf-sub">
-            Nothing is currently standing in the way: automatic scanning is on, tracked editing is
-            enabled, a semantic profile is active, a provider is configured, sending your text to
-            that provider is allowed, every finding waiting to be applied has been reviewed, the
-            Semantic tab is holding a paragraph if one was wanted, and any analysis that has run
-            covered the whole document.
+      <Accordion multiple defaultOpenItems={["host", "why", "coverage", "mutation"]}>
+        <AccordionItem value="host">
+          <AccordionHeader>Host inspection</AccordionHeader>
+          <AccordionPanel>
+            <div className={styles.actions}>
+              <Button onClick={() => void probeCapabilities()} disabled={busy}>
+                {busy ? "Probing capabilities…" : "Probe Word capabilities"}
+              </Button>
+              <Button
+                onClick={() => {
+                  setDiagnostics(formatDiagnostics(probeOfficeRuntime()));
+                  setLastAction("diagnose");
+                }}
+              >
+                Diagnose Office runtime
+              </Button>
+              <Button onClick={() => void copyDiagnostics()} disabled={!hasOutput}>
+                Copy diagnostics
+              </Button>
+            </div>
             {/*
-              Only the checks that have actually run. This sentence is a claim
-              about the host and about past runs, and "no review has been run"
-              is not the same as "every review that ran was complete" — a
-              registry that only sees what it is handed cannot tell the user the
-              second thing from the first.
+              One live region, not one per output. Probing and then diagnosing
+              leaves both blocks on screen, and two polite regions updating in one
+              session read in DOM order rather than in the order they were run —
+              the same defect ADR-0062 fixed on the Dashboard. The text therefore
+              follows `lastAction`, so the announcement names the run that
+              actually happened last.
             */}
-            {consistency === null
-              ? " No consistency review has been run in this session, so this panel cannot say whether one would be complete."
-              : " Any consistency review that has run compared everything it set out to compare."}
-            {contextMenuApi === null
-              ? " The context-menu capability has not been probed on this host yet, so this panel cannot say whether the host supports it."
-              : " The host exposes the context-menu API."}
-          </p>
-        ) : (
-          <ul className="tf-troubleshooting-list">
-            {notes.map((note) => (
-              <li key={note.id}>
-                <p>
-                  <strong>{note.situation}</strong>
-                </p>
-                <p>{note.cause}</p>
-                <p>{note.remedy}</p>
-                {/*
-                  The target, on its own labelled line. Folding it into the
-                  remedy prose meant the one actionable part was indistinguishable
-                  from the explanation around it.
-                */}
-                <p>
-                  <span className="tf-sub">Change this: </span>
-                  {note.remedyTarget.label}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section aria-label="Analysis coverage diagnostics" className="tf-debug-section">
-        <h2>Analysis coverage diagnostics</h2>
-        {coverage ? (
-          <pre className="tf-debug-output" aria-live="polite">
-            {JSON.stringify(
-              {
-                complete: coverage.complete,
-                processedCharacterCount: coverage.processedCharacterCount,
-                examinedNodeCount: coverage.examinedNodeIds.length,
-                unsupported: coverage.unsupported,
-                unprocessed: coverage.unprocessed,
-                excluded: coverage.excluded,
-                acquisition: coverage.acquisition ?? null,
-              },
-              null,
-              2,
+            <p className="sr-only" role="status" aria-live="polite">
+              {lastAction === "probe"
+                ? "Capability probe finished. The result is below."
+                : lastAction === "diagnose"
+                  ? "Office runtime diagnosis finished. The result is below."
+                  : lastAction === "probeFailed"
+                    ? "Capability probe did not complete. The reason is below."
+                    : lastAction === "copied"
+                      ? "Diagnostics copied to the clipboard."
+                      : lastAction === "copyFailed"
+                        ? "Copying to the clipboard was refused by the host. Select the text and copy it manually."
+                        : ""}
+            </p>
+            {capabilities && (
+              <Card>
+                <Text as="pre" className={styles.output}>
+                  {JSON.stringify(capabilities, null, 2)}
+                </Text>
+              </Card>
             )}
-          </pre>
-        ) : (
-          <p className="tf-sub">No analysis coverage has been recorded in this session.</p>
-        )}
-      </section>
-      <section aria-label="Mutation readiness" className="tf-debug-section">
-        <h2>Mutation readiness</h2>
-        <p>
-          Tracked editing is currently <strong>{trackedEditing ? "enabled" : "disabled"}</strong>.
-          Change it in Settings, where the host probe runs as part of the change.
-        </p>
-        <p>
-          Apply performs a fresh host probe and checks every operation in the plan. Track Changes
-          can never be bypassed.
-        </p>
-      </section>
+            {diagnostics && (
+              <Card>
+                <Text as="pre" className={styles.output}>
+                  {diagnostics}
+                </Text>
+              </Card>
+            )}
+          </AccordionPanel>
+        </AccordionItem>
+
+        {/*
+          What is actually wrong right now. Above this point the panel answers
+          "what does this host support"; this answers "why is the pane not doing
+          what I expect", which is the question a person arrives here with.
+
+          The section is titled for the question, not for a control: this is the one
+          place every surface's blockers are collected, so the user has somewhere
+          to look that is not the surface refusing them. The title was "What to
+          check", which named an action rather than the answer to the question.
+        */}
+        <AccordionItem value="why">
+          <AccordionHeader>Why something may not be working</AccordionHeader>
+          <AccordionPanel>
+            <p className="tf-sub">
+              Everything the other pages would refuse to do, and the setting behind each one. Only
+              situations that are true right now are listed.
+            </p>
+            {notes.length === 0 ? (
+              /*
+               * Enumerated rather than "nothing is wrong", because this registry
+               * only sees what it is given and a run of unchecked situations reads
+               * as a clean bill of health. Every situation below has a check above;
+               * adding one here is the cost of a new input field.
+               */
+              <p className="tf-sub">
+                Nothing is currently standing in the way: automatic scanning is on, tracked editing
+                is enabled, a semantic profile is active, a provider is configured, sending your
+                text to that provider is allowed, every finding waiting to be applied has been
+                reviewed, the Semantic tab is holding a paragraph if one was wanted, and any
+                analysis that has run covered the whole document.
+                {/*
+                  Only the checks that have actually run. This sentence is a claim
+                  about the host and about past runs, and "no review has been run"
+                  is not the same as "every review that ran was complete" — a
+                  registry that only sees what it is handed cannot tell the user the
+                  second thing from the first.
+                */}
+                {consistency === null
+                  ? " No consistency review has been run in this session, so this panel cannot say whether one would be complete."
+                  : " Any consistency review that has run compared everything it set out to compare."}
+                {contextMenuApi === null
+                  ? " The context-menu capability has not been probed on this host yet, so this panel cannot say whether the host supports it."
+                  : " The host exposes the context-menu API."}
+              </p>
+            ) : (
+              <ul className={styles.noteList}>
+                {notes.map((note) => (
+                  <li key={note.id} className={styles.note}>
+                    <p>
+                      <strong>{note.situation}</strong>
+                    </p>
+                    <p>{note.cause}</p>
+                    <p>{note.remedy}</p>
+                    {/*
+                      The target, on its own labelled line. Folding it into the
+                      remedy prose meant the one actionable part was indistinguishable
+                      from the explanation around it.
+                    */}
+                    <p className={styles.noteTarget}>
+                      <span>Change this: </span>
+                      {note.remedyTarget.label}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </AccordionPanel>
+        </AccordionItem>
+
+        <AccordionItem value="coverage">
+          <AccordionHeader>Analysis coverage diagnostics</AccordionHeader>
+          <AccordionPanel>
+            {coverage ? (
+              <Card>
+                <Text as="pre" className={styles.output}>
+                  {JSON.stringify(
+                    {
+                      complete: coverage.complete,
+                      processedCharacterCount: coverage.processedCharacterCount,
+                      examinedNodeCount: coverage.examinedNodeIds.length,
+                      unsupported: coverage.unsupported,
+                      unprocessed: coverage.unprocessed,
+                      excluded: coverage.excluded,
+                      acquisition: coverage.acquisition ?? null,
+                    },
+                    null,
+                    2,
+                  )}
+                </Text>
+              </Card>
+            ) : (
+              <p className="tf-sub">No analysis coverage has been recorded in this session.</p>
+            )}
+          </AccordionPanel>
+        </AccordionItem>
+
+        <AccordionItem value="mutation">
+          <AccordionHeader>Mutation readiness</AccordionHeader>
+          <AccordionPanel>
+            <p>
+              Tracked editing is currently{" "}
+              <strong>{trackedEditing ? "enabled" : "disabled"}</strong>. Change it in Settings,
+              where the host probe runs as part of the change.
+            </p>
+            <p>
+              Apply performs a fresh host probe and checks every operation in the plan. Track
+              Changes can never be bypassed.
+            </p>
+          </AccordionPanel>
+        </AccordionItem>
+      </Accordion>
     </div>
   );
 }

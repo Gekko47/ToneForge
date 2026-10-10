@@ -1183,7 +1183,7 @@ every scan, and the skip list still reports the narrowing rather than hiding it.
 
 Two independent defects made the task pane look broken in dark mode.
 
-First, [`createDefaultTheme()`](../src/taskpane/fluentTheme.ts) set only a
+First, `createDefaultTheme()` set only a
 `palette`. Fluent v8 decides whether a component paints itself against light or dark
 neutrals from `theme.isInverted`; the palette only supplies the values it paints
 _with_. A dark palette on a non-inverted theme therefore produces light-bodied
@@ -1216,8 +1216,7 @@ inverted-theme conventions, so a future Fluent upgrade that changes the ramp wil
 need this function revisited; `tests/unit/taskpane/fluentTheme.test.ts` pins the
 `isInverted` contract so a regression there is caught immediately.
 
-- Evidence: [`fluentTheme.ts`](../src/taskpane/fluentTheme.ts),
-  [`theme.tsx`](../src/taskpane/theme.tsx),
+- Evidence: `fluentTheme.ts`, `theme.tsx`,
   [`taskpane.css`](../src/taskpane/taskpane.css), and
   `tests/unit/taskpane/fluentTheme.test.ts`.
 
@@ -5256,3 +5255,260 @@ asserted a reconciliation the code did not perform.
   `tests/unit/taskpane/pages/LlmSettings.test.tsx`;
   `tests/unit/taskpane/pages/GeneralSettings.test.tsx`;
   `tests/unit/taskpane/pages/DashboardNoProfile.test.tsx`.
+
+## ADR-0130 — Fluent v8 is replaced by Fluent v9, and the theme is a provider, not a stylesheet
+
+- **Status**: Accepted (2026-10-09)
+- **Context**: The unified Fluent UX mandate
+  (`plans/unified-fluent-v9-ux-implementation-plan.md`, L2) requires the
+  primitives the target spec names — `FluentProvider`, `Card`, `Badge`,
+  `Toast`/`Toaster`, `Accordion`, `makeStyles`, `tokens.*`, and Fluent System
+  Icons. The repository is on Fluent v8 (`@fluentui/react`), where none of those
+  exist: v8 themes through `ThemeProvider` + `createTheme` with `isInverted`
+  (ADR-0057), icons are font icons named by string, and there is no `Card`,
+  `Toast`, `Accordion`, or Griffel. The pane also carries a 1468-line bespoke
+  stylesheet (`taskpane.css`) with its own `--tf-*` colour ramp, type ramp, and
+  spacing scale — a parallel design system Fluent cannot re-theme (ADR-0121,
+  ADR-0122).
+- **Decision**: Migrate to Fluent v9 (`@fluentui/react-components` +
+  `@fluentui/react-icons`) before any page migration. Theming is owned by a
+  single `FluentProvider` at the pane root, built from
+  `createLightTheme`/`createDarkTheme` over a minimal `brandRamp`; there is no
+  hand-authored global theme file and no `--tf-*` colour ramp after migration.
+  Component styling is component-local (Fluent components plus
+  `makeStyles`/Griffel using `tokens.*`). `taskpane.css` is reduced to four
+  non-component concerns — canvas (`html`/`body`/`#root` height and background
+  from a token), `.sr-only`, `:focus-visible`, and `prefers-reduced-motion` —
+  plus a temporary `.tf-native*` block that shrinks to empty as pages migrate and
+  is deleted when the controls migration completes. This **supersedes ADR-0057**:
+  the `isInverted` contract and the document-element token scope are v8
+  mechanisms; v9's `FluentProvider` writes design-token variables at the provider
+  root and selects light/dark by theme object. The stable-theme-object reasoning
+  from ADR-0057's amendment is preserved — both themes are built once and
+  selected by reference.
+- **Consequences**:
+  - Positive: every primitive the spec names has a home; one provider owns
+    theming; the bespoke stylesheet trends to four rules instead of a parallel
+    layer.
+  - Positive: the theme-preference persistence, `prefers-color-scheme`, and
+    reduced-motion behaviour carry forward unchanged.
+  - Cost: the migration touches every Fluent import site (18 files) and the theme
+    module; it is done once, first, so pages migrate against v9 rather than being
+    ported twice.
+  - Cost: `@fluentui/react` and its transitive v8 packages are removed once no
+    import remains; bundle size is measured by the `build-artifacts` stage.
+  - **Not claimed**: a green automated run is not a release (ADR-0051); the
+    Word-host gate stays open until a person verifies v9 rendering, including
+    `Dialog`/`Toast` portals inside the Office pane iframe.
+- **Evidence**: `plans/unified-fluent-v9-ux-implementation-plan.md` §1.1, §3;
+  `package.json`; `src/taskpane/theme/FluentV9Provider.tsx`; `src/taskpane/theme/toneForgeTheme.ts`;
+  `src/taskpane/taskpane.css`; ADR-0057; ADR-0121; ADR-0122.
+
+### Amendment (2026-10-09) — the migration is additive, and the root swap is the last step
+
+The decision above says "migrate before any page migration", which is right, but
+"migrate" is not a single commit. Eighteen components still import
+`@fluentui/react`, and three guarded tests pin the v8 mechanism directly —
+`theme.test.ts` asserts `isInverted`, `#0078d4`, and `#4aaaf0` inside
+`fluentTheme.ts`, and `theme.test.tsx` mocks `createDefaultTheme` to count theme
+construction. Removing v8 in one step would break the build and those guards at
+once, and a broken guard is a guard that gets deleted rather than satisfied.
+
+So the foundation is built **alongside** v8 and the root is swapped when the last
+v8 consumer is gone:
+
+- P1 adds `src/taskpane/theme/` — `toneForgeTheme.ts` (the `brandRamp` and the
+  two themes), `icons.ts`, `tokens.ts`, `FluentV9Provider.tsx`, and the barrel —
+  plus the Vitest harness (`tests/helpers/fluentV9.tsx`). Nothing imports it from
+  the running pane yet, so the pane is unchanged and every existing test still
+  passes.
+- The v9 barrel is imported by its explicit `theme/index` path during this phase.
+  The v8 `src/taskpane/theme.tsx` and the new `theme/` directory collide, and module
+  resolution prefers the file, so `./theme` still resolves to v8 until that file
+  is deleted.
+- P3 deletes `theme.tsx` and `fluentTheme.ts`, points `App.tsx` at
+  `FluentV9Provider`, and rewrites the three guards to assert the v9 contract
+  (brand anchored on `#0078d4`, two distinct themes, no theme rebuilt on
+  re-render) rather than the v8 mechanism. The canvas moves from `taskpane.css`
+  to the provider at the same moment, so there is never a second, differently
+  coloured canvas showing a seam.
+- `@fluentui/react` is removed from `package.json` only when no import remains.
+
+This is the same "additive layering over replacement" the repository already
+uses (ADR-0031), applied to the theme layer itself.
+
+## ADR-0131 — One ROUTES source owns route labels, and the pane target mapping is derived from it
+
+- **Status**: Accepted (2026-10-09)
+- **Context**: The unified UX mandate renames user-facing routes (Deterministic
+  Style Profile → Deterministic Style, Governance Policy → Governance) and
+  regroups navigation into Review / Styles / More. Today the labels live in
+  `TASKPANE_DESTINATIONS` (`TaskPaneHeader.tsx`), the route keys are a
+  `TaskPaneDestination` union, and the ribbon-to-pane arrival mapping is a
+  separate `TaskpaneTarget` union in `shared/office/taskpaneNavigation.ts` whose
+  own note records a bug where a renamed target stopped being handled (ADR-0102).
+  Three places that must agree, with no single owner, is the drift the mandate
+  forbids.
+- **Decision**: Introduce one `ROUTES` source of truth that owns each route's
+  key, label, group, and icon. `TASKPANE_DESTINATIONS`, the navigation groups,
+  and the Home command centre derive from it. Route **keys** stay stable (fewer
+  churn points); only user-facing labels change. Any key rename must be mirrored
+  in `TaskpaneTarget` and its arrival mapping in the same change, and the
+  destination-enumeration guard (`DashboardNoProfile.test.tsx`) is updated with
+  it.
+- **Consequences**:
+  - Positive: label drift is impossible — the drawer, Home, and any breadcrumb
+    read the same source.
+  - Positive: the rename is a data change, not a scatter of string edits.
+  - Cost: a new module and a test that derives labels from `ROUTES` and asserts
+    the drawer and Home agree.
+  - **Not claimed**: the ribbon labels are a separate surface (P10) and are kept
+    in sync by `validateManifests`, not by `ROUTES`.
+- **Evidence**: `plans/unified-fluent-v9-ux-implementation-plan.md` §5.2;
+  `src/taskpane/components/TaskPaneHeader.tsx`;
+  `src/shared/office/taskpaneNavigation.ts`; ADR-0102.
+
+## ADR-0132 — Home reads workflow state and owns none
+
+- **Status**: Accepted (2026-10-09)
+- **Context**: The mandate replaces the setup-checklist Home with a command
+  centre that shows the live state of all three reviews, the active styles, and
+  any attention item. The risk (spec §48) is that Home becomes a second state
+  owner — a parallel store that can disagree with the review surfaces it
+  summarises.
+- **Decision**: Home is a read-only projection. It reads the existing workflow
+  and persisted state through selectors only; it owns no storage, starts no
+  review, and duplicates no review workspace content. The three
+  `ReviewModeCard`s share one contract and differ only by icon, title,
+  description, status, and primary action. A state-matrix test drives every
+  listed Home state.
+- **Consequences**:
+  - Positive: Home cannot disagree with the reviews it summarises; there is one
+    state owner per behaviour (ADR-0126).
+  - Positive: no persisted-state change and no migration.
+  - Cost: Home depends on selectors that must exist for each review's state;
+    where a selector does not exist it is added to the owning module, not to
+    Home.
+  - **Not claimed**: the consistency-analysis storage control (spec §30.1) is
+    deferred unless a retained-analysis store exists behind it; it is recorded as
+    a documented limitation rather than shipped as a control that governs
+    nothing.
+- **Evidence**: `plans/unified-fluent-v9-ux-implementation-plan.md` §6, §11.4;
+  `src/taskpane/pages/Home.tsx`; ADR-0126.
+
+## ADR-0133 — Destructive actions confirm through a Dialog, and transient outcomes announce through a Toaster
+
+- **Status**: Accepted (2026-10-09)
+- **Context**: Three destructive actions fire with no confirmation — delete
+  semantic profile (`SemanticProfilePicker.tsx`), remove governance rule
+  (`GovernancePolicySection.tsx`), remove a pending change (`PendingChanges.tsx`).
+  No transient confirmation exists anywhere. A search found zero
+  `alert(`/`window.confirm` calls, so there is no native-dialog precedent to
+  undo, but there is also no Fluent gate to add one to.
+- **Decision**: All destructive actions confirm through one promisified
+  `ConfirmDialog` helper over Fluent `Dialog`; transient save/apply/cancel
+  outcomes announce through one `Toaster` helper over Fluent `Toaster` +
+  `useToastController`. Native `alert`/`confirm`/`window.confirm` are banned by
+  an ESLint rule so the gate cannot regress. The single live region (ADR-0062) is
+  unchanged: the Toaster is transient visual feedback, not a second live region.
+- **Consequences**:
+  - Positive: destructive actions are reversible-by-refusal; transient outcomes
+    are visible without a modal.
+  - Positive: the ban is enforced, not documented.
+  - Cost: two shared primitives and their tests; the three destructive call sites
+    gain a confirmation step.
+  - **Not claimed**: `Dialog`/`Toast` portals inside the Office pane iframe are
+    verified in a real Word host (manual evidence); a `FluentProvider`-scoped
+    portal is the fallback if the default portal misbehaves.
+- **Evidence**: `plans/unified-fluent-v9-ux-implementation-plan.md` §1.5, §2.7,
+  §8; `src/taskpane/components/SemanticProfilePicker.tsx`;
+  `src/taskpane/components/GovernancePolicySection.tsx`;
+  `src/taskpane/components/PendingChanges.tsx`; ADR-0062.
+
+## ADR-0134 — The ribbon speaks the Home vocabulary, and secondary commands are pane-only
+
+- **Status**: Accepted (2026-10-10)
+- **Context**: The ribbon and the Home command centre named the same work
+  differently. The ribbon carried four groups whose labels (`AI Review`,
+  `Profile`, `Changes`, `Governance`) did not match the Home card titles
+  (`Deterministic Review`, `Semantic Review`, `Consistency Review`) or the
+  primary-action labels in `homeState.ts` (`Run review`, `Review issues`,
+  `Consistency Check`, `Manage style`). The spec (§42) also forbids exposing
+  troubleshooting, governance, and internal scan commands as primary ribbon
+  commands — they belong in the task pane — yet the command registry must keep
+  those commands registered and wired, and `validateCommandParity` required a
+  ribbon control for every command definition. Those three constraints could not
+  all hold at once.
+- **Decision**: The ribbon is reorganised into the four product groups the spec
+  names — **Deterministic Review**, **Semantic Review**, **Consistency Check**,
+  **Styles** — and every control is relabelled to the Home vocabulary
+  (`Run review`, `Review issues`, `Consistency Check`, `Manage style`,
+  `Semantic Review`). Group **ids** are kept stable (`ToneForgeGovernance`,
+  `ToneForgeAIReview`, `ToneForgeProfileGroup`, `ToneForgeChanges`) and only
+  their labels change, so the host does not demand a restart for a cosmetic
+  change. The semantic control moves into `ToneForgeAIReview`, so
+  `SEMANTIC_RIBBON_GROUP` follows it. To reconcile the spec with the registry,
+  a command may be declared **pane-only** (`paneOnly: true` in
+  `commandDefinitions.json`): it stays registered, wired, and reachable from the
+  task pane, but it has no ribbon control. `ToneForgeGovernancePolicy`,
+  `ToneForgePendingChanges`, and `ToneForgeTroubleshooting` are pane-only.
+  `validateCommandParity` now requires a runtime action for every command but a
+  ribbon control only for non-pane-only commands, and rejects a ribbon control
+  for a pane-only command.
+- **Consequences**:
+  - Positive: the ribbon and the Home command centre use one vocabulary; a user
+    reads the same words in both places.
+  - Positive: the spec's "no troubleshooting/governance on the ribbon" rule and
+    the registry's "every command is wired" rule both hold, enforced by the
+    validator and a guard test rather than by comment.
+  - Positive: stable group ids avoid `HostRestartNeeded` churn for a label-only
+    change.
+  - Cost: a new `paneOnly` flag and its validator branch; the three secondary
+    commands are no longer discoverable from the ribbon (they remain in the
+    pane).
+  - **Not claimed**: the reorganised ribbon is verified in a real Word host
+    (manual evidence); the automated graph proves parity, not rendering.
+- **Evidence**: `plans/unified-fluent-v9-ux-implementation-plan.md` §8, §10
+  (criterion 30); `systematic review/ToneForge_HOME_AND_UNIFIED_FLUENT_UX_IMPLEMENTATION.md`
+  §42, §44; `src/commands/commandDefinitions.json`; `src/commands/ribbonState.ts`;
+  `manifest.json`; `manifest.xml`; `scripts/validate-manifest.mjs`;
+  `tests/unit/commands/commandContracts.test.ts`; ADR-0070, ADR-0082.
+
+## ADR-0135 — Responsive, accessible-name, and high-contrast invariants are guarded, not asserted by eye
+
+- **Status**: Accepted (2026-10-10)
+- **Context**: The plan's P11–P13 gates are "no horizontal scrollbar"
+  (criterion 18), "keyboard/focus/screen-reader/axe" (criteria 25–27), and
+  "dark readable / high-contrast usable" (criteria 28–29). jsdom computes no
+  layout and no colour, so none of these can be asserted as a rendered pixel in
+  the unit suite, and the project has no axe dependency. The risk is that the
+  gates are declared met by inspection and then quietly regress.
+- **Decision**: Each gate is guarded by the structural invariant that causes it,
+  not by a screenshot:
+  - **Responsive** — every `justifyContent: "space-between"` style block in the
+    pane must also declare `flexWrap`, so neither end of a row can push past the
+    pane edge at 320px. The Home rows and `MetadataRow` were given `flexWrap`
+    (and value cells `minWidth: 0` / `overflowWrap: "anywhere"`) to satisfy it.
+  - **Accessible names** — every `Button` that renders only an icon must carry
+    `aria-label`/`aria-labelledby`/`title`.
+  - **High contrast** — one `@media (forced-colors: active)` block redefines the
+    residual `--tf-*` surfaces to system colours, so the hand-authored CSS
+    follows the OS palette. Fluent v9 components already honour forced-colors.
+  - **Not automated** — axe and real screen-reader announcement stay manual
+    evidence (plan §11.2); no axe dependency is added (Ponytail).
+- **Consequences**:
+  - Positive: three gates that could only be eyeballed now fail a test when
+    broken, and the guards name the file rather than a count.
+  - Positive: the forced-colors block fixes every `var(--tf-*)` consumer at once.
+  - Cost: three small guard tests; the invariants are structural, so a genuinely
+    different layout that still avoids overflow would need the guard updated.
+  - **Not claimed**: real Word rendering in light/dark/high-contrast, keyboard
+    traversal, and screen-reader announcement are human evidence and remain open
+    until a person records them in `docs/manual-verification.md`.
+- **Evidence**: `plans/unified-fluent-v9-ux-implementation-plan.md` §9 (P11–P13),
+  §10 (criteria 18, 25–29), §11.2; `systematic review/ToneForge_HOME_AND_UNIFIED_FLUENT_UX_IMPLEMENTATION.md`
+  §33, §34, §50; `src/taskpane/taskpane.css`; `src/taskpane/pages/Home.tsx`;
+  `src/taskpane/components/common/MetadataRow.tsx`;
+  `tests/unit/taskpane/responsive.test.ts`;
+  `tests/unit/taskpane/accessibleNames.test.ts`;
+  `tests/unit/taskpane/nativeFieldMarkers.test.ts`; ADR-0062, ADR-0130.

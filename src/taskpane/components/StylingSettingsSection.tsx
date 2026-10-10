@@ -1,5 +1,5 @@
 import React from "react";
-import { Dropdown } from "@fluentui/react";
+import { Dropdown, Field, Option } from "@fluentui/react-components";
 import { useTheme, type ThemePreference } from "../theme";
 import {
   INITIAL_SECTION_STATUS,
@@ -31,22 +31,23 @@ export default function StylingSettingsSection(): React.ReactNode {
         setStatus(INITIAL_SECTION_STATUS);
       }}
     >
-      <Dropdown
-        label="Theme"
-        selectedKey={draft}
-        options={[
-          { key: "system", text: "Use system setting" },
-          { key: "light", text: "Light" },
-          { key: "dark", text: "Dark" },
-        ]}
-        onChange={(_event, option) => {
-          const value = option?.key;
-          if (value === "system" || value === "light" || value === "dark") {
-            setDraft(value);
-            setStatus(markDirty());
-          }
-        }}
-      />
+      <Field label="Theme">
+        <Dropdown
+          value={draft === "system" ? "Use system setting" : draft === "light" ? "Light" : "Dark"}
+          selectedOptions={[draft]}
+          onOptionSelect={(_event, data) => {
+            const value = data.optionValue;
+            if (value === "system" || value === "light" || value === "dark") {
+              setDraft(value);
+              setStatus(markDirty());
+            }
+          }}
+        >
+          <Option value="system">Use system setting</Option>
+          <Option value="light">Light</Option>
+          <Option value="dark">Dark</Option>
+        </Dropdown>
+      </Field>
     </SettingsSectionCard>
   );
 }

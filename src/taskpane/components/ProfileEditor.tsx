@@ -1,13 +1,13 @@
 import React from "react";
 import {
-  DefaultButton,
+  Button,
   Dropdown,
-  type IDropdownOption,
+  Field,
+  Input,
   MessageBar,
-  MessageBarType,
-  PrimaryButton,
-  TextField,
-} from "@fluentui/react";
+  Option,
+  Textarea,
+} from "@fluentui/react-components";
 import type { DeterministicStyleProfile } from "../../core/domain/StyleProfile";
 import {
   createEmptyProfile,
@@ -95,8 +95,8 @@ interface ProfileValidation {
  * them without a component change.
  */
 
-function dropdownValue(option: IDropdownOption | undefined): string | null {
-  return option && typeof option.key === "string" ? option.key : null;
+function dropdownValue(optionValue: string | undefined): string | null {
+  return typeof optionValue === "string" ? optionValue : null;
 }
 
 function parseLines(value: string): string[] {
@@ -465,14 +465,14 @@ export default function ProfileEditor({
   function renderMessageBar(): React.ReactNode {
     if (error) {
       return (
-        <MessageBar messageBarType={MessageBarType.error} role="alert">
+        <MessageBar intent="error" role="alert">
           <span data-testid="profile-editor-error">{error}</span>
         </MessageBar>
       );
     }
     if (savedAt) {
       return (
-        <MessageBar messageBarType={MessageBarType.success} role="status" aria-live="polite">
+        <MessageBar intent="success" role="status" aria-live="polite">
           <span data-testid="profile-editor-success">Profile saved.</span>
         </MessageBar>
       );
@@ -485,7 +485,7 @@ export default function ProfileEditor({
   const historyCount = history.length;
 
   return (
-    <div className="tf-card">
+    <div>
       {/*
         No heading here.
 
@@ -503,34 +503,30 @@ export default function ProfileEditor({
       {renderMessageBar()}
 
       <div className="tf-editor-actions tf-editor-actions-spaced">
-        <Dropdown
-          label="Saved profiles"
-          selectedKey={baseProfile.id}
-          options={profiles.map((item) => ({
-            key: item.id,
-            text: `${item.name} ${formatRevision(item.revision)}`,
-          }))}
-          onChange={(_event, optionValue) => {
-            const nextValue = dropdownValue(optionValue);
-            if (nextValue) {
-              selectProfile(nextValue);
-            }
-          }}
-        />
-        <TextField
-          label="Profile name"
-          required
-          value={values.name}
-          errorMessage={fieldErrors.name ?? ""}
-          onChange={(_event, value) => patch({ name: value ?? "" })}
-        />
-        <TextField
-          label="Revision"
-          disabled
-          readOnly
-          value={formatRevision(revision)}
-          description="Assigned automatically when a draft is saved."
-        />
+        <Field label="Saved profiles">
+          <Dropdown
+            value={profiles.find((item) => item.id === baseProfile.id)?.name ?? ""}
+            selectedOptions={[baseProfile.id]}
+            onOptionSelect={(_event, data) => {
+              const nextValue = dropdownValue(data.optionValue);
+              if (nextValue) {
+                selectProfile(nextValue);
+              }
+            }}
+          >
+            {profiles.map((item) => (
+              <Option key={item.id} value={item.id}>
+                {`${item.name} ${formatRevision(item.revision)}`}
+              </Option>
+            ))}
+          </Dropdown>
+        </Field>
+        <Field label="Profile name" required validationMessage={fieldErrors.name ?? ""}>
+          <Input value={values.name} onChange={(_event, data) => patch({ name: data.value })} />
+        </Field>
+        <Field label="Revision" hint="Assigned automatically when a draft is saved.">
+          <Input disabled readOnly value={formatRevision(revision)} />
+        </Field>
       </div>
 
       {/*
@@ -555,10 +551,9 @@ export default function ProfileEditor({
               <li key={`${snapshot.id}-${snapshot.updatedAt}-${index}`}>
                 {formatRevision(snapshot.revision)} —{" "}
                 {new Date(snapshot.updatedAt).toLocaleString()}{" "}
-                <DefaultButton
-                  text={`Restore ${formatRevision(snapshot.revision)}`}
-                  onClick={() => restoreHistorySnapshot(snapshot)}
-                />
+                <Button onClick={() => restoreHistorySnapshot(snapshot)}>
+                  {`Restore ${formatRevision(snapshot.revision)}`}
+                </Button>
               </li>
             ))}
           </ul>
@@ -637,14 +632,16 @@ export default function ProfileEditor({
           the rules that enforce them live.
         </p>
         <div className="tf-editor-grid">
-          <TextField
+          <Field
             label="Title-case words (one per line)"
-            multiline
-            rows={4}
-            value={values.titleCaseWords}
-            errorMessage={fieldErrors["capitalization.titleCaseWords"] ?? ""}
-            onChange={(_event, value) => patch({ titleCaseWords: value ?? "" })}
-          />
+            validationMessage={fieldErrors["capitalization.titleCaseWords"] ?? ""}
+          >
+            <Textarea
+              rows={4}
+              value={values.titleCaseWords}
+              onChange={(_event, data) => patch({ titleCaseWords: data.value })}
+            />
+          </Field>
           {/*
            * No spelling-variant control, deliberately (spec §4.3).
            *
@@ -660,19 +657,20 @@ export default function ProfileEditor({
       <VersionDiff savedProfile={savedProfile} currentProfile={validation.profile} />
 
       <div className="tf-editor-actions">
-        <PrimaryButton
-          text="Save profile"
+        <Button
+          appearance="primary"
           onClick={save}
           disabled={!derivedDirty}
           className="tf-editor-action"
-        />
-        <DefaultButton
-          text="Reset changes"
-          onClick={reset}
-          disabled={!derivedDirty}
-          className="tf-editor-action"
-        />
-        <DefaultButton text="New profile" onClick={createNewProfile} className="tf-editor-action" />
+        >
+          Save profile
+        </Button>
+        <Button onClick={reset} disabled={!derivedDirty} className="tf-editor-action">
+          Reset changes
+        </Button>
+        <Button onClick={createNewProfile} className="tf-editor-action">
+          New profile
+        </Button>
       </div>
     </div>
   );

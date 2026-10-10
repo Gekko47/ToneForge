@@ -59,7 +59,7 @@
                     {
                       "id": "ToneForgeScanControl",
                       "type": "button",
-                      "label": "Scan Now",
+                      "label": "Run review",
                       "actionId": "ToneForgeScan",
                       "icons": [
                         { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
@@ -67,14 +67,14 @@
                         { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
                       ],
                       "supertip": {
-                        "title": "Scan Now",
+                        "title": "Run review",
                         "description": "Run the deterministic style checks against this document now and show the results."
                       }
                     },
                     {
                       "id": "ToneForgeFindingsControl",
                       "type": "button",
-                      "label": "Findings",
+                      "label": "Review issues",
                       "actionId": "ToneForgeFindings",
                       "icons": [
                         { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
@@ -82,7 +82,7 @@
                         { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
                       ],
                       "supertip": {
-                        "title": "Findings",
+                        "title": "Review issues",
                         "description": "Open the findings already recorded for this document."
                       }
                     }
@@ -90,59 +90,8 @@
                 },
                 {
                   "id": "ToneForgeAIReview",
-                  "label": "AI Review",
+                  "label": "Semantic Review",
                   "controls": [
-                    {
-                      "id": "ToneForgeReviewControl",
-                      "type": "button",
-                      "label": "Review for Consistency",
-                      "actionId": "ToneForgeReview",
-                      "icons": [
-                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
-                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
-                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
-                      ],
-                      "supertip": {
-                        "title": "Review for Consistency",
-                        "description": "Check whether different parts of this document disagree with each other. You choose when to run it, after seeing exactly what would be sent."
-                      }
-                    }
-                  ]
-                },
-                {
-                  "id": "ToneForgeProfileGroup",
-                  "label": "Profile",
-                  "controls": [
-                    {
-                      "id": "ToneForgeProfileControl",
-                      "type": "button",
-                      "label": "Style Profile",
-                      "actionId": "ToneForgeProfile",
-                      "icons": [
-                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
-                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
-                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
-                      ],
-                      "supertip": {
-                        "title": "Style Profile",
-                        "description": "Open the deterministic style profile this document is checked against: typography, house style, and the measured metrics they came from."
-                      }
-                    },
-                    {
-                      "id": "ToneForgeGovernancePolicyControl",
-                      "type": "button",
-                      "label": "Governance Policy",
-                      "actionId": "ToneForgeGovernancePolicy",
-                      "icons": [
-                        { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
-                        { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
-                        { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
-                      ],
-                      "supertip": {
-                        "title": "Governance Policy",
-                        "description": "Open the policy that decides which checks are mandatory, which are advisory, and which corrections ToneForge may apply without asking."
-                      }
-                    },
                     {
                       "id": "ToneForgeSemanticControl",
                       "type": "button",
@@ -162,37 +111,43 @@
                   ]
                 },
                 {
-                  "id": "ToneForgeChanges",
-                  "label": "Changes",
+                  "id": "ToneForgeProfileGroup",
+                  "label": "Consistency Check",
                   "controls": [
                     {
-                      "id": "ToneForgePendingChangesControl",
+                      "id": "ToneForgeReviewControl",
                       "type": "button",
-                      "label": "Pending Changes",
-                      "actionId": "ToneForgePendingChanges",
+                      "label": "Consistency Check",
+                      "actionId": "ToneForgeReview",
                       "icons": [
                         { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
                         { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
                         { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
                       ],
                       "supertip": {
-                        "title": "Pending Changes",
-                        "description": "Open the proposed Word revisions waiting for your approval."
+                        "title": "Consistency Check",
+                        "description": "Check whether different parts of this document disagree with each other. You choose when to run it, after seeing exactly what would be sent."
                       }
-                    },
+                    }
+                  ]
+                },
+                {
+                  "id": "ToneForgeChanges",
+                  "label": "Styles",
+                  "controls": [
                     {
-                      "id": "ToneForgeTroubleshootingControl",
+                      "id": "ToneForgeProfileControl",
                       "type": "button",
-                      "label": "Troubleshooting",
-                      "actionId": "ToneForgeTroubleshooting",
+                      "label": "Manage style",
+                      "actionId": "ToneForgeProfile",
                       "icons": [
                         { "size": 16, "url": "https://localhost:3000/assets/icon-16.png" },
                         { "size": 32, "url": "https://localhost:3000/assets/icon-32.png" },
                         { "size": 80, "url": "https://localhost:3000/assets/icon-80.png" }
                       ],
                       "supertip": {
-                        "title": "Troubleshooting",
-                        "description": "Inspect this Word host's capabilities and the coverage of the last scan. These checks never change the document."
+                        "title": "Manage style",
+                        "description": "Open the deterministic style profile this document is checked against: typography, house style, and the measured metrics they came from."
                       }
                     }
                   ]

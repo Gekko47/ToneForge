@@ -29,7 +29,11 @@ vi.mock("../../../../src/reformat", () => ({
 }));
 
 vi.mock("../../../../src/taskpane/theme", () => ({
-  useTheme: () => ({ themePreference: "system", setThemePreference: vi.fn() }),
+  useTheme: () => ({
+    reducedMotion: false,
+    themePreference: "system",
+    setThemePreference: vi.fn(),
+  }),
 }));
 
 beforeEach(() => {

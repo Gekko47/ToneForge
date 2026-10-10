@@ -1,5 +1,5 @@
 import React from "react";
-import { DefaultButton, Dropdown, MessageBar, MessageBarType, TextField } from "@fluentui/react";
+import { Button, Dropdown, Field, Input, MessageBar, Option } from "@fluentui/react-components";
 import { createProviderGatewayClient, GatewayError, SessionTokenStore } from "../../ai/gateway";
 import { isCatalogForConnection, resolveCatalogStatus } from "../../ai/gateway/modelCatalog";
 import type { ModelCatalog, ProviderConnection } from "../../core/domain/index";
@@ -198,59 +198,58 @@ export default function OpenRouterConnectionSettings({
 
   return (
     <section aria-label="OpenRouter connection" className="tf-collapsible">
-      <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
+      <MessageBar intent="info">
         Your OpenRouter API key is sent once to the local gateway and is not stored by ToneForge.
         Only the opaque connection reference the gateway returns is saved.
       </MessageBar>
-      <TextField
+      <Field
         label="OpenRouter base URL"
-        value={baseUrl}
-        onChange={(_event, value) => setBaseUrl(value ?? "")}
-        description="Where the gateway sends requests. The add-in never calls this address itself."
-      />
+        hint="Where the gateway sends requests. The add-in never calls this address itself."
+      >
+        <Input value={baseUrl} onChange={(_event, data) => setBaseUrl(data.value)} />
+      </Field>
       {connected ? (
         <>
-          <MessageBar messageBarType={MessageBarType.severeWarning} delayedRender={false}>
+          <MessageBar intent="warning">
             Connected. Disconnecting drops the credential on the gateway side and cannot be undone
             without entering the key again.
           </MessageBar>
-          <DefaultButton
-            text="Disconnect OpenRouter"
+          <Button
             onClick={() => {
               void disconnect();
             }}
             disabled={phase === "connecting"}
-          />
+          >
+            Disconnect OpenRouter
+          </Button>
         </>
       ) : (
         <>
-          <TextField
+          <Field
             label="OpenRouter API key"
-            type="password"
-            autoComplete="off"
-            value={apiKey}
-            onChange={(_event, value) => setApiKey(value ?? "")}
-            description="Submitted once, then cleared from the pane. It is never saved to settings or logs."
-          />
-          <DefaultButton
-            text="Connect OpenRouter"
-            primary
+            hint="Submitted once, then cleared from the pane. It is never saved to settings or logs."
+          >
+            <Input
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              onChange={(_event, data) => setApiKey(data.value)}
+            />
+          </Field>
+          <Button
+            appearance="primary"
             onClick={() => {
               void connect();
             }}
             disabled={phase === "connecting" || phase === "loadingModels"}
-          />
+          >
+            Connect OpenRouter
+          </Button>
         </>
       )}
-      {error ? (
-        <MessageBar messageBarType={MessageBarType.error} delayedRender={false}>
-          {error}
-        </MessageBar>
-      ) : null}
+      {error ? <MessageBar intent="error">{error}</MessageBar> : null}
       {connected ? (
-        <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
-          {describeCatalog(catalogStatus, models.length)}
-        </MessageBar>
+        <MessageBar intent="info">{describeCatalog(catalogStatus, models.length)}</MessageBar>
       ) : null}
       {connected ? (
         <ModelPicker models={models} selectedModel={selectedModel} onSelect={onSelectModel} />
@@ -298,14 +297,21 @@ function ModelPicker({
   const selected = models.find((model) => model.key === selectedModel);
   return (
     <>
-      <Dropdown
-        label="Model"
-        selectedKey={selectedModel.length > 0 ? selectedModel : null}
-        options={models.map((model) => ({ key: model.key, text: model.text, title: model.detail }))}
-        onChange={(_event, option) => {
-          if (typeof option?.key === "string") onSelect(option.key);
-        }}
-      />
+      <Field label="Model">
+        <Dropdown
+          value={selected?.text ?? ""}
+          selectedOptions={selectedModel ? [selectedModel] : []}
+          onOptionSelect={(_event, data) => {
+            if (data.optionValue) onSelect(data.optionValue);
+          }}
+        >
+          {models.map((model) => (
+            <Option key={model.key} value={model.key} title={model.detail}>
+              {model.text}
+            </Option>
+          ))}
+        </Dropdown>
+      </Field>
       <p className="tf-settings-note">
         {selected?.detail ?? "Choose a model. Leaving this unset uses the provider's default."}
       </p>

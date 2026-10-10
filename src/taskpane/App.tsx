@@ -1,7 +1,21 @@
 import React, { Suspense, lazy } from "react";
+import { Button } from "@fluentui/react-components";
 import { initializeOffice } from "./officeInit";
 import { logger } from "../shared/utils/logger";
-import { ThemeProvider as LocalThemeProvider } from "./theme";
+/*
+ * From the module, not the `./theme` barrel: the barrel also re-exports the
+ * icon map and the token object, and this is the eager entry chunk. The icons
+ * belong to the lazy page chunks that render them.
+ */
+import { FluentV9Provider } from "./theme/FluentV9Provider";
+/*
+ * Imported from their modules, not the `./components/common` barrel: the barrel
+ * also re-exports `ConfirmDialog` (Fluent `Dialog`) and `useToaster` (Fluent
+ * `Toaster`), and this is the eager entry chunk. Pulling the barrel in here put
+ * both portals in the initial bundle for a page that renders neither.
+ */
+import { ErrorState } from "./components/common/ErrorState";
+import { LoadingState } from "./components/common/LoadingState";
 import type { DashboardInitialPage } from "./pages/Dashboard";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -40,16 +54,19 @@ export default function App({ initialPage }: AppProps): React.ReactNode {
   }, []);
 
   const content = error ? (
-    <div className="tf-card" role="alert">
-      <p className="tf-error">{error}</p>
-    </div>
+    <ErrorState
+      title="ToneForge could not start"
+      message={error}
+      primaryRecoveryAction={
+        <Button appearance="primary" onClick={() => window.location.reload()}>
+          Reload the pane
+        </Button>
+      }
+    />
   ) : !ready ? (
-    <div className="tf-card" aria-live="polite">
-      <p className="tf-title">ToneForge</p>
-      <p>Loading…</p>
-    </div>
+    <LoadingState label="Starting ToneForge…" />
   ) : (
-    <Suspense fallback={<div className="tf-card">Loading…</div>}>
+    <Suspense fallback={<LoadingState label="Loading…" />}>
       {/*
         Passed conditionally rather than as `initialPage={initialPage}`: this
         project sets `exactOptionalPropertyTypes`, so an explicit `undefined` is
@@ -60,5 +77,5 @@ export default function App({ initialPage }: AppProps): React.ReactNode {
     </Suspense>
   );
 
-  return <LocalThemeProvider>{content}</LocalThemeProvider>;
+  return <FluentV9Provider>{content}</FluentV9Provider>;
 }

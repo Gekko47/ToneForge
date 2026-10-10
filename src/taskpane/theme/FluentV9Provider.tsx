@@ -1,6 +1,7 @@
 import React, { createContext, useContext } from "react";
-import { ThemeProvider as FluentThemeProvider } from "@fluentui/react";
-import { createDefaultTheme } from "./fluentTheme";
+import { FluentProvider, makeStyles } from "@fluentui/react-components";
+import { toneForgeDarkTheme, toneForgeLightTheme } from "./toneForgeTheme";
+import { toneForgeTokens } from "./tokens";
 
 export type ThemePreference = "system" | "light" | "dark";
 
@@ -26,20 +27,49 @@ function readThemePreference(): ThemePreference {
   }
 }
 
-export function ThemeProvider({ children }: { children: React.ReactNode }): React.ReactNode {
+const useStyles = makeStyles({
+  root: {
+    height: "100%",
+    backgroundColor: toneForgeTokens.canvas,
+    color: toneForgeTokens.text,
+  },
+});
+
+export interface FluentV9ProviderProps {
+  children: React.ReactNode;
+}
+
+/**
+ * The Fluent v9 theme provider — the single root of the pane's theme.
+ *
+ * It owns the design tokens: `FluentProvider` writes them as CSS variables at
+ * this element, and every v9 component below reads them. The theme objects are
+ * module-level constants, so they are the same reference on every render —
+ * passing a new theme identity to `FluentProvider` would invalidate the theme
+ * for every Fluent consumer in the pane, and a failing document scan emits a
+ * new status on every attempt, so each of those emissions would restyle the
+ * whole pane if the theme identity churned.
+ *
+ * It also owns the theme *preference* (light/dark/system), the reduced-motion
+ * preference, and the canvas background. The `tf-theme-dark`/`tf-theme-light`
+ * classes are applied to `documentElement` so the stylesheet's `--tf-*` tokens
+ * — still used by not-yet-migrated components — flip with the theme.
+ */
+export function FluentV9Provider({ children }: FluentV9ProviderProps): React.ReactNode {
   const [reducedMotion, setReducedMotion] = React.useState(false);
   const [themePreference, setThemePreferenceState] =
     React.useState<ThemePreference>(readThemePreference);
   const [systemDark, setSystemDark] = React.useState(false);
+  const styles = useStyles();
 
-  function setThemePreference(preference: ThemePreference): void {
+  const setThemePreference = React.useCallback((preference: ThemePreference): void => {
     setThemePreferenceState(preference);
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, preference);
     } catch {
       // A session-only preference is safe when storage is unavailable.
     }
-  }
+  }, []);
 
   React.useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -59,39 +89,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }): Reac
 
   const isDark = themePreference === "dark" || (themePreference === "system" && systemDark);
 
-  /*
-   * The theme object must be stable across renders.
-   *
-   * `createDefaultTheme` builds a fresh object every call, and passing a new
-   * identity to `FluentThemeProvider` invalidates the theme for every Fluent
-   * consumer in the pane — each one recomputes its styles from scratch. That is
-   * survivable on an idle pane and ruinous when something else is already
-   * re-rendering, which is exactly the case here: a failing document scan emits
-   * a new status on every attempt, so a single theme change could fan a handful
-   * of status emissions into a full-pane restyle each time.
-   *
-   * Two themes exist, so both are built once and selected by reference.
-   */
-  const lightTheme = React.useMemo(() => createDefaultTheme(false), []);
-  const darkTheme = React.useMemo(() => createDefaultTheme(true), []);
-  const theme = isDark ? darkTheme : lightTheme;
-
-  // The theme class is applied to the document element, not to an inner
-  // wrapper, because the CSS custom properties are consumed by `html` and
-  // `body`. A wrapper cannot supply variables to its own ancestors: the page
-  // canvas would fall through to the user-agent default of white and the
-  // content card would appear to float inside a white frame.
   React.useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("tf-theme-dark", isDark);
     root.classList.toggle("tf-theme-light", !isDark);
   }, [isDark]);
 
+  const contextValue = React.useMemo(
+    () => ({ reducedMotion, themePreference, setThemePreference }),
+    [reducedMotion, themePreference, setThemePreference],
+  );
+
   return (
-    <ThemeContext.Provider value={{ reducedMotion, themePreference, setThemePreference }}>
-      <FluentThemeProvider theme={theme}>
-        <div className={isDark ? "tf-theme-dark" : "tf-theme-light"}>{children}</div>
-      </FluentThemeProvider>
+    <ThemeContext.Provider value={contextValue}>
+      <FluentProvider
+        theme={isDark ? toneForgeDarkTheme : toneForgeLightTheme}
+        className={styles.root}
+      >
+        {children}
+      </FluentProvider>
     </ThemeContext.Provider>
   );
 }

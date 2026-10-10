@@ -21,6 +21,16 @@
  */
 
 import React from "react";
+import {
+  Button,
+  Checkbox,
+  Dropdown,
+  Field,
+  Input,
+  Option,
+  Radio,
+  Textarea,
+} from "@fluentui/react-components";
 import ProfileSection from "./ProfileSection";
 import ProfileSubsection from "./ProfileSubsection";
 import TerminologyBulkAdd from "./TerminologyBulkAdd";
@@ -120,15 +130,9 @@ function StyleTextField({
   onChange: (next: string) => void;
 }): React.ReactNode {
   return (
-    <label className="tf-field">
-      <span>{label}</span>
-      <input
-        className="tf-native"
-        type="text"
-        value={value ?? ""}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
+    <Field label={label}>
+      <Input value={value ?? ""} onChange={(_event, data) => onChange(data.value)} />
+    </Field>
   );
 }
 
@@ -147,17 +151,15 @@ function NumberField({
   onChange: (next: string) => void;
 }): React.ReactNode {
   return (
-    <label className="tf-field">
-      <span>{label}</span>
-      <input
-        className="tf-native"
+    <Field label={label}>
+      <Input
         type="number"
         min={min}
         max={max}
-        value={value ?? ""}
-        onChange={(event) => onChange(event.target.value)}
+        value={value === undefined ? "" : String(value)}
+        onChange={(_event, data) => onChange(data.value)}
       />
-    </label>
+    </Field>
   );
 }
 
@@ -182,15 +184,11 @@ function CompareToggle({
   onChange: (next: boolean) => void;
 }): React.ReactNode {
   return (
-    <label className="tf-field tf-field-inline">
-      <input
-        className="tf-native"
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span>{`Compare ${what} against the document`}</span>
-    </label>
+    <Checkbox
+      checked={checked}
+      onChange={(_event, data) => onChange(data.checked === true)}
+      label={`Compare ${what} against the document`}
+    />
   );
 }
 
@@ -214,23 +212,14 @@ function LineListField({
   value: readonly string[];
   onChange: (next: string[]) => void;
 }): React.ReactNode {
-  const controlId = React.useId();
-  const hintId = React.useId();
   return (
-    <div className="tf-field">
-      <label htmlFor={controlId}>{label}</label>
-      <textarea
-        className="tf-native"
-        id={controlId}
-        aria-describedby={hintId}
+    <Field label={label} hint={hint}>
+      <Textarea
         rows={3}
         value={formatTermList(value)}
-        onChange={(event) => onChange(parseTermList(event.target.value))}
+        onChange={(_event, data) => onChange(parseTermList(data.value))}
       />
-      <span className="tf-sub" id={hintId}>
-        {hint}
-      </span>
-    </div>
+    </Field>
   );
 }
 
@@ -257,34 +246,22 @@ function PairListField({
   onChange: (next: Record<string, string>) => void;
 }): React.ReactNode {
   const [error, setError] = React.useState<string | null>(null);
-  const controlId = React.useId();
-  const hintId = React.useId();
-  const errorId = React.useId();
   return (
-    <div className="tf-field">
-      <label htmlFor={controlId}>{label}</label>
-      <textarea
-        className="tf-native"
-        id={controlId}
-        aria-describedby={error === null ? hintId : `${hintId} ${errorId}`}
-        aria-invalid={error !== null}
+    <Field
+      label={label}
+      hint={hint}
+      {...(error === null ? {} : { validationMessage: error, validationState: "error" as const })}
+    >
+      <Textarea
         rows={3}
         value={formatTerminology(value)}
-        onChange={(event) => {
-          const parsed = parseTerminology(event.target.value, nouns);
+        onChange={(_event, data) => {
+          const parsed = parseTerminology(data.value, nouns);
           setError(parsed.error);
           if (parsed.error === null) onChange(parsed.values);
         }}
       />
-      <span className="tf-sub" id={hintId}>
-        {hint}
-      </span>
-      {error !== null && (
-        <span className="tf-error" id={errorId}>
-          {error}
-        </span>
-      )}
-    </div>
+    </Field>
   );
 }
 
@@ -308,30 +285,21 @@ function EnumSelect<T extends string>({
   options: readonly (readonly [T, string])[];
   onChange: (next: T) => void;
 }): React.ReactNode {
-  const controlId = React.useId();
-  const hintId = React.useId();
+  const selected = options.find(([id]) => id === value);
   return (
-    <div className="tf-field">
-      <label htmlFor={controlId}>{label}</label>
-      <select
-        className="tf-native"
-        id={controlId}
-        {...(hint === undefined ? {} : { "aria-describedby": hintId })}
-        value={value}
-        onChange={(event) => onChange(event.target.value as T)}
+    <Field label={label} {...(hint === undefined ? {} : { hint })}>
+      <Dropdown
+        value={selected?.[1] ?? value}
+        selectedOptions={[value]}
+        onOptionSelect={(_event, data) => onChange((data.optionValue ?? value) as T)}
       >
         {options.map(([id, text]) => (
-          <option key={id} value={id}>
+          <Option key={id} value={id}>
             {text}
-          </option>
+          </Option>
         ))}
-      </select>
-      {hint !== undefined && (
-        <span className="tf-sub" id={hintId}>
-          {hint}
-        </span>
-      )}
-    </div>
+      </Dropdown>
+    </Field>
   );
 }
 
@@ -361,29 +329,28 @@ function OptionalEnumSelect({
   options: readonly (readonly [string, string])[];
   onChange: (next: string | undefined) => void;
 }): React.ReactNode {
-  const controlId = React.useId();
-  const hintId = React.useId();
+  const selected = value === undefined ? undefined : options.find(([id]) => id === value);
   return (
-    <div className="tf-field">
-      <label htmlFor={controlId}>{label}</label>
-      <select
-        className="tf-native"
-        id={controlId}
-        aria-describedby={hintId}
-        value={value ?? ""}
-        onChange={(event) => onChange(event.target.value === "" ? undefined : event.target.value)}
+    <Field label={label} hint={hint}>
+      <Dropdown
+        value={selected?.[1] ?? "Not set"}
+        selectedOptions={[value ?? ""]}
+        onOptionSelect={(_event, data) =>
+          onChange(
+            data.optionValue === undefined || data.optionValue === ""
+              ? undefined
+              : data.optionValue,
+          )
+        }
       >
-        <option value="">Not set</option>
+        <Option value="">Not set</Option>
         {options.map(([id, text]) => (
-          <option key={id} value={id}>
+          <Option key={id} value={id}>
             {text}
-          </option>
+          </Option>
         ))}
-      </select>
-      <span className="tf-sub" id={hintId}>
-        {hint}
-      </span>
-    </div>
+      </Dropdown>
+    </Field>
   );
 }
 
@@ -460,62 +427,47 @@ function TerminologyRow({
   return (
     <fieldset className="tf-standard-block">
       <legend>{rule.id}</legend>
-      <label className="tf-field">
-        <span>Term</span>
-        <input
-          className="tf-native"
-          type="text"
-          value={source}
-          onChange={(event) => commitSource(event.target.value)}
-        />
-        {sourceProblem !== null ? <span className="tf-sub">{sourceProblem}</span> : null}
-      </label>
+      <Field
+        label="Term"
+        {...(sourceProblem === null
+          ? {}
+          : { validationMessage: sourceProblem, validationState: "error" as const })}
+      >
+        <Input value={source} onChange={(_event, data) => commitSource(data.value)} />
+      </Field>
       {withReplacement ? (
-        <label className="tf-field">
-          <span>Replacement</span>
-          <input
-            className="tf-native"
-            type="text"
-            value={replacement}
-            onChange={(event) => commitReplacement(event.target.value)}
-          />
-          <span className="tf-sub">Blank means the term is flagged, never rewritten.</span>
-        </label>
+        <Field label="Replacement" hint="Blank means the term is flagged, never rewritten.">
+          <Input value={replacement} onChange={(_event, data) => commitReplacement(data.value)} />
+        </Field>
       ) : null}
-      <label className="tf-field tf-field-inline">
-        <input
-          className="tf-native"
-          type="checkbox"
-          checked={rule.wholeWord}
-          onChange={(event) => onChange({ ...rule, wholeWord: event.target.checked })}
-        />
-        <span>Match whole words only</span>
-      </label>
-      <label className="tf-field tf-field-inline">
-        <input
-          className="tf-native"
-          type="checkbox"
-          checked={rule.caseSensitive}
-          onChange={(event) => onChange({ ...rule, caseSensitive: event.target.checked })}
-        />
-        <span>Case sensitive</span>
-      </label>
-      <label className="tf-field">
-        <span>Severity</span>
-        <select
-          className="tf-native"
-          value={rule.severity}
-          onChange={(event) =>
-            onChange({ ...rule, severity: event.target.value as "mandatory" | "advisory" })
+      <Checkbox
+        checked={rule.wholeWord}
+        onChange={(_event, data) => onChange({ ...rule, wholeWord: data.checked === true })}
+        label="Match whole words only"
+      />
+      <Checkbox
+        checked={rule.caseSensitive}
+        onChange={(_event, data) => onChange({ ...rule, caseSensitive: data.checked === true })}
+        label="Case sensitive"
+      />
+      <Field label="Severity">
+        <Dropdown
+          value={rule.severity === "mandatory" ? "Mandatory" : "Advisory"}
+          selectedOptions={[rule.severity]}
+          onOptionSelect={(_event, data) =>
+            onChange({
+              ...rule,
+              severity: (data.optionValue ?? "advisory") as "mandatory" | "advisory",
+            })
           }
         >
-          <option value="advisory">Advisory</option>
-          <option value="mandatory">Mandatory</option>
-        </select>
-      </label>
-      <button type="button" className="tf-native-button tf-link-button" onClick={onRemove}>
+          <Option value="advisory">Advisory</Option>
+          <Option value="mandatory">Mandatory</Option>
+        </Dropdown>
+      </Field>
+      <Button appearance="transparent" onClick={onRemove}>
         Remove
-      </button>
+      </Button>
     </fieldset>
   );
 }
@@ -927,9 +879,8 @@ export default function DeterministicStyleSections({
               }
             />
           ))}
-          <button
-            type="button"
-            className="tf-native-button tf-link-button"
+          <Button
+            appearance="transparent"
             onClick={() =>
               tryPatchLanguage({
                 terminology: [
@@ -946,7 +897,7 @@ export default function DeterministicStyleSections({
             }
           >
             Add preferred term
-          </button>
+          </Button>
 
           <TerminologyBulkAdd
             id="preferred-terminology-bulk"
@@ -971,14 +922,13 @@ export default function DeterministicStyleSections({
           <p className="tf-sub" id="tf-banned-terms-hint">
             One per line. Flagged, never rewritten.
           </p>
-          <textarea
-            className="tf-native"
+          <Textarea
             aria-labelledby="tf-banned-terms-heading"
             aria-describedby="tf-banned-terms-hint"
             rows={4}
             value={formatTermList(profile.language.bannedTerms)}
-            onChange={(event) =>
-              tryPatchLanguage({ bannedTerms: parseTermList(event.target.value) })
+            onChange={(_event, data) =>
+              tryPatchLanguage({ bannedTerms: parseTermList(data.value) })
             }
           />
 
@@ -1008,9 +958,8 @@ export default function DeterministicStyleSections({
               }
             />
           ))}
-          <button
-            type="button"
-            className="tf-native-button tf-link-button"
+          <Button
+            appearance="transparent"
             onClick={() =>
               tryPatchLanguage({
                 requiredTerms: [
@@ -1028,24 +977,20 @@ export default function DeterministicStyleSections({
             }
           >
             Add required term
-          </button>
+          </Button>
 
-          <label className="tf-field tf-field-inline">
-            <input
-              className="tf-native"
-              type="checkbox"
-              checked={profile.language.capitalisation.sentenceCase}
-              onChange={(event) =>
-                patchLanguage({
-                  capitalisation: {
-                    ...profile.language.capitalisation,
-                    sentenceCase: event.target.checked,
-                  },
-                })
-              }
-            />
-            <span>Sentences begin with a capital letter</span>
-          </label>
+          <Checkbox
+            checked={profile.language.capitalisation.sentenceCase}
+            onChange={(_event, data) =>
+              patchLanguage({
+                capitalisation: {
+                  ...profile.language.capitalisation,
+                  sentenceCase: data.checked === true,
+                },
+              })
+            }
+            label="Sentences begin with a capital letter"
+          />
           {/*
            * A dropdown, because the locale is now *enforced* (D5).
            *
@@ -1055,24 +1000,28 @@ export default function DeterministicStyleSections({
            * typo in a free-text field would parse cleanly and then match no rule,
            * which is the ND-13 failure wearing a different hat.
            */}
-          <label className="tf-field">
-            <span>Locale</span>
-            <select
-              className="tf-native"
-              value={profile.language.locale}
-              onChange={(event) => tryPatchLanguage({ locale: event.target.value })}
+          <Field
+            label="Locale"
+            hint="Sets the default numeric date shape. A preferred date format set elsewhere always wins."
+          >
+            <Dropdown
+              value={`${profile.language.locale} — dates as ${LOCALE_DATE_SHAPES[profile.language.locale].format}`}
+              selectedOptions={[profile.language.locale]}
+              onOptionSelect={(_event, data) => {
+                if (data.optionValue !== undefined) tryPatchLanguage({ locale: data.optionValue });
+              }}
             >
               {LOCALE_OPTIONS.map((locale) => (
-                <option key={locale} value={locale}>
+                <Option
+                  key={locale}
+                  value={locale}
+                  text={`${locale} — dates as ${LOCALE_DATE_SHAPES[locale].format}`}
+                >
                   {locale} — dates as {LOCALE_DATE_SHAPES[locale].format}
-                </option>
+                </Option>
               ))}
-            </select>
-            <span className="tf-sub">
-              Sets the default numeric date shape. A preferred date format set elsewhere always
-              wins.
-            </span>
-          </label>
+            </Dropdown>
+          </Field>
           {/*
            * Every language field, with a control.
            *
@@ -1180,23 +1129,22 @@ export default function DeterministicStyleSections({
               options={PERCENTAGE_SPACING_OPTIONS}
               onChange={(next) => patchNumbers({ percentageSpacing: next })}
             />
-            <div className="tf-field">
-              <label htmlFor="tf-number-word-threshold">Spell out numbers up to</label>
-              <input
-                className="tf-native"
-                id="tf-number-word-threshold"
-                aria-describedby="tf-number-word-threshold-hint"
+            <Field
+              label="Spell out numbers up to"
+              hint="Left blank, numbers are never spelled out. This is reported only — rewriting “10” as “ten” changes the author’s prose, so no correction is offered."
+            >
+              <Input
                 type="number"
                 min={0}
                 max={999}
-                value={numbers.numberWordThreshold ?? ""}
-                onChange={(event) => setNumberWordThreshold(event.target.value)}
+                value={
+                  numbers.numberWordThreshold === undefined
+                    ? ""
+                    : String(numbers.numberWordThreshold)
+                }
+                onChange={(_event, data) => setNumberWordThreshold(data.value)}
               />
-              <span className="tf-sub" id="tf-number-word-threshold-hint">
-                Left blank, numbers are never spelled out. This is reported only — rewriting “10” as
-                “ten” changes the author’s prose, so no correction is offered.
-              </span>
-            </div>
+            </Field>
             <EnumSelect
               label="Negative numbers"
               hint="How a negative figure is written."
@@ -1229,75 +1177,50 @@ export default function DeterministicStyleSections({
                  * because a hook cannot be called inside this `map`. `useId` would be
                  * the usual answer and would be wrong here.
                  */}
-                <div className="tf-field">
-                  <label htmlFor={`tf-date-shape-${index}`}>Shape</label>
-                  <select
-                    className="tf-native"
-                    id={`tf-date-shape-${index}`}
-                    aria-describedby={`tf-date-shape-hint-${index}`}
-                    value={format.id}
-                    onChange={(event) => patchDateFormat(index, { id: event.target.value })}
+                <Field
+                  label="Shape"
+                  hint="The shape the rule recognises in the document. “unrecognised” is not offered: a profile cannot prefer a shape the tool cannot read."
+                >
+                  <Dropdown
+                    value={DATE_SHAPE_OPTIONS.find(([id]) => id === format.id)?.[1] ?? format.id}
+                    selectedOptions={[format.id]}
+                    onOptionSelect={(_event, data) => {
+                      if (data.optionValue !== undefined)
+                        patchDateFormat(index, { id: data.optionValue });
+                    }}
                   >
                     {DATE_SHAPE_OPTIONS.map(([id, text]) => (
-                      <option key={id} value={id}>
+                      <Option key={id} value={id} text={text}>
                         {text}
-                      </option>
+                      </Option>
                     ))}
-                  </select>
-                  <span className="tf-sub" id={`tf-date-shape-hint-${index}`}>
-                    The shape the rule recognises in the document. “unrecognised” is not offered: a
-                    profile cannot prefer a shape the tool cannot read.
-                  </span>
-                </div>
-                <div className="tf-field">
-                  <label htmlFor={`tf-date-format-${index}`}>Written as</label>
-                  <input
-                    className="tf-native"
-                    id={`tf-date-format-${index}`}
-                    aria-describedby={`tf-date-format-hint-${index}`}
-                    type="text"
+                  </Dropdown>
+                </Field>
+                <Field label="Written as" hint="For your reference, e.g. DD/MM/YYYY.">
+                  <Input
                     value={format.format}
-                    onChange={(event) => patchDateFormat(index, { format: event.target.value })}
+                    onChange={(_event, data) => patchDateFormat(index, { format: data.value })}
                   />
-                  <span className="tf-sub" id={`tf-date-format-hint-${index}`}>
-                    For your reference, e.g. DD/MM/YYYY.
-                  </span>
-                </div>
-                <label className="tf-field tf-field-inline">
-                  <input
-                    className="tf-native"
-                    type="radio"
-                    name="tf-preferred-date-format"
-                    checked={format.preferred}
-                    onChange={() => preferDateFormat(index)}
-                  />
-                  <span>This is the shape new dates should be written in</span>
-                </label>
-                <button
-                  type="button"
-                  className="tf-native-button tf-link-button"
-                  onClick={() => removeDateFormat(index)}
-                >
+                </Field>
+                <Radio
+                  name="tf-preferred-date-format"
+                  checked={format.preferred}
+                  onChange={() => preferDateFormat(index)}
+                  label="This is the shape new dates should be written in"
+                />
+                <Button appearance="transparent" onClick={() => removeDateFormat(index)}>
                   Remove
-                </button>
+                </Button>
               </fieldset>
             ))}
-            <button
-              type="button"
-              className="tf-native-button tf-link-button"
-              onClick={addDateFormat}
-            >
+            <Button appearance="transparent" onClick={addDateFormat}>
               Add date format
-            </button>
-            <label className="tf-field tf-field-inline">
-              <input
-                className="tf-native"
-                type="checkbox"
-                checked={dates.requireUnambiguous}
-                onChange={(event) => patchDates({ requireUnambiguous: event.target.checked })}
-              />
-              <span>Refuse a date written in a shape that could be read two ways</span>
-            </label>
+            </Button>
+            <Checkbox
+              checked={dates.requireUnambiguous}
+              onChange={(_event, data) => patchDates({ requireUnambiguous: data.checked === true })}
+              label="Refuse a date written in a shape that could be read two ways"
+            />
           </fieldset>
         </ProfileSubsection>
 
@@ -1574,19 +1497,16 @@ export default function DeterministicStyleSections({
         supported={capabilities === null ? null : true}
         uncheckedStandards={uncheckedStandards}
       >
-        <label className="tf-field">
-          <span>Body style</span>
-          <input
-            className="tf-native"
-            type="text"
+        <Field label="Body style">
+          <Input
             value={profile.formatting.bodyStyle.styleName}
-            onChange={(event) =>
+            onChange={(_event, data) =>
               patchFormatting({
-                bodyStyle: { ...profile.formatting.bodyStyle, styleName: event.target.value },
+                bodyStyle: { ...profile.formatting.bodyStyle, styleName: data.value },
               })
             }
           />
-        </label>
+        </Field>
 
         <fieldset className="tf-standard-block">
           <legend>Named styles</legend>
@@ -1660,17 +1580,11 @@ export default function DeterministicStyleSections({
             value={tables?.cellStyleName}
             onChange={(next) => patchTables({ cellStyleName: stringOrUndefined(next) })}
           />
-          <label className="tf-field tf-field-inline">
-            <input
-              className="tf-native"
-              type="checkbox"
-              checked={tables?.headerRow === true}
-              onChange={(event) =>
-                patchTables({ headerRow: event.target.checked ? true : undefined })
-              }
-            />
-            <span>The first row is a header row</span>
-          </label>
+          <Checkbox
+            checked={tables?.headerRow === true}
+            onChange={(_event, data) => patchTables({ headerRow: data.checked ? true : undefined })}
+            label="The first row is a header row"
+          />
           <NumberField
             label="Header rows"
             min={0}
@@ -1692,17 +1606,13 @@ export default function DeterministicStyleSections({
             value={headersFooters?.styleName}
             onChange={(next) => patchHeadersFooters({ styleName: stringOrUndefined(next) })}
           />
-          <label className="tf-field tf-field-inline">
-            <input
-              className="tf-native"
-              type="checkbox"
-              checked={headersFooters?.required === true}
-              onChange={(event) =>
-                patchHeadersFooters({ required: event.target.checked ? true : undefined })
-              }
-            />
-            <span>Every section must have a header and a footer</span>
-          </label>
+          <Checkbox
+            checked={headersFooters?.required === true}
+            onChange={(_event, data) =>
+              patchHeadersFooters({ required: data.checked ? true : undefined })
+            }
+            label="Every section must have a header and a footer"
+          />
           <CompareToggle
             what="headers and footers"
             checked={standardIsRequested(headersFooters)}
@@ -1712,22 +1622,33 @@ export default function DeterministicStyleSections({
 
         <fieldset className="tf-standard-block">
           <legend>Page setup</legend>
-          <label className="tf-field">
-            <span>Orientation</span>
-            <select
-              className="tf-native"
-              value={page?.orientation ?? ""}
-              onChange={(event) =>
+          <Field label="Orientation">
+            <Dropdown
+              value={
+                page?.orientation === "portrait"
+                  ? "Portrait"
+                  : page?.orientation === "landscape"
+                    ? "Landscape"
+                    : "Not specified"
+              }
+              selectedOptions={[page?.orientation ?? ""]}
+              onOptionSelect={(_event, data) =>
                 patchPage({
-                  orientation: event.target.value === "" ? undefined : event.target.value,
+                  orientation: data.optionValue === "" ? undefined : data.optionValue,
                 })
               }
             >
-              <option value="">Not specified</option>
-              <option value="portrait">Portrait</option>
-              <option value="landscape">Landscape</option>
-            </select>
-          </label>
+              <Option value="" text="Not specified">
+                Not specified
+              </Option>
+              <Option value="portrait" text="Portrait">
+                Portrait
+              </Option>
+              <Option value="landscape" text="Landscape">
+                Landscape
+              </Option>
+            </Dropdown>
+          </Field>
           {(["top", "bottom", "left", "right"] as const).map((edge) => (
             <NumberField
               key={edge}
@@ -1754,35 +1675,27 @@ export default function DeterministicStyleSections({
         summary="Whether a skipped heading level or an empty heading is a finding, and how deep the document may nest."
         supported={capabilities === null ? null : true}
       >
-        <label className="tf-field tf-field-inline">
-          <input
-            className="tf-native"
-            type="checkbox"
-            checked={profile.structure.reportEmptyHeadings}
-            onChange={(event) => patchStructure({ reportEmptyHeadings: event.target.checked })}
-          />
-          <span>Report empty headings</span>
-        </label>
-        <label className="tf-field tf-field-inline">
-          <input
-            className="tf-native"
-            type="checkbox"
-            checked={profile.structure.reportUnknownStyles}
-            onChange={(event) => patchStructure({ reportUnknownStyles: event.target.checked })}
-          />
-          <span>Report styles ToneForge does not recognise</span>
-        </label>
-        <label className="tf-field tf-field-inline">
-          <input
-            className="tf-native"
-            type="checkbox"
-            checked={profile.structure.allowSkippedHeadingLevels}
-            onChange={(event) =>
-              patchStructure({ allowSkippedHeadingLevels: event.target.checked })
-            }
-          />
-          <span>Allow a skipped heading level</span>
-        </label>
+        <Checkbox
+          checked={profile.structure.reportEmptyHeadings}
+          onChange={(_event, data) =>
+            patchStructure({ reportEmptyHeadings: data.checked === true })
+          }
+          label="Report empty headings"
+        />
+        <Checkbox
+          checked={profile.structure.reportUnknownStyles}
+          onChange={(_event, data) =>
+            patchStructure({ reportUnknownStyles: data.checked === true })
+          }
+          label="Report styles ToneForge does not recognise"
+        />
+        <Checkbox
+          checked={profile.structure.allowSkippedHeadingLevels === true}
+          onChange={(_event, data) =>
+            patchStructure({ allowSkippedHeadingLevels: data.checked === true })
+          }
+          label="Allow a skipped heading level"
+        />
         <NumberField
           label="Deepest heading level"
           min={1}

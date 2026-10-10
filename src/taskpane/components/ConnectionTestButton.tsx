@@ -1,5 +1,5 @@
 import React from "react";
-import { DefaultButton, MessageBar, MessageBarType } from "@fluentui/react";
+import { Button, MessageBar } from "@fluentui/react-components";
 import {
   createProviderGatewayClient,
   describeGatewayError,
@@ -74,27 +74,21 @@ export function ConnectionTestButton({
 
   return (
     <div className="tf-connection-test">
-      <DefaultButton
-        text="Test connection"
+      <Button
         onClick={() => {
           void test();
         }}
         disabled={testing}
-      />
+      >
+        Test connection
+      </Button>
       {testing ? <span className="tf-settings-note">Testing…</span> : null}
       {result ? (
-        <MessageBar
-          messageBarType={result.ok ? MessageBarType.success : MessageBarType.error}
-          delayedRender={false}
-        >
+        <MessageBar intent={result.ok ? "success" : "error"}>
           {result.ok ? `Connected — ${result.detail}` : `Failed — ${result.detail}`}
         </MessageBar>
       ) : null}
-      {error ? (
-        <MessageBar messageBarType={MessageBarType.error} delayedRender={false}>
-          {error}
-        </MessageBar>
-      ) : null}
+      {error ? <MessageBar intent="error">{error}</MessageBar> : null}
     </div>
   );
 }

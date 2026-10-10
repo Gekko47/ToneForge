@@ -12,6 +12,7 @@
  */
 
 import React from "react";
+import { Button } from "@fluentui/react-components";
 import type { ConsistencyProgress } from "../../analysis/consistency";
 
 export interface ConsistencyReviewProgressProps {
@@ -41,9 +42,7 @@ export default function ConsistencyReviewProgress({
           review of the document.
         </p>
       )}
-      <button className="tf-native-button" type="button" onClick={onCancel}>
-        Cancel review
-      </button>
+      <Button onClick={onCancel}>Cancel review</Button>
     </section>
   );
 }

@@ -58,6 +58,18 @@ describe("VersionDiff", () => {
     expect(within(container).getByText("utilize")).toBeInTheDocument();
   });
 
+  it("renders the diff as a card list, not a table", () => {
+    const saved = makeProfile();
+    const current = makeProfile({ name: "Edited profile" });
+
+    const { container } = render(<VersionDiff savedProfile={saved} currentProfile={current} />);
+
+    // Plan §2.3/§33: a three-column table in a 320px pane is one word per cell
+    // and scrolls sideways, so the comparison is a card list.
+    expect(within(container).queryByRole("table")).not.toBeInTheDocument();
+    expect(within(container).getByRole("heading", { name: "Profile name" })).toBeInTheDocument();
+  });
+
   it("renders a governance-only change when the style profile is unchanged", () => {
     const profile = makeProfile();
     const savedGovernance = createGovernanceProfile(profile);

@@ -81,22 +81,11 @@ body {
   padding: 0;
   height: 100%;
   font-family: "Segoe UI", system-ui, sans-serif;
-  color: var(--tf-text);
-  background-color: var(--tf-bg);
 }
 
 #root {
   height: 100%;
   overflow: auto;
-}
-
-.tf-card {
-  background: var(--tf-surface);
-  border: 1px solid var(--tf-border);
-  border-radius: 8px;
-  padding: 16px;
-  margin: 8px;
-  max-width: 960px;
 }
 
 .tf-governance-reformat {
@@ -389,77 +378,13 @@ body {
  *
  * A deny-list is the wrong shape here. The question is not "is this one of ours?"
  * but "is this ours?", and only the author of a control can answer that. So our
- * own controls carry `.tf-native` — see `src/taskpane/nativeField.ts` — and this
- * rule is scoped to that class and nothing else. A Fluent component is then
- * excluded by construction: whatever it renders, and whatever it names its
- * classes.
- *
- * **The selector list is `.tf-native` alone, and it has to stay that way.** An
- * earlier version of this rule read `button, .tf-native`, left over from
- * deleting the three `:not()` selectors out of the middle of a list. It parsed,
- * it looked right in the file, and every test passed — but it meant this rule
- * still reached every `<button>` in the add-in, Fluent's included, which is the
- * same defect under a different selector. `nativeFieldMarkers.test.ts` asserts
- * the selector list as well as the coverage, so a stray bare element here fails
- * rather than shipping.
- *
- * `nativeFieldMarkers.test.ts` also asserts that every native control in the
- * task pane carries the marker, so a new control cannot silently escape these
- * rules.
- *
- * **What this cannot verify.** jsdom computes no styles, so no test here can
- * confirm what Word actually paints. The visual check stays a manual item in
- * `docs/manual-verification.md`; the test below asserts the *rule*, not a
- * computed colour.
- */
-.tf-native {
-  font: inherit;
-  background-color: var(--tf-surface);
-  color: var(--tf-text);
-}
-
-select.tf-native {
-  color-scheme: inherit;
-}
-
-input.tf-native::placeholder,
-textarea.tf-native::placeholder {
-  color: var(--tf-muted);
-  opacity: 1;
-}
-
 /*
- * Buttons, and only the buttons we render.
+ * Focus-visible outline, unscoped on purpose.
  *
- * These four rules were bare `button` selectors. That is the same defect the
- * `.tf-native` rule above had, one element over: Fluent's `DefaultButton`,
- * `PrimaryButton`, `IconButton` and `Toggle` all render a real `<button>`, so a
- * bare selector reaches into components this codebase does not own and hands
- * them a border, a background and a hover colour it had no say in.
- *
- * Fluent's own class rules outrank a bare element selector, so these were losing
- * on specificity rather than by design — and that flips the moment the
- * stylesheet load order changes, which is not something a theme file should be
- * quietly depending on.
- *
- * The focus rule below stays unscoped on purpose: an outline on `:focus-visible`
- * is correct on every focusable element in the pane, Fluent's included, and
- * removing a keyboard focus indicator from a third-party component would be a
- * regression in its own right.
+ * An outline on `:focus-visible` is correct on every focusable element in the
+ * pane, Fluent's included, and removing a keyboard focus indicator from a
+ * third-party component would be a regression in its own right.
  */
-button.tf-native-button {
-  border: 1px solid var(--tf-border);
-  border-radius: 4px;
-  background: var(--tf-surface);
-  color: var(--tf-text);
-  cursor: pointer;
-}
-
-button.tf-native-button:hover:not(:disabled) {
-  border-color: var(--tf-accent);
-  color: var(--tf-accent);
-}
-
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -467,11 +392,6 @@ textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--tf-accent);
   outline-offset: 2px;
-}
-
-button.tf-native-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 /*
@@ -618,30 +538,6 @@ h4 {
   border-color: var(--tf-warning-border);
   background: var(--tf-warning-bg);
   color: var(--tf-text);
-}
-
-/* Shared banner surface. Previously each banner inlined its own hex values,
-   which meant none of them responded to the dark theme. */
-.tf-banner {
-  margin-top: 1rem;
-  padding: 0.75rem;
-  border: 1px solid var(--tf-border);
-  border-radius: 4px;
-  background: var(--tf-surface);
-}
-
-.tf-banner-warning {
-  border-color: var(--tf-warning-border);
-  background: var(--tf-warning-bg);
-}
-
-.tf-banner-heading {
-  margin: 0 0 0.5rem;
-  font-size: 0.95rem;
-}
-
-.tf-empty {
-  color: var(--tf-success);
 }
 
 /*
@@ -904,36 +800,6 @@ h4 {
   font-size: 0.8rem;
 }
 
-/*
- * The unsupported marking.
- *
- * Deliberately inside the summary rather than only in the body: a collapsed
- * section is exactly the case where a user would not see the note, and the
- * whole point is that a section which cannot be checked must not look like one
- * that can.
- */
-.tf-profile-section-unsupported {
-  padding: 0.15rem 0.45rem;
-  border: 1px solid var(--tf-warning-border);
-  border-radius: 3px;
-  color: var(--tf-muted);
-  font-size: 0.75rem;
-  font-weight: 400;
-  white-space: nowrap;
-}
-
-/*
- * A section where *some* standards are readable and some are not.
- *
- * Deliberately weaker than the wholly-unsupported marking: a dashed border
- * rather than a solid one, because the section is not dead. What it must not do
- * is look identical to the fully-supported case, which is the failure this
- * marking exists to prevent.
- */
-.tf-profile-section-partial {
-  border-style: dashed;
-}
-
 .tf-profile-section-limits {
   display: flex;
   flex-direction: column;
@@ -1066,25 +932,6 @@ h4 {
   gap: 0.5rem;
 }
 
-/* The sticky footer carries the two counts and the one button that writes, so it
-   is where the user is looking when they decide. `bottom: 0` inside the section
-   rather than `position: fixed`, which would float over other pages.
-
-   A solid background and a top border are load-bearing rather than decorative:
-   cards scroll *under* the footer, and a translucent one would show the text it
-   is covering, which is exactly the ambiguity a sticky footer exists to remove. */
-.tf-pending-footer {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.5rem 0;
-  background: var(--tf-surface);
-  border-top: 1px solid var(--tf-border);
-}
-
 .tf-conflict-list {
   margin-bottom: 0.5rem;
   color: var(--tf-danger);
@@ -1101,7 +948,9 @@ h4 {
   min-height: 56px;
   border-bottom: 1px solid var(--tf-border);
   padding: 8px 0 12px;
-  margin: -4px 0 16px;
+  /* The shell's PageContainer owns the gutter now, so the header no longer
+     cancels a card's padding with a negative margin. */
+  margin: 0 0 16px;
   background: var(--tf-surface);
 }
 
@@ -1167,8 +1016,23 @@ h4 {
 
 .tf-nav-drawer {
   display: grid;
-  gap: 4px;
+  gap: 12px;
   padding: 8px;
+}
+
+.tf-nav-group {
+  display: grid;
+  gap: 4px;
+}
+
+.tf-nav-group-label {
+  margin: 0;
+  padding: 0 12px;
+  font-size: var(--tf-font-caption);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tf-text-muted);
 }
 
 .tf-nav-drawer button {
@@ -1247,60 +1111,11 @@ h4 {
   margin-bottom: 0.75rem;
 }
 
-.tf-debug-section {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--tf-border);
-}
-
-/* The "what to check" list. Each item is a situation, its cause, and its
-   remedy, so the three sit as one block rather than as three loose paragraphs
-   that a reader has to group themselves. */
-.tf-troubleshooting-list {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.tf-troubleshooting-list > li {
-  padding: 10px 12px;
-  border: 1px solid var(--tf-border);
-  border-left: 3px solid var(--tf-warning-border);
-  border-radius: 4px;
-  background: var(--tf-surface-subtle);
-}
-
-.tf-troubleshooting-list p {
-  margin: 0 0 4px;
-}
-
-.tf-troubleshooting-list p:last-child {
-  margin-bottom: 0;
-  color: var(--tf-muted);
-  font-size: 12px;
-}
-
 .tf-debug-warning {
   padding: 0.75rem;
   border: 1px solid var(--tf-warning-border);
   border-radius: 4px;
   background: var(--tf-warning-bg);
-}
-
-.tf-debug-output {
-  overflow: auto;
-  max-height: 18rem;
-  padding: 0.5rem;
-  background: var(--tf-bg);
-  color: var(--tf-text);
-  white-space: pre-wrap;
-}
-
-.tf-debug-confirmation {
-  display: block;
-  margin: 0.75rem 0;
 }
 
 .sr-only {
@@ -1425,13 +1240,6 @@ h4 {
   font-weight: 600;
 }
 
-/* Side-by-side comparison stays readable when the pane is narrow. */
-.tf-published-list + section table {
-  table-layout: fixed;
-  width: 100%;
-  overflow-wrap: anywhere;
-}
-
 @media (max-width: 420px) {
   .tf-active-profile {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -1453,6 +1261,38 @@ h4 {
   .tf-settings-section,
   .tf-lifecycle-actions {
     padding: 12px;
+  }
+}
+
+/*
+ * Windows High Contrast (forced-colors) — spec §50 criterion 29.
+ *
+ * Fluent v9 components already honour forced-colors, but the residual `--tf-*`
+ * surfaces in this stylesheet are hand-authored and would keep their light or
+ * dark values, which the OS then overrides inconsistently. Redefining the
+ * variables to system colours in one place fixes every consumer at once, since
+ * every rule below reads `var(--tf-*)`.
+ *
+ * The semantic tones collapse to `CanvasText` on purpose: forced-colors removes
+ * colour, and the pane already carries meaning in text and icons rather than in
+ * colour alone (criterion 27), so nothing is lost.
+ */
+@media (forced-colors: active) {
+  :root,
+  .tf-theme-light,
+  .tf-theme-dark {
+    --tf-bg: Canvas;
+    --tf-surface: Canvas;
+    --tf-surface-subtle: Canvas;
+    --tf-text: CanvasText;
+    --tf-muted: CanvasText;
+    --tf-accent: LinkText;
+    --tf-accent-hover: LinkText;
+    --tf-border: CanvasText;
+    --tf-warning-bg: Canvas;
+    --tf-warning-border: CanvasText;
+    --tf-danger: CanvasText;
+    --tf-success: CanvasText;
   }
 }
 

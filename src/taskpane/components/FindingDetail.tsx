@@ -35,6 +35,7 @@
  */
 
 import React, { useState } from "react";
+import { Button } from "@fluentui/react-components";
 import type { Finding } from "../../core/domain/Finding";
 import { goToFinding } from "../findingNavigation";
 import { describeFindingLocation } from "../findingLocation";
@@ -305,15 +306,13 @@ export default function FindingDetail({
       )}
 
       <nav className="tf-finding-actions" aria-label="Finding actions">
-        <button
-          className="tf-native-button"
-          type="button"
+        <Button
           onClick={() => void handleGoToText()}
           disabled={navigationState.status === "working"}
           aria-describedby={navigationStatusId}
         >
           {navigationState.status === "working" ? "Going to text…" : "Go to text"}
-        </button>
+        </Button>
         {/*
           Approve, Skip and Undo decision (spec §15).
 
@@ -325,24 +324,16 @@ export default function FindingDetail({
           once a decision is recorded.
         */}
         {onReview && controls.kind === "undecided" && !manualCorrection && (
-          <button className="tf-native-button" type="button" onClick={() => onReview(finding)}>
-            Approve
-          </button>
+          <Button onClick={() => onReview(finding)}>Approve</Button>
         )}
         {onSkip && controls.kind !== "approved" && (
-          <button className="tf-native-button" type="button" onClick={() => onSkip(finding)}>
-            Skip
-          </button>
+          <Button onClick={() => onSkip(finding)}>Skip</Button>
         )}
         {onUndo && controls.kind !== "undecided" && (
-          <button className="tf-native-button" type="button" onClick={() => onUndo(finding)}>
-            Undo decision
-          </button>
+          <Button onClick={() => onUndo(finding)}>Undo decision</Button>
         )}
         {onIgnore && (
-          <button
-            className="tf-native-button"
-            type="button"
+          <Button
             onClick={() => onIgnore(finding.id)}
             /*
              * Disabled once decided, and it has to be: approving admits a change
@@ -360,7 +351,7 @@ export default function FindingDetail({
             aria-describedby={controls.kind === "undecided" ? undefined : ignoreBlockedId}
           >
             Ignore
-          </button>
+          </Button>
         )}
         {controls.kind !== "undecided" && onIgnore ? (
           <span id={ignoreBlockedId} className="sr-only">

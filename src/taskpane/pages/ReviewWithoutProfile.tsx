@@ -1,4 +1,6 @@
 import React from "react";
+import { Button } from "@fluentui/react-components";
+import { Breadcrumb } from "../shell";
 
 /**
  * Deterministic Review, with no deterministic style profile.
@@ -35,12 +37,8 @@ export default function ReviewWithoutProfile({
   onOpenProfile,
 }: ReviewWithoutProfileProps): React.ReactNode {
   return (
-    <div className="tf-card" data-page="review">
-      <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button className="tf-native-button" type="button" onClick={onBack}>
-          Back to Home
-        </button>
-      </nav>
+    <div data-page="review">
+      <Breadcrumb label="Back to Home" onBack={onBack} />
 
       <h1 className="tf-title">Deterministic Review</h1>
       <p className="tf-sub">
@@ -67,9 +65,7 @@ export default function ReviewWithoutProfile({
       </section>
 
       <div className="tf-actions">
-        <button className="tf-native-button" type="button" onClick={onOpenProfile}>
-          Deterministic Style Profile
-        </button>
+        <Button onClick={onOpenProfile}>Deterministic Style Profile</Button>
       </div>
     </div>
   );

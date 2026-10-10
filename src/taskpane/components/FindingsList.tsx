@@ -21,6 +21,8 @@
  */
 
 import React from "react";
+import { Button } from "@fluentui/react-components";
+import { EmptyState } from "./common";
 import type { Finding } from "../../core/domain/Finding";
 import type { DeterministicFindingGroup } from "../../analysis/deterministic/contracts";
 import { reviewIdentity } from "../occurrenceIdentity";
@@ -97,7 +99,7 @@ export default function FindingsList({
 }: FindingsListProps): React.ReactNode {
   const [visibleCount, setVisibleCount] = React.useState(pageSize);
   if (findings.length === 0) {
-    return <p className="tf-empty">No findings detected.</p>;
+    return <EmptyState title="No findings detected." />;
   }
 
   const { units } = resolveFindingGroups(groups ?? [], findings);
@@ -182,13 +184,9 @@ export default function FindingsList({
         })}
       </div>
       {consumed < findings.length && (
-        <button
-          className="tf-native-button"
-          type="button"
-          onClick={() => setVisibleCount((count) => count + pageSize)}
-        >
+        <Button onClick={() => setVisibleCount((count) => count + pageSize)}>
           Show more findings ({findings.length - consumed} remaining)
-        </button>
+        </Button>
       )}
     </section>
   );

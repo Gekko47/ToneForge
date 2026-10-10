@@ -1,5 +1,5 @@
 import React from "react";
-import { Toggle } from "@fluentui/react";
+import { Switch } from "@fluentui/react-components";
 import type { PersistedState } from "../../core/state/persistence";
 import { DecisionFallbackPolicyControl } from "./DecisionFallbackPolicyControl";
 import { CONSISTENCY_CONSENT_EXPLANATION } from "../settings/settingsModel";
@@ -28,26 +28,22 @@ export function RedactionSettingsSection({
         AI Review is the only review that can send document text to a provider. Consent is
         per-feature and never implied by another.
       </p>
-      <Toggle
+      <Switch
         label="Allow semantic analysis"
         checked={settings.semanticOptIn}
-        onChange={(_event, value) => {
-          onChange({ ...state, settings: { ...settings, semanticOptIn: value ?? false } });
+        onChange={(_event, data) => {
+          onChange({ ...state, settings: { ...settings, semanticOptIn: data.checked } });
         }}
-        onText="Enabled"
-        offText="Disabled"
       />
-      <Toggle
+      <Switch
         label="Allow AI Review to send this document for consistency checking"
         checked={settings.consistencyReviewConsent}
-        onChange={(_event, value) => {
+        onChange={(_event, data) => {
           onChange({
             ...state,
-            settings: { ...settings, consistencyReviewConsent: value ?? false },
+            settings: { ...settings, consistencyReviewConsent: data.checked },
           });
         }}
-        onText="Enabled"
-        offText="Disabled"
       />
       <p className="tf-settings-note">{CONSISTENCY_CONSENT_EXPLANATION}</p>
       <DecisionFallbackPolicyControl

@@ -1,5 +1,6 @@
 import React from "react";
 import ScanningSettingsSection from "../components/ScanningSettingsSection";
+import { Breadcrumb } from "../shell";
 import StylingSettingsSection from "../components/StylingSettingsSection";
 import TrackedEditingSettingsSection from "../components/TrackedEditingSettingsSection";
 
@@ -21,12 +22,8 @@ export interface GeneralSettingsProps {
  */
 export default function GeneralSettings({ onBack }: GeneralSettingsProps): React.ReactNode {
   return (
-    <div className="tf-card" data-page="general-settings">
-      <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button className="tf-native-button" type="button" onClick={onBack}>
-          Back to Deterministic Review
-        </button>
-      </nav>
+    <div data-page="general-settings">
+      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
       <h2 className="tf-title">General Settings</h2>
       <ScanningSettingsSection />
       <TrackedEditingSettingsSection />

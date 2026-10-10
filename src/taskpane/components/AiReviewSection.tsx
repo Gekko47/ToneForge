@@ -20,6 +20,7 @@
  */
 
 import React from "react";
+import { Button } from "@fluentui/react-components";
 import ConsistencyReviewPreflight from "./ConsistencyReviewPreflight";
 import ConsistencyReviewProgress from "./ConsistencyReviewProgress";
 import ConsistencyReviewResults from "./ConsistencyReviewResults";
@@ -132,9 +133,7 @@ export default function AiReviewSection({
       {blocker !== null ? (
         <div role="status" data-testid="ai-review-blocker">
           <p className="tf-debug-warning">{blocker.message}</p>
-          <button className="tf-native-button" type="button" onClick={onOpenSettings}>
-            {blocker.action}
-          </button>
+          <Button onClick={onOpenSettings}>{blocker.action}</Button>
         </div>
       ) : null}
 
@@ -145,15 +144,14 @@ export default function AiReviewSection({
       )}
 
       {stage === "idle" ? (
-        <button
-          className="tf-native-button"
-          type="button"
+        <Button
+          appearance="primary"
           onClick={onStart}
           disabled={blocker !== null}
           aria-describedby={blocker !== null ? "ai-review-blocker" : undefined}
         >
           Check Consistency
-        </button>
+        </Button>
       ) : null}
 
       {stage === "preflight" && preflight !== null ? (

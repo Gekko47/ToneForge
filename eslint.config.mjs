@@ -49,6 +49,23 @@ export default [
       "@typescript-eslint/consistent-type-imports": "error",
       "no-console": ["error", { allow: ["warn", "error"] }],
       "prefer-const": "error",
+      /*
+       * No native browser dialogs (ADR-0133, spec §19/§46).
+       *
+       * `window.confirm`/`alert`/`prompt` are unthemed, untranslatable, and
+       * block the whole host. Destructive actions confirm through the shared
+       * `ConfirmDialog` and transient outcomes announce through `useToaster`.
+       * The ban is enforced rather than documented so the gate cannot regress:
+       * a search found zero calls when this was written, and this keeps it that
+       * way.
+       */
+      "no-alert": "error",
+      "no-restricted-globals": [
+        "error",
+        { name: "confirm", message: "Use the shared ConfirmDialog (ADR-0133)." },
+        { name: "alert", message: "Use the shared useToaster (ADR-0133)." },
+        { name: "prompt", message: "Use a Fluent field, not a native prompt (ADR-0133)." },
+      ],
       "no-restricted-syntax": [
         "error",
         {
@@ -69,13 +86,13 @@ export default [
      * production caller, which is how they survived — nothing rendered them,
      * so nothing looked wrong.
      *
-     * `src/taskpane/fluentTheme.ts` is exempt because it *is* the palette: it
-     * defines the tokens, so a literal there is the definition rather than a
-     * bypass. The CSS file is not linted by this rule at all, since tokens are
-     * written there by design.
+     * `src/taskpane/theme/toneForgeTheme.ts` is exempt because it *is* the
+     * palette: it defines the brand ramp and builds the two themes, so a
+     * literal there is the definition rather than a bypass. The CSS file is
+     * not linted by this rule at all, since tokens are written there by design.
      */
     files: ["src/taskpane/**/*.tsx", "src/taskpane/**/*.ts"],
-    ignores: ["src/taskpane/fluentTheme.ts"],
+    ignores: ["src/taskpane/theme/toneForgeTheme.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -101,7 +118,7 @@ export default [
          *
          * Only sizes on the ramp are allowed, so a value that means something
          * cannot be written where it cannot be changed. The ramp itself lives in
-         * `taskpane.css`; `fluentTheme.ts` is exempt below for the same reason
+         * `taskpane.css`; `toneForgeTheme.ts` is exempt below for the same reason
          * the colour rule exempts it — it defines the palette, so a literal there
          * is the definition rather than an escape from it.
          */

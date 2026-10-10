@@ -1,6 +1,7 @@
 import React from "react";
 import { diffProfiles } from "../../style/versioning";
 import type { StyleProfile } from "../../core/domain/StyleProfile";
+import { DiffCardList } from "./common/DiffCardList";
 
 export interface ProfileHistoryCompareProps {
   left: StyleProfile;
@@ -20,6 +21,9 @@ function render(value: unknown): string {
  * Side-by-side profile history comparison. Human-readable field changes are
  * always visible; the raw technical field diff sits behind progressive
  * disclosure so it never competes with the semantic summary.
+ *
+ * The comparison is a card list, not a table (plan §2.3/§33): a three-column
+ * table in a 320px pane is one word per cell and scrolls sideways.
  */
 export default function ProfileHistoryCompare({
   left,
@@ -36,27 +40,16 @@ export default function ProfileHistoryCompare({
       {changes.length === 0 ? (
         <p className="tf-sub">These versions are equivalent.</p>
       ) : (
-        <table>
-          <caption className="tf-sub">
-            {changes.length} field change(s) between {leftLabel} and {rightLabel}
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Field</th>
-              <th scope="col">{leftLabel}</th>
-              <th scope="col">{rightLabel}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {changes.map((change) => (
-              <tr key={change.field}>
-                <th scope="row">{change.field}</th>
-                <td>{render(change.from)}</td>
-                <td>{render(change.to)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DiffCardList
+          caption={`${changes.length} field change(s) between ${leftLabel} and ${rightLabel}`}
+          leftLabel={leftLabel}
+          rightLabel={rightLabel}
+          changes={changes.map((change) => ({
+            field: change.field,
+            from: render(change.from),
+            to: render(change.to),
+          }))}
+        />
       )}
       <details>
         <summary>Technical field diff</summary>

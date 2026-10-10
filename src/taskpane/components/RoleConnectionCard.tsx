@@ -1,5 +1,5 @@
 import React from "react";
-import { DefaultButton, MessageBar, MessageBarType, Toggle } from "@fluentui/react";
+import { Button, MessageBar, Switch } from "@fluentui/react-components";
 import type { LlmRole, LlmRoleBinding } from "../../core/domain/LlmRole";
 import type { ProviderConnection } from "../../core/domain/ProviderConnection";
 import { ConnectionTestButton } from "./ConnectionTestButton";
@@ -49,18 +49,16 @@ export function RoleConnectionCard({
       <p className="tf-sub">{label.description}</p>
       {configured ? (
         <>
-          <MessageBar messageBarType={MessageBarType.success} delayedRender={false}>
+          <MessageBar intent="success">
             Connected — {connection.provider} ·{" "}
             {binding?.selectedModel ?? connection.selectedModel ?? "default model"}
           </MessageBar>
           <ConnectionTestButton connection={connection} gatewayOrigin={gatewayOrigin} />
           {showReuseToggle ? (
-            <Toggle
+            <Switch
               label="Reuse general connection (different model)"
               checked={binding?.reuseGeneral === true}
-              onChange={(_event, value) => onReuseGeneralChange(value ?? false)}
-              onText="Reusing"
-              offText="Separate"
+              onChange={(_event, data) => onReuseGeneralChange(data.checked)}
             />
           ) : null}
           <ModelPicker
@@ -70,20 +68,18 @@ export function RoleConnectionCard({
             catalog={null}
             onCatalogChange={() => {}}
           />
-          <DefaultButton text="Disconnect" onClick={onDisconnect} />
+          <Button onClick={onDisconnect}>Disconnect</Button>
         </>
       ) : (
         <>
-          <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
+          <MessageBar intent="info">
             Not configured. Connect a provider to enable this role.
           </MessageBar>
           {showReuseToggle ? (
-            <Toggle
+            <Switch
               label="Reuse general connection (different model)"
               checked={binding?.reuseGeneral === true}
-              onChange={(_event, value) => onReuseGeneralChange(value ?? false)}
-              onText="Reusing"
-              offText="Separate"
+              onChange={(_event, data) => onReuseGeneralChange(data.checked)}
             />
           ) : null}
         </>

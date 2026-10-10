@@ -92,6 +92,36 @@ describe("command and manifest contracts", () => {
     expect(errors).toEqual([]);
   });
 
+  it("exposes only the four product groups on the ribbon, with pane-only commands off it", () => {
+    // Spec §42: the ribbon mirrors the product architecture — Deterministic
+    // Review, Semantic Review, Consistency Check, Styles — and keeps
+    // troubleshooting, governance and internal commands as secondary
+    // administration reached from the task pane. Criterion 30.
+    const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as {
+      extensions: Array<{
+        ribbons: Array<{ tabs: Array<{ id: string; groups: Array<{ label: string }> }> }>;
+      }>;
+    };
+    const tab = manifest.extensions[0]?.ribbons[0]?.tabs?.find(({ id }) => id === "ToneForge");
+    expect(tab?.groups.map(({ label }) => label)).toEqual([
+      "Deterministic Review",
+      "Semantic Review",
+      "Consistency Check",
+      "Styles",
+    ]);
+
+    const definitions = JSON.parse(
+      readFileSync(repositoryPath("src/commands/commandDefinitions.json"), "utf8"),
+    ) as Array<{ id: string; paneOnly?: boolean }>;
+    // The commands the user requires to stay wired, but which §42 keeps off the
+    // ribbon. They remain registered and reachable from the pane.
+    expect(definitions.filter(({ paneOnly }) => paneOnly === true).map(({ id }) => id)).toEqual([
+      "ToneForgeGovernancePolicy",
+      "ToneForgePendingChanges",
+      "ToneForgeTroubleshooting",
+    ]);
+  });
+
   it("rejects missing runtime actions, mismatched destinations, and missing XML resources", async () => {
     const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as {
       extensions: Array<{ runtimes: Array<{ id: string; actions: Array<{ id: string }> }> }>;

@@ -21,6 +21,7 @@
  */
 
 import React from "react";
+import { Button, MessageBar } from "@fluentui/react-components";
 import type { ApplyOutcome } from "../../reformat/orchestrator";
 
 export interface ApplyResultBlockProps {
@@ -70,15 +71,14 @@ export default function ApplyResultBlock({
 
   return (
     <section className="tf-collapsible" aria-label="Apply result">
-      <button
-        type="button"
-        className="tf-native-button tf-collapsible-header"
+      <Button
+        appearance="subtle"
         onClick={onToggle}
         aria-expanded={open}
         aria-label={`Apply result: ${verdict}`}
       >
         Apply result <span>{verdict}</span>
-      </button>
+      </Button>
       {open && (
         <div className={clean ? "tf-apply-result" : "tf-apply-result tf-apply-result-partial"}>
           {/*
@@ -116,9 +116,9 @@ export default function ApplyResultBlock({
           )}
 
           {outcome.remainingFindingsError !== undefined && (
-            <p className="tf-apply-result-bad" role="status">
+            <MessageBar intent="error" role="status">
               {outcome.remainingFindingsError}
-            </p>
+            </MessageBar>
           )}
 
           {/*
@@ -135,13 +135,9 @@ export default function ApplyResultBlock({
               {remainingFindings.summary.total > 0 && onReviewRemaining !== undefined && (
                 <>
                   {" "}
-                  <button
-                    type="button"
-                    className="tf-native-button tf-coverage-action"
-                    onClick={() => onReviewRemaining?.()}
-                  >
+                  <Button appearance="subtle" onClick={() => onReviewRemaining?.()}>
                     Review the {remainingFindings.summary.total} remaining
-                  </button>
+                  </Button>
                 </>
               )}
             </p>

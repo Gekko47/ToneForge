@@ -18,6 +18,7 @@
  */
 
 import React from "react";
+import { Button } from "@fluentui/react-components";
 import type { IgnoredFinding } from "../../core/domain/Finding";
 
 export interface IgnoredFindingsProps {
@@ -55,14 +56,13 @@ export default function IgnoredFindings({
 
   return (
     <section className="tf-collapsible" aria-label="Ignored findings section">
-      <button
-        type="button"
-        className="tf-native-button tf-collapsible-header"
+      <Button
+        appearance="subtle"
         onClick={() => setOpen((previous) => !previous)}
         aria-expanded={open}
       >
         Ignored findings <span>{entries.length}</span>
-      </button>
+      </Button>
       {open && (
         <>
           {/*
@@ -81,14 +81,10 @@ export default function IgnoredFindings({
                 </div>
                 <div className="tf-sub">{entry.category}</div>
                 <div className="tf-sub">Ignored {ignoredAtLabel(entry.ignoredAt)}</div>
-                <button
-                  className="tf-native-button"
-                  type="button"
-                  onClick={() => onRestore(occurrence)}
-                >
+                <Button onClick={() => onRestore(occurrence)}>
                   Restore
                   <span className="sr-only"> {entry.message}</span>
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

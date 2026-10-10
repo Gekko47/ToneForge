@@ -1,13 +1,13 @@
 import React from "react";
 import {
+  Button,
   Checkbox,
-  DefaultButton,
   Dropdown,
+  Field,
+  Input,
   MessageBar,
-  MessageBarType,
-  PrimaryButton,
-  TextField,
-} from "@fluentui/react";
+  Option,
+} from "@fluentui/react-components";
 import { v4 as uuidv4 } from "uuid";
 import {
   GOVERNANCE_RULE_SOURCES,
@@ -18,6 +18,8 @@ import {
   type ScopePolicy,
 } from "../../core/domain/GovernanceProfile";
 import { updateGovernancePolicy } from "../../core/state/persistence";
+import { useConfirmDialog } from "./common/ConfirmDialog";
+import { useToaster } from "./common/useToast";
 
 /**
  * Authoring for the normative half of the policy contract.
@@ -315,6 +317,8 @@ export default function GovernancePolicySection({
   policy,
   onPolicySaved,
 }: GovernancePolicySectionProps): React.ReactNode {
+  const { confirm, dialog } = useConfirmDialog();
+  const { toaster, notify } = useToaster();
   const [draft, setDraft] = React.useState<PolicyDraft>(() => toDraft(policy));
   const [savedAt, setSavedAt] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -367,8 +371,29 @@ export default function GovernancePolicySection({
     });
   }
 
-  function removeRule(id: string): void {
-    patch({ rules: draft.rules.filter((rule) => rule.id !== id) });
+  /*
+   * Removing a rule is destructive: it drops a category's severity and
+   * auto-fix behaviour, and the only way back is to author it again. It
+   * confirms first (spec §19, ADR-0133) rather than firing on one click.
+   */
+  async function removeRule(id: string): Promise<void> {
+    const rule = draft.rules.find((entry) => entry.id === id);
+    const confirmed = await confirm({
+      title: "Remove this rule?",
+      message: rule
+        ? `The rule for "${SOURCE_LABEL[rule.source]}" will be removed. Findings in that category fall back to the learned profile.`
+        : "This rule will be removed.",
+      confirmLabel: "Remove rule",
+      danger: true,
+    });
+    if (confirmed) {
+      // Filter from the latest draft, not the one captured before awaiting the
+      // dialog, so changes made while the dialog was open are preserved.
+      setDraft((previous) => ({
+        ...previous,
+        rules: previous.rules.filter((entry) => entry.id !== id),
+      }));
+    }
   }
 
   function toggleProtection(key: keyof ProtectionPolicy, checked: boolean): void {
@@ -410,6 +435,9 @@ export default function GovernancePolicySection({
       });
       onPolicySaved(next);
       setSavedAt(`Policy saved as version ${next.version}.`);
+      // The durable MessageBar below keeps the version visible; the toast is the
+      // transient confirmation (spec §20, ADR-0133) that the save landed.
+      notify(`Policy saved as version ${next.version}.`, "success");
       setError(null);
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -417,7 +445,9 @@ export default function GovernancePolicySection({
   }
 
   return (
-    <section className="tf-card" aria-labelledby="governance-policy-heading">
+    <section aria-labelledby="governance-policy-heading">
+      {dialog}
+      {toaster}
       <h2 id="governance-policy-heading">Governance policy</h2>
       <p className="tf-sub">
         These rules take precedence over the learned style profile. Version {policy.version}. Every
@@ -436,56 +466,68 @@ export default function GovernancePolicySection({
         )}
         {draft.rules.map((rule) => (
           <div key={rule.id} className="tf-settings-section" aria-label={`Rule for ${rule.source}`}>
-            <Dropdown
-              label="Applies to"
-              selectedKey={rule.source}
-              options={GOVERNANCE_RULE_SOURCES.map((source) => ({
-                key: source,
-                text: SOURCE_LABEL[source],
-                disabled: draft.rules.some(
-                  (other) => other.id !== rule.id && other.source === source,
-                ),
-              }))}
-              onChange={(_event, option) => {
-                if (option) {
-                  patchRule(rule.id, {
-                    source: option.key as (typeof GOVERNANCE_RULE_SOURCES)[number],
-                  });
-                }
-              }}
-            />
-            <TextField
-              label="Description"
-              value={rule.description}
-              placeholder="House terminology is mandatory"
-              onChange={(_event, value) => patchRule(rule.id, { description: value ?? "" })}
-            />
-            <Dropdown
-              label="Severity"
-              selectedKey={rule.severity}
-              options={SEVERITY_OPTIONS}
-              onChange={(_event, option) => {
-                if (option) {
-                  patchRule(rule.id, {
-                    severity: option.key as GovernanceRule["severity"],
-                  });
-                }
-              }}
-            />
+            <Field label="Applies to">
+              <Dropdown
+                value={SOURCE_LABEL[rule.source]}
+                selectedOptions={[rule.source]}
+                onOptionSelect={(_event, data) => {
+                  if (data.optionValue) {
+                    patchRule(rule.id, {
+                      source: data.optionValue as (typeof GOVERNANCE_RULE_SOURCES)[number],
+                    });
+                  }
+                }}
+              >
+                {GOVERNANCE_RULE_SOURCES.map((source) => (
+                  <Option
+                    key={source}
+                    value={source}
+                    disabled={draft.rules.some(
+                      (other) => other.id !== rule.id && other.source === source,
+                    )}
+                  >
+                    {SOURCE_LABEL[source]}
+                  </Option>
+                ))}
+              </Dropdown>
+            </Field>
+            <Field label="Description">
+              <Input
+                value={rule.description}
+                placeholder="House terminology is mandatory"
+                onChange={(_event, data) => patchRule(rule.id, { description: data.value })}
+              />
+            </Field>
+            <Field label="Severity">
+              <Dropdown
+                value={SEVERITY_OPTIONS.find((option) => option.key === rule.severity)?.text ?? ""}
+                selectedOptions={[rule.severity]}
+                onOptionSelect={(_event, data) => {
+                  if (data.optionValue) {
+                    patchRule(rule.id, {
+                      severity: data.optionValue as GovernanceRule["severity"],
+                    });
+                  }
+                }}
+              >
+                {SEVERITY_OPTIONS.map((option) => (
+                  <Option key={option.key} value={option.key}>
+                    {option.text}
+                  </Option>
+                ))}
+              </Dropdown>
+            </Field>
             <Checkbox
               label="Auto-fix findings in this category"
               checked={rule.autoFix}
-              onChange={(_event, checked) => patchRule(rule.id, { autoFix: checked === true })}
+              onChange={(_event, data) => patchRule(rule.id, { autoFix: data.checked === true })}
             />
-            <DefaultButton onClick={() => removeRule(rule.id)}>Remove rule</DefaultButton>
+            <Button onClick={() => void removeRule(rule.id)}>Remove rule</Button>
           </div>
         ))}
-        <DefaultButton
-          onClick={addRule}
-          disabled={draft.rules.length >= GOVERNANCE_RULE_SOURCES.length}
-        >
+        <Button onClick={addRule} disabled={draft.rules.length >= GOVERNANCE_RULE_SOURCES.length}>
           Add rule
-        </DefaultButton>
+        </Button>
       </section>
 
       {/*
@@ -513,20 +555,20 @@ export default function GovernancePolicySection({
             label={flag.label}
             title={flag.detail}
             checked={draft.protection[flag.key]}
-            onChange={(_event, checked) => toggleProtection(flag.key, checked === true)}
+            onChange={(_event, data) => toggleProtection(flag.key, data.checked === true)}
           />
         ))}
         {pendingProtection !== null && (
           <div>
-            <MessageBar messageBarType={MessageBarType.severeWarning} delayedRender={false}>
+            <MessageBar intent="warning">
               {PROTECTION_FLAGS.find((flag) => flag.key === pendingProtection)?.label} will be
               switched off for every scan. Content of this kind may be changed by a previewed,
               applied plan.
             </MessageBar>
-            <PrimaryButton onClick={confirmProtection}>Yes, turn it off</PrimaryButton>
-            <DefaultButton onClick={() => setPendingProtection(null)}>
-              Keep it protected
-            </DefaultButton>
+            <Button appearance="primary" onClick={confirmProtection}>
+              Yes, turn it off
+            </Button>
+            <Button onClick={() => setPendingProtection(null)}>Keep it protected</Button>
           </div>
         )}
       </section>
@@ -542,8 +584,8 @@ export default function GovernancePolicySection({
             key={flag.key}
             label={flag.label}
             checked={draft.scope[flag.key]}
-            onChange={(_event, checked) =>
-              patch({ scope: { ...draft.scope, [flag.key]: checked === true } })
+            onChange={(_event, data) =>
+              patch({ scope: { ...draft.scope, [flag.key]: data.checked === true } })
             }
           />
         ))}
@@ -553,8 +595,8 @@ export default function GovernancePolicySection({
             key={flag.key}
             label={flag.label}
             checked={draft.scope[flag.key]}
-            onChange={(_event, checked) =>
-              patch({ scope: { ...draft.scope, [flag.key]: checked === true } })
+            onChange={(_event, data) =>
+              patch({ scope: { ...draft.scope, [flag.key]: data.checked === true } })
             }
           />
         ))}
@@ -578,12 +620,12 @@ export default function GovernancePolicySection({
               }
               disabled={!inScope}
               checked={checked}
-              onChange={(_event, value) =>
+              onChange={(_event, data) =>
                 patch({
                   scope: {
                     ...draft.scope,
                     mandatoryScopes:
-                      value === true
+                      data.checked === true
                         ? [...draft.scope.mandatoryScopes, entry.scope]
                         : draft.scope.mandatoryScopes.filter((scope) => scope !== entry.scope),
                   },
@@ -594,26 +636,22 @@ export default function GovernancePolicySection({
         })}
       </section>
 
-      {problem !== null && (
-        <MessageBar messageBarType={MessageBarType.severeWarning} delayedRender={false}>
-          {problem}
-        </MessageBar>
-      )}
+      {problem !== null && <MessageBar intent="warning">{problem}</MessageBar>}
       {error !== null && (
-        <MessageBar messageBarType={MessageBarType.error} role="alert">
+        <MessageBar intent="error" role="alert">
           {error}
         </MessageBar>
       )}
       {savedAt !== null && (
-        <MessageBar messageBarType={MessageBarType.success} role="status">
+        <MessageBar intent="success" role="status">
           {savedAt}
         </MessageBar>
       )}
       <div className="tf-settings-actions">
-        <PrimaryButton onClick={save} disabled={!dirty || problem !== null}>
+        <Button appearance="primary" onClick={save} disabled={!dirty || problem !== null}>
           Save governance policy
-        </PrimaryButton>
-        <DefaultButton
+        </Button>
+        <Button
           onClick={() => {
             setDraft(toDraft(policy));
             setError(null);
@@ -622,7 +660,7 @@ export default function GovernancePolicySection({
           disabled={!dirty}
         >
           Discard changes
-        </DefaultButton>
+        </Button>
       </div>
     </section>
   );

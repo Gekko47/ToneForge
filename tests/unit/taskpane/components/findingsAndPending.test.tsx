@@ -313,6 +313,21 @@ describe("PendingChanges apply readiness", () => {
     expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
   });
 
+  it("confirms before removing a change, and only then calls onRemove", async () => {
+    // Removing withdraws the review that put the change in the plan, so it is
+    // destructive and confirms first (spec §19, ADR-0133). The dialog is the
+    // gate: onRemove must not fire until the user confirms.
+    const onRemove = vi.fn();
+    render(<PendingChanges plan={plan} findings={[]} onApply={vi.fn()} onRemove={onRemove} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(onRemove).not.toHaveBeenCalled();
+    expect(await screen.findByText("Remove this change?")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Remove change" }));
+    expect(onRemove).toHaveBeenCalledWith("44444444-4444-4444-4444-444444444444");
+  });
+
   it("offers Preview only when the caller can build one", async () => {
     const onPreview = vi.fn();
     const { rerender } = render(

@@ -50,7 +50,7 @@ or inline `import { type X }`.
 - `no-restricted-syntax` forbids `ForStatement` — use array methods or
   `forEach`.
 - No colour literals in `src/taskpane/**` except
-  [`src/taskpane/fluentTheme.ts`](../../src/taskpane/fluentTheme.ts), which _is_ the
+  [`src/taskpane/theme/toneForgeTheme.ts`](../../src/taskpane/theme/toneForgeTheme.ts), which _is_ the
   palette. Use the theme tokens in `taskpane.css` so the UI follows the theme.
 - `lint` runs with `--max-warnings 0`. A warning fails the build.
 

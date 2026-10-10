@@ -13,6 +13,8 @@
  * document is too short, and the one route in runs a model over their prose.
  */
 import React from "react";
+import { Button } from "@fluentui/react-components";
+import { useConfirmDialog } from "./common/ConfirmDialog";
 import type { ProfileSummary } from "../../core/state/profileSelectors";
 import type { ProfileRecord } from "../../core/domain/ProfileRecord";
 
@@ -36,8 +38,30 @@ export default function SemanticProfilePicker({
   onCreateEmpty,
   onDelete,
 }: SemanticProfilePickerProps): React.ReactNode {
+  const { confirm, dialog } = useConfirmDialog();
+
+  /*
+   * Deleting a profile is destructive and irreversible, so it confirms first
+   * (spec §19, ADR-0133). The dialog is rendered inside this section rather
+   * than portalled to the pane root: it is scoped to the list it acts on, and
+   * the shared helper still focus-traps and dismisses on Escape.
+   */
+  async function confirmDelete(record: ProfileSummary): Promise<void> {
+    const confirmed = await confirm({
+      title: `Delete "${record.name}"?`,
+      message:
+        "This removes the semantic profile and its published revisions. It cannot be undone.",
+      confirmLabel: "Delete profile",
+      danger: true,
+    });
+    if (confirmed) {
+      onDelete(record.id);
+    }
+  }
+
   return (
-    <section aria-labelledby="semantic-profiles-heading" className="tf-card">
+    <section aria-labelledby="semantic-profiles-heading">
+      {dialog}
       <h2 id="semantic-profiles-heading">Semantic profiles</h2>
       <p className="tf-sub">
         A semantic profile says how the writing should sound. The rewrite is asked to match
@@ -70,13 +94,9 @@ export default function SemanticProfilePicker({
                    * screen reader user nothing about which one they are on, and
                    * a list of them is not a list they can navigate.
                    */
-                  <button
-                    className="tf-native-button"
-                    type="button"
-                    onClick={() => onSelect(record.id)}
-                  >
+                  <Button onClick={() => onSelect(record.id)}>
                     Use this one<span className="sr-only"> — {record.name}</span>
-                  </button>
+                  </Button>
                 )}
                 {/*
                   Deleting the only profile is offered, and lands the pane back on
@@ -84,13 +104,9 @@ export default function SemanticProfilePicker({
                   refuses the one action that would leave the user stuck is worse
                   than one that lets them back out.
                 */}
-                <button
-                  className="tf-native-button"
-                  type="button"
-                  onClick={() => onDelete(record.id)}
-                >
+                <Button onClick={() => void confirmDelete(record)}>
                   Delete<span className="sr-only"> {record.name}</span>
-                </button>
+                </Button>
               </li>
             );
           })}
@@ -98,9 +114,7 @@ export default function SemanticProfilePicker({
       )}
 
       <div className="tf-actions">
-        <button className="tf-native-button" type="button" onClick={onCreateEmpty}>
-          Create empty profile
-        </button>
+        <Button onClick={onCreateEmpty}>Create empty profile</Button>
       </div>
 
       {activeRecord !== null && (

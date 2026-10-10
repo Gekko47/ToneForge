@@ -26,7 +26,7 @@
  */
 
 import React from "react";
-import { Dropdown, TextField, type IDropdownOption } from "@fluentui/react";
+import { Dropdown, Field, Input, Option, Textarea } from "@fluentui/react-components";
 import {
   SemanticStyleProfileSchema,
   type SemanticStyleProfile,
@@ -40,8 +40,8 @@ export interface SemanticProfileEditorProps {
 }
 
 /** Options for a closed enum, labelled for a person. */
-function options<T extends string>(values: readonly T[]): IDropdownOption[] {
-  return values.map((value) => ({ key: value, text: label(value) }));
+function options<T extends string>(values: readonly T[]): readonly [T, string][] {
+  return values.map((value) => [value, label(value)]);
 }
 
 /** `direct-analytical` reads as `Direct analytical`. */
@@ -109,15 +109,22 @@ function EnumField<T extends string>(props: {
   onChange: (next: T) => void;
 }): React.ReactNode {
   return (
-    <Dropdown
-      id={props.id}
-      label={props.label}
-      selectedKey={props.value}
-      options={options(props.values)}
-      onChange={(_event, option) => {
-        if (option !== undefined) props.onChange(option.key as T);
-      }}
-    />
+    <Field label={props.label}>
+      <Dropdown
+        id={props.id}
+        value={label(props.value)}
+        selectedOptions={[props.value]}
+        onOptionSelect={(_event, data) => {
+          if (data.optionValue) props.onChange(data.optionValue as T);
+        }}
+      >
+        {options(props.values).map(([value, text]) => (
+          <Option key={value} value={value}>
+            {text}
+          </Option>
+        ))}
+      </Dropdown>
+    </Field>
   );
 }
 
@@ -133,16 +140,17 @@ function NumberField(props: {
   const [draft, setDraft] = React.useState(String(props.value));
   React.useEffect(() => setDraft(String(props.value)), [props.value]);
   return (
-    <TextField
-      id={props.id}
-      label={`${props.label} (${props.min}-${props.max})`}
-      value={draft}
-      onChange={(_event, next) => setDraft(next ?? "")}
-      onBlur={() => {
-        const parsed = toNumber(draft, props.value, props.min, props.max);
-        if (parsed !== props.value) props.onChange(parsed);
-      }}
-    />
+    <Field label={`${props.label} (${props.min}-${props.max})`}>
+      <Input
+        id={props.id}
+        value={draft}
+        onChange={(_event, data) => setDraft(data.value)}
+        onBlur={() => {
+          const parsed = toNumber(draft, props.value, props.min, props.max);
+          if (parsed !== props.value) props.onChange(parsed);
+        }}
+      />
+    </Field>
   );
 }
 
@@ -181,16 +189,16 @@ function LinesField(props: {
     props.onChange(lines);
   };
   return (
-    <TextField
-      id={props.id}
-      label={props.label}
-      multiline
-      rows={props.rows}
-      maxLength={props.maxLength}
-      value={draft}
-      onChange={(_event, next) => setDraft(next ?? "")}
-      onBlur={commit}
-    />
+    <Field label={props.label}>
+      <Textarea
+        id={props.id}
+        rows={props.rows}
+        maxLength={props.maxLength}
+        value={draft}
+        onChange={(_event, data) => setDraft(data.value)}
+        onBlur={commit}
+      />
+    </Field>
   );
 }
 
@@ -236,7 +244,7 @@ export default function SemanticProfileEditor({
   }
 
   return (
-    <section aria-labelledby="semantic-heading" className="tf-card">
+    <section aria-labelledby="semantic-heading">
       <h2 id="semantic-heading">Semantic style</h2>
       <p className="tf-sub">
         How the writing sounds rather than how it is punctuated. These values are what the semantic

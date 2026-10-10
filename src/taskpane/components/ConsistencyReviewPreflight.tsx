@@ -23,6 +23,7 @@
  */
 
 import React from "react";
+import { Button, Checkbox } from "@fluentui/react-components";
 import { redactionListFor } from "../../analysis/consistency";
 
 export interface ConsistencyReviewPreflightProps {
@@ -90,27 +91,22 @@ export default function ConsistencyReviewPreflight({
         </ul>
       </div>
       {onAllowUnredactedChange !== undefined ? (
-        <label className="tf-inline-row">
-          <input
-            className="tf-native"
-            type="checkbox"
-            checked={allowUnredacted}
-            onChange={(event) => onAllowUnredactedChange(event.target.checked)}
-            disabled={disabled}
-          />
-          Allow unredacted evidence for this run — exact statement text will be sent to{" "}
-          {providerName}.
-        </label>
+        <Checkbox
+          checked={allowUnredacted}
+          onChange={(_event, data) => onAllowUnredactedChange(data.checked === true)}
+          disabled={disabled}
+          label={`Allow unredacted evidence for this run — exact statement text will be sent to ${providerName}.`}
+        />
       ) : null}
       {storageNote !== undefined ? <p className="tf-sub">Storage: {storageNote}</p> : null}
       <p>Nothing in your document is changed by this review.</p>
       <div className="tf-inline-row">
-        <button className="tf-native-button" type="button" onClick={onStart} disabled={disabled}>
+        <Button appearance="primary" onClick={onStart} disabled={disabled}>
           Start consistency review
-        </button>
-        <button className="tf-native-button" type="button" onClick={onCancel} disabled={disabled}>
+        </Button>
+        <Button onClick={onCancel} disabled={disabled}>
           Cancel
-        </button>
+        </Button>
       </div>
     </section>
   );

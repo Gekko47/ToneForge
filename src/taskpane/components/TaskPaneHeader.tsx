@@ -1,41 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
-import { IconButton } from "@fluentui/react";
-import { nativeButtonProps } from "../nativeField";
+import { Button } from "@fluentui/react-components";
+import { Dismiss24Regular, Navigation24Regular } from "@fluentui/react-icons";
+import { HOME_ROUTE, NAV_GROUPS, TASKPANE_DESTINATIONS, type TaskPaneDestination } from "../routes";
 
-export type TaskPaneDestination =
-  /** The landing page: the setup checklist. Reachable with no profile at all. */
-  | "landing"
-  /** Deterministic Review: findings, coverage, and pending changes. */
-  | "review"
-  | "consistency"
-  | "profile"
-  /**
-   * Semantic Review: the review of a selection against a style.
-   *
-   * And `semantic-style` beside it, for the style itself. Two destinations, one
-   * ribbon command (D10): the button opens Review, and Style is reached from
-   * Review's own control or from this drawer. A second ribbon button would have
-   * needed a second command claiming a navigation target, and
-   * `duplicateNavigationTargets()` fails the build on exactly that — which is the
-   * right outcome, because two buttons opening two pages that a user thinks are
-   * one feature is how the split reads as a duplicate rather than as a split.
-   */
-  | "semantic-review"
-  | "semantic-style"
-  | "governance-policy"
-  /**
-   * Two settings pages, because they answer two different questions.
-   *
-   * `llm-settings` is the provider and consent surface: the two LLM roles, the
-   * connect-a-provider card, and the redaction/consent section. `general-settings`
-   * is the project-wide surface: scanning, tracked editing, and styling. They were
-   * one page until the LLM connector change replaced the composed Settings page
-   * with the LLM dashboard and left the general sections unmounted; the split
-   * restores them and names each page for what it holds.
-   */
-  | "llm-settings"
-  | "general-settings"
-  | "troubleshooting";
+/*
+ * Re-exported from the single `ROUTES` source (ADR-0131) so existing importers
+ * keep working while the drawer, Home, and any breadcrumb read one list. The
+ * type and the enumeration used to live here; they now live in `routes.ts`.
+ */
+export { TASKPANE_DESTINATIONS, type TaskPaneDestination };
 
 interface TaskPaneHeaderProps {
   activePage: TaskPaneDestination;
@@ -54,40 +27,6 @@ interface TaskPaneHeaderProps {
    */
   lastScan?: string | null | undefined;
 }
-
-/**
- * The drawer, in the order a user works in rather than alphabetically.
- *
- * **The two semantic entries are adjacent and read as a pair.** "Semantic Review"
- * and "Semantic Style" sit together because they are two halves of one feature
- * with one thing in common — a style — and the user who has just learned one is
- * about to review with it. Separating them would have put the style editor
- * among the policy pages, which is where it was before the split and where
- * nobody found it.
- */
-/**
- * Exported so a routing test can enumerate destinations rather than repeat them.
- *
- * The bug this exists to prevent: a destination was added to the drawer with no
- * branch in `DashboardWithoutProfile`, and every click on it fell through to Home.
- * A test listing destinations by name would have gone stale silently in the same
- * way the routing did; one that reads the list cannot.
- */
-export const TASKPANE_DESTINATIONS: readonly {
-  key: TaskPaneDestination;
-  label: string;
-}[] = [
-  { key: "landing", label: "Home" },
-  { key: "review", label: "Deterministic Review" },
-  { key: "consistency", label: "Consistency Review" },
-  { key: "profile", label: "Deterministic Style Profile" },
-  { key: "semantic-review", label: "Semantic Review" },
-  { key: "semantic-style", label: "Semantic Style" },
-  { key: "governance-policy", label: "Governance Policy" },
-  { key: "llm-settings", label: "LLM Settings" },
-  { key: "general-settings", label: "General Settings" },
-  { key: "troubleshooting", label: "Troubleshooting" },
-];
 
 export default function TaskPaneHeader({
   activePage,
@@ -134,10 +73,11 @@ export default function TaskPaneHeader({
   return (
     <header className="tf-app-header">
       <div ref={triggerRef}>
-        <IconButton
-          iconProps={{ iconName: "GlobalNavButton" }}
+        <Button
+          appearance="subtle"
+          icon={<Navigation24Regular />}
           title="Open navigation"
-          ariaLabel="Open navigation"
+          aria-label="Open navigation"
           aria-expanded={isOpen}
           onClick={() => setIsOpen(true)}
         />
@@ -193,24 +133,39 @@ export default function TaskPaneHeader({
           >
             <header className="tf-nav-panel-header">
               <h2 id="tf-navigation-title">ToneForge navigation</h2>
-              <IconButton
-                iconProps={{ iconName: "Cancel" }}
+              <Button
+                appearance="subtle"
+                icon={<Dismiss24Regular />}
                 title="Close navigation"
-                ariaLabel="Close navigation"
+                aria-label="Close navigation"
                 onClick={closeAndRestoreFocus}
               />
             </header>
             <nav aria-label="Task pane navigation" className="tf-nav-drawer">
-              {TASKPANE_DESTINATIONS.map((destination) => (
-                <button
-                  key={destination.key}
-                  type="button"
-                  {...nativeButtonProps(activePage === destination.key ? "is-active" : undefined)}
-                  aria-current={activePage === destination.key ? "page" : undefined}
-                  onClick={() => navigate(destination.key)}
-                >
-                  {destination.label}
-                </button>
+              <Button
+                key={HOME_ROUTE.key}
+                appearance="subtle"
+                className={activePage === HOME_ROUTE.key ? "is-active" : undefined}
+                aria-current={activePage === HOME_ROUTE.key ? "page" : undefined}
+                onClick={() => navigate(HOME_ROUTE.key)}
+              >
+                {HOME_ROUTE.label}
+              </Button>
+              {NAV_GROUPS.map((group) => (
+                <div key={group.key} className="tf-nav-group" role="group" aria-label={group.label}>
+                  <h3 className="tf-nav-group-label">{group.label}</h3>
+                  {group.routes.map((route) => (
+                    <Button
+                      key={route.key}
+                      appearance="subtle"
+                      className={activePage === route.key ? "is-active" : undefined}
+                      aria-current={activePage === route.key ? "page" : undefined}
+                      onClick={() => navigate(route.key)}
+                    >
+                      {route.label}
+                    </Button>
+                  ))}
+                </div>
               ))}
             </nav>
           </div>

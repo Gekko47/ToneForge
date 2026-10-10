@@ -139,7 +139,7 @@ flowchart TD
 - Modify [`RedactionSettingsSection.tsx`](src/taskpane/components/RedactionSettingsSection.tsx) to render two accordions; modify [`OpenRouterConnectionSettings.tsx`](src/taskpane/components/OpenRouterConnectionSettings.tsx:85) to use transient submit via [`submitBrokerApiKey()`](src/ai/gateway/gatewayClient.ts:316) then clear; modify [`LlmSettings.tsx`](src/taskpane/pages/LlmSettings.tsx:1) IA minimally.
 - Behaviour: collapsed shows [`Connected`](src/core/domain/ProviderConnection.ts:67) plus model; `not_configured` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:218) neutral; `connection_failed` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:248) red with `Test again` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:1330); no show-key control; `Replace key` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:1368) validates before swapping; `Disconnect` (systematic review/ToneForge_LLM_SETTINGS_SYSTEMATIC_IMPLEMENTATION.md:1389) confirms then calls [`disconnect()`](src/ai/gateway/gatewayClient.ts:388) plus [`clear()`](src/ai/gateway/gatewayClient.ts:136).
 - Tests: [`SettingsDashboard.test.tsx`](tests/unit/taskpane/components/SettingsDashboard.test.tsx:1), [`OpenRouterConnectionSettings.test.tsx`](tests/unit/taskpane/components/OpenRouterConnectionSettings.test.tsx:1), axe keyboard, dark plus high-contrast, narrow pane.
-- Depends on: Phase B. Gates: Fluent v8 theme via [`fluentTheme.ts`](src/taskpane/fluentTheme.ts:1).
+- Depends on: Phase B. Gates: Fluent v8 theme via [`toneForgeTheme.ts`](src/taskpane/theme/toneForgeTheme.ts:1).
 
 ### Phase D — Decision seam plus unresolved fallback
 

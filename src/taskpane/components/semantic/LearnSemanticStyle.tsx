@@ -1,4 +1,5 @@
 import React from "react";
+import { Button, Checkbox, Textarea } from "@fluentui/react-components";
 import { evaluateSampleQuality, type SampleQuality } from "../../../style/sampleQuality";
 import {
   MAX_TEXT_FILE_BYTES,
@@ -159,28 +160,28 @@ export default function LearnSemanticStyle({
 
       <div>
         <label htmlFor="tf-learn-pasted">Paste a sample of your writing</label>
-        <textarea
-          className="tf-native"
+        <Textarea
           id="tf-learn-pasted"
           value={pasted}
           rows={5}
-          onChange={(event) => setPasted(event.target.value)}
+          onChange={(_event, data) => setPasted(data.value)}
           placeholder="Paste a few paragraphs you have written."
         />
-        <button
-          className="tf-native-button"
-          type="button"
-          onClick={learnFromPasted}
-          disabled={pasted.trim() === ""}
-        >
+        <Button onClick={learnFromPasted} disabled={pasted.trim() === ""}>
           Use this text
-        </button>
+        </Button>
       </div>
 
       <div>
         <label htmlFor="tf-learn-file">Or choose a plain-text file</label>
+        {/*
+          ponytail: Fluent v9 has no file-picker component, so this stays a
+          native <input type="file">. It carries no `.tf-native` marker because
+          that rule is being deleted; the browser default is the correct
+          rendering for a file control. Upgrade path: a Fluent `Field` wrapper
+          around a visually-hidden native input if the default ever clashes.
+        */}
         <input
-          className="tf-native"
           id="tf-learn-file"
           type="file"
           accept={TEXT_FILE_EXTENSION}
@@ -198,19 +199,14 @@ export default function LearnSemanticStyle({
         whole document optional and not the primary route, and learning from it
         sends more of someone's writing than any other route here.
       */}
-      <button
-        className="tf-native-button"
-        type="button"
-        onClick={() => void learnFromDocument()}
-        disabled={busy}
-      >
+      <Button onClick={() => void learnFromDocument()} disabled={busy}>
         Use the current document
-      </button>
+      </Button>
 
       {refusal !== null && <p className="tf-debug-warning">{refusal}</p>}
 
       {sample !== null && quality !== null && (
-        <div className="tf-card">
+        <div>
           <p data-testid="sample-quality" className="tf-sub">
             {quality.wordCount} {quality.wordCount === 1 ? "word" : "words"} — {quality.level}, from{" "}
             {SOURCE_LABEL[source]}.
@@ -226,28 +222,23 @@ export default function LearnSemanticStyle({
             </p>
           )}
           {needsAcknowledgement && (
-            <label htmlFor="tf-learn-acknowledge">
-              <input
-                className="tf-native"
-                id="tf-learn-acknowledge"
-                type="checkbox"
-                checked={acknowledged}
-                onChange={(event) => setAcknowledged(event.target.checked)}
-              />
-              Learn from this sample anyway.
-            </label>
+            <Checkbox
+              id="tf-learn-acknowledge"
+              checked={acknowledged}
+              onChange={(_event, data) => setAcknowledged(data.checked === true)}
+              label="Learn from this sample anyway."
+            />
           )}
         </div>
       )}
 
-      <button
-        className="tf-native-button"
-        type="button"
+      <Button
+        appearance="primary"
         onClick={submit}
         disabled={!gate.allowed || sample === null || needsAcknowledgement || busy}
       >
         {busy ? "Learning…" : "Learn style"}
-      </button>
+      </Button>
 
       {!gate.allowed && gate.blocker !== null && (
         <p className="tf-debug-warning">
@@ -255,9 +246,9 @@ export default function LearnSemanticStyle({
           {gate.remedy?.destination === "llm-settings" && (
             <>
               {" "}
-              <button className="tf-native-button" type="button" onClick={onOpenSettings}>
+              <Button appearance="subtle" onClick={onOpenSettings}>
                 {gate.remedy.label}
-              </button>
+              </Button>
             </>
           )}
         </p>

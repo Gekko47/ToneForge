@@ -367,6 +367,9 @@ describe("Phase C task-pane components", () => {
     expect(screen.getByText("Required node inaccessible")).toBeInTheDocument();
 
     rerender(<StaleBanner stale onRescan={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: "Findings are stale" })).toBeInTheDocument();
+    // The banner is a Fluent MessageBar now: its title is a span, and the bar
+    // itself is a labelled group. Assert the accessible name rather than a
+    // heading role, which the MessageBar does not carry.
+    expect(screen.getByRole("group", { name: "Findings are stale" })).toBeInTheDocument();
   });
 });

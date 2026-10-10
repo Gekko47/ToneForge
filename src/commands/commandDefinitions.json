@@ -1,7 +1,7 @@
 [
   {
     "id": "ToneForgeScan",
-    "label": "Scan Now",
+    "label": "Run review",
     "jsonAction": "executeFunction",
     "xmlAction": "ExecuteFunction",
     "navigationTarget": "review",
@@ -9,7 +9,7 @@
   },
   {
     "id": "ToneForgeFindings",
-    "label": "Findings",
+    "label": "Review issues",
     "jsonAction": "executeFunction",
     "xmlAction": "ExecuteFunction",
     "navigationTarget": "findings",
@@ -17,7 +17,7 @@
   },
   {
     "id": "ToneForgeReview",
-    "label": "Review for Consistency",
+    "label": "Consistency Check",
     "jsonAction": "executeFunction",
     "xmlAction": "ExecuteFunction",
     "navigationTarget": "ai-review",
@@ -25,7 +25,7 @@
   },
   {
     "id": "ToneForgeProfile",
-    "label": "Style Profile",
+    "label": "Manage style",
     "jsonAction": "executeFunction",
     "xmlAction": "ExecuteFunction",
     "navigationTarget": "profile",
@@ -37,7 +37,8 @@
     "jsonAction": "executeFunction",
     "xmlAction": "ExecuteFunction",
     "navigationTarget": "governance-policy",
-    "xmlNavigationTarget": "default"
+    "xmlNavigationTarget": "default",
+    "paneOnly": true
   },
   {
     "id": "ToneForgePendingChanges",
@@ -45,7 +46,8 @@
     "jsonAction": "executeFunction",
     "xmlAction": "ExecuteFunction",
     "navigationTarget": "pending-changes",
-    "xmlNavigationTarget": "default"
+    "xmlNavigationTarget": "default",
+    "paneOnly": true
   },
   {
     "id": "ToneForgeTroubleshooting",
@@ -53,7 +55,8 @@
     "jsonAction": "executeFunction",
     "xmlAction": "ExecuteFunction",
     "navigationTarget": "debugging",
-    "xmlNavigationTarget": "default"
+    "xmlNavigationTarget": "default",
+    "paneOnly": true
   },
   {
     "id": "ToneForgeSemantic",

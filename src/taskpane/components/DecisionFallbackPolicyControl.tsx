@@ -1,5 +1,5 @@
 import React from "react";
-import { Dropdown, type IDropdownOption } from "@fluentui/react";
+import { Dropdown, Field, Option } from "@fluentui/react-components";
 import {
   DecisionFallbackPolicySchema,
   type DecisionFallbackPolicy,
@@ -12,11 +12,7 @@ export interface DecisionFallbackPolicyControlProps {
   disabled?: boolean;
 }
 
-const OPTIONS: IDropdownOption[] = FALLBACK_POLICY_OPTIONS.map((option) => ({
-  key: option.key,
-  text: option.text,
-  title: option.detail,
-}));
+const OPTIONS = FALLBACK_POLICY_OPTIONS;
 
 /**
  * Dropdown for the decision fallback policy.
@@ -31,15 +27,22 @@ export function DecisionFallbackPolicyControl({
   disabled,
 }: DecisionFallbackPolicyControlProps): React.ReactNode {
   return (
-    <Dropdown
-      label="When the decision LLM is unavailable"
-      selectedKey={value}
-      options={OPTIONS}
-      disabled={disabled ?? false}
-      onChange={(_event, option) => {
-        const parsed = DecisionFallbackPolicySchema.safeParse(option?.key);
-        if (parsed.success) onChange(parsed.data);
-      }}
-    />
+    <Field label="When the decision LLM is unavailable">
+      <Dropdown
+        value={OPTIONS.find((option) => option.key === value)?.text ?? ""}
+        selectedOptions={[value]}
+        disabled={disabled ?? false}
+        onOptionSelect={(_event, data) => {
+          const parsed = DecisionFallbackPolicySchema.safeParse(data.optionValue);
+          if (parsed.success) onChange(parsed.data);
+        }}
+      >
+        {OPTIONS.map((option) => (
+          <Option key={option.key} value={option.key} title={option.detail}>
+            {option.text}
+          </Option>
+        ))}
+      </Dropdown>
+    </Field>
   );
 }

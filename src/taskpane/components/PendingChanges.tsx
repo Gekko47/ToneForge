@@ -27,6 +27,10 @@
  */
 
 import React, { useId, useState } from "react";
+import { Button } from "@fluentui/react-components";
+import { StickyActionBar } from "./common";
+import { useConfirmDialog } from "./common/ConfirmDialog";
+import { useToaster } from "./common/useToast";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import type { Finding } from "../../core/domain/Finding";
@@ -116,6 +120,8 @@ export default function PendingChanges({
   const [applying, setApplying] = useState(false);
   const [navigationNote, setNavigationNote] = useState<string | null>(null);
   const localReadinessId = useId();
+  const { confirm, dialog } = useConfirmDialog();
+  const { toaster, notify } = useToaster();
   const cards = buildPendingChangeCards(plan, findings);
   const schemaBlocked = plan?.schemaVersion !== 2;
   const staleBlocked = plan?.stale === true;
@@ -171,6 +177,29 @@ export default function PendingChanges({
   }
 
   /*
+   * Removing a change is destructive: it withdraws the review that put the
+   * change in the plan, and the only way back is to review the finding again.
+   * It confirms first (spec §19, ADR-0133) rather than firing on one click, and
+   * announces the outcome through the toaster (spec §20) because the card
+   * disappearing is the only other sign it happened. The apply/reject outcomes
+   * are *not* toasted here: the pane already speaks those from its single live
+   * region (ADR-0062), and a toast would say them twice.
+   */
+  async function confirmRemove(changeId: string): Promise<void> {
+    const confirmed = await confirm({
+      title: "Remove this change?",
+      message:
+        "This withdraws the change from the pending list. The finding stays in Findings, so you can review it again.",
+      confirmLabel: "Remove change",
+      danger: true,
+    });
+    if (confirmed) {
+      onRemove?.(changeId);
+      notify("Change removed from the pending list.", "success");
+    }
+  }
+
+  /*
    * One navigation per click, through the shared guard.
    *
    * A card that called the host itself would race any other card's navigation,
@@ -211,11 +240,11 @@ export default function PendingChanges({
         <h3>Pending Changes</h3>
         <p>{emptyReason ?? "No changes are ready to apply for this document."}</p>
         {onPreview && (
-          <div className="tf-pending-footer">
-            <button className="tf-native-button" type="button" onClick={onPreview}>
+          <StickyActionBar>
+            <Button appearance="primary" onClick={onPreview}>
               Preview {totalCount} change{totalCount === 1 ? "" : "s"}
-            </button>
-          </div>
+            </Button>
+          </StickyActionBar>
         )}
       </section>
     );
@@ -224,6 +253,8 @@ export default function PendingChanges({
   const changes = plan.changes;
   return (
     <section aria-label="Pending changes" className="tf-pending">
+      {dialog}
+      {toaster}
       <h3>Pending Changes ({cards.length})</h3>
       {/*
         The three counts, labelled.
@@ -264,11 +295,7 @@ export default function PendingChanges({
       {applyDisabledReason !== null && (
         <div id="pending-apply-readiness" role="status" aria-live="polite" className="tf-sub">
           <p>{applyDisabledReason}</p>
-          {onOpenSettings && (
-            <button className="tf-native-button" type="button" onClick={onOpenSettings}>
-              Open General Settings
-            </button>
-          )}
+          {onOpenSettings && <Button onClick={onOpenSettings}>Open General Settings</Button>}
         </div>
       )}
       {coverage && !coverage.complete && (
@@ -322,24 +349,16 @@ export default function PendingChanges({
                 disabled Apply with no stated reason.
               */}
               {card.canNavigate && card.finding && (
-                <button
-                  className="tf-native-button"
-                  type="button"
+                <Button
                   onClick={() => {
                     void handleGoTo(card.finding as Finding);
                   }}
                 >
                   Go to text
-                </button>
+                </Button>
               )}
               {onRemove && (
-                <button
-                  className="tf-native-button"
-                  type="button"
-                  onClick={() => onRemove(card.changeId)}
-                >
-                  Remove
-                </button>
+                <Button onClick={() => void confirmRemove(card.changeId)}>Remove</Button>
               )}
             </div>
           </li>
@@ -359,46 +378,37 @@ export default function PendingChanges({
         after the cards so it is the last thing in the tab order — a control the
         user reaches after reading what it will do, not before.
       */}
-      <div className="tf-pending-footer">
-        <p className="tf-sub">
-          {totals.approved} approved · {totals.awaitingReview} awaiting review
-        </p>
-        <div className="tf-pending-actions">
-          <button
-            className="tf-native-button"
-            type="button"
-            onClick={handleApply}
-            disabled={applying || !canApply}
-            aria-describedby={canApply ? undefined : describedBy || undefined}
-          >
-            {applying
-              ? "Applying…"
-              : canApply
-                ? `Apply ${cards.length} with Track Changes`
-                : "Apply unavailable"}
-          </button>
-          <button
-            className="tf-native-button"
-            type="button"
-            onClick={handleReject}
-            disabled={applying}
-          >
-            Reject all
-          </button>
-          {/*
-            A change list a reviewer can hand to a colleague, without granting
-            them access to the document. Gated on the same coverage report as
-            Apply, because a list drawn from a partial analysis is
-            indistinguishable from a complete one once it is a file on someone's
-            disk.
-          */}
-          <ExportChangesButton
-            changes={changes}
-            findings={findings}
-            coverage={exportCoverage ?? null}
-          />
-        </div>
-      </div>
+      <StickyActionBar
+        summary={`${totals.approved} approved · ${totals.awaitingReview} awaiting review`}
+      >
+        <Button
+          appearance="primary"
+          onClick={handleApply}
+          disabled={applying || !canApply}
+          aria-describedby={canApply ? undefined : describedBy || undefined}
+        >
+          {applying
+            ? "Applying…"
+            : canApply
+              ? `Apply ${cards.length} with Track Changes`
+              : "Apply unavailable"}
+        </Button>
+        <Button onClick={handleReject} disabled={applying}>
+          Reject all
+        </Button>
+        {/*
+          A change list a reviewer can hand to a colleague, without granting
+          them access to the document. Gated on the same coverage report as
+          Apply, because a list drawn from a partial analysis is
+          indistinguishable from a complete one once it is a file on someone's
+          disk.
+        */}
+        <ExportChangesButton
+          changes={changes}
+          findings={findings}
+          coverage={exportCoverage ?? null}
+        />
+      </StickyActionBar>
 
       {result && (
         <p className="tf-detail tf-detail-spaced-2" aria-live="polite">

@@ -1,5 +1,5 @@
 import React from "react";
-import { DefaultButton, MessageBar, MessageBarType, PrimaryButton } from "@fluentui/react";
+import { Button, MessageBar } from "@fluentui/react-components";
 import { INITIAL_SECTION_STATUS, type SectionStatus } from "../settings/settingsModel";
 
 export interface SettingsSectionCardProps {
@@ -33,19 +33,23 @@ export default function SettingsSectionCard({
       <h2 id={headingId}>{title}</h2>
       <p className="tf-sub">{description}</p>
       {status.error && (
-        <MessageBar messageBarType={MessageBarType.error} role="alert">
+        <MessageBar intent="error" role="alert">
           {status.error}
         </MessageBar>
       )}
       {status.savedAt && (
-        <MessageBar messageBarType={MessageBarType.success} role="status" aria-live="polite">
+        <MessageBar intent="success" role="status" aria-live="polite">
           {title} settings saved.
         </MessageBar>
       )}
       <div className="tf-settings-fields">{children}</div>
       <div className="tf-settings-actions">
-        <PrimaryButton text={saveLabel} onClick={onSave} disabled={!status.dirty} />
-        <DefaultButton text="Cancel" onClick={onCancel} disabled={!status.dirty} />
+        <Button appearance="primary" onClick={onSave} disabled={!status.dirty}>
+          {saveLabel}
+        </Button>
+        <Button onClick={onCancel} disabled={!status.dirty}>
+          Cancel
+        </Button>
       </div>
     </section>
   );

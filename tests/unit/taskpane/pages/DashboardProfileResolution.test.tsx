@@ -134,14 +134,11 @@ describe("Dashboard profile resolution", () => {
     mocks.loadState.mockReturnValue(emptyState());
 
     render(<Dashboard />);
-    // The first-run landing page, not the editor itself: the checklist replaced
-    // the embedded editor, and the editor is reached from a checklist row.
-    // Awaited because the page is lazily imported, so the first paint is the
-    // Suspense fallback rather than the checklist.
-    expect(await screen.findByTestId("tf-setup-deterministicProfile")).toBeInTheDocument();
-    await user.click(
-      await screen.findByRole("button", { name: /Set up deterministic style profile/ }),
-    );
+    // The Home command centre, not the editor itself: the editor is reached
+    // from the navigation drawer.
+    expect(await screen.findByText("Active styles")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open navigation" }));
+    await user.click(screen.getByRole("button", { name: "Deterministic Style" }));
 
     const record = createRecord(profile.id, profile.name, profile.createdAt, profile);
     mocks.loadState.mockReturnValue({
@@ -151,28 +148,23 @@ describe("Dashboard profile resolution", () => {
     });
     await user.click(await screen.findByRole("button", { name: "Leave profile setup" }));
 
-    await waitFor(() =>
-      expect(screen.queryByTestId("tf-setup-deterministicProfile")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(mocks.prepareReformatHost).toHaveBeenCalled());
     expect(mocks.reload).not.toHaveBeenCalled();
     // Office-dependent wiring is established by the dashboard, not by a reload.
-    expect(mocks.prepareReformatHost).toHaveBeenCalled();
     expect(mocks.createDocumentObserver).toHaveBeenCalled();
   });
 
-  it("stays on the checklist when leaving the editor without a profile", async () => {
+  it("returns to Home when leaving the editor without a profile", async () => {
     const user = userEvent.setup();
     mocks.loadState.mockReturnValue(emptyState());
 
     render(<Dashboard />);
-    await user.click(
-      await screen.findByRole("button", { name: /Set up deterministic style profile/ }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open navigation" }));
+    await user.click(screen.getByRole("button", { name: "Deterministic Style" }));
     await user.click(await screen.findByRole("button", { name: "Leave profile setup" }));
 
-    // Leaving the editor returns to the checklist rather than reloading the
-    // pane, so the checklist comes back lazily and has to be awaited.
-    expect(await screen.findByTestId("tf-setup-deterministicProfile")).toBeInTheDocument();
+    // Leaving the editor returns to Home rather than reloading the pane.
+    expect(await screen.findByText("Active styles")).toBeInTheDocument();
     expect(mocks.reload).not.toHaveBeenCalled();
   });
 
@@ -197,7 +189,8 @@ describe("Dashboard profile resolution", () => {
       activeProfileId: record.id,
     });
 
-    render(<Dashboard />);
+    // The live region is on the review page, not Home, so this test navigates there.
+    render(<Dashboard initialPage="review" />);
     await waitFor(() => expect(mocks.createDocumentObserver).toHaveBeenCalled());
 
     const options = mocks.createDocumentObserver.mock.calls[0]?.[0] as {

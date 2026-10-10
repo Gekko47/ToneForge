@@ -1,5 +1,6 @@
 import React from "react";
-import { DefaultButton, MessageBar, MessageBarType, PrimaryButton } from "@fluentui/react";
+import { MessageBar } from "@fluentui/react-components";
+import { Button } from "@fluentui/react-components";
 import {
   activatePublished,
   discardDraft,
@@ -140,13 +141,17 @@ export default function ProfileRecordSection({
       </p>
 
       <div className="tf-lifecycle-actions">
-        <PrimaryButton
+        <Button
+          appearance="primary"
           onClick={handlePublish}
           disabled={!record.draft}
-          text="Publish draft"
           aria-describedby="publish-draft-hint"
-        />
-        <DefaultButton onClick={handleDiscard} disabled={!record.draft} text="Discard draft" />
+        >
+          Publish draft
+        </Button>
+        <Button onClick={handleDiscard} disabled={!record.draft}>
+          Discard draft
+        </Button>
       </div>
       <p id="publish-draft-hint" className="tf-sub">
         {record.draft
@@ -172,23 +177,19 @@ export default function ProfileRecordSection({
                 {isActive ? (
                   <span className="tf-published-active">Active version</span>
                 ) : (
-                  <button
-                    className="tf-native-button"
-                    type="button"
+                  <Button
                     onClick={() => handleActivate(entry.revision)}
                     aria-label={`Activate published revision ${entry.revision}`}
                   >
                     Activate
-                  </button>
+                  </Button>
                 )}
-                <button
-                  className="tf-native-button"
-                  type="button"
+                <Button
                   onClick={() => handleRestore(entry.revision)}
                   aria-label={`Restore published revision ${entry.revision} as a draft`}
                 >
                   Restore as draft
-                </button>
+                </Button>
               </li>
             );
           })}
@@ -209,15 +210,15 @@ export default function ProfileRecordSection({
           when the rows are not.
         */}
         {revisions.length > 0 && (
-          <button
-            type="button"
-            className="tf-native-button tf-collapsible-header"
+          <Button
+            appearance="subtle"
+            className="tf-collapsible-header"
             aria-expanded={showAllRevisions}
             onClick={() => setShowAllRevisions((open) => !open)}
           >
             {showAllRevisions ? "Hide revisions" : "Show all revisions"}{" "}
             <span>{revisions.length}</span>
-          </button>
+          </Button>
         )}
         {revisions.length === 0 ? (
           <p className="tf-sub">No revisions recorded yet.</p>
@@ -233,9 +234,7 @@ export default function ProfileRecordSection({
                   <span>
                     Revision {entry.revision} · {dateLabel(entry.at)} · {entry.detail}
                   </span>
-                  <button
-                    className="tf-native-button"
-                    type="button"
+                  <Button
                     onClick={() => handleRecall(entry.revision)}
                     disabled={isCurrentDraft}
                     aria-label={`Recall revision ${entry.revision} as a new draft`}
@@ -246,7 +245,7 @@ export default function ProfileRecordSection({
                     }
                   >
                     Recall
-                  </button>
+                  </Button>
                 </li>
               );
             })}
@@ -274,7 +273,7 @@ export default function ProfileRecordSection({
         </div>
       )}
       {error && (
-        <MessageBar messageBarType={MessageBarType.error} role="alert">
+        <MessageBar intent="error" role="alert">
           {error}
         </MessageBar>
       )}

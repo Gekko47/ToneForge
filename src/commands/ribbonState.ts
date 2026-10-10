@@ -28,14 +28,14 @@ import { logger } from "../shared/utils/logger";
 /**
  * The control ids this module owns. They must match the manifest exactly.
  *
- * The group is `ToneForgeProfileGroup` rather than `ToneForgeProfile` because a
- * ribbon surface requires every UI element id to be unique, and the group
- * contains a control with the shorter name. Sharing it made Word refuse the
- * whole manifest, which presented as "This add-in is no longer available" with
- * no ribbon at all. See ADR-0082.
+ * The group is `ToneForgeAIReviewGroup`, which P10 relabelled "Semantic Review"
+ * and moved the semantic control into. The id is kept from the previous
+ * arrangement because P10 relabels groups rather than churning ids: a changed
+ * id is a `HostRestartNeeded` risk, and the runtime enable request must keep
+ * addressing a control the host actually has. See ADR-0082 and the P10 ADR.
  */
 export const SEMANTIC_RIBBON_TAB = "ToneForge";
-export const SEMANTIC_RIBBON_GROUP = "ToneForgeProfileGroup";
+export const SEMANTIC_RIBBON_GROUP = "ToneForgeAIReviewGroup";
 export const SEMANTIC_RIBBON_CONTROL = "ToneForgeSemanticControl";
 
 /**

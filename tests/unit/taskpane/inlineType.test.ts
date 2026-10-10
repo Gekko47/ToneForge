@@ -26,7 +26,7 @@ const STYLESHEET = join(TASKPANE, "taskpane.css");
 
 /**
  * Every .tsx under src/taskpane. `.ts` files are excluded deliberately: a
- * theme module legitimately holds a size in data (fluentTheme.ts carries
+ * theme module legitimately holds a size in data (toneForgeTheme.ts carries
  * Fluent's own type ramp), and the guard in eslint.config.mjs excludes it for
  * the same reason.
  */

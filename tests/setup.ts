@@ -234,6 +234,35 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
   return originalFetch(input);
 }) as typeof fetch;
 
+// jsdom does not implement `window.matchMedia`. The Fluent v9 provider reads it
+// for the system colour-scheme and reduced-motion preferences, so every test
+// that mounts the provider would otherwise throw. A minimal, non-matching double
+// is enough: tests that need a specific match override it locally.
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+}
+
+// jsdom does not implement `ResizeObserver`. Fluent v9's MessageBar observes its
+// own reflow to decide whether to collapse its actions, so mounting one throws
+// without this. A no-op double is enough: nothing in the suite asserts on a
+// resize callback, and the observer only needs to exist and be constructible.
+if (typeof globalThis.ResizeObserver !== "function") {
+  globalThis.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver;
+}
+
 // Ensure a clean document body between tests, even when a test file does not
 // call cleanup() itself. This prevents DOM rendered by an earlier file from
 // leaking into later files that use global queries.

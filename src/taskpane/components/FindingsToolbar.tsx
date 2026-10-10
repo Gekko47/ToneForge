@@ -1,4 +1,5 @@
 import React from "react";
+import { Button } from "@fluentui/react-components";
 
 export interface FindingsToolbarProps {
   label: string;
@@ -38,24 +39,20 @@ export default function FindingsToolbar({
       </p>
       {total > 0 && (
         <nav className="tf-finding-actions" aria-label="Finding navigation">
-          <button
-            className="tf-native-button"
-            type="button"
+          <Button
             onClick={onPrevious}
             aria-label={`Previous finding, at ${current} of ${total}`}
             {...controls}
           >
             Previous finding
-          </button>
-          <button
-            className="tf-native-button"
-            type="button"
+          </Button>
+          <Button
             onClick={onNext}
             aria-label={`Next finding, at ${current} of ${total}`}
             {...controls}
           >
             Next finding
-          </button>
+          </Button>
           <span className="tf-sub" aria-live="polite">
             {selectedIndex === null ? "No finding selected" : `Finding ${current} of ${total}`}
           </span>

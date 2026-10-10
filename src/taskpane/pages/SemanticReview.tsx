@@ -1,5 +1,7 @@
 import React from "react";
+import { Button } from "@fluentui/react-components";
 import SemanticReviewScope from "../components/semantic/SemanticReviewScope";
+import { Breadcrumb } from "../shell";
 import SemanticAssessmentView from "../components/semantic/SemanticAssessmentView";
 import SemanticRewriteComparison from "../components/semantic/SemanticRewriteComparison";
 import PreservationSummary from "../components/semantic/PreservationSummary";
@@ -480,12 +482,8 @@ export default function SemanticReview({
   });
 
   return (
-    <div className="tf-card" data-page="semantic-review">
-      <nav aria-label="Breadcrumb" className="tf-breadcrumbs">
-        <button className="tf-native-button" type="button" onClick={onBack}>
-          Back to Deterministic Review
-        </button>
-      </nav>
+    <div data-page="semantic-review">
+      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
 
       <h1 className="tf-title">Semantic Review</h1>
       <p className="tf-sub">
@@ -527,9 +525,7 @@ export default function SemanticReview({
       />
 
       <div className="tf-actions">
-        <button className="tf-native-button" type="button" onClick={onOpenSemanticStyle}>
-          Semantic Style
-        </button>
+        <Button onClick={onOpenSemanticStyle}>Semantic Style</Button>
       </div>
 
       {result !== null && (
@@ -537,7 +533,7 @@ export default function SemanticReview({
           <SemanticAssessmentView assessment={result.assessment} />
 
           {result.proposedRevision === undefined ? (
-            <section aria-labelledby="tf-semantic-nothing" className="tf-card">
+            <section aria-labelledby="tf-semantic-nothing">
               <h2 id="tf-semantic-nothing">Nothing to change</h2>
               <p className="tf-sub">{result.refusalReason ?? "The model proposed no revision."}</p>
             </section>
@@ -563,22 +559,16 @@ export default function SemanticReview({
               )}
 
               <div className="tf-pending-actions">
-                <button
-                  className="tf-native-button"
-                  type="button"
+                <Button
+                  appearance="primary"
                   disabled={!applyGate.allowed || applying}
                   onClick={() => void applyRevision()}
                 >
                   {applying ? "Applying…" : "Apply revision"}
-                </button>
-                <button
-                  className="tf-native-button"
-                  type="button"
-                  disabled={reviewing || applying}
-                  onClick={regenerate}
-                >
+                </Button>
+                <Button disabled={reviewing || applying} onClick={regenerate}>
                   {reviewing ? "Asking again…" : "Regenerate review"}
-                </button>
+                </Button>
                 {/*
                   Keep original, offered with the same weight as Apply.
 
@@ -587,14 +577,9 @@ export default function SemanticReview({
                   "Regenerate" would leave "do not change this" expressible only by
                   closing the pane.
                 */}
-                <button
-                  className="tf-native-button"
-                  type="button"
-                  disabled={!keepGate.allowed}
-                  onClick={keepOriginal}
-                >
+                <Button disabled={!keepGate.allowed} onClick={keepOriginal}>
                   Keep original
-                </button>
+                </Button>
               </div>
 
               {!applyGate.allowed && applyGate.blocker !== null && (

@@ -32,6 +32,7 @@
  */
 
 import React from "react";
+import { Button } from "@fluentui/react-components";
 import {
   CONSISTENCY_ACTIONABLE_CONFIDENCE,
   collapsedCount,
@@ -300,22 +301,18 @@ export default function ConsistencyReviewResults({
       */}
       {groups.length > 0 && (
         <nav className="tf-finding-actions" aria-label="Consistency issue navigation">
-          <button
-            className="tf-native-button"
-            type="button"
+          <Button
             onClick={() => step(-1)}
             aria-label={`Previous contradiction, at ${position + 1} of ${groups.length}`}
           >
             Previous contradiction
-          </button>
-          <button
-            className="tf-native-button"
-            type="button"
+          </Button>
+          <Button
             onClick={() => step(1)}
             aria-label={`Next contradiction, at ${position + 1} of ${groups.length}`}
           >
             Next contradiction
-          </button>
+          </Button>
           {/*
             One element, doing both jobs: showing where you are, and announcing
             that you moved. Splitting them was the wrong instinct — two elements
@@ -360,9 +357,7 @@ export default function ConsistencyReviewResults({
        * beside the list means what it says.
        */}
       <div className="tf-inline-row">
-        <button className="tf-native-button" type="button" onClick={onDismiss}>
-          Dismiss
-        </button>
+        <Button onClick={onDismiss}>Dismiss</Button>
       </div>
     </section>
   );

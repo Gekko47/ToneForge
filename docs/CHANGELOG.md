@@ -1,5 +1,54 @@
 # ToneForge — Changelog
 
+## Unreleased — Accessibility and high-contrast pass (2026-10-10)
+
+- **Icon-only buttons are named.** `tests/unit/taskpane/accessibleNames.test.ts`
+  asserts that every `Button` rendering only an icon carries an `aria-label`
+  (or `title`/`aria-labelledby`), so no control is announced as just "button"
+  (spec §34, criterion 25–27). The two existing icon-only buttons — open and
+  close navigation — already comply.
+- **Windows High Contrast is mapped.** A single `@media (forced-colors: active)`
+  block redefines the residual `--tf-*` surfaces to system colours (`Canvas`,
+  `CanvasText`, `LinkText`), so the hand-authored CSS follows the OS palette
+  instead of keeping its light/dark values (spec §50 criterion 29). Fluent v9
+  components already honour forced-colors; this covers the not-yet-migrated
+  rules. The semantic tones collapse to `CanvasText` deliberately — the pane
+  carries meaning in text and icons, not colour alone (criterion 27).
+- **axe and real screen-reader announcement remain manual evidence** (plan
+  §11.2); no axe dependency is added for them.
+
+## Unreleased — Responsive pass (2026-10-10)
+
+- **Every `space-between` row wraps.** The Home attention line, setup card,
+  active-styles rows, and the shared `MetadataRow` now declare `flexWrap: "wrap"`
+  (and the value cells `minWidth: 0` / `overflowWrap: "anywhere"`), so a long
+  profile name or the setup sentence drops below its label instead of pushing the
+  row past the pane edge at 320px (spec §33, criterion 18).
+- **A guard keeps it that way.** `tests/unit/taskpane/responsive.test.ts` asserts
+  that every `justifyContent: "space-between"` style block in the pane also
+  declares `flexWrap`, so a future non-wrapping row cannot reintroduce a
+  horizontal scrollbar.
+
+## Unreleased — Ribbon speaks the Home vocabulary (2026-10-10)
+
+- **The ribbon is reorganised into the four product groups the spec names.**
+  Deterministic Review, Semantic Review, Consistency Check, and Styles replace
+  the previous `AI Review` / `Profile` / `Changes` / `Governance` grouping, and
+  every control is relabelled to the Home command-centre vocabulary
+  (`Run review`, `Review issues`, `Consistency Check`, `Manage style`,
+  `Semantic Review`). Group ids are unchanged, so the host does not demand a
+  restart for a label-only change.
+- **Secondary commands are pane-only.** `ToneForgeGovernancePolicy`,
+  `ToneForgePendingChanges`, and `ToneForgeTroubleshooting` stay registered and
+  wired but are no longer exposed as primary ribbon commands, per spec §42. A
+  new `paneOnly` flag in `commandDefinitions.json` records this, and
+  `validateCommandParity` enforces it: a runtime action is required for every
+  command, a ribbon control only for non-pane-only commands.
+- **The semantic control moves to the Semantic Review group.**
+  `SEMANTIC_RIBBON_GROUP` follows it to `ToneForgeAIReview`.
+
+`npm run validate` passes; the command contract and registry tests pass.
+
 ## Unreleased — Consistency engine code-review pass (2026-10-08)
 
 - **Fixed: IndexedDB transaction completion.** `IndexedDbStore.tx()` resolved on

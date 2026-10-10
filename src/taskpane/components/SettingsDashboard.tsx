@@ -1,5 +1,5 @@
 import React from "react";
-import { MessageBar, MessageBarType } from "@fluentui/react";
+import { MessageBar } from "@fluentui/react-components";
 import { env } from "../../core/config/env";
 import type { PersistedState } from "../../core/state/persistence";
 import type { LlmRole } from "../../core/domain/LlmRole";
@@ -154,7 +154,7 @@ export function SettingsDashboard({
       ))}
       <RedactionSettingsSection state={state} onChange={onStateChange} />
       {!generalBindingExists ? (
-        <MessageBar messageBarType={MessageBarType.info} delayedRender={false}>
+        <MessageBar intent="info">
           No general LLM binding is configured yet. Connect a provider to enable semantic review and
           consistency extraction.
         </MessageBar>

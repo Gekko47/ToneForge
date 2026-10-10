@@ -22,6 +22,7 @@
  */
 
 import React from "react";
+import { Button } from "@fluentui/react-components";
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import type {
   CoverageBlocker,
@@ -153,15 +154,14 @@ export default function CoverageBanner({
         both operable, and three siblings where one is not is the inconsistency
         the user noticed.
       */}
-      <button
-        type="button"
-        className="tf-native-button tf-collapsible-header"
+      <Button
+        appearance="subtle"
         onClick={onToggle}
         aria-expanded={open}
         aria-label={`Coverage ${verdictLabel(verdict)}`}
       >
         Coverage <span>{verdictLabel(verdict)}</span>
-      </button>
+      </Button>
       {/*
         The panel keeps its own border and background so the verdict is
         visible at a glance even when the detail is collapsed. The border
@@ -190,13 +190,9 @@ export default function CoverageBanner({
                 ))}
               </ul>
               {canRescan && (
-                <button
-                  type="button"
-                  className="tf-native-button tf-coverage-action"
-                  onClick={() => onRescan?.(blockedScopes)}
-                >
+                <Button appearance="subtle" onClick={() => onRescan?.(blockedScopes)}>
                   Re-scan to check {listScopes(blockedScopes)}
-                </button>
+                </Button>
               )}
             </>
           )}

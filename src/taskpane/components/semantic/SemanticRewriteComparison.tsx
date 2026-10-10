@@ -25,7 +25,7 @@ export default function SemanticRewriteComparison({
   unchanged,
 }: SemanticRewriteComparisonProps): React.ReactNode {
   return (
-    <section aria-labelledby="tf-semantic-comparison" className="tf-card">
+    <section aria-labelledby="tf-semantic-comparison">
       <h2 id="tf-semantic-comparison">Your paragraph and the proposed revision</h2>
       {unchanged && (
         <p className="tf-sub">

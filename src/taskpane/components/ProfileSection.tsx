@@ -19,6 +19,7 @@
  */
 
 import React from "react";
+import { ToneBadge } from "./common";
 
 export interface ProfileSectionProps {
   id: string;
@@ -74,10 +75,10 @@ export default function ProfileSection({
   const partlyUnsupported =
     !whollyUnsupported && supported !== null && uncheckedStandards.length > 0;
   const marker = whollyUnsupported
-    ? { className: "tf-profile-section-unsupported", text: "Not checked in this Word version" }
+    ? { tone: "neutral" as const, text: "Not checked in this Word version" }
     : partlyUnsupported
       ? {
-          className: "tf-profile-section-unsupported tf-profile-section-partial",
+          tone: "warning" as const,
           text: `Partly checked — ${uncheckedStandards.length} standard${uncheckedStandards.length === 1 ? "" : "s"} not read here`,
         }
       : null;
@@ -89,16 +90,15 @@ export default function ProfileSection({
           {title}
         </span>
         {marker && (
-          <span
-            className={marker.className}
+          <ToneBadge
+            tone={marker.tone}
+            label={marker.text}
             title={
               whollyUnsupported
                 ? unsupportedReason
                 : uncheckedStandards.map((entry) => `${entry.label}: ${entry.reason}`).join("\n")
             }
-          >
-            {marker.text}
-          </span>
+          />
         )}
       </summary>
       <div className="tf-profile-section-body">

@@ -95,6 +95,22 @@ function renderSections(
 }
 
 /**
+ * Select an option from a Fluent v9 Dropdown by its label.
+ *
+ * Fluent v9 Dropdown is not a native `<select>`, so `fireEvent.change` with
+ * `target.value` does nothing. The dropdown must be opened (click the trigger)
+ * and the option clicked from the popup list.
+ */
+async function selectDropdownOption(
+  label: string | RegExp,
+  optionName: string | RegExp,
+): Promise<void> {
+  fireEvent.click(screen.getByLabelText(label));
+  const option = await screen.findByRole("option", { name: optionName });
+  fireEvent.click(option);
+}
+
+/**
  * The four section frames, typed.
  *
  * A compound selector alone returns `Element[]`, which has no `open`, so writing
@@ -194,18 +210,15 @@ describe("the Language section sub-division (UX-4)", () => {
      * put several claims on the page where one is true, and a group has no
      * independent capability to report.
      */
-    const { container } = renderSections(CAPABLE);
-    expect(container.querySelectorAll(".tf-profile-section-unsupported")).toHaveLength(0);
-    expect(
-      container.querySelectorAll(".tf-profile-subsection .tf-profile-section-unsupported"),
-    ).toHaveLength(0);
+    renderSections(CAPABLE);
+    expect(screen.queryByText("Not checked in this Word version")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Partly checked/)).not.toBeInTheDocument();
   });
 
   it("still marks a partly-unsupported section on the section frame itself", () => {
-    const { container } = renderSections(NO_TABLES);
-    const unsupported = container.querySelectorAll(".tf-profile-section-unsupported");
-    expect(unsupported).toHaveLength(1);
-    expect(unsupported[0]?.closest("details")?.className).toContain("tf-profile-section");
+    renderSections(NO_TABLES);
+    const marker = screen.getByText(/Partly checked/);
+    expect(marker.closest("details")?.className).toContain("tf-profile-section");
   });
 });
 
@@ -252,9 +265,8 @@ describe("DeterministicStyleSections", () => {
   it("carries the marking in the collapsed header, where a user would not see it in the body", () => {
     // The whole point of putting it in the summary: a collapsed section is
     // exactly the case where a note in the body would go unread.
-    const { container } = renderSections(NO_TABLES);
-    const summary = container.querySelector(".tf-profile-section-unsupported");
-    expect(summary?.closest("summary")).not.toBeNull();
+    renderSections(NO_TABLES);
+    expect(screen.getByText(/Partly checked/).closest("summary")).not.toBeNull();
   });
 
   /*
@@ -410,9 +422,9 @@ describe("DeterministicStyleSections", () => {
     expect(last.formatting.headersFooters?.required).toBe(true);
   });
 
-  it("writes a page-setup standard, so a page check is reachable at all", () => {
+  it("writes a page-setup standard, so a page check is reachable at all", async () => {
     const { onChange } = renderSections(CAPABLE);
-    fireEvent.change(screen.getByLabelText("Orientation"), { target: { value: "landscape" } });
+    await selectDropdownOption("Orientation", "Landscape");
     fireEvent.change(screen.getByLabelText("Top margin (points)"), { target: { value: "72" } });
     const last = onChange.mock.calls.at(-1)?.[0] as DeterministicStyleProfile;
     expect(last.formatting.page?.orientation).toBe("landscape");
@@ -670,20 +682,23 @@ describe("DeterministicStyleSections", () => {
       ).toBeInTheDocument();
     });
 
-    it("offers three states for the expansion requirement, not two", () => {
+    it("offers three states for the expansion requirement, not two", async () => {
       renderSections(CAPABLE);
-      const select = screen.getByLabelText("Expansion on first use") as HTMLSelectElement;
+      fireEvent.click(screen.getByLabelText("Expansion on first use"));
 
       // A checkbox cannot say "the house has not decided", and collapsing three
       // states into two is how an unanswered question reads as a yes.
-      expect([...select.options].map((option) => option.value)).toEqual(["", "true", "false"]);
+      const options = await screen.findAllByRole("option");
+      expect(options.map((option) => option.textContent)).toEqual([
+        "Not set",
+        expect.stringMatching(/^Required/),
+        expect.stringMatching(/^Not required/),
+      ]);
     });
 
-    it("stores the expansion requirement as false, not as absent", () => {
+    it("stores the expansion requirement as false, not as absent", async () => {
       const { onChange } = renderSections(CAPABLE);
-      fireEvent.change(screen.getByLabelText("Expansion on first use"), {
-        target: { value: "false" },
-      });
+      await selectDropdownOption("Expansion on first use", /Not required/);
 
       // "Not required" is a decision. Writing `undefined` instead would record it
       // as "not configured", which is the answer the schema exists to distinguish.
@@ -720,17 +735,15 @@ describe("DeterministicStyleSections", () => {
       ]);
     });
 
-    it("writes the number conventions", () => {
+    it("writes the number conventions", async () => {
       const { onChange } = renderSections(CAPABLE);
-      fireEvent.change(screen.getByLabelText(/Percent sign/), { target: { value: "space" } });
+      await selectDropdownOption(/Percent sign/, /50 %/);
       expect(lastProfile(onChange).language.numbers.percentageSpacing).toBe("space");
 
-      fireEvent.change(screen.getByLabelText(/Negative numbers/), {
-        target: { value: "parenthesis" },
-      });
+      await selectDropdownOption(/Negative numbers/, /Parentheses/);
       expect(lastProfile(onChange).language.numbers.negativeNumber).toBe("parenthesis");
 
-      fireEvent.change(screen.getByLabelText("Ranges"), { target: { value: "to" } });
+      await selectDropdownOption("Ranges", /The word to/);
       expect(lastProfile(onChange).language.numbers.rangeStyle).toBe("to");
     });
 
@@ -760,17 +773,13 @@ describe("DeterministicStyleSections", () => {
       renderSections(CAPABLE);
       fireEvent.click(screen.getByRole("button", { name: "Add date format" }));
 
-      const shape = screen.getByLabelText("Shape") as HTMLSelectElement;
-      expect([...shape.options].map((option) => option.value)).toEqual([
-        "year-first",
-        "day-month-year",
-        "dmy",
-        "mdy",
-        "numeric",
-      ]);
-      // "unrecognised" is what the rule says when it could not read a shape. A
-      // profile must not be able to prefer it.
-      expect([...shape.options].map((option) => option.value)).not.toContain("unrecognised");
+      fireEvent.click(screen.getByLabelText("Shape"));
+      const options = screen.getAllByRole("option");
+      // The five shapes the rule can recognise; "unrecognised" is not offered.
+      expect(options).toHaveLength(5);
+      expect(options.map((option) => option.textContent ?? "").join(" ")).not.toContain(
+        "unrecognised",
+      );
     });
 
     it("keeps exactly one date format preferred", () => {
@@ -798,16 +807,12 @@ describe("DeterministicStyleSections", () => {
       ).toEqual([false, true]);
     });
 
-    it("writes the currency conventions that this profile owns", () => {
+    it("writes the currency conventions that this profile owns", async () => {
       const { onChange } = renderSections(CAPABLE);
-      fireEvent.change(screen.getByLabelText(/Amounts are written with/), {
-        target: { value: "code" },
-      });
+      await selectDropdownOption(/Amounts are written with/, /code/i);
       expect(lastProfile(onChange).language.currency.representation).toBe("code");
 
-      fireEvent.change(screen.getByLabelText(/How large amounts are written/), {
-        target: { value: "millions" },
-      });
+      await selectDropdownOption(/How large amounts are written/, /4\.2m/);
       expect(lastProfile(onChange).language.currency.magnitude).toBe("millions");
     });
 
@@ -930,24 +935,22 @@ describe("DeterministicStyleSections", () => {
       });
     });
 
-    it("writes the eight punctuation fields through to typography", () => {
+    it("writes the eight punctuation fields through to typography", async () => {
       const { onChange } = renderSections(CAPABLE);
-      fireEvent.change(screen.getByLabelText("Em dash"), { target: { value: "hyphen" } });
+      await selectDropdownOption("Em dash", /hyphen/i);
       expect(last(onChange).typography.emDash).toBe("hyphen");
 
-      fireEvent.change(screen.getByLabelText("Double quotes"), { target: { value: "straight" } });
+      await selectDropdownOption("Double quotes", /straight/i);
       expect(last(onChange).typography.doubleQuotes).toBe("straight");
 
-      fireEvent.change(screen.getByLabelText("Ellipsis"), { target: { value: "three-dots" } });
+      await selectDropdownOption("Ellipsis", /three dots/i);
       expect(last(onChange).typography.ellipsis).toBe("three-dots");
 
-      fireEvent.change(screen.getByLabelText("Thousands separator"), {
-        target: { value: "space" },
-      });
+      await selectDropdownOption("Thousands separator", /space/i);
       expect(last(onChange).typography.thousandsSeparator).toBe("space");
     });
 
-    it("writes the whitespace and spacing fields through to typography", () => {
+    it("writes the whitespace and spacing fields through to typography", async () => {
       const { onChange } = renderSections(CAPABLE);
 
       fireEvent.click(screen.getByLabelText("Compare runs of spaces against the document"));
@@ -956,12 +959,10 @@ describe("DeterministicStyleSections", () => {
       fireEvent.click(screen.getByLabelText("Compare tabs against the document"));
       expect(last(onChange).typography.flagTabs).toBe(false);
 
-      fireEvent.change(screen.getByLabelText("A non-breaking space is"), {
-        target: { value: "preserve" },
-      });
+      await selectDropdownOption("A non-breaking space is", /preserve/i);
       expect(last(onChange).typography.nonBreakingSpace).toBe("preserve");
 
-      fireEvent.change(screen.getByLabelText("Around a solidus"), { target: { value: "spaced" } });
+      await selectDropdownOption("Around a solidus", /spaced/i);
       expect(last(onChange).typography.slashSpacing).toBe("spaced");
 
       fireEvent.click(

@@ -1,12 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ComboBox,
-  DefaultButton,
-  MessageBar,
-  MessageBarType,
-  TextField,
-  type IComboBoxOption,
-} from "@fluentui/react";
+import { Button, Combobox, Field, Input, MessageBar, Option } from "@fluentui/react-components";
 import { createProviderGatewayClient, SessionTokenStore } from "../../ai/gateway";
 import { isCatalogForConnection, resolveCatalogStatus } from "../../ai/gateway/modelCatalog";
 import { env } from "../../core/config/env";
@@ -121,36 +114,40 @@ export default function ModelPicker({
 
   if (connection === undefined) {
     return (
-      <TextField
+      <Field
         label="Model"
-        value={value}
-        onChange={(_event, next) => onChange(next ?? "")}
-        placeholder="gpt-4o-mini"
-        description="Leave blank to use the provider's default model. This provider has no active connection, so its model list is unavailable."
-      />
+        hint="Leave blank to use the provider's default model. This provider has no active connection, so its model list is unavailable."
+      >
+        <Input
+          value={value}
+          onChange={(_event, data) => onChange(data.value)}
+          placeholder="gpt-4o-mini"
+        />
+      </Field>
     );
   }
 
   if (!showList) {
     return (
       <div data-testid="model-picker-manual">
-        <TextField
+        <Field
           label="Model"
-          value={value}
-          onChange={(_event, next) => onChange(next ?? "")}
-          placeholder="gpt-4o-mini"
-          description={
+          hint={
             status === "loading"
               ? "Loading the models this connection can use…"
               : "Enter a model id manually. The provider did not return a list of models."
           }
-        />
-        <div className="tf-settings-actions">
-          <DefaultButton
-            text={status === "stale" ? "Reload model list" : "Load model list"}
-            onClick={() => void refresh()}
-            disabled={loading}
+        >
+          <Input
+            value={value}
+            onChange={(_event, data) => onChange(data.value)}
+            placeholder="gpt-4o-mini"
           />
+        </Field>
+        <div className="tf-settings-actions">
+          <Button onClick={() => void refresh()} disabled={loading}>
+            {status === "stale" ? "Reload model list" : "Load model list"}
+          </Button>
         </div>
       </div>
     );
@@ -158,41 +155,47 @@ export default function ModelPicker({
 
   return (
     <div data-testid="model-picker-list">
-      <ComboBox
-        label="Model"
-        selectedKey={value}
-        options={options}
-        onChange={(_event, option?: IComboBoxOption) => onChange(String(option?.key ?? ""))}
-        allowFreeInput
-        autoComplete="off"
-        placeholder="Select or type a model"
-      />
+      <Field label="Model">
+        <Combobox
+          value={value}
+          selectedOptions={value ? [value] : []}
+          freeform
+          autoComplete="off"
+          placeholder="Select or type a model"
+          onChange={(event) => {
+            const target = event.target as HTMLInputElement;
+            onChange(target.value);
+          }}
+          onOptionSelect={(_event, data) => {
+            if (data.optionValue) onChange(data.optionValue);
+          }}
+        >
+          {options.map((option) => (
+            <Option key={option.key} value={option.key} title={option.detail}>
+              {option.text}
+            </Option>
+          ))}
+        </Combobox>
+      </Field>
       <p className="tf-settings-note">
         {options.length} model(s) available on this connection. Leave blank to use the provider's
         own default.
       </p>
       <div className="tf-settings-actions">
-        <DefaultButton
-          text="Refresh model list"
-          onClick={() => void refresh()}
-          disabled={loading}
-        />
-        <DefaultButton
-          text="Enter a model id manually"
-          onClick={() => setManual(true)}
-          aria-expanded={manual}
-        />
+        <Button onClick={() => void refresh()} disabled={loading}>
+          Refresh model list
+        </Button>
+        <Button onClick={() => setManual(true)} aria-expanded={manual}>
+          Enter a model id manually
+        </Button>
       </div>
       {manual ? (
-        <TextField
-          label="Model id"
-          value={value}
-          onChange={(_event, next) => onChange(next ?? "")}
-          description="Use this only if the list is missing the model you need."
-        />
+        <Field label="Model id" hint="Use this only if the list is missing the model you need.">
+          <Input value={value} onChange={(_event, data) => onChange(data.value)} />
+        </Field>
       ) : null}
       {status === "stale" ? (
-        <MessageBar messageBarType={MessageBarType.warning} role="status">
+        <MessageBar intent="warning" role="status">
           The model list is out of date. Refresh it before choosing.
         </MessageBar>
       ) : null}
