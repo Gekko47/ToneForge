@@ -1,6 +1,7 @@
 import React from "react";
 import { Button, Card, makeStyles, tokens } from "@fluentui/react-components";
 import { Breadcrumb } from "../shell";
+import { parentRoute } from "../routes";
 
 /**
  * Deterministic Review, with no deterministic style profile.
@@ -49,7 +50,7 @@ export default function ReviewWithoutProfile({
   const styles = useStyles();
   return (
     <div data-page="review">
-      <Breadcrumb label="Back to Home" onBack={onBack} />
+      <Breadcrumb parent={parentRoute("review")} onBack={onBack} />
 
       <h1 className="tf-title">Deterministic Review</h1>
       <p className="tf-sub">

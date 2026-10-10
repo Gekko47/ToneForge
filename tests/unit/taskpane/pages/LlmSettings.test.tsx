@@ -20,19 +20,17 @@ vi.mock("../../../../src/taskpane/components/SettingsDashboard", () => ({
 
 describe("LlmSettings", () => {
   it("is titled LLM Settings", () => {
-    render(<LlmSettings onBack={vi.fn()} />);
+    render(<LlmSettings onBack={vi.fn()} parent="landing" />);
     expect(screen.getByRole("heading", { name: "LLM Settings" })).toBeInTheDocument();
   });
 
   it("renders the LLM dashboard body", () => {
-    render(<LlmSettings onBack={vi.fn()} />);
+    render(<LlmSettings onBack={vi.fn()} parent="landing" />);
     expect(screen.getByTestId("settings-dashboard")).toBeInTheDocument();
   });
 
-  it("offers a way back to Deterministic Review", () => {
-    render(<LlmSettings onBack={vi.fn()} />);
-    expect(
-      screen.getByRole("button", { name: "Back to Deterministic Review" }),
-    ).toBeInTheDocument();
+  it("offers a way back to Home", () => {
+    render(<LlmSettings onBack={vi.fn()} parent="landing" />);
+    expect(screen.getByRole("button", { name: "Back to Home" })).toBeInTheDocument();
   });
 });

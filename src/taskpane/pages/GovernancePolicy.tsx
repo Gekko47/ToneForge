@@ -1,6 +1,7 @@
 import React from "react";
 import GovernancePolicySection from "../components/GovernancePolicySection";
 import { Breadcrumb } from "../shell";
+import { parentRoute } from "../routes";
 import { readActiveGovernanceContext } from "../activeGovernance";
 import type { GovernanceProfile } from "../../core/domain/GovernanceProfile";
 
@@ -42,7 +43,7 @@ export default function GovernancePolicy({ onBack }: GovernancePolicyProps): Rea
 
   return (
     <div data-page="governance-policy">
-      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
+      <Breadcrumb parent={parentRoute("governance-policy")} onBack={onBack} />
       <h1 className="tf-title">Governance Policy</h1>
       <p className="tf-sub">
         How strict each check is, and which corrections ToneForge may apply without asking.

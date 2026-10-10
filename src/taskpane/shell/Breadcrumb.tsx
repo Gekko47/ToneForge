@@ -1,6 +1,7 @@
 import React from "react";
 import { Button, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { toneForgeIcons } from "../theme/icons";
+import { routeLabel, type TaskPaneDestination } from "../routes";
 
 const useStyles = makeStyles({
   root: {
@@ -11,8 +12,13 @@ const useStyles = makeStyles({
 });
 
 export interface BreadcrumbProps {
-  /** The back control's label, e.g. "Back to Deterministic Review". */
-  label: string;
+  /**
+   * The page this control returns to, or `null` for the root.
+   *
+   * The label is derived from the parent's entry in `ROUTES`, so a breadcrumb
+   * cannot say one thing and navigate somewhere else (ADR-0102, ADR-0137).
+   */
+  parent: TaskPaneDestination | null;
   onBack: () => void;
   className?: string | undefined;
 }
@@ -25,13 +31,14 @@ export interface BreadcrumbProps {
  * name cannot drift between pages, and the control is a Fluent `Button` rather
  * than a bare `<button>` the stylesheet had to reach into.
  */
-export function Breadcrumb({ label, onBack, className }: BreadcrumbProps): React.ReactNode {
+export function Breadcrumb({ parent, onBack, className }: BreadcrumbProps): React.ReactNode {
   const styles = useStyles();
   const BackIcon = toneForgeIcons.back;
+  if (parent === null) return null;
   return (
     <nav aria-label="Breadcrumb" className={mergeClasses(styles.root, className)}>
       <Button appearance="subtle" icon={<BackIcon />} onClick={onBack}>
-        {label}
+        {`Back to ${routeLabel(parent)}`}
       </Button>
     </nav>
   );

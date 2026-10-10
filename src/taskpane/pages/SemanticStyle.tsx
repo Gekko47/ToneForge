@@ -3,6 +3,7 @@ import { Button } from "@fluentui/react-components";
 import { DisclosurePanel } from "../components/common";
 import SemanticProfileEditor from "../components/SemanticProfileEditor";
 import { Breadcrumb } from "../shell";
+import { parentRoute } from "../routes";
 import SemanticProfilePicker from "../components/SemanticProfilePicker";
 import ProfileRecordSection from "../components/ProfileRecordSection";
 import LearnSemanticStyle from "../components/semantic/LearnSemanticStyle";
@@ -262,7 +263,7 @@ export default function SemanticStyle({
 
   return (
     <div data-page="semantic-style">
-      <Breadcrumb label="Back to Semantic Review" onBack={onBack} />
+      <Breadcrumb parent={parentRoute("semantic-style")} onBack={onBack} />
 
       <h1 className="tf-title">Semantic Style</h1>
       <p className="tf-sub">

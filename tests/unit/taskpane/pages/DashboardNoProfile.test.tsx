@@ -208,22 +208,64 @@ describe(
       ).toBeInTheDocument();
     });
 
-    it("returns from Semantic Review to Deterministic Review, not to Home", async () => {
+    it("returns from Semantic Review to Home", async () => {
       /*
-       * The reported path. The breadcrumb on the semantic page says "Back to
-       * Deterministic Review", and it used to arrive at Home.
+       * The parent map (ADR-0137). The breadcrumb on the semantic page reads
+       * "Back to Home" and lands on Home; it used to read "Back to Deterministic
+       * Review" and land on Home, which is the lie the map removes.
        */
       render(<Dashboard />);
       await screen.findByText("Active styles");
 
       await userEvent.click(screen.getByRole("button", { name: "Open navigation" }));
       await userEvent.click(screen.getByRole("button", { name: "Semantic Review" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Back to Home" }, LAZY_PAGE));
+
+      expect(await screen.findByText("Active styles", undefined, LAZY_PAGE)).toBeInTheDocument();
+    });
+
+    it("returns from Semantic Style to Semantic Review, not to Home", async () => {
+      /*
+       * The one page whose parent is not Home. Its breadcrumb reads "Back to
+       * Semantic Review" and must land there; it used to read the same and land
+       * wherever the shared `back` closure sent it.
+       */
+      render(<Dashboard />);
+      await screen.findByText("Active styles");
+
+      await userEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+      await userEvent.click(screen.getByRole("button", { name: "Semantic Style" }));
       await userEvent.click(
-        await screen.findByRole("button", { name: "Back to Deterministic Review" }, LAZY_PAGE),
+        await screen.findByRole("button", { name: "Back to Semantic Review" }, LAZY_PAGE),
       );
 
       expect(
-        await screen.findByRole("heading", { name: "Deterministic Review" }, LAZY_PAGE),
+        await screen.findByRole("heading", { name: "Semantic Review" }, LAZY_PAGE),
+      ).toBeInTheDocument();
+    });
+
+    it("returns from LLM Settings to the page it was opened from", async () => {
+      /*
+       * A settings page has no single parent, so its breadcrumb returns to the
+       * page the user was on when they opened it — Governance, here.
+       */
+      render(<Dashboard />);
+      await screen.findByText("Active styles");
+
+      await userEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+      await userEvent.click(screen.getByRole("button", { name: "Governance" }));
+      expect(
+        await screen.findByRole("heading", { name: "Governance Policy" }, LAZY_PAGE),
+      ).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+      await userEvent.click(await screen.findByRole("button", { name: "LLM Settings" }, LAZY_PAGE));
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Back to Governance" }, LAZY_PAGE),
+      );
+
+      expect(
+        await screen.findByRole("heading", { name: "Governance Policy" }, LAZY_PAGE),
       ).toBeInTheDocument();
     });
 

@@ -1,6 +1,7 @@
 import React from "react";
 import ProfileEditor from "../components/ProfileEditor";
 import { Breadcrumb } from "../shell";
+import { parentRoute } from "../routes";
 import ProfileRecordSection from "../components/ProfileRecordSection";
 import { readActiveGovernanceContext } from "../activeGovernance";
 import { saveProfileRecord } from "../../core/state/persistence";
@@ -51,7 +52,7 @@ export default function Profile({ onBack, capabilities = null }: ProfileProps): 
 
   return (
     <div data-page="profile">
-      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
+      <Breadcrumb parent={parentRoute("profile")} onBack={onBack} />
       <h1 className="tf-title">Deterministic Style Profile</h1>
       <p className="tf-sub">
         The rules ToneForge checks deterministically: typography and house style. Semantic style and

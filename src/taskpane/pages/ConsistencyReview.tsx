@@ -1,6 +1,7 @@
 import React from "react";
 import AiReviewSection, { type AiReviewStage } from "../components/AiReviewSection";
 import { Breadcrumb } from "../shell";
+import { parentRoute } from "../routes";
 import { getStructuredSnapshot } from "../../word/documentReader";
 import { loadState } from "../../core/state/persistence";
 import {
@@ -222,7 +223,7 @@ export default function ConsistencyReview({
 
   return (
     <div data-page="consistency">
-      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
+      <Breadcrumb parent={parentRoute("consistency")} onBack={onBack} />
       <AiReviewSection
         stage={stage}
         // The same check Settings and the setup status use. Reading the base URL

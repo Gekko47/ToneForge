@@ -488,6 +488,29 @@ Per host (Windows desktop, Mac desktop, Word on the web):
 8. Confirm the control is still disabled when no semantic style profile exists,
    and that learning one turns it on without a Word restart.
 
+### Breadcrumb parent navigation (ADR-0137)
+
+Each breadcrumb's label names the page the press lands on. Verify:
+
+1. Open **Deterministic Review**. The breadcrumb reads "Back to Home". Press it;
+   the pane returns to Home (the command centre).
+2. Open **Semantic Review**. The breadcrumb reads "Back to Home". Press it; the
+   pane returns to Home, not to Deterministic Review.
+3. Open **Deterministic Style**. The breadcrumb reads "Back to Deterministic
+   Review". Press it; the pane returns to Deterministic Review.
+4. Open **Governance**. The breadcrumb reads "Back to Home". Press it; the pane
+   returns to Home.
+5. Open **Troubleshooting**. The breadcrumb reads "Back to Home". Press it; the
+   pane returns to Home.
+6. From Home, open **LLM Settings**. The breadcrumb reads "Back to Home". Press
+   it; the pane returns to Home.
+7. From Home, open **General Settings**. The breadcrumb reads "Back to Home".
+   Press it; the pane returns to Home.
+8. From **Deterministic Review**, open **LLM Settings** (via the drawer). The
+   breadcrumb reads "Back to Deterministic Review". Press it; the pane returns to
+   Deterministic Review, not to Home.
+9. Confirm Home itself has no breadcrumb — it is the root.
+
 Record the host and version for each. A label that is correct in one manifest and
 stale in the other is a passing build and a wrong product, so check both.
 

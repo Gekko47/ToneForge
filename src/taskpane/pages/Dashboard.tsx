@@ -21,7 +21,7 @@ import {
 } from "../../shared/office/taskpaneNavigation";
 import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
-import { AppShell } from "../shell";
+import { AppShell, Breadcrumb } from "../shell";
 import { LoadingState } from "../components/common/LoadingState";
 import { DisclosurePanel } from "../components/common";
 import ReviewWithoutProfile from "./ReviewWithoutProfile";
@@ -70,6 +70,8 @@ import {
 import { selectActiveProfile } from "../../core/state/profileSelectors";
 import { usePersistedState } from "../state/usePersistedState";
 import { useAnnouncement } from "../settings/useAnnouncement";
+import { usePageNavigation } from "../usePageNavigation";
+import { parentRoute } from "../routes";
 import { deriveAnnouncement } from "../state/announcement";
 import { applyReadiness, hostReadinessMessage } from "../settings/applyReadiness";
 import { StyleProfileSchema, type StyleProfile } from "../../core/domain/StyleProfile";
@@ -309,13 +311,9 @@ function DashboardWithoutProfile({
   activeProfile: StyleProfile | null;
   initialPage: DashboardInitialPage;
 }): React.ReactNode {
-  const [page, setPage] = useState<DashboardPage>(initialPage);
+  const { page, navigate, parent, goToParent } = usePageNavigation(initialPage);
   const persisted = usePersistedState();
   const status = setupStatusFromState(persisted);
-
-  function navigate(destination: TaskPaneDestination): void {
-    setPage(destination);
-  }
 
   const header = (
     <TaskPaneHeader
@@ -326,7 +324,12 @@ function DashboardWithoutProfile({
     />
   );
 
-  const back = () => navigate("landing");
+  /*
+   * Breadcrumbs resolve their destination from the parent map (ADR-0137), so a
+   * breadcrumb's label is always the page it lands on. The mapped parent is fixed
+   * by `PARENT_ROUTE`; the two settings pages return to the page the user was on
+   * when they opened them, which is what `resolveParentDestination` resolves.
+   */
 
   /**
    * Leaving the profile editor with no profile still returns to the checklist.
@@ -347,7 +350,7 @@ function DashboardWithoutProfile({
     return (
       <AppShell header={header}>
         <Suspense fallback={<LoadingState label="Loading…" />}>
-          <LlmSettings onBack={back} />
+          <LlmSettings onBack={goToParent} parent={parent} />
         </Suspense>
       </AppShell>
     );
@@ -357,7 +360,7 @@ function DashboardWithoutProfile({
     return (
       <AppShell header={header}>
         <Suspense fallback={<LoadingState label="Loading…" />}>
-          <GeneralSettings onBack={back} />
+          <GeneralSettings onBack={goToParent} parent={parent} />
         </Suspense>
       </AppShell>
     );
@@ -367,7 +370,7 @@ function DashboardWithoutProfile({
     return (
       <AppShell header={header}>
         <Suspense fallback={<LoadingState label="Loading…" />}>
-          <DebuggingPanel onBack={back} coverage={null} />
+          <DebuggingPanel onBack={goToParent} coverage={null} />
         </Suspense>
       </AppShell>
     );
@@ -410,17 +413,7 @@ function DashboardWithoutProfile({
       <AppShell header={header}>
         <Suspense fallback={<LoadingState label="Loading" />}>
           <SemanticReview
-            /*
-             * To Deterministic Review, not to the shared `back`.
-             *
-             * The breadcrumb on this page reads "Back to Deterministic Review",
-             * and `back` in this dashboard is `navigate("landing")`. Passing it
-             * would make that label a lie: the user presses Back to Deterministic
-             * Review and arrives at the setup checklist, which is exactly the
-             * report this phase fixes. The profiled dashboard already uses
-             * `navigate("review")` here; this branch now says the same thing.
-             */
-            onBack={() => navigate("review")}
+            onBack={goToParent}
             onOpenSettings={() => navigate("llm-settings")}
             onOpenSemanticStyle={() => navigate("semantic-style")}
             session={null}
@@ -448,7 +441,7 @@ function DashboardWithoutProfile({
     return (
       <AppShell header={header}>
         <Suspense fallback={<LoadingState label="Loading" />}>
-          <ReviewWithoutProfile onBack={back} onOpenProfile={() => navigate("profile")} />
+          <ReviewWithoutProfile onBack={goToParent} onOpenProfile={() => navigate("profile")} />
         </Suspense>
       </AppShell>
     );
@@ -458,7 +451,7 @@ function DashboardWithoutProfile({
       <AppShell header={header}>
         <Suspense fallback={<LoadingState label="Loading…" />}>
           <ConsistencyReview
-            onBack={back}
+            onBack={goToParent}
             onOpenSettings={() => navigate("llm-settings")}
             result={null}
             onResult={() => undefined}
@@ -472,7 +465,7 @@ function DashboardWithoutProfile({
     return (
       <AppShell header={header}>
         <Suspense fallback={<LoadingState label="Loading…" />}>
-          <GovernancePolicy onBack={back} />
+          <GovernancePolicy onBack={goToParent} />
         </Suspense>
       </AppShell>
     );
@@ -526,7 +519,7 @@ function DashboardWithProfile({
    */
   const autoScan = persisted.settings.autoScan;
   const activeGovernanceProfile = resolveGovernanceProfile(persisted, activeProfile);
-  const [page, setPage] = useState<DashboardPage>(initialPage);
+  const { page, navigate, parent, goToParent } = usePageNavigation(initialPage);
   /*
    * Open by default, and opened *for* the user when findings arrive.
    *
@@ -982,7 +975,7 @@ function DashboardWithProfile({
       setArrival(request);
       switch (request.target) {
         case "debugging":
-          setPage("troubleshooting");
+          navigate("troubleshooting");
           return;
         /*
          * One command, and it opens Review — not Style.
@@ -993,27 +986,27 @@ function DashboardWithProfile({
          * voice would throw away the gesture that brought the user here.
          */
         case "semantic-review":
-          setPage("semantic-review");
+          navigate("semantic-review");
           return;
         case "profile":
-          setPage("profile");
+          navigate("profile");
           return;
         case "governance-policy":
-          setPage("governance-policy");
+          navigate("governance-policy");
           return;
         case "ai-review":
-          setPage("consistency");
+          navigate("consistency");
           return;
         case "findings":
-          setPage("review");
+          navigate("review");
           setFindingsOpen(true);
           break;
         case "pending-changes":
-          setPage("review");
+          navigate("review");
           setPendingOpen(true);
           break;
         case "review":
-          setPage("review");
+          navigate("review");
           break;
       }
       /*
@@ -1115,10 +1108,6 @@ function DashboardWithProfile({
     // The persisted entry is the whole update. `usePersistedState` re-renders on
     // the save, so there is no second copy to keep in step â€” and a second copy
     // keyed on fingerprints is exactly what caused the bug this replaces.
-  }
-
-  function navigate(destination: TaskPaneDestination): void {
-    setPage(destination);
   }
 
   async function applyPendingPlan(pendingPlan: PendingPlan | null): Promise<boolean> {
@@ -1504,7 +1493,13 @@ function DashboardWithProfile({
     page === "semantic-style" ||
     page === "troubleshooting"
   ) {
-    const back = () => navigate("review");
+    /*
+     * Breadcrumbs resolve their destination from the parent map (ADR-0137), so a
+     * breadcrumb's label is always the page it lands on. The mapped parent is fixed
+     * by `PARENT_ROUTE`; the two settings pages return to the page the user was on
+     * when they opened them, which is what `resolveParentDestination` resolves.
+     * `profile` and `semantic-style` sit under the review they serve.
+     */
     return (
       <AppShell
         header={
@@ -1518,28 +1513,25 @@ function DashboardWithProfile({
       >
         <Suspense fallback={<LoadingState label="Loading…" />}>
           {page === "llm-settings" ? (
-            <LlmSettings onBack={back} />
+            <LlmSettings onBack={goToParent} parent={parent} />
           ) : page === "general-settings" ? (
-            <GeneralSettings onBack={back} />
+            <GeneralSettings onBack={goToParent} parent={parent} />
           ) : page === "profile" ? (
-            <Profile onBack={back} capabilities={caps} />
+            <Profile onBack={goToParent} capabilities={caps} />
           ) : page === "governance-policy" ? (
-            <GovernancePolicy onBack={back} />
+            <GovernancePolicy onBack={goToParent} />
           ) : page === "consistency" ? (
             <ConsistencyReview
-              onBack={back}
+              onBack={goToParent}
               onOpenSettings={() => navigate("llm-settings")}
               result={consistencyResult}
               onResult={setConsistencyResult}
             />
           ) : page === "semantic-style" ? (
-            <SemanticStyle
-              onBack={() => navigate("semantic-review")}
-              onOpenSettings={() => navigate("llm-settings")}
-            />
+            <SemanticStyle onBack={goToParent} onOpenSettings={() => navigate("llm-settings")} />
           ) : page === "semantic-review" ? (
             <SemanticReview
-              onBack={back}
+              onBack={goToParent}
               onOpenSettings={() => navigate("llm-settings")}
               onOpenSemanticStyle={() => navigate("semantic-style")}
               onReviewStatus={setSemanticReviewStatus}
@@ -1563,7 +1555,7 @@ function DashboardWithProfile({
              * cannot disagree with the pending-changes section below it.
              */
             <DebuggingPanel
-              onBack={back}
+              onBack={goToParent}
               coverage={status?.coverage ?? null}
               plannedCount={reformatResult?.plan.changes.length ?? 0}
               reviewedCount={reviewedKeys.size}
@@ -1782,24 +1774,32 @@ function DashboardWithProfile({
       announcement={announcement.message ?? undefined}
     >
       {page === "review" && (
-        <DisclosurePanel
-          title={
+        <>
+          {/*
+            Deterministic Review renders inline rather than through a page
+            component, so it is the one destination that had to be given its
+            breadcrumb explicitly. The parent comes from the same map every other
+            page uses (ADR-0137), so the label is the page the press lands on.
+          */}
+          <Breadcrumb parent={parentRoute("review")} onBack={goToParent} />
+          <DisclosurePanel
+            title={
+              <>
+                Findings <span>{findings.length}</span>
+              </>
+            }
+            ariaLabel="Findings section"
+            open={findingsOpen}
+            onToggle={setFindingsOpen}
+            className={styles.root}
+          >
             <>
-              Findings <span>{findings.length}</span>
-            </>
-          }
-          ariaLabel="Findings section"
-          open={findingsOpen}
-          onToggle={setFindingsOpen}
-          className={styles.root}
-        >
-          <>
-            {/*
+              {/*
                 The counts lead the list rather than sitting below it. A user
                 deciding whether to work through twenty findings needs to know
                 how many of them are mandatory before deciding to, not after.
               */}
-            {/*
+              {/*
                 Spec §22: severity and category, because they answer different
                 questions. "How bad" tells a reader whether to stop reading;
                 "what kind" tells them where to start, and a document with four
@@ -1809,66 +1809,66 @@ function DashboardWithProfile({
                 Counted over the same filtered list the count above uses, so the
                 two lines cannot disagree about what is open.
               */}
-            <p className="tf-sub">
-              {describeOpenFindings(openSummary)}
-              {describeCategoryGroups(openSummary.byGroup) !== "" &&
-                ` / ${describeCategoryGroups(openSummary.byGroup)}`}
-            </p>
-            <FindingsToolbar
-              label={currentTask.label}
-              nextAction={currentTask.nextAction}
-              total={findings.length}
-              selectedIndex={workflow.planReview.selectedFindingIndex}
-              listId={FINDINGS_LIST_ID}
-              onPrevious={() =>
-                dispatchWorkflow({
-                  type: "plan/selectFinding",
-                  index: selectPreviousFindingIndex(workflow),
-                })
-              }
-              onNext={() =>
-                dispatchWorkflow({
-                  type: "plan/selectFinding",
-                  index: selectNextFindingIndex(workflow),
-                })
-              }
-            />
-            <FindingsList
-              id={FINDINGS_LIST_ID}
-              findings={findings}
-              /*
-               * This run's own groups, not the preview report's.
-               *
-               * The list is the observer's findings (see above), and the two runs
-               * issue separate uuids, so the preview's `occurrenceIds` name
-               * occurrences that are not in this list. The observer carries the
-               * groups from the same `runDeterministicReview` call that produced
-               * these findings, so they address it exactly.
-               */
-              groups={status?.groups ?? []}
-              onApproveAll={approveGroupAll}
-              onSkipAll={skipGroupAll}
-              selectedIndex={workflow.planReview.selectedFindingIndex}
-              reviewedKeys={reviewedKeys}
-              skippedKeys={skippedKeys}
-              onReview={reviewOne}
-              onSkip={skipOne}
-              onUndo={undoOne}
-              approveRefusal={unapprovableReason}
-              onIgnore={(findingId) => {
-                const finding = findings.find((item) => item.id === findingId);
-                if (finding) ignoreFinding(finding);
-              }}
-            />
-            {/*
+              <p className="tf-sub">
+                {describeOpenFindings(openSummary)}
+                {describeCategoryGroups(openSummary.byGroup) !== "" &&
+                  ` / ${describeCategoryGroups(openSummary.byGroup)}`}
+              </p>
+              <FindingsToolbar
+                label={currentTask.label}
+                nextAction={currentTask.nextAction}
+                total={findings.length}
+                selectedIndex={workflow.planReview.selectedFindingIndex}
+                listId={FINDINGS_LIST_ID}
+                onPrevious={() =>
+                  dispatchWorkflow({
+                    type: "plan/selectFinding",
+                    index: selectPreviousFindingIndex(workflow),
+                  })
+                }
+                onNext={() =>
+                  dispatchWorkflow({
+                    type: "plan/selectFinding",
+                    index: selectNextFindingIndex(workflow),
+                  })
+                }
+              />
+              <FindingsList
+                id={FINDINGS_LIST_ID}
+                findings={findings}
+                /*
+                 * This run's own groups, not the preview report's.
+                 *
+                 * The list is the observer's findings (see above), and the two runs
+                 * issue separate uuids, so the preview's `occurrenceIds` name
+                 * occurrences that are not in this list. The observer carries the
+                 * groups from the same `runDeterministicReview` call that produced
+                 * these findings, so they address it exactly.
+                 */
+                groups={status?.groups ?? []}
+                onApproveAll={approveGroupAll}
+                onSkipAll={skipGroupAll}
+                selectedIndex={workflow.planReview.selectedFindingIndex}
+                reviewedKeys={reviewedKeys}
+                skippedKeys={skippedKeys}
+                onReview={reviewOne}
+                onSkip={skipOne}
+                onUndo={undoOne}
+                approveRefusal={unapprovableReason}
+                onIgnore={(findingId) => {
+                  const finding = findings.find((item) => item.id === findingId);
+                  if (finding) ignoreFinding(finding);
+                }}
+              />
+              {/*
                * The gate's verdict, in a live region.
 
                * A review that produced no pending change has to say so. The
                * alternative is a button that appears to do nothing again â€” which
                * is exactly what the status label-only version of Review did.
                */}
-            {reviewNote !== null && <p className="tf-sub">{reviewNote}</p>}
-            {/*
+              {reviewNote !== null && <p className="tf-sub">{reviewNote}</p>}
+              {/*
                 Reviews that no longer describe anything in this document.
 
                 A review is tied to exact text, so an edit above a reviewed
@@ -1878,15 +1878,16 @@ function DashboardWithProfile({
                 expired review; the user reviews again, which is the direction
                 that fails safe.
               */}
-            {expiredDecisionCount > 0 && (
-              <p className="tf-sub">
-                {expiredDecisionCount} review decision{expiredDecisionCount === 1 ? "" : "s"}{" "}
-                expired because the document or review policy changed. Review the findings again
-                before adding changes to Pending changes.
-              </p>
-            )}
-          </>
-        </DisclosurePanel>
+              {expiredDecisionCount > 0 && (
+                <p className="tf-sub">
+                  {expiredDecisionCount} review decision{expiredDecisionCount === 1 ? "" : "s"}{" "}
+                  expired because the document or review policy changed. Review the findings again
+                  before adding changes to Pending changes.
+                </p>
+              )}
+            </>
+          </DisclosurePanel>
+        </>
       )}
       {/*
        * The rest of the review page, in the order the work is done: findings,
@@ -1923,7 +1924,7 @@ function DashboardWithProfile({
             >
               {hostReadiness.message}{" "}
               {hostReadiness.verdict === "blocked" && (
-                <Button onClick={() => setPage("general-settings")}>Open General Settings</Button>
+                <Button onClick={() => navigate("general-settings")}>Open General Settings</Button>
               )}
             </p>
           )}
@@ -1987,7 +1988,7 @@ function DashboardWithProfile({
             open={applyResultOpen}
             onToggle={() => setApplyResultOpen((open) => !open)}
             onReviewRemaining={() => {
-              setPage("review");
+              navigate("review");
               setFindingsOpen(true);
             }}
           />
@@ -2070,7 +2071,7 @@ function DashboardWithProfile({
             coverage={pendingPlan?.coverage ?? null}
             exportCoverage={reformatResult?.sharedCoverage ?? null}
             applyDisabledReason={readiness.reason}
-            onOpenSettings={() => setPage("general-settings")}
+            onOpenSettings={() => navigate("general-settings")}
             onApply={() => applyPendingPlan(pendingPlan)}
             onReject={() => {
               setReformatResult(null);

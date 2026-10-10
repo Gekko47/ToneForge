@@ -5553,3 +5553,44 @@ uses (ADR-0031), applied to the theme layer itself.
   §11.4; `src/taskpane/components/common/DisclosurePanel.tsx`;
   `tests/unit/taskpane/commonPrimitives.test.tsx`;
   `tests/unit/architecture/disclosureGuards.test.ts`; ADR-0130, ADR-0135.
+
+## ADR-0137 â€” Breadcrumbs link to their parent page, so a label is the page it lands on
+
+- **Status**: Accepted (2026-10-10)
+- **Context**: Every page at or below Level 2 carried a breadcrumb button labelled
+  "Back to <page>", but the destination was not always the page named. In
+  [`DashboardWithoutProfile`](../src/taskpane/pages/Dashboard.tsx) the shared
+  `back` closure sent Semantic Review to the setup checklist while the control
+  read "Back to Deterministic Review"; the two settings pages and
+  Troubleshooting were passed the same shared closure; the profiled dashboard had
+  a second, different one. The label was a promise the press did not keep, which
+  is worse than no breadcrumb at all because the user learns to distrust the one
+  they have.
+- **Decision**: One pure parent map, [`PARENT_ROUTE`](../src/taskpane/routes.ts),
+  in the same file as the routes it is derived from. Each page renders
+  [`Breadcrumb`](src/taskpane/shell/Breadcrumb.tsx) with the mapped parent, and
+  the control derives its label from that parent's entry in `ROUTES`, so the label
+  and the destination cannot disagree. A page whose parent is not unique â€” the two
+  settings pages, which are opened from several places â€” takes a `parent` prop and
+  returns to the page the user was on when they opened it, falling back to Home.
+  [`usePageNavigation`](src/taskpane/usePageNavigation.ts) holds the page state and
+  the previous-page reference, so no `setPage` call can bypass it and no
+  per-branch `back` closure can say the other branch's page.
+- **Consequences**:
+  - Positive: the breadcrumb's label is now the page it navigates to, in both
+    dashboards and in every page rendered standalone.
+  - Positive: the map is total by construction â€” a routes test asserts it covers
+    every destination, so a new destination cannot ship without a parent.
+  - Positive: the profiled and no-profile dashboards share one navigation hook and
+    one breadcrumb rule, so they cannot drift.
+  - Cost: settings pages take a `parent` prop, and a settings page opened on
+    another settings page returns to that page rather than to a single parent.
+  - **Not claimed**: the visual result in a real Word host is human evidence in
+    [`docs/manual-verification.md`](manual-verification.md); a green automated run
+    is not a release (ADR-0051).
+- **Evidence**: [`plans/breadcrumb-parent-navigation-plan.md`](../plans/breadcrumb-parent-navigation-plan.md);
+  [`src/taskpane/routes.ts`](../src/taskpane/routes.ts);
+  [`src/taskpane/usePageNavigation.ts`](../src/taskpane/usePageNavigation.ts);
+  [`src/taskpane/shell/Breadcrumb.tsx`](../src/taskpane/shell/Breadcrumb.tsx);
+  `tests/unit/taskpane/routes.test.ts`; `tests/unit/taskpane/breadcrumb.test.tsx`;
+  `tests/unit/taskpane/pages/DashboardNoProfile.test.tsx`; ADR-0131, ADR-0135.

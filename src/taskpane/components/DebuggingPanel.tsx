@@ -12,6 +12,7 @@ import {
 } from "@fluentui/react-components";
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import { Breadcrumb } from "../shell";
+import { parentRoute } from "../routes";
 import { isTrackedEditingEnabled, prepareReformatHost } from "../../reformat";
 import { formatDiagnostics, probeOfficeRuntime } from "../../shared/office/diagnostics";
 import { loadState } from "../../core/state/persistence";
@@ -274,7 +275,7 @@ export default function DebuggingPanel({
 
   return (
     <div data-page="debugging">
-      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
+      <Breadcrumb parent={parentRoute("troubleshooting")} onBack={onBack} />
       <h1 className="tf-title">Troubleshooting & diagnostics</h1>
       <p className="tf-sub">
         Technical inspection for the current Word host. These checks are not required for normal

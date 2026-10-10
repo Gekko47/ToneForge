@@ -2,6 +2,7 @@ import React from "react";
 import { Button } from "@fluentui/react-components";
 import SemanticReviewScope from "../components/semantic/SemanticReviewScope";
 import { Breadcrumb } from "../shell";
+import { parentRoute } from "../routes";
 import SemanticAssessmentView from "../components/semantic/SemanticAssessmentView";
 import SemanticRewriteComparison from "../components/semantic/SemanticRewriteComparison";
 import PreservationSummary from "../components/semantic/PreservationSummary";
@@ -483,7 +484,7 @@ export default function SemanticReview({
 
   return (
     <div data-page="semantic-review">
-      <Breadcrumb label="Back to Deterministic Review" onBack={onBack} />
+      <Breadcrumb parent={parentRoute("semantic-review")} onBack={onBack} />
 
       <h1 className="tf-title">Semantic Review</h1>
       <p className="tf-sub">

@@ -111,3 +111,66 @@ export const TASKPANE_DESTINATIONS: readonly {
   key: TaskPaneDestination;
   label: string;
 }[] = ROUTES.map(({ key, label }) => ({ key, label }));
+
+/**
+ * The one level above each page, for the breadcrumb (ADR-0137).
+ *
+ * A breadcrumb's label is its destination, so the two cannot disagree: the label
+ * is derived from the parent's entry in `ROUTES`, and the press navigates to the
+ * parent. `landing` is the root and has no parent, so it renders no breadcrumb.
+ *
+ * The hierarchy is the spec tree with the groups collapsed to a page: the three
+ * review modes and the More pages sit directly under Home, and each style page
+ * sits under the review it serves. The two settings pages are the exception —
+ * they are reached from several places, so their breadcrumb returns to the page
+ * the user was on when they opened them, falling back to Home (see
+ * `resolveParentDestination`).
+ */
+export const PARENT_ROUTE: Readonly<Record<TaskPaneDestination, TaskPaneDestination | null>> = {
+  landing: null,
+  review: "landing",
+  "semantic-review": "landing",
+  consistency: "landing",
+  profile: "review",
+  "semantic-style": "semantic-review",
+  "governance-policy": "landing",
+  troubleshooting: "landing",
+  "llm-settings": "landing",
+  "general-settings": "landing",
+};
+
+/** The mapped parent of a page, or `null` for the root. */
+export function parentRoute(destination: TaskPaneDestination): TaskPaneDestination | null {
+  return PARENT_ROUTE[destination];
+}
+
+/**
+ * The destination a breadcrumb on `current` should navigate to.
+ *
+ * The two settings pages return to the page the user was on when they opened
+ * them, because "up one level" is not a single answer for a page reached from
+ * several places; every other page returns to its mapped parent. A `previous` of
+ * `null` — the pane opened directly on a settings page — falls back to Home.
+ */
+export function resolveParentDestination(
+  current: TaskPaneDestination,
+  previous: TaskPaneDestination | null,
+): TaskPaneDestination | null {
+  if (
+    (current === "llm-settings" || current === "general-settings") &&
+    previous !== null &&
+    previous !== current
+  ) {
+    return previous;
+  }
+  return PARENT_ROUTE[current];
+}
+
+/** The user-facing label for a destination, derived from `ROUTES` (ADR-0131). */
+export function routeLabel(destination: TaskPaneDestination): string {
+  const route = ROUTES.find((candidate) => candidate.key === destination);
+  if (route === undefined) {
+    throw new Error(`routeLabel: unknown destination ${destination}`);
+  }
+  return route.label;
+}

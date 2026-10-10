@@ -343,3 +343,37 @@ describe("the whole-document action row", () => {
     expect(state.reviewedFindings ?? []).toEqual([]);
   });
 });
+
+/**
+ * How long to wait for Home, which is lazily imported.
+ *
+ * The destination renders behind a `Suspense` fallback, so the first paint is a
+ * "Loading..." element and the page arrives on a later tick. Testing Library
+ * defaults to one second, which is enough in a plain run and not enough under
+ * the coverage instrumentation the verification graph also runs.
+ */
+const LAZY_PAGE = { timeout: 5000 } as const;
+
+describe("the review page's breadcrumb", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    installMockBehaviour();
+    window.localStorage.clear();
+    __resetPersistedStore();
+    mocks.loadState.mockReturnValue(stateWithProfile(true));
+  });
+
+  it("returns to Home from the review page that renders inline", async () => {
+    /*
+     * Deterministic Review is the one destination that renders inside the
+     * dashboard rather than through a page component, so it was the one page
+     * with no breadcrumb at all. Its parent comes from the same map every other
+     * page uses (ADR-0137), so the label is the page the press lands on.
+     */
+    render(<Dashboard initialPage="review" />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Back to Home" }));
+
+    expect(await screen.findByText("Active styles", undefined, LAZY_PAGE)).toBeInTheDocument();
+  });
+});

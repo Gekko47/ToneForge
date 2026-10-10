@@ -16,6 +16,11 @@
   carries meaning in text and icons, not colour alone (criterion 27).
 - **axe and real screen-reader announcement remain manual evidence** (plan
   §11.2); no axe dependency is added for them.
+- **Breadcrumbs link to their parent page.** The label is the page the press
+  lands on. One pure parent map in `src/taskpane/routes.ts`, and both dashboards
+  render it through a single navigation hook, so a breadcrumb can no longer say
+  one page and arrive at another. Settings pages return to the page they were
+  opened from.
 
 ## Unreleased — Responsive pass (2026-10-10)
 

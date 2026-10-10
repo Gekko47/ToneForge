@@ -43,22 +43,20 @@ beforeEach(() => {
 
 describe("GeneralSettings", () => {
   it("is titled General Settings", () => {
-    render(<GeneralSettings onBack={vi.fn()} />);
+    render(<GeneralSettings onBack={vi.fn()} parent="landing" />);
     expect(screen.getByRole("heading", { name: "General Settings" })).toBeInTheDocument();
   });
 
   it("mounts the scanning, tracked editing, and styling controls", () => {
-    render(<GeneralSettings onBack={vi.fn()} />);
+    render(<GeneralSettings onBack={vi.fn()} parent="landing" />);
 
     expect(screen.getByRole("switch", { name: /scan automatically/i })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: /tracked changes/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Styling" })).toBeInTheDocument();
   });
 
-  it("offers a way back to Deterministic Review", () => {
-    render(<GeneralSettings onBack={vi.fn()} />);
-    expect(
-      screen.getByRole("button", { name: "Back to Deterministic Review" }),
-    ).toBeInTheDocument();
+  it("offers a way back to Home", () => {
+    render(<GeneralSettings onBack={vi.fn()} parent="landing" />);
+    expect(screen.getByRole("button", { name: "Back to Home" })).toBeInTheDocument();
   });
 });

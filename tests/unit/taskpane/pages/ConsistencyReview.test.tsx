@@ -195,7 +195,7 @@ describe("ConsistencyReview page", () => {
     expect(mocks.runConsistencyReview).not.toHaveBeenCalled();
   });
 
-  it("offers a route back to Deterministic Review", async () => {
+  it("offers a route back to Home", async () => {
     const onBack = vi.fn();
     render(
       <ConsistencyReview
@@ -206,7 +206,7 @@ describe("ConsistencyReview page", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Back to Deterministic Review" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back to Home" }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 });
