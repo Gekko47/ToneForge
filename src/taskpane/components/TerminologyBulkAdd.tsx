@@ -24,11 +24,27 @@
  */
 
 import React from "react";
-import { Button, Textarea } from "@fluentui/react-components";
+import { Button, Textarea, makeStyles, tokens } from "@fluentui/react-components";
 
 import { buildBulkRules, planBulkTerms, type BulkTermOutcome } from "../terminologyRows";
 import { parseTerminology, TERMINOLOGY_NOUNS } from "../settings/terminologyText";
 import type { TerminologyRule } from "../../core/domain/StyleProfile";
+import { DisclosurePanel } from "./common";
+
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+  },
+  body: {
+    padding: `${tokens.spacingVerticalSNudge} 0 ${tokens.spacingVerticalXS}`,
+  },
+  skipped: {
+    margin: `${tokens.spacingVerticalXS} 0`,
+    paddingLeft: tokens.spacingHorizontalL,
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase200,
+  },
+});
 
 export interface TerminologyBulkAddProps {
   /** The rules currently in the profile. */
@@ -95,10 +111,10 @@ export default function TerminologyBulkAdd({
     setPasted("");
   }
 
+  const styles = useStyles();
   return (
-    <details className="tf-bulk-add">
-      <summary className="tf-bulk-add-summary">Add many terms</summary>
-      <div className="tf-bulk-add-body">
+    <DisclosurePanel title="Add many terms" className={styles.root}>
+      <div className={styles.body}>
         <label className="tf-field">
           <span id={`${id}-label`}>Paste terms, one per line</span>
           <Textarea
@@ -125,7 +141,7 @@ export default function TerminologyBulkAdd({
               : summary(plan.added.length, plan.skipped)}
         </p>
         {plan.skipped.length > 0 && (
-          <ul className="tf-bulk-add-skipped" aria-label="Lines that would be skipped">
+          <ul className={styles.skipped} aria-label="Lines that would be skipped">
             {plan.skipped.map((entry, index) => (
               <li key={`${entry.source}-${index}`}>
                 <code>{entry.source.length === 0 ? "(blank line)" : entry.source}</code> —{" "}
@@ -138,6 +154,6 @@ export default function TerminologyBulkAdd({
           {plan.added.length === 1 ? "Add 1 term" : `Add ${plan.added.length} terms`}
         </Button>
       </div>
-    </details>
+    </DisclosurePanel>
   );
 }

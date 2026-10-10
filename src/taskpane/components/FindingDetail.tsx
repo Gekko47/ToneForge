@@ -35,12 +35,21 @@
  */
 
 import React, { useState } from "react";
-import { Button } from "@fluentui/react-components";
+import { Button, makeStyles, tokens } from "@fluentui/react-components";
 import type { Finding } from "../../core/domain/Finding";
 import { goToFinding } from "../findingNavigation";
 import { describeFindingLocation } from "../findingLocation";
 import { approvalControls } from "../approvalControls";
 import EvidenceSplit from "./EvidenceSplit";
+import { DisclosurePanel } from "./common";
+
+const useDetailRegionStyles = makeStyles({
+  root: {
+    margin: `${tokens.spacingVerticalXS} 0`,
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground2,
+  },
+});
 
 /** The two statements a cross-report finding compared. */
 export interface FindingEvidence {
@@ -98,6 +107,15 @@ export interface FindingDetailProps {
    * Approve is absent rather than present and inert (UX-1).
    */
   approveRefusal?: string | null;
+}
+
+function DetailRegion({ children }: { children: React.ReactNode }): React.ReactNode {
+  const styles = useDetailRegionStyles();
+  return (
+    <DisclosurePanel title="Details" className={styles.root}>
+      {children}
+    </DisclosurePanel>
+  );
 }
 
 export default function FindingDetail({
@@ -290,13 +308,12 @@ export default function FindingDetail({
       {variant === "consistency" ? (
         <footer className="tf-finding-location">{location}</footer>
       ) : (
-        <details className="tf-finding-detail-region">
-          <summary>Details</summary>
+        <DetailRegion>
           <p className="tf-finding-detail-line">
             {sourceLabel} · {reviewContextLabel} · Risk: {riskLabel}
           </p>
           <p className="tf-finding-detail-line">{location}</p>
-        </details>
+        </DetailRegion>
       )}
 
       {manualCorrection && (

@@ -1,5 +1,5 @@
 import React from "react";
-import { Button, Checkbox, Textarea } from "@fluentui/react-components";
+import { Button, Card, Checkbox, Textarea, makeStyles, tokens } from "@fluentui/react-components";
 import { evaluateSampleQuality, type SampleQuality } from "../../../style/sampleQuality";
 import {
   MAX_TEXT_FILE_BYTES,
@@ -38,6 +38,16 @@ export interface LearnSemanticStyleProps {
   busy: boolean;
 }
 
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+    overflow: "hidden",
+  },
+});
+
 type Source = "pasted" | "file" | "document";
 
 export default function LearnSemanticStyle({
@@ -46,6 +56,7 @@ export default function LearnSemanticStyle({
   onLearn,
   busy,
 }: LearnSemanticStyleProps): React.ReactNode {
+  const styles = useStyles();
   const [pasted, setPasted] = React.useState("");
   const [sample, setSample] = React.useState<CapturedSample | null>(null);
   const [source, setSource] = React.useState<Source>("pasted");
@@ -144,115 +155,117 @@ export default function LearnSemanticStyle({
   };
 
   return (
-    <section aria-labelledby="learn-style-heading" className="tf-collapsible">
-      <h2 id="learn-style-heading">Learn a style</h2>
+    <section aria-labelledby="learn-style-heading">
+      <Card className={styles.root} appearance="outline">
+        <h2 id="learn-style-heading">Learn a style</h2>
 
-      {/*
+        {/*
         The disclosure, before the controls. What leaves the machine is the sample
         and nothing else: the profile, the settings and the document never go.
       */}
-      <p className="tf-sub">
-        Learning sends <strong>your sample text</strong> — and nothing else — to the provider you
-        have configured. The profile it produces, its history and your document stay on this
-        machine. The sample itself is never stored: the profile records where it came from, how many
-        words it held, and a hash that lets two samples be compared without keeping either.
-      </p>
+        <p className="tf-sub">
+          Learning sends <strong>your sample text</strong> — and nothing else — to the provider you
+          have configured. The profile it produces, its history and your document stay on this
+          machine. The sample itself is never stored: the profile records where it came from, how
+          many words it held, and a hash that lets two samples be compared without keeping either.
+        </p>
 
-      <div>
-        <label htmlFor="tf-learn-pasted">Paste a sample of your writing</label>
-        <Textarea
-          id="tf-learn-pasted"
-          value={pasted}
-          rows={5}
-          onChange={(_event, data) => setPasted(data.value)}
-          placeholder="Paste a few paragraphs you have written."
-        />
-        <Button onClick={learnFromPasted} disabled={pasted.trim() === ""}>
-          Use this text
-        </Button>
-      </div>
+        <div>
+          <label htmlFor="tf-learn-pasted">Paste a sample of your writing</label>
+          <Textarea
+            id="tf-learn-pasted"
+            value={pasted}
+            rows={5}
+            onChange={(_event, data) => setPasted(data.value)}
+            placeholder="Paste a few paragraphs you have written."
+          />
+          <Button onClick={learnFromPasted} disabled={pasted.trim() === ""}>
+            Use this text
+          </Button>
+        </div>
 
-      <div>
-        <label htmlFor="tf-learn-file">Or choose a plain-text file</label>
-        {/*
+        <div>
+          <label htmlFor="tf-learn-file">Or choose a plain-text file</label>
+          {/*
           ponytail: Fluent v9 has no file-picker component, so this stays a
           native <input type="file">. It carries no `.tf-native` marker because
           that rule is being deleted; the browser default is the correct
           rendering for a file control. Upgrade path: a Fluent `Field` wrapper
           around a visually-hidden native input if the default ever clashes.
         */}
-        <input
-          id="tf-learn-file"
-          type="file"
-          accept={TEXT_FILE_EXTENSION}
-          onChange={(event) => void onFileChosen(event)}
-        />
-        <p className="tf-sub">
-          Up to {Math.round(MAX_TEXT_FILE_BYTES / 1024)} KB, read on this machine. Document formats
-          are not accepted: a .docx is a binary archive, and reading it as text would send the
-          file's internal structure rather than your writing.
-        </p>
-      </div>
+          <input
+            id="tf-learn-file"
+            type="file"
+            accept={TEXT_FILE_EXTENSION}
+            onChange={(event) => void onFileChosen(event)}
+          />
+          <p className="tf-sub">
+            Up to {Math.round(MAX_TEXT_FILE_BYTES / 1024)} KB, read on this machine. Document
+            formats are not accepted: a .docx is a binary archive, and reading it as text would send
+            the file's internal structure rather than your writing.
+          </p>
+        </div>
 
-      {/*
+        {/*
         The document route is last and behind its own control. Spec §6.4 makes the
         whole document optional and not the primary route, and learning from it
         sends more of someone's writing than any other route here.
       */}
-      <Button onClick={() => void learnFromDocument()} disabled={busy}>
-        Use the current document
-      </Button>
+        <Button onClick={() => void learnFromDocument()} disabled={busy}>
+          Use the current document
+        </Button>
 
-      {refusal !== null && <p className="tf-debug-warning">{refusal}</p>}
+        {refusal !== null && <p className="tf-debug-warning">{refusal}</p>}
 
-      {sample !== null && quality !== null && (
-        <div>
-          <p data-testid="sample-quality" className="tf-sub">
-            {quality.wordCount} {quality.wordCount === 1 ? "word" : "words"} — {quality.level}, from{" "}
-            {SOURCE_LABEL[source]}.
+        {sample !== null && quality !== null && (
+          <div>
+            <p data-testid="sample-quality" className="tf-sub">
+              {quality.wordCount} {quality.wordCount === 1 ? "word" : "words"} — {quality.level},
+              from {SOURCE_LABEL[source]}.
+            </p>
+            {quality.warnings.map((warning) => (
+              <p key={warning} className="tf-sub">
+                {warning}
+              </p>
+            ))}
+            {!quality.eligible && (
+              <p className="tf-debug-warning">
+                This sample cannot be learned from yet. {quality.reasons.join(" ")}
+              </p>
+            )}
+            {needsAcknowledgement && (
+              <Checkbox
+                id="tf-learn-acknowledge"
+                checked={acknowledged}
+                onChange={(_event, data) => setAcknowledged(data.checked === true)}
+                label="Learn from this sample anyway."
+              />
+            )}
+          </div>
+        )}
+
+        <Button
+          appearance="primary"
+          onClick={submit}
+          disabled={!gate.allowed || sample === null || needsAcknowledgement || busy}
+        >
+          {busy ? "Learning…" : "Learn style"}
+        </Button>
+
+        {!gate.allowed && gate.blocker !== null && (
+          <p className="tf-debug-warning">
+            {gate.blocker}
+            {gate.remedy?.destination === "llm-settings" && (
+              <>
+                {" "}
+                <Button appearance="subtle" onClick={onOpenSettings}>
+                  {gate.remedy.label}
+                </Button>
+              </>
+            )}
           </p>
-          {quality.warnings.map((warning) => (
-            <p key={warning} className="tf-sub">
-              {warning}
-            </p>
-          ))}
-          {!quality.eligible && (
-            <p className="tf-debug-warning">
-              This sample cannot be learned from yet. {quality.reasons.join(" ")}
-            </p>
-          )}
-          {needsAcknowledgement && (
-            <Checkbox
-              id="tf-learn-acknowledge"
-              checked={acknowledged}
-              onChange={(_event, data) => setAcknowledged(data.checked === true)}
-              label="Learn from this sample anyway."
-            />
-          )}
-        </div>
-      )}
-
-      <Button
-        appearance="primary"
-        onClick={submit}
-        disabled={!gate.allowed || sample === null || needsAcknowledgement || busy}
-      >
-        {busy ? "Learning…" : "Learn style"}
-      </Button>
-
-      {!gate.allowed && gate.blocker !== null && (
-        <p className="tf-debug-warning">
-          {gate.blocker}
-          {gate.remedy?.destination === "llm-settings" && (
-            <>
-              {" "}
-              <Button appearance="subtle" onClick={onOpenSettings}>
-                {gate.remedy.label}
-              </Button>
-            </>
-          )}
-        </p>
-      )}
+        )}
+      </Card>
     </section>
   );
 }

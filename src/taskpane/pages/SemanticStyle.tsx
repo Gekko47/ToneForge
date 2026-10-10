@@ -1,5 +1,6 @@
 import React from "react";
 import { Button } from "@fluentui/react-components";
+import { DisclosurePanel } from "../components/common";
 import SemanticProfileEditor from "../components/SemanticProfileEditor";
 import { Breadcrumb } from "../shell";
 import SemanticProfilePicker from "../components/SemanticProfilePicker";
@@ -384,15 +385,11 @@ export default function SemanticStyle({
               Measured from your writing on every scan. These numbers do not control Semantic
               Review; they are here so you can see what the measured half of this profile holds.
             </p>
-            <Button
-              appearance="subtle"
-              className="tf-collapsible-header"
-              aria-expanded={diagnosticsOpen}
-              onClick={() => setDiagnosticsOpen((open) => !open)}
+            <DisclosurePanel
+              title={diagnosticsOpen ? "Hide diagnostics" : "Show diagnostics"}
+              open={diagnosticsOpen}
+              onToggle={setDiagnosticsOpen}
             >
-              {diagnosticsOpen ? "Hide diagnostics" : "Show diagnostics"}
-            </Button>
-            {diagnosticsOpen && (
               <dl>
                 <dt>Average sentence length</dt>
                 <dd>{count(profile.measured.avgSentenceLength, "words")}</dd>
@@ -411,7 +408,7 @@ export default function SemanticStyle({
                 <dt>Sample size</dt>
                 <dd>{count(profile.measured.sampleWordCount, "words")}</dd>
               </dl>
-            )}
+            </DisclosurePanel>
           </section>
 
           {/*

@@ -9,16 +9,9 @@
  * are in. That is the "collapsible" half of UX-4, and it is a navigation
  * problem rather than a styling one.
  *
- * **Why `<details>` again, and not a Fluent `Accordion`.** The sibling
- * `ProfileSection` deliberately uses the native disclosure element so the open
- * state, the keyboard behaviour and the screen-reader semantics are the
- * browser's. Replacing it with a JavaScript-driven `Accordion` would trade a
- * guarantee for a component, and the specific risk is concrete: Fluent v8's
- * `Accordion` implements its own expand/collapse and ARIA wiring, so every
- * behavioural property this component currently inherits for free becomes
- * something to re-implement and to re-test. `<details>` nesting is valid HTML —
- * a disclosure inside a disclosure is exactly how a grouped form is meant to be
- * marked up — and it needs no state, no effect and no ref.
+ * Rendered as a DisclosurePanel so the open state, keyboard behaviour, and
+ * screen-reader semantics are Fluent's. Nested inside a ProfileSection's own
+ * DisclosurePanel — separate Accordion instances, so contexts do not collide.
  *
  * The sub-section carries no capability marking of its own. Host capability is a
  * property of the whole section, and duplicating it per sub-section would
@@ -26,6 +19,19 @@
  */
 
 import React from "react";
+import { makeStyles, tokens } from "@fluentui/react-components";
+import { DisclosurePanel } from "./common";
+
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalS,
+    borderLeft: `${tokens.strokeWidthThick} solid ${tokens.colorNeutralStroke1}`,
+    paddingLeft: tokens.spacingHorizontalMNudge,
+  },
+  body: {
+    padding: `${tokens.spacingVerticalSNudge} 0 ${tokens.spacingVerticalXS}`,
+  },
+});
 
 export interface ProfileSubsectionProps {
   /** Names the disclosure. Unique within the page; used for the heading id. */
@@ -56,17 +62,19 @@ export default function ProfileSubsection({
   children,
   defaultOpen = false,
 }: ProfileSubsectionProps): React.ReactNode {
+  const styles = useStyles();
   return (
-    <details className="tf-profile-subsection" open={defaultOpen}>
-      <summary className="tf-profile-subsection-summary">
-        <span className="tf-profile-subsection-title" id={`${id}-heading`}>
-          {title}
-        </span>
-      </summary>
-      <div className="tf-profile-subsection-body">
+    <DisclosurePanel
+      title={title}
+      id={id}
+      as="h3"
+      defaultOpen={defaultOpen}
+      className={styles.root}
+    >
+      <div className={styles.body}>
         {summary !== undefined && <p className="tf-sub">{summary}</p>}
         {children}
       </div>
-    </details>
+    </DisclosurePanel>
   );
 }

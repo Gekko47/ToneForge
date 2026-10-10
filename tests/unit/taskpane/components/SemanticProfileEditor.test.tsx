@@ -29,6 +29,19 @@ async function choose(label: string, option: string): Promise<void> {
   await userEvent.click(await screen.findByText(option));
 }
 
+/** Open all collapsed disclosure sections so field-level queries can find controls. */
+function openAllSections(): void {
+  Array.from({ length: 10 }).forEach(() => {
+    const collapsed = [
+      ...document.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
+    ].filter((btn) => btn.getAttribute("aria-expanded") === "false");
+    if (collapsed.length === 0) return;
+    collapsed.forEach((btn) => {
+      fireEvent.click(btn);
+    });
+  });
+}
+
 describe("SemanticProfileEditor", () => {
   it("saves an edited dimension rather than only displaying it", async () => {
     /*
@@ -43,6 +56,7 @@ describe("SemanticProfileEditor", () => {
      */
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
+    openAllSections();
 
     await choose("Primary tone", "Assertive");
 
@@ -58,6 +72,7 @@ describe("SemanticProfileEditor", () => {
      */
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
+    openAllSections();
 
     const field = screen.getByLabelText(/Sentence length/);
     await userEvent.clear(field);
@@ -77,6 +92,7 @@ describe("SemanticProfileEditor", () => {
      */
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
+    openAllSections();
 
     const field = screen.getByLabelText(/Sentence length/);
     await userEvent.clear(field);
@@ -93,6 +109,7 @@ describe("SemanticProfileEditor", () => {
   it("keeps the stored value when the number is cleared, rather than storing nothing", async () => {
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
+    openAllSections();
 
     const field = screen.getByLabelText(/Sentence length/);
     await userEvent.clear(field);
@@ -106,6 +123,7 @@ describe("SemanticProfileEditor", () => {
   it("splits the tone-avoid list into one entry per line and drops blanks", async () => {
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
+    openAllSections();
 
     const avoid = screen.getByLabelText(/Words to avoid for tone/i) as HTMLTextAreaElement;
     // One change event carrying the whole textarea value, rather than a
@@ -131,6 +149,7 @@ describe("SemanticProfileEditor", () => {
   it("keeps blank lines and trailing spaces visible while the field is being typed in", async () => {
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
+    openAllSections();
 
     const avoid = screen.getByLabelText(/Words to avoid for tone/i) as HTMLTextAreaElement;
     fireEvent.change(avoid, { target: { value: "very \n\nreally" } });
@@ -152,6 +171,7 @@ describe("SemanticProfileEditor", () => {
      */
     const onSave = vi.fn();
     const { rerender } = render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
+    openAllSections();
 
     rerender(
       <SemanticProfileEditor
@@ -165,6 +185,7 @@ describe("SemanticProfileEditor", () => {
         onSave={onSave}
       />,
     );
+    openAllSections();
 
     await waitFor(() =>
       expect((screen.getByLabelText(/Sentence length/) as HTMLInputElement).value).toBe("30"),
@@ -193,6 +214,7 @@ describe("SemanticProfileEditor", () => {
         onSave={vi.fn()}
       />,
     );
+    openAllSections();
 
     expect(screen.getByText(/reading grade target 14/i)).toBeInTheDocument();
     expect(screen.getByText(/nothing reads them/i)).toBeInTheDocument();
@@ -205,6 +227,7 @@ describe("SemanticProfileEditor", () => {
      * needed carrying", and the notice above would appear on every new profile.
      */
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={vi.fn()} />);
+    openAllSections();
 
     expect(screen.queryByText(/carried from an earlier style profile/i)).toBeNull();
   });

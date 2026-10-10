@@ -40,20 +40,18 @@ function Harness({
 /**
  * Renders with the disclosure already open.
  *
- * Required for any assertion on the *contents*: a closed `<details>` hides them
- * from the accessibility tree, so `getByRole` cannot see them. That is the
- * behaviour we want — a screen-reader user reaches the paste box by opening the
- * disclosure — and the tests have to open it the same way a user would.
+ * Required for any assertion on the *contents*: a collapsed AccordionPanel
+ * unmounts them, so `getByRole` cannot see them. That is the behaviour we want
+ * — a screen-reader user reaches the paste box by opening the disclosure — and
+ * the tests have to open it the same way a user would.
  */
 function renderOpened(
   existing: TerminologyRule[] = [],
   onAdd: (rules: TerminologyRule[]) => void = vi.fn(),
-): HTMLElement {
-  const { container } = render(<Harness existing={existing} onAdd={onAdd} />);
-  const details = container.querySelector("details");
-  if (details === null) throw new Error("bulk-add did not render a disclosure");
-  details.open = true;
-  return container;
+): void {
+  render(<Harness existing={existing} onAdd={onAdd} />);
+  const disclosure = screen.getByRole("button", { name: "Add many terms" });
+  fireEvent.click(disclosure);
 }
 
 function paste(text: string): void {
@@ -67,7 +65,7 @@ describe("TerminologyBulkAdd", () => {
      * hundred lines is something a user should agree to.
      */
     const onAdd = vi.fn();
-    render(<Harness onAdd={onAdd} />);
+    renderOpened([], onAdd);
     paste("colour: color\nprioritise: prioritize");
 
     expect(screen.getByText("2 terms would be added.")).toBeInTheDocument();
@@ -75,7 +73,7 @@ describe("TerminologyBulkAdd", () => {
   });
 
   it("says nothing would be added when everything is already present", () => {
-    render(<Harness existing={[rule({ id: "term-1", source: "colour" })]} />);
+    renderOpened([rule({ id: "term-1", source: "colour" })]);
     paste("colour: color");
 
     expect(screen.getByText(/0 terms would be added\./)).toBeInTheDocument();
@@ -84,14 +82,14 @@ describe("TerminologyBulkAdd", () => {
 
   it("says so rather than showing a live button when there is nothing to add", () => {
     // A disabled-looking control next to "0 terms" still reads as broken.
-    render(<Harness existing={[rule({ id: "term-1", source: "colour" })]} />);
+    renderOpened([rule({ id: "term-1", source: "colour" })]);
     paste("colour: color");
     expect(screen.getByRole("button", { name: "Add 0 terms" })).toBeDisabled();
   });
 
   it("adds every pasted pair when Apply is pressed", () => {
     const onAdd = vi.fn();
-    render(<Harness onAdd={onAdd} />);
+    renderOpened([], onAdd);
     paste("colour: color\nprioritise: prioritize");
     fireEvent.click(screen.getByRole("button", { name: "Add 2 terms" }));
 
@@ -118,14 +116,15 @@ describe("TerminologyBulkAdd", () => {
      * unusable is more likely a formatting mistake than a deliberate exclusion,
      * and applying the rest silently would hide the mistake.
      */
-    render(<Harness />);
+    renderOpened();
     paste("colour");
-    expect(screen.getByRole("button", { name: /Add/ })).toBeDisabled();
+    // Match the Apply button specifically, not the "Add many terms" disclosure header.
+    expect(screen.getByRole("button", { name: /^Add \d+ term/ })).toBeDisabled();
   });
 
   it("clears the box after applying, so Apply cannot be pressed twice", () => {
     const onAdd = vi.fn();
-    render(<Harness onAdd={onAdd} />);
+    renderOpened([], onAdd);
     paste("colour: color");
     fireEvent.click(screen.getByRole("button", { name: "Add 1 term" }));
 
@@ -136,19 +135,19 @@ describe("TerminologyBulkAdd", () => {
 
   it("is a disclosure, so the paste box is not permanently in the way", () => {
     // Forty terminology rows would bury an always-open textarea in a 329px pane.
-    const container = renderOpened();
-    expect(container.querySelector("details.tf-bulk-add")).not.toBeNull();
-    expect(screen.getByText("Add many terms")).toBeInTheDocument();
+    render(<Harness />);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByRole("button", { name: "Add many terms" })).toBeInTheDocument();
   });
 
   it("announces the count politely, because it changes as the user types", () => {
-    render(<Harness />);
+    renderOpened();
     paste("colour: color");
     expect(screen.getByRole("status")).toHaveTextContent("1 term would be added.");
   });
 
   it("prompts rather than showing a zero when the box is empty", () => {
-    render(<Harness />);
+    renderOpened();
     expect(screen.getByRole("status")).toHaveTextContent("Paste some lines");
   });
 });

@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import FindingDetail from "../../../../src/taskpane/components/FindingDetail";
 import { FindingSchema, type Finding } from "../../../../src/core/domain/Finding";
 
@@ -58,16 +58,16 @@ describe("the deterministic variant", () => {
    * far less work and thrown away information the card used to carry.
    */
   it("keeps source, risk and the location in a collapsed detail region", () => {
-    const { container } = render(
-      <FindingDetail finding={finding()} variant="deterministic" {...actions()} />,
-    );
+    render(<FindingDetail finding={finding()} variant="deterministic" {...actions()} />);
 
-    const region = container.querySelector(".tf-finding-detail-region");
-    expect(region).not.toBeNull();
-    expect(region?.tagName).toBe("DETAILS");
-    expect(region?.textContent).toContain("Document scan");
-    expect(region?.textContent).toContain("Risk: None");
-    expect(region?.textContent).toContain("Location:");
+    const details = screen.getByRole("button", { name: "Details" });
+    expect(details).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(details);
+    expect(details).toHaveAttribute("aria-expanded", "true");
+    const panel = details.parentElement!.nextElementSibling as HTMLElement;
+    expect(panel.textContent).toContain("Document scan");
+    expect(panel.textContent).toContain("Risk: None");
+    expect(panel.textContent).toContain("Location:");
   });
 
   it("renders Actual and Expected as one before-and-after, not two paragraphs", () => {
@@ -119,12 +119,12 @@ describe("the consistency variant", () => {
   });
 
   it("prints the location in a footer rather than a collapsed region", () => {
-    const { container } = render(
-      <FindingDetail finding={finding()} variant="consistency" {...actions()} />,
-    );
+    render(<FindingDetail finding={finding()} variant="consistency" {...actions()} />);
 
-    expect(container.querySelector(".tf-finding-location")?.textContent).toContain("Location:");
-    expect(container.querySelector(".tf-finding-detail-region")).toBeNull();
+    // The consistency variant has no Details disclosure — location is always visible
+    expect(screen.queryByRole("button", { name: "Details" })).toBeNull();
+    const footer = document.querySelector(".tf-finding-location");
+    expect(footer?.textContent).toContain("Location:");
   });
 });
 

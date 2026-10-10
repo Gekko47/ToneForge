@@ -5512,3 +5512,44 @@ uses (ADR-0031), applied to the theme layer itself.
   `tests/unit/taskpane/responsive.test.ts`;
   `tests/unit/taskpane/accessibleNames.test.ts`;
   `tests/unit/taskpane/nativeFieldMarkers.test.ts`; ADR-0062, ADR-0130.
+
+## ADR-0136 — One disclosure primitive: every bespoke disclosure renders through `DisclosurePanel`
+
+- **Status**: Accepted (2026-10-10)
+- **Context**: [`DisclosurePanel`](../src/taskpane/components/common/DisclosurePanel.tsx)
+  documents itself as _"The one disclosure (spec §32)"_, but the pane had **six**
+  native `<details>` beside it (ProfileSection, ProfileSubsection,
+  SemanticProfileEditor's `Section`, TerminologyBulkAdd, and the A′ sites
+  FindingDetail, ConsistencyReviewResults ×2, ProfileEditor revision history,
+  ProfileHistoryCompare) plus six controlled `Button` + `aria-expanded`
+  disclosures (CoverageBanner, ApplyResultBlock, IgnoredFindings, Dashboard
+  findings/pending, ProfileRecordSection trail, SemanticStyle diagnostics). The
+  unified Fluent v9 plan §11.4 deferred the conversion because it is a
+  behaviour-visible change, not a reskin: the controlled disclosures carry a
+  test-asserted `onToggle` contract the uncontrolled primitive could not satisfy,
+  and the native ones were asserted as `HTMLDetailsElement` across ~20 tests.
+- **Decision**: Extend the one primitive rather than add a second. `DisclosurePanel`
+  gains a controlled `open`/`onToggle` contract (uncontrolled `defaultOpen` is
+  kept), a `headerSlot` for a right-aligned badge/count, `ariaLabel`, `id`, and an
+  `as` heading level. Every bespoke disclosure — Groups A, A′, and B — is migrated
+  onto it; the plain cards (Group C) move to Fluent `Card`. The residual
+  disclosure CSS (including `tf-finding-detail-region`) is deleted, and a guard
+  test asserts no `<details>`/`<summary>` and no retired class name survives in
+  `src/taskpane/**/*.tsx` or `taskpane.css`.
+- **Consequences**:
+  - Positive: the "one disclosure" claim is now true and enforced by a guard, not
+    by comment; a new disclosure cannot arrive as a native `<details>`.
+  - Positive: the controlled contract is preserved, so the `onToggle`-asserting
+    tests keep their meaning; the two Dashboard mount/unmount swaps became one
+    persistent header.
+  - Cost: the primitive carries both controlled and uncontrolled modes; the
+    pinned tests were rewritten from `HTMLDetailsElement` to role/behaviour
+    queries.
+  - **Not claimed**: the visual result and screen-reader announcement are human
+    evidence in a real Word host ([`docs/manual-verification.md`](manual-verification.md));
+    a green automated run is not a release (ADR-0051).
+- **Evidence**: [`plans/disclosure-panel-unification-plan.md`](../plans/disclosure-panel-unification-plan.md);
+  [`plans/unified-fluent-v9-ux-implementation-plan.md`](../plans/unified-fluent-v9-ux-implementation-plan.md)
+  §11.4; `src/taskpane/components/common/DisclosurePanel.tsx`;
+  `tests/unit/taskpane/commonPrimitives.test.tsx`;
+  `tests/unit/architecture/disclosureGuards.test.ts`; ADR-0130, ADR-0135.

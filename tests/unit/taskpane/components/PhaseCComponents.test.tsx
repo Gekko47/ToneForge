@@ -91,7 +91,7 @@ describe("Phase C task-pane components", () => {
     // constant — this is exactly the case the plan called out. The claim under
     // test is that a reader can still tell which run produced a finding, so it
     // is asserted against the detail region rather than the header.
-    const { container } = render(
+    render(
       <FindingsList
         findings={[
           finding(),
@@ -100,10 +100,16 @@ describe("Phase C task-pane components", () => {
       />,
     );
 
-    const regions = container.querySelectorAll(".tf-finding-detail-region");
-    expect(regions).toHaveLength(2);
-    expect(regions[0]?.textContent).toContain("Document scan");
-    expect(regions[1]?.textContent).toContain("Current AI review");
+    const detailButtons = screen.getAllByRole("button", { name: "Details" });
+    expect(detailButtons).toHaveLength(2);
+    // Open the first finding's details
+    fireEvent.click(detailButtons[0]!);
+    const firstPanel = detailButtons[0]!.parentElement!.nextElementSibling as HTMLElement;
+    expect(firstPanel.textContent).toContain("Document scan");
+    // Open the second finding's details
+    fireEvent.click(detailButtons[1]!);
+    const secondPanel = detailButtons[1]!.parentElement!.nextElementSibling as HTMLElement;
+    expect(secondPanel.textContent).toContain("Current AI review");
   });
 
   it("exposes navigation, approve, skip and ignore as separate actions", async () => {

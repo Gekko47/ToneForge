@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createEmptyProfile, type StyleProfile } from "../../../../src/core/domain/StyleProfile";
 import { createEmptySemanticStyleProfile } from "../../../../src/core/domain/SemanticStyleProfile";
@@ -305,12 +305,10 @@ describe("ProfileEditor", () => {
      */
     const user = userEvent.setup();
     const { container } = render(<ProfileEditor />);
-    const details = container.querySelector<HTMLDetailsElement>("details.tf-bulk-add");
-    expect(details).not.toBeNull();
-    if (details === null) throw new Error("the bulk-add disclosure did not render");
-    details.open = true;
+    const bulkAdd = screen.getByRole("button", { name: "Add many terms" });
+    fireEvent.click(bulkAdd);
 
-    const terminologyInput = within(details).getByRole("textbox", {
+    const terminologyInput = screen.getByRole("textbox", {
       name: /Paste terms/,
     });
     await user.clear(terminologyInput);
@@ -394,6 +392,7 @@ describe("ProfileEditor", () => {
     installRecords([makeRecord(profile, [previous])]);
 
     render(<ProfileEditor />);
+    fireEvent.click(screen.getByRole("button", { name: "Revision history" }));
     await user.click(within(document.body).getByRole("button", { name: /Restore r1/ }));
 
     expect(mocks.saveProfileRecord).not.toHaveBeenCalled();
@@ -414,6 +413,7 @@ describe("ProfileEditor", () => {
     installRecords([makeRecord(profile, [previous])]);
 
     const { container } = render(<ProfileEditor />);
+    fireEvent.click(screen.getByRole("button", { name: "Revision history" }));
     await user.click(within(document.body).getByRole("button", { name: /Restore r1/ }));
 
     expect(inputByValue(container, "Earlier profile")).toBeInTheDocument();
@@ -448,6 +448,7 @@ describe("ProfileEditor", () => {
     installRecords([makeRecord(profile, [previous])]);
 
     const { container } = render(<ProfileEditor />);
+    fireEvent.click(screen.getByRole("button", { name: "Revision history" }));
     await user.click(within(document.body).getByRole("button", { name: /Restore r1/ }));
     await user.click(lastByRole("button", { name: "Reset changes" }));
 
@@ -478,6 +479,18 @@ describe("ProfileEditor", () => {
      * reason.
      */
     const { container } = render(<ProfileEditor />);
+    // Open the Typography section, then loop to open every nested subsection —
+    // opening a parent reveals nested buttons that weren't in the first query.
+    fireEvent.click(screen.getByRole("button", { name: "Typography" }));
+    Array.from({ length: 10 }).forEach(() => {
+      const collapsed = [
+        ...document.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
+      ].filter((btn) => btn.getAttribute("aria-expanded") === "false");
+      if (collapsed.length === 0) return;
+      collapsed.forEach((btn) => {
+        fireEvent.click(btn);
+      });
+    });
     ["Em dash", "Double quotes", "Thousands separator"].forEach((label) => {
       expect(screen.getAllByLabelText(label)).toHaveLength(1);
     });

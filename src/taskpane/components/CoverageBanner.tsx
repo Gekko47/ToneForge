@@ -22,7 +22,7 @@
  */
 
 import React from "react";
-import { Button } from "@fluentui/react-components";
+import { Button, makeStyles, tokens } from "@fluentui/react-components";
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import type {
   CoverageBlocker,
@@ -30,6 +30,7 @@ import type {
   ScopeKind,
 } from "../../analysis/deterministic/contracts";
 import { coverageVerdict, verdictDetail, verdictLabel } from "../coverageVerdict";
+import { DisclosurePanel } from "./common";
 
 export interface CoverageBannerProps {
   /** The shared report: per-node counts and acquisition diagnostics. */
@@ -110,6 +111,16 @@ function blockerLine(blocker: CoverageBlocker): string {
   return blocker.reason;
 }
 
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+    overflow: "hidden",
+  },
+});
+
 export default function CoverageBanner({
   coverage,
   deterministicCoverage = null,
@@ -118,6 +129,7 @@ export default function CoverageBanner({
   onToggle,
   onRescan,
 }: CoverageBannerProps): React.ReactNode {
+  const styles = useStyles();
   if (!coverage && !deterministicCoverage) {
     return null;
   }
@@ -148,20 +160,17 @@ export default function CoverageBanner({
   const canRescan = onRescan !== undefined && blockedScopes.length > 0;
 
   return (
-    <section className="tf-collapsible" aria-label="Coverage section">
-      {/*
-        A real button rather than a heading: Findings and Pending changes are
-        both operable, and three siblings where one is not is the inconsistency
-        the user noticed.
-      */}
-      <Button
-        appearance="subtle"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-label={`Coverage ${verdictLabel(verdict)}`}
-      >
-        Coverage <span>{verdictLabel(verdict)}</span>
-      </Button>
+    <DisclosurePanel
+      title={
+        <>
+          Coverage <span>{verdictLabel(verdict)}</span>
+        </>
+      }
+      ariaLabel={`Coverage ${verdictLabel(verdict)}`}
+      open={open}
+      onToggle={() => onToggle()}
+      className={styles.root}
+    >
       {/*
         The panel keeps its own border and background so the verdict is
         visible at a glance even when the detail is collapsed. The border
@@ -268,6 +277,6 @@ export default function CoverageBanner({
           <p className="tf-sub">Technical coverage details are available in Troubleshooting.</p>
         </div>
       )}
-    </section>
+    </DisclosurePanel>
   );
 }

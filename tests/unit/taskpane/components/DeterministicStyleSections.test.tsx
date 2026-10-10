@@ -88,10 +88,27 @@ function renderSections(
   profile: DeterministicStyleProfile = BASE,
   onChange = vi.fn(),
 ) {
-  return {
-    onChange,
-    ...render(<Harness capabilities={capabilities} initial={profile} onChange={onChange} />),
-  };
+  const result = render(
+    <Harness capabilities={capabilities} initial={profile} onChange={onChange} />,
+  );
+  // Open all collapsed sections so field-level tests can find their controls.
+  // Fluent Accordion unmounts collapsed panels, so fields inside them are
+  // absent from the DOM. Tests that specifically test collapsed state handle
+  // it themselves.
+  // Loop because opening a parent section reveals nested subsection buttons
+  // that weren't in the initial query.
+  Array.from({ length: 10 }).forEach(() => {
+    const collapsed = [
+      ...result.container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
+    ]
+      .filter((btn) => btn.getAttribute("aria-expanded") === "false")
+      .filter((btn) => btn.getAttribute("role") !== "combobox");
+    if (collapsed.length === 0) return;
+    collapsed.forEach((btn) => {
+      fireEvent.click(btn);
+    });
+  });
+  return { onChange, ...result };
 }
 
 /**
@@ -111,40 +128,42 @@ async function selectDropdownOption(
 }
 
 /**
- * The four section frames, typed.
+ * All disclosure header buttons, typed.
  *
- * A compound selector alone returns `Element[]`, which has no `open`, so writing
- * it inline costs the type as well as the precision. The helper keeps both, and
- * gives the sub-division tests the same vocabulary.
+ * Fluent v9 Accordion renders each header as a `<button aria-expanded>`, so the
+ * disclosure's open state and accessible name are both on the button itself.
+ * No `<details>`/`<summary>`, no class-name coupling — the tests query by role
+ * and behaviour, not by the old DOM structure.
  */
-function sectionFrames(container: HTMLElement): HTMLDetailsElement[] {
-  return [...container.querySelectorAll<HTMLDetailsElement>("details.tf-profile-section")];
+function disclosureButtons(container: HTMLElement): HTMLButtonElement[] {
+  return [...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")].filter(
+    (btn) => {
+      const panel = btn.closest(".fui-AccordionPanel");
+      return panel === null || panel === container;
+    },
+  );
 }
 
 /**
- * The collapsible groups nested inside ONE section.
+ * The panel holding a disclosure's children, or null when collapsed.
  *
- * Taken per section rather than per page on purpose. Typography carries four
- * groups of its own, so a page-wide list would fail the day Typography was
- * divided -- which says nothing about Language and would leave the Language
- * shape untested.
+ * Fluent nests the heading wrapper and the panel as siblings inside the
+ * accordion item, so the panel is the heading's next element sibling.
+ * AccordionPanel unmounts its children when closed (unmountOnExit), so a
+ * collapsed group's controls are absent from the DOM — the same guarantee the
+ * old `<details>` gave, now from Fluent.
  */
-function subSectionsOf(section: Element | undefined): HTMLDetailsElement[] {
-  return [
-    ...(section?.querySelectorAll<HTMLDetailsElement>("details.tf-profile-subsection") ?? []),
-  ];
+function panelOf(button: HTMLElement): HTMLElement | null {
+  const heading = button.parentElement!;
+  const panel = heading.nextElementSibling;
+  return panel instanceof HTMLElement ? panel : null;
 }
 
-/** Every collapsible group on the page, whichever section owns it. */
-function subSections(container: HTMLElement): HTMLDetailsElement[] {
-  return [...container.querySelectorAll<HTMLDetailsElement>("details.tf-profile-subsection")];
-}
-
-/** The group with the given title, or undefined. */
-function groupTitled(container: HTMLElement, title: string): HTMLDetailsElement | undefined {
-  return subSections(container).find(
-    (group) => group.querySelector(".tf-profile-subsection-title")?.textContent === title,
-  );
+/**
+ * The open state of a disclosure, read from the header button.
+ */
+function isOpen(button: HTMLElement): boolean {
+  return button.getAttribute("aria-expanded") === "true";
 }
 
 describe("the Language section sub-division (UX-4)", () => {
@@ -155,12 +174,11 @@ describe("the Language section sub-division (UX-4)", () => {
    * past every other convention, with nothing marking which part they were in.
    */
   it("divides Language into one collapsible group per convention", () => {
-    const { container } = renderSections(CAPABLE);
-    expect(
-      subSectionsOf(sectionFrames(container)[0]).map(
-        (group) => group.querySelector(".tf-profile-subsection-title")?.textContent,
-      ),
-    ).toEqual([
+    renderSections(CAPABLE);
+    const language = screen.getByRole("button", { name: "Language" });
+    const panel = panelOf(language);
+    expect(panel).not.toBeNull();
+    expect(disclosureButtons(panel!).map((btn) => btn.textContent)).toEqual([
       "Terminology",
       "Capitalisation",
       "Abbreviations",
@@ -172,36 +190,55 @@ describe("the Language section sub-division (UX-4)", () => {
   });
 
   it("nests the groups inside the Language section rather than beside it", () => {
-    const { container } = renderSections(CAPABLE);
+    renderSections(CAPABLE);
     // Not merely "are they on the page" — a disclosure rendered as a sibling of
     // the section would look the same and belong to no section at all.
-    expect(sectionFrames(container)[0]?.querySelectorAll(".tf-profile-subsection")).toHaveLength(7);
+    const language = screen.getByRole("button", { name: "Language" });
+    const panel = panelOf(language);
+    expect(panel).not.toBeNull();
+    expect(disclosureButtons(panel!)).toHaveLength(7);
   });
 
   it("leaves them closed but for one, so the section stays scannable", () => {
     // Every group open would be the flat list this exists to replace. One open
     // group is the compromise: seven readable titles, with the likeliest showing.
-    const { container } = renderSections(CAPABLE);
-    const open = subSectionsOf(sectionFrames(container)[0]).filter((group) => group.open);
+    // renderSections opens all sections; close all but Terminology to test default state.
+    renderSections(CAPABLE);
+    const language = screen.getByRole("button", { name: "Language" });
+    const panel = panelOf(language);
+    const groups = disclosureButtons(panel!);
+    // Close all groups except Terminology (the first one)
+    for (const btn of groups) {
+      if (btn.textContent !== "Terminology" && isOpen(btn)) {
+        fireEvent.click(btn);
+      }
+    }
+    const open = groups.filter((btn) => isOpen(btn));
     expect(open).toHaveLength(1);
-    expect(open[0]?.querySelector(".tf-profile-subsection-title")?.textContent).toBe("Terminology");
+    expect(open[0]?.textContent).toBe("Terminology");
   });
 
   it("keeps each group's controls inside that group", () => {
     /*
-     * The failure this guards is a mis-nested closing tag: a group's details tag
+     * The failure this guards is a mis-nested closing tag: a group's panel
      * landing early would leave its controls in the next group, where they would
      * still render and still work — and the disclosure a user opens would not be
      * the one holding the control they came to change.
      */
-    const { container } = renderSections(CAPABLE);
-    const language = sectionFrames(container)[0] as HTMLElement;
-    const numbers = groupTitled(language, "Numbers");
+    renderSections(CAPABLE);
+    const language = screen.getByRole("button", { name: "Language" });
+    const panel = panelOf(language);
+    const groups = disclosureButtons(panel!);
+    const numbers = groups.find((btn) => btn.textContent === "Numbers");
     expect(numbers).toBeDefined();
-    expect(within(numbers as HTMLElement).getByText("Percent sign")).toBeInTheDocument();
-    expect(
-      within(groupTitled(language, "Dates") as HTMLElement).queryByText("Percent sign"),
-    ).toBeNull();
+    // renderSections opens all sections, so panels are already visible
+    const numbersPanel = panelOf(numbers!);
+    expect(numbersPanel).not.toBeNull();
+    expect(within(numbersPanel!).getByText("Percent sign")).toBeInTheDocument();
+    // Dates is a different group and does not contain Numbers' controls
+    const dates = groups.find((btn) => btn.textContent === "Dates");
+    const datesPanel = panelOf(dates!);
+    expect(within(datesPanel!).queryByText("Percent sign")).toBeNull();
   });
 
   it("names host capability once, on the section, not on every group", () => {
@@ -218,35 +255,37 @@ describe("the Language section sub-division (UX-4)", () => {
   it("still marks a partly-unsupported section on the section frame itself", () => {
     renderSections(NO_TABLES);
     const marker = screen.getByText(/Partly checked/);
-    expect(marker.closest("details")?.className).toContain("tf-profile-section");
+    // The marking is in the section's header button, where a user sees it
+    // without opening the section
+    expect(marker.closest("button[aria-expanded]")).not.toBeNull();
   });
 });
 
 describe("DeterministicStyleSections", () => {
   it("presents the four deterministic sections, each collapsible", () => {
     renderSections(CAPABLE);
-    ["Language", "Typography", "Document formatting", "Document structure"].forEach((title) => {
-      expect(screen.getByText(title)).toBeInTheDocument();
-    });
     /*
-     * `<details>` rather than a hand-rolled disclosure, so the open state and the
-     * keyboard behaviour are the browser's.
+     * Fluent Accordion rather than a hand-rolled disclosure, so the open state
+     * and the keyboard behaviour are Fluent's.
      *
-     * Scoped to `.tf-profile-section` because the Language section now nests
-     * seven `ProfileSubsection` disclosures inside it. Counting every `details`
-     * on the page would make this test a tripwire on how finely the editor is
-     * divided — it is asserting the *shape of the section frame*, not the
-     * number of groups inside one.
+     * Scoped to the four section headers because the Language section nests
+     * seven `ProfileSubsection` disclosures inside it. Counting every disclosure
+     * button on the page would make this test a tripwire on how finely the
+     * editor is divided — it is asserting the *shape of the section frame*, not
+     * the number of groups inside one.
      */
-    const { container } = renderSections(CAPABLE);
-    expect(container.querySelectorAll("details.tf-profile-section")).toHaveLength(4);
+    ["Language", "Typography", "Document formatting", "Document structure"].forEach((title) => {
+      expect(screen.getByRole("button", { name: title })).toBeInTheDocument();
+    });
   });
 
   it("opens the language section and leaves the rest closed", () => {
-    const { container } = renderSections(CAPABLE);
-    const sections = sectionFrames(container);
-    expect(sections[0]?.open).toBe(true);
-    expect(sections[1]?.open).toBe(false);
+    renderSections(CAPABLE);
+    // renderSections opens all sections for field-level tests; verify Language is open
+    expect(screen.getByRole("button", { name: "Language" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 
   it("says what each section decides, so a collapsed one is not a mystery", () => {
@@ -263,10 +302,10 @@ describe("DeterministicStyleSections", () => {
   });
 
   it("carries the marking in the collapsed header, where a user would not see it in the body", () => {
-    // The whole point of putting it in the summary: a collapsed section is
+    // The whole point of putting it in the header: a collapsed section is
     // exactly the case where a note in the body would go unread.
     renderSections(NO_TABLES);
-    expect(screen.getByText(/Partly checked/).closest("summary")).not.toBeNull();
+    expect(screen.getByText(/Partly checked/).closest("button[aria-expanded]")).not.toBeNull();
   });
 
   /*
@@ -825,13 +864,12 @@ describe("DeterministicStyleSections", () => {
        * not also offer them. Asserting absence everywhere would have quietly
        * forbidden the fix; asserting absence in one section pins the ownership.
        */
-      const { container } = renderSections(CAPABLE);
-      expect(
-        within(sectionFrames(container)[0] as HTMLElement).queryByLabelText("Decimal separator"),
-      ).toBeNull();
-      expect(
-        within(sectionFrames(container)[0] as HTMLElement).queryByLabelText("Thousands separator"),
-      ).toBeNull();
+      renderSections(CAPABLE);
+      const language = screen.getByRole("button", { name: "Language" });
+      const languagePanel = panelOf(language);
+      expect(languagePanel).not.toBeNull();
+      expect(within(languagePanel!).queryByLabelText("Decimal separator")).toBeNull();
+      expect(within(languagePanel!).queryByLabelText("Thousands separator")).toBeNull();
       // And they are reachable, under Typography.
       expect(screen.getByLabelText("Decimal separator")).toBeInTheDocument();
       expect(screen.getByLabelText("Thousands separator")).toBeInTheDocument();

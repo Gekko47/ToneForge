@@ -160,26 +160,6 @@ body {
   flex-wrap: wrap;
 }
 
-/* The collapsed detail region on the deterministic card (UX-3).
-   Source, risk and the described location are *moved* here, not dropped — a
-   reader who wants them opens one control. `summary` is styled rather than left
-   as the platform marker so it reads as a control beside the card's own actions
-   instead of as another finding. */
-.tf-finding-detail-region {
-  margin: 6px 0;
-  font-size: 0.85rem;
-  color: var(--tf-text-muted, inherit);
-}
-
-.tf-finding-detail-region > summary {
-  cursor: pointer;
-  color: var(--tf-accent);
-}
-
-.tf-finding-detail-region > p {
-  margin: 2px 0;
-}
-
 /* Actual -> Expected on one line. The arrow is decorative, so it is hidden from
    assistive technology and the direction is stated in a visually-hidden word —
    " - " alone reads as a dash, not as "becomes". */
@@ -693,122 +673,6 @@ h4 {
 }
 
 /*
- * The deterministic profile sections (spec §21).
- *
- * A native `<details>`, so the open state, the keyboard behaviour and the
- * screen-reader semantics are the browser's rather than a hand-rolled
- * approximation. The summary is the whole header: the title, and the
- * unsupported marking when the host cannot read the section.
- */
-.tf-profile-section {
-  margin-top: 0.5rem;
-  border: 1px solid var(--tf-border);
-  border-radius: 4px;
-  background-color: var(--tf-surface);
-}
-
-.tf-profile-section-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.6rem 0.75rem;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.tf-profile-section-body {
-  padding: 0 0.75rem 0.75rem;
-}
-
-.tf-profile-section-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  margin-top: 0.5rem;
-}
-
-.tf-profile-section-title {
-  font-weight: 600;
-}
-
-/*
- * A sub-section: a disclosure inside a disclosure.
- *
- * Indented and lighter than its parent, because the relationship is the whole
- * point — a reader must be able to tell at a glance which group a control
- * belongs to. The parent's own rules are not restated; a nested `<details>`
- * inherits them, and duplicating them here would be a second place to keep in
- * step.
- */
-.tf-profile-subsection {
-  margin-top: 0.5rem;
-  border-left: 2px solid var(--tf-border);
-  padding-left: 0.6rem;
-}
-
-.tf-profile-subsection-summary {
-  cursor: pointer;
-  padding: 0.25rem 0;
-}
-
-.tf-profile-subsection-title {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--tf-muted);
-}
-
-.tf-profile-subsection[open] > .tf-profile-subsection-summary .tf-profile-subsection-title {
-  color: var(--tf-text);
-}
-
-.tf-profile-subsection-body {
-  padding: 0.35rem 0 0.25rem;
-}
-
-/*
- * Bulk-add for preferred terminology.
- *
- * Styled like a sub-section because it is one: a disclosure inside a disclosure,
- * sitting beside the single-add button and above the rows it produces. The skip
- * list is indented rather than boxed, so the eye reads it as a note about the
- * paste rather than as another control.
- */
-.tf-bulk-add {
-  margin-top: 0.5rem;
-}
-
-.tf-bulk-add-summary {
-  cursor: pointer;
-  padding: 0.25rem 0;
-  color: var(--tf-muted);
-  font-size: 0.85rem;
-}
-
-.tf-bulk-add[open] > .tf-bulk-add-summary {
-  color: var(--tf-text);
-}
-
-.tf-bulk-add-body {
-  padding: 0.35rem 0 0.25rem;
-}
-
-.tf-bulk-add-skipped {
-  margin: 0.25rem 0;
-  padding-left: 1.25rem;
-  color: var(--tf-muted);
-  font-size: 0.8rem;
-}
-
-.tf-profile-section-limits {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin: 0.5rem 0 0;
-  padding-left: 1.1rem;
-}
-
-/*
  * One structural standard (lists, tables, headers/footers, page setup).
  *
  * A `fieldset`/`legend` rather than a heading so the group is programmatically
@@ -1055,14 +919,6 @@ h4 {
   font-weight: 600;
 }
 
-.tf-collapsible {
-  margin-top: 12px;
-  border: 1px solid var(--tf-border);
-  border-radius: 6px;
-  background: var(--tf-surface-subtle);
-  overflow: hidden;
-}
-
 /* Supplementary text under a control that cannot carry its own description,
    such as a Fluent Dropdown. Muted, small, and never the only label. */
 .tf-settings-note {
@@ -1077,23 +933,6 @@ h4 {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--tf-border);
-}
-
-.tf-collapsible-header {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  border: 0;
-  border-radius: 0;
-  background: var(--tf-surface-subtle);
-  padding: 12px;
-  font-weight: 600;
-  text-align: left;
-}
-
-.tf-collapsible-header span {
-  color: var(--tf-muted);
-  font-weight: 400;
 }
 
 .tf-header-actions,

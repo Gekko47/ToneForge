@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { Button } from "@fluentui/react-components";
+import { Button, makeStyles, tokens } from "@fluentui/react-components";
 import { toAnalysisCapabilities, type WordCapabilities } from "../../word/capabilityProbe";
 import type { AnalysisCapabilities } from "../../analysis/analysisContext";
 import {
@@ -23,6 +23,7 @@ import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
 import { AppShell } from "../shell";
 import { LoadingState } from "../components/common/LoadingState";
+import { DisclosurePanel } from "../components/common";
 import ReviewWithoutProfile from "./ReviewWithoutProfile";
 import FindingsList from "../components/FindingsList";
 import FindingsToolbar from "../components/FindingsToolbar";
@@ -90,6 +91,16 @@ import type { HomeState } from "./homeState";
 
 /** Lets the findings toolbar's `aria-controls` point at the rendered list. */
 const FINDINGS_LIST_ID = "tf-findings-list";
+
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+    overflow: "hidden",
+  },
+});
 
 /**
  * What the pane knows about the host before the probe has answered.
@@ -498,6 +509,7 @@ function DashboardWithProfile({
   activeProfile: StyleProfile;
   initialPage: DashboardInitialPage;
 }): React.ReactNode {
+  const styles = useStyles();
   const [caps, setCaps] = useState<WordCapabilities | null>(null);
   // Persisted state is read through the store, not `loadState()`, so a consent
   // toggle or provider connection saved in Settings is visible here in the same
@@ -1769,23 +1781,25 @@ function DashboardWithProfile({
       }
       announcement={announcement.message ?? undefined}
     >
-      {page === "review" && findingsOpen && (
-        <section className="tf-collapsible" aria-label="Findings section">
-          <Button
-            appearance="subtle"
-            onClick={() => setFindingsOpen((open) => !open)}
-            aria-expanded={findingsOpen}
-          >
-            Findings <span>{findings.length}</span>
-          </Button>
-          {findingsOpen && (
+      {page === "review" && (
+        <DisclosurePanel
+          title={
             <>
-              {/*
+              Findings <span>{findings.length}</span>
+            </>
+          }
+          ariaLabel="Findings section"
+          open={findingsOpen}
+          onToggle={setFindingsOpen}
+          className={styles.root}
+        >
+          <>
+            {/*
                 The counts lead the list rather than sitting below it. A user
                 deciding whether to work through twenty findings needs to know
                 how many of them are mandatory before deciding to, not after.
               */}
-              {/*
+            {/*
                 Spec §22: severity and category, because they answer different
                 questions. "How bad" tells a reader whether to stop reading;
                 "what kind" tells them where to start, and a document with four
@@ -1795,66 +1809,66 @@ function DashboardWithProfile({
                 Counted over the same filtered list the count above uses, so the
                 two lines cannot disagree about what is open.
               */}
-              <p className="tf-sub">
-                {describeOpenFindings(openSummary)}
-                {describeCategoryGroups(openSummary.byGroup) !== "" &&
-                  ` / ${describeCategoryGroups(openSummary.byGroup)}`}
-              </p>
-              <FindingsToolbar
-                label={currentTask.label}
-                nextAction={currentTask.nextAction}
-                total={findings.length}
-                selectedIndex={workflow.planReview.selectedFindingIndex}
-                listId={FINDINGS_LIST_ID}
-                onPrevious={() =>
-                  dispatchWorkflow({
-                    type: "plan/selectFinding",
-                    index: selectPreviousFindingIndex(workflow),
-                  })
-                }
-                onNext={() =>
-                  dispatchWorkflow({
-                    type: "plan/selectFinding",
-                    index: selectNextFindingIndex(workflow),
-                  })
-                }
-              />
-              <FindingsList
-                id={FINDINGS_LIST_ID}
-                findings={findings}
-                /*
-                 * This run's own groups, not the preview report's.
-                 *
-                 * The list is the observer's findings (see above), and the two runs
-                 * issue separate uuids, so the preview's `occurrenceIds` name
-                 * occurrences that are not in this list. The observer carries the
-                 * groups from the same `runDeterministicReview` call that produced
-                 * these findings, so they address it exactly.
-                 */
-                groups={status?.groups ?? []}
-                onApproveAll={approveGroupAll}
-                onSkipAll={skipGroupAll}
-                selectedIndex={workflow.planReview.selectedFindingIndex}
-                reviewedKeys={reviewedKeys}
-                skippedKeys={skippedKeys}
-                onReview={reviewOne}
-                onSkip={skipOne}
-                onUndo={undoOne}
-                approveRefusal={unapprovableReason}
-                onIgnore={(findingId) => {
-                  const finding = findings.find((item) => item.id === findingId);
-                  if (finding) ignoreFinding(finding);
-                }}
-              />
-              {/*
+            <p className="tf-sub">
+              {describeOpenFindings(openSummary)}
+              {describeCategoryGroups(openSummary.byGroup) !== "" &&
+                ` / ${describeCategoryGroups(openSummary.byGroup)}`}
+            </p>
+            <FindingsToolbar
+              label={currentTask.label}
+              nextAction={currentTask.nextAction}
+              total={findings.length}
+              selectedIndex={workflow.planReview.selectedFindingIndex}
+              listId={FINDINGS_LIST_ID}
+              onPrevious={() =>
+                dispatchWorkflow({
+                  type: "plan/selectFinding",
+                  index: selectPreviousFindingIndex(workflow),
+                })
+              }
+              onNext={() =>
+                dispatchWorkflow({
+                  type: "plan/selectFinding",
+                  index: selectNextFindingIndex(workflow),
+                })
+              }
+            />
+            <FindingsList
+              id={FINDINGS_LIST_ID}
+              findings={findings}
+              /*
+               * This run's own groups, not the preview report's.
+               *
+               * The list is the observer's findings (see above), and the two runs
+               * issue separate uuids, so the preview's `occurrenceIds` name
+               * occurrences that are not in this list. The observer carries the
+               * groups from the same `runDeterministicReview` call that produced
+               * these findings, so they address it exactly.
+               */
+              groups={status?.groups ?? []}
+              onApproveAll={approveGroupAll}
+              onSkipAll={skipGroupAll}
+              selectedIndex={workflow.planReview.selectedFindingIndex}
+              reviewedKeys={reviewedKeys}
+              skippedKeys={skippedKeys}
+              onReview={reviewOne}
+              onSkip={skipOne}
+              onUndo={undoOne}
+              approveRefusal={unapprovableReason}
+              onIgnore={(findingId) => {
+                const finding = findings.find((item) => item.id === findingId);
+                if (finding) ignoreFinding(finding);
+              }}
+            />
+            {/*
                * The gate's verdict, in a live region.
 
                * A review that produced no pending change has to say so. The
                * alternative is a button that appears to do nothing again â€” which
                * is exactly what the status label-only version of Review did.
                */}
-              {reviewNote !== null && <p className="tf-sub">{reviewNote}</p>}
-              {/*
+            {reviewNote !== null && <p className="tf-sub">{reviewNote}</p>}
+            {/*
                 Reviews that no longer describe anything in this document.
 
                 A review is tied to exact text, so an edit above a reviewed
@@ -1864,21 +1878,15 @@ function DashboardWithProfile({
                 expired review; the user reviews again, which is the direction
                 that fails safe.
               */}
-              {expiredDecisionCount > 0 && (
-                <p className="tf-sub">
-                  {expiredDecisionCount} review decision{expiredDecisionCount === 1 ? "" : "s"}{" "}
-                  expired because the document or review policy changed. Review the findings again
-                  before adding changes to Pending changes.
-                </p>
-              )}
-            </>
-          )}
-        </section>
-      )}
-      {page === "review" && !findingsOpen && (
-        <Button appearance="subtle" onClick={() => setFindingsOpen(true)} aria-expanded={false}>
-          Findings <span>{findings.length}</span>
-        </Button>
+            {expiredDecisionCount > 0 && (
+              <p className="tf-sub">
+                {expiredDecisionCount} review decision{expiredDecisionCount === 1 ? "" : "s"}{" "}
+                expired because the document or review policy changed. Review the findings again
+                before adding changes to Pending changes.
+              </p>
+            )}
+          </>
+        </DisclosurePanel>
       )}
       {/*
        * The rest of the review page, in the order the work is done: findings,
@@ -2021,15 +2029,18 @@ function DashboardWithProfile({
           </Button>
         </div>
       )}
-      {page === "review" && !pendingOpen ? (
-        <Button appearance="subtle" onClick={() => setPendingOpen(true)} aria-expanded={false}>
-          Pending changes <span>{totalPlannedChanges}</span>
-        </Button>
-      ) : (
-        <section className="tf-collapsible" aria-label="Pending changes section">
-          <Button appearance="subtle" onClick={() => setPendingOpen(false)} aria-expanded>
-            Pending changes <span>{totalPlannedChanges}</span>
-          </Button>
+      {page === "review" && (
+        <DisclosurePanel
+          title={
+            <>
+              Pending changes <span>{totalPlannedChanges}</span>
+            </>
+          }
+          ariaLabel="Pending changes section"
+          open={pendingOpen}
+          onToggle={setPendingOpen}
+          className={styles.root}
+        >
           <PendingChanges
             plan={pendingPlan?.plan ?? null}
             emptyReason={pendingEmptyReason}
@@ -2070,7 +2081,7 @@ function DashboardWithProfile({
           {/* Visible but not live: the pane speaks this from the single region
               above, and a second one here would say it twice. */}
           {applyMessage && <p className="tf-readiness">{applyMessage}</p>}
-        </section>
+        </DisclosurePanel>
       )}
     </AppShell>
   );

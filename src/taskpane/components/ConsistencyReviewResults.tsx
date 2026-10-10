@@ -32,7 +32,7 @@
  */
 
 import React from "react";
-import { Button } from "@fluentui/react-components";
+import { Button, makeStyles, tokens } from "@fluentui/react-components";
 import {
   CONSISTENCY_ACTIONABLE_CONFIDENCE,
   collapsedCount,
@@ -42,6 +42,15 @@ import {
   type ConsistencyReport,
 } from "../../analysis/consistency";
 import FindingDetail from "./FindingDetail";
+import { DisclosurePanel } from "./common";
+
+const useDetailRegionStyles = makeStyles({
+  root: {
+    margin: `${tokens.spacingVerticalXS} 0`,
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground2,
+  },
+});
 
 export interface ConsistencyReviewResultsProps {
   report: ConsistencyReport;
@@ -69,9 +78,9 @@ function WhyConfidence({
   rows: NonNullable<ConsistencyIssueGroup["issues"][number]["whyConfidence"]>;
   confidence: number;
 }): React.ReactNode {
+  const styles = useDetailRegionStyles();
   return (
-    <details className="tf-finding-detail-region">
-      <summary>{`Why ${Math.round(confidence * 100)}%?`}</summary>
+    <DisclosurePanel title={`Why ${Math.round(confidence * 100)}%?`} className={styles.root}>
       <ul>
         {rows.map((row, index) => (
           <li key={`${row.label}-${index}`}>
@@ -79,7 +88,7 @@ function WhyConfidence({
           </li>
         ))}
       </ul>
-    </details>
+    </DisclosurePanel>
   );
 }
 
@@ -262,8 +271,7 @@ export default function ConsistencyReviewResults({
             {limitation}
           </p>
         ))}
-        <details>
-          <summary>Checks performed</summary>
+        <DisclosurePanel title="Checks performed">
           <ul>
             {Object.entries(coverage.perCheck)
               .sort(([left], [right]) => left.localeCompare(right))
@@ -273,7 +281,7 @@ export default function ConsistencyReviewResults({
                 </li>
               ))}
           </ul>
-        </details>
+        </DisclosurePanel>
       </div>
 
       <p role="status">

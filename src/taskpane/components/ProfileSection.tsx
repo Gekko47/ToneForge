@@ -4,10 +4,10 @@
  * Spec §21. The profile editor grew four sections in this pass (language,
  * typography, formatting, structure) and a flat list of them is unreadable in a
  * narrow pane: a user opening "Deterministic Style" to change one thing has to
- * scroll past a hundred controls to find it. `<details>` rather than a custom
- * disclosure so the open state, the keyboard behaviour and the screen-reader
- * semantics are the browser's — all of which a hand-rolled version gets subtly
- * wrong.
+ * scroll past a hundred controls to find it. A DisclosurePanel rather than a
+ * custom disclosure so the open state, the keyboard behaviour and the
+ * screen-reader semantics are Fluent's — all of which a hand-rolled version
+ * gets subtly wrong.
  *
  * **The unsupported marking is the point.** A section the host cannot read is
  * still editable, because the host may be replaced, and a user who cannot set
@@ -19,7 +19,33 @@
  */
 
 import React from "react";
-import { ToneBadge } from "./common";
+import { makeStyles, tokens } from "@fluentui/react-components";
+import { DisclosurePanel, ToneBadge } from "./common";
+
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground1,
+  },
+  body: {
+    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM} ${tokens.spacingHorizontalM}`,
+  },
+  fields: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalM,
+    marginTop: tokens.spacingVerticalM,
+  },
+  limits: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalS,
+    marginTop: tokens.spacingVerticalM,
+    paddingLeft: tokens.spacingHorizontalL,
+  },
+});
 
 export interface ProfileSectionProps {
   id: string;
@@ -64,7 +90,7 @@ export default function ProfileSection({
   uncheckedStandards = [],
   defaultOpen = false,
 }: ProfileSectionProps): React.ReactNode {
-  const headingId = `${id}-heading`;
+  const styles = useStyles();
   /*
    * The whole-section marking wins when it applies: a section that cannot read
    * anything it governs is a stronger and simpler statement than a list of what
@@ -84,12 +110,13 @@ export default function ProfileSection({
       : null;
 
   return (
-    <details className="tf-profile-section" open={defaultOpen}>
-      <summary className="tf-profile-section-summary">
-        <span className="tf-profile-section-title" id={headingId}>
-          {title}
-        </span>
-        {marker && (
+    <DisclosurePanel
+      title={title}
+      id={id}
+      defaultOpen={defaultOpen}
+      className={styles.root}
+      headerSlot={
+        marker ? (
           <ToneBadge
             tone={marker.tone}
             label={marker.text}
@@ -99,9 +126,10 @@ export default function ProfileSection({
                 : uncheckedStandards.map((entry) => `${entry.label}: ${entry.reason}`).join("\n")
             }
           />
-        )}
-      </summary>
-      <div className="tf-profile-section-body">
+        ) : undefined
+      }
+    >
+      <div className={styles.body}>
         <p className="tf-sub">{summary}</p>
         {whollyUnsupported && (
           <p className="tf-coverage-blocked" role="note">
@@ -110,7 +138,7 @@ export default function ProfileSection({
           </p>
         )}
         {partlyUnsupported && (
-          <ul className="tf-profile-section-limits" aria-label="Not read in this Word version">
+          <ul className={styles.limits} aria-label="Not read in this Word version">
             {uncheckedStandards.map((entry) => (
               <li key={entry.label} className="tf-coverage-blocked">
                 <strong>{entry.label}:</strong> {entry.reason}
@@ -118,8 +146,8 @@ export default function ProfileSection({
             ))}
           </ul>
         )}
-        <div className="tf-profile-section-fields">{children}</div>
+        <div className={styles.fields}>{children}</div>
       </div>
-    </details>
+    </DisclosurePanel>
   );
 }

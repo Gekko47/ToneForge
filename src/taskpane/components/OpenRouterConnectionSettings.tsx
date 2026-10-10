@@ -1,5 +1,15 @@
 import React from "react";
-import { Button, Dropdown, Field, Input, MessageBar, Option } from "@fluentui/react-components";
+import {
+  Button,
+  Card,
+  Dropdown,
+  Field,
+  Input,
+  MessageBar,
+  Option,
+  makeStyles,
+  tokens,
+} from "@fluentui/react-components";
 import { createProviderGatewayClient, GatewayError, SessionTokenStore } from "../../ai/gateway";
 import { isCatalogForConnection, resolveCatalogStatus } from "../../ai/gateway/modelCatalog";
 import type { ModelCatalog, ProviderConnection } from "../../core/domain/index";
@@ -49,6 +59,16 @@ export interface OpenRouterConnectionSettingsProps {
   selectedModel: string;
 }
 
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+    overflow: "hidden",
+  },
+});
+
 type Phase = "idle" | "connecting" | "loadingModels" | "ready" | "error";
 
 export default function OpenRouterConnectionSettings({
@@ -61,6 +81,7 @@ export default function OpenRouterConnectionSettings({
   onSelectModel,
   selectedModel,
 }: OpenRouterConnectionSettingsProps): React.ReactNode {
+  const styles = useStyles();
   const [apiKey, setApiKey] = React.useState("");
   const [baseUrl, setBaseUrl] = React.useState(OPENROUTER_DEFAULT_BASE_URL);
   const [phase, setPhase] = React.useState<Phase>("idle");
@@ -197,63 +218,65 @@ export default function OpenRouterConnectionSettings({
   }
 
   return (
-    <section aria-label="OpenRouter connection" className="tf-collapsible">
-      <MessageBar intent="info">
-        Your OpenRouter API key is sent once to the local gateway and is not stored by ToneForge.
-        Only the opaque connection reference the gateway returns is saved.
-      </MessageBar>
-      <Field
-        label="OpenRouter base URL"
-        hint="Where the gateway sends requests. The add-in never calls this address itself."
-      >
-        <Input value={baseUrl} onChange={(_event, data) => setBaseUrl(data.value)} />
-      </Field>
-      {connected ? (
-        <>
-          <MessageBar intent="warning">
-            Connected. Disconnecting drops the credential on the gateway side and cannot be undone
-            without entering the key again.
-          </MessageBar>
-          <Button
-            onClick={() => {
-              void disconnect();
-            }}
-            disabled={phase === "connecting"}
-          >
-            Disconnect OpenRouter
-          </Button>
-        </>
-      ) : (
-        <>
-          <Field
-            label="OpenRouter API key"
-            hint="Submitted once, then cleared from the pane. It is never saved to settings or logs."
-          >
-            <Input
-              type="password"
-              autoComplete="off"
-              value={apiKey}
-              onChange={(_event, data) => setApiKey(data.value)}
-            />
-          </Field>
-          <Button
-            appearance="primary"
-            onClick={() => {
-              void connect();
-            }}
-            disabled={phase === "connecting" || phase === "loadingModels"}
-          >
-            Connect OpenRouter
-          </Button>
-        </>
-      )}
-      {error ? <MessageBar intent="error">{error}</MessageBar> : null}
-      {connected ? (
-        <MessageBar intent="info">{describeCatalog(catalogStatus, models.length)}</MessageBar>
-      ) : null}
-      {connected ? (
-        <ModelPicker models={models} selectedModel={selectedModel} onSelect={onSelectModel} />
-      ) : null}
+    <section aria-label="OpenRouter connection">
+      <Card className={styles.root} appearance="outline">
+        <MessageBar intent="info">
+          Your OpenRouter API key is sent once to the local gateway and is not stored by ToneForge.
+          Only the opaque connection reference the gateway returns is saved.
+        </MessageBar>
+        <Field
+          label="OpenRouter base URL"
+          hint="Where the gateway sends requests. The add-in never calls this address itself."
+        >
+          <Input value={baseUrl} onChange={(_event, data) => setBaseUrl(data.value)} />
+        </Field>
+        {connected ? (
+          <>
+            <MessageBar intent="warning">
+              Connected. Disconnecting drops the credential on the gateway side and cannot be undone
+              without entering the key again.
+            </MessageBar>
+            <Button
+              onClick={() => {
+                void disconnect();
+              }}
+              disabled={phase === "connecting"}
+            >
+              Disconnect OpenRouter
+            </Button>
+          </>
+        ) : (
+          <>
+            <Field
+              label="OpenRouter API key"
+              hint="Submitted once, then cleared from the pane. It is never saved to settings or logs."
+            >
+              <Input
+                type="password"
+                autoComplete="off"
+                value={apiKey}
+                onChange={(_event, data) => setApiKey(data.value)}
+              />
+            </Field>
+            <Button
+              appearance="primary"
+              onClick={() => {
+                void connect();
+              }}
+              disabled={phase === "connecting" || phase === "loadingModels"}
+            >
+              Connect OpenRouter
+            </Button>
+          </>
+        )}
+        {error ? <MessageBar intent="error">{error}</MessageBar> : null}
+        {connected ? (
+          <MessageBar intent="info">{describeCatalog(catalogStatus, models.length)}</MessageBar>
+        ) : null}
+        {connected ? (
+          <ModelPicker models={models} selectedModel={selectedModel} onSelect={onSelectModel} />
+        ) : null}
+      </Card>
     </section>
   );
 }

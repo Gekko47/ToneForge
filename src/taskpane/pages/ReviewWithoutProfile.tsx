@@ -1,5 +1,5 @@
 import React from "react";
-import { Button } from "@fluentui/react-components";
+import { Button, Card, makeStyles, tokens } from "@fluentui/react-components";
 import { Breadcrumb } from "../shell";
 
 /**
@@ -32,10 +32,21 @@ export interface ReviewWithoutProfileProps {
   onOpenProfile: () => void;
 }
 
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+    overflow: "hidden",
+  },
+});
+
 export default function ReviewWithoutProfile({
   onBack,
   onOpenProfile,
 }: ReviewWithoutProfileProps): React.ReactNode {
+  const styles = useStyles();
   return (
     <div data-page="review">
       <Breadcrumb label="Back to Home" onBack={onBack} />
@@ -55,13 +66,15 @@ export default function ReviewWithoutProfile({
         No deterministic style profile is active. Open Deterministic Style Profile to create one.
       </p>
 
-      <section aria-label="Findings section" className="tf-collapsible">
-        <h2>Findings</h2>
-        <p className="tf-sub">
-          No findings, because no scan has run against a profile. This is not the same as a document
-          with nothing wrong with it, and nothing will be written until a profile exists and you
-          approve each change.
-        </p>
+      <section aria-label="Findings section">
+        <Card className={styles.root} appearance="outline">
+          <h2>Findings</h2>
+          <p className="tf-sub">
+            No findings, because no scan has run against a profile. This is not the same as a
+            document with nothing wrong with it, and nothing will be written until a profile exists
+            and you approve each change.
+          </p>
+        </Card>
       </section>
 
       <div className="tf-actions">

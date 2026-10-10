@@ -26,11 +26,20 @@
  */
 
 import React from "react";
-import { Dropdown, Field, Input, Option, Textarea } from "@fluentui/react-components";
+import {
+  Dropdown,
+  Field,
+  Input,
+  Option,
+  Textarea,
+  makeStyles,
+  tokens,
+} from "@fluentui/react-components";
 import {
   SemanticStyleProfileSchema,
   type SemanticStyleProfile,
 } from "../../core/domain/SemanticStyleProfile";
+import { DisclosurePanel } from "./common";
 
 export interface SemanticProfileEditorProps {
   /** The semantic half of the profile being edited. */
@@ -202,18 +211,41 @@ function LinesField(props: {
   );
 }
 
+const useSectionStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalL,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+    overflow: "hidden",
+  },
+  body: {
+    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalL}`,
+  },
+  summary: {
+    color: tokens.colorNeutralForeground2,
+  },
+  fields: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: tokens.spacingHorizontalM,
+  },
+});
+
 /** One collapsible group of controls. */
 function Section(props: {
   title: string;
   summary: string;
   children: React.ReactNode;
 }): React.ReactNode {
+  const styles = useSectionStyles();
   return (
-    <details className="tf-collapsible">
-      <summary className="tf-sub">{props.title}</summary>
-      <p className="tf-sub">{props.summary}</p>
-      <div className="tf-inline-row tf-inline-row-wrap">{props.children}</div>
-    </details>
+    <DisclosurePanel title={props.title} className={styles.root}>
+      <div className={styles.body}>
+        <p className={styles.summary}>{props.summary}</p>
+        <div className={styles.fields}>{props.children}</div>
+      </div>
+    </DisclosurePanel>
   );
 }
 

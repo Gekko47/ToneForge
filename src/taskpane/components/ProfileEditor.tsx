@@ -7,6 +7,8 @@ import {
   MessageBar,
   Option,
   Textarea,
+  makeStyles,
+  tokens,
 } from "@fluentui/react-components";
 import type { DeterministicStyleProfile } from "../../core/domain/StyleProfile";
 import {
@@ -30,7 +32,14 @@ import { selectAllProfiles } from "../../core/state/profileSelectors";
 import { diffProfiles } from "../../style/versioning";
 import VersionDiff from "./VersionDiff";
 import DeterministicStyleSections from "./DeterministicStyleSections";
+import { DisclosurePanel } from "./common";
 import type { WordCapabilities } from "../../word/capabilityProbe";
+
+const useEditorNoteStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalL,
+  },
+});
 
 /**
  * The deterministic style fields this editor owns.
@@ -235,6 +244,30 @@ export interface ProfileEditorProps {
    * permanent answer here, so no section could ever carry its marking.
    */
   capabilities?: WordCapabilities | null;
+}
+
+function RevisionHistoryDisclosure({
+  history,
+  onRestore,
+}: {
+  history: readonly StyleProfile[];
+  onRestore: (snapshot: StyleProfile) => void;
+}): React.ReactNode {
+  const styles = useEditorNoteStyles();
+  return (
+    <DisclosurePanel title="Revision history" className={styles.root}>
+      <ul className="tf-editor-list">
+        {history.map((snapshot, index) => (
+          <li key={`${snapshot.id}-${snapshot.updatedAt}-${index}`}>
+            {formatRevision(snapshot.revision)} — {new Date(snapshot.updatedAt).toLocaleString()}{" "}
+            <Button onClick={() => onRestore(snapshot)}>
+              {`Restore ${formatRevision(snapshot.revision)}`}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </DisclosurePanel>
+  );
 }
 
 export default function ProfileEditor({
@@ -544,20 +577,7 @@ export default function ProfileEditor({
           : "No revisions yet — save to record the first revision."}
       </p>
       {hasHistory && (
-        <details className="tf-editor-note">
-          <summary className="tf-sub">Revision history</summary>
-          <ul className="tf-editor-list">
-            {history.map((snapshot, index) => (
-              <li key={`${snapshot.id}-${snapshot.updatedAt}-${index}`}>
-                {formatRevision(snapshot.revision)} —{" "}
-                {new Date(snapshot.updatedAt).toLocaleString()}{" "}
-                <Button onClick={() => restoreHistorySnapshot(snapshot)}>
-                  {`Restore ${formatRevision(snapshot.revision)}`}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </details>
+        <RevisionHistoryDisclosure history={history} onRestore={restoreHistorySnapshot} />
       )}
 
       {/*

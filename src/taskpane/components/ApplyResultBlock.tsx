@@ -21,8 +21,9 @@
  */
 
 import React from "react";
-import { Button, MessageBar } from "@fluentui/react-components";
+import { Button, MessageBar, makeStyles, tokens } from "@fluentui/react-components";
 import type { ApplyOutcome } from "../../reformat/orchestrator";
+import { DisclosurePanel } from "./common";
 
 export interface ApplyResultBlockProps {
   outcome: ApplyOutcome | null;
@@ -43,12 +44,23 @@ function plural(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
 }
 
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+    overflow: "hidden",
+  },
+});
+
 export default function ApplyResultBlock({
   outcome,
   open,
   onToggle,
   onReviewRemaining,
 }: ApplyResultBlockProps): React.ReactNode {
+  const styles = useStyles();
   if (outcome === null) return null;
 
   const { verifiedCount, unverifiedCount, failedCount, changes, remainingFindings } = outcome;
@@ -70,15 +82,17 @@ export default function ApplyResultBlock({
       : `${problems} of ${total} ${plural(total, "change")} did not complete`;
 
   return (
-    <section className="tf-collapsible" aria-label="Apply result">
-      <Button
-        appearance="subtle"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-label={`Apply result: ${verdict}`}
-      >
-        Apply result <span>{verdict}</span>
-      </Button>
+    <DisclosurePanel
+      title={
+        <>
+          Apply result <span>{verdict}</span>
+        </>
+      }
+      ariaLabel={`Apply result: ${verdict}`}
+      open={open}
+      onToggle={() => onToggle()}
+      className={styles.root}
+    >
       {open && (
         <div className={clean ? "tf-apply-result" : "tf-apply-result tf-apply-result-partial"}>
           {/*
@@ -144,6 +158,6 @@ export default function ApplyResultBlock({
           )}
         </div>
       )}
-    </section>
+    </DisclosurePanel>
   );
 }

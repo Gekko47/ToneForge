@@ -2,6 +2,7 @@ import React from "react";
 import { diffProfiles } from "../../style/versioning";
 import type { StyleProfile } from "../../core/domain/StyleProfile";
 import { DiffCardList } from "./common/DiffCardList";
+import { DisclosurePanel } from "./common";
 
 export interface ProfileHistoryCompareProps {
   left: StyleProfile;
@@ -51,10 +52,9 @@ export default function ProfileHistoryCompare({
           }))}
         />
       )}
-      <details>
-        <summary>Technical field diff</summary>
+      <DisclosurePanel title="Technical field diff">
         <pre>{JSON.stringify(changes, null, 2)}</pre>
-      </details>
+      </DisclosurePanel>
     </section>
   );
 }

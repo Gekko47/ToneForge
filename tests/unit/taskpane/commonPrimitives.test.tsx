@@ -152,15 +152,89 @@ describe("common primitives", () => {
     resetGriffelStyles();
   });
 
-  it("renders a DisclosurePanel with its title and body", () => {
-    renderWithFluent(
-      <DisclosurePanel title="Diagnostics" defaultOpen>
-        <span>detail</span>
-      </DisclosurePanel>,
-    );
-    expect(screen.getByText("Diagnostics")).toBeInTheDocument();
-    expect(screen.getByText("detail")).toBeInTheDocument();
-    resetGriffelStyles();
+  describe("DisclosurePanel primitive", () => {
+    it("renders uncontrolled with its title and body when defaultOpen", () => {
+      renderWithFluent(
+        <DisclosurePanel title="Diagnostics" defaultOpen>
+          <span>detail</span>
+        </DisclosurePanel>,
+      );
+      expect(screen.getByText("Diagnostics")).toBeInTheDocument();
+      expect(screen.getByText("detail")).toBeInTheDocument();
+      resetGriffelStyles();
+    });
+
+    it("unmounts collapsed children, so they are absent from the DOM", () => {
+      renderWithFluent(
+        <DisclosurePanel title="Collapsed">
+          <span>hidden body</span>
+        </DisclosurePanel>,
+      );
+      const button = screen.getByRole("button", { name: "Collapsed" });
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByText("hidden body")).not.toBeInTheDocument();
+      fireEvent.click(button);
+      expect(button).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByText("hidden body")).toBeInTheDocument();
+      resetGriffelStyles();
+    });
+
+    it("supports controlled open/onToggle round-trip", () => {
+      function ControlledHost(): React.ReactNode {
+        const [open, setOpen] = React.useState(false);
+        return (
+          <DisclosurePanel title="Controlled" open={open} onToggle={setOpen}>
+            <span>controlled body</span>
+          </DisclosurePanel>
+        );
+      }
+      renderWithFluent(<ControlledHost />);
+      const button = screen.getByRole("button", { name: "Controlled" });
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByText("controlled body")).not.toBeInTheDocument();
+      fireEvent.click(button);
+      expect(button).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByText("controlled body")).toBeInTheDocument();
+      fireEvent.click(button);
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByText("controlled body")).not.toBeInTheDocument();
+      resetGriffelStyles();
+    });
+
+    it("renders a headerSlot alongside the title", () => {
+      renderWithFluent(
+        <DisclosurePanel title="With slot" defaultOpen headerSlot={<span>extra</span>}>
+          <span>body</span>
+        </DisclosurePanel>,
+      );
+      expect(screen.getByText("With slot")).toBeInTheDocument();
+      expect(screen.getByText("extra")).toBeInTheDocument();
+      resetGriffelStyles();
+    });
+
+    it("keeps nested disclosures independent", () => {
+      renderWithFluent(
+        <>
+          <DisclosurePanel title="First" defaultOpen>
+            <span>first body</span>
+          </DisclosurePanel>
+          <DisclosurePanel title="Second">
+            <span>second body</span>
+          </DisclosurePanel>
+        </>,
+      );
+      expect(screen.getByRole("button", { name: "First" })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "Second" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      expect(screen.getByText("first body")).toBeInTheDocument();
+      expect(screen.queryByText("second body")).not.toBeInTheDocument();
+      resetGriffelStyles();
+    });
   });
 
   it("resolves the confirm dialog true when the user confirms", async () => {

@@ -1,6 +1,5 @@
 import React from "react";
-import { MessageBar } from "@fluentui/react-components";
-import { Button } from "@fluentui/react-components";
+import { Button, Card, MessageBar, makeStyles, tokens } from "@fluentui/react-components";
 import {
   activatePublished,
   discardDraft,
@@ -11,6 +10,7 @@ import {
   type ProfileRecord,
 } from "../../core/domain/ProfileRecord";
 import ProfileHistoryCompare from "./ProfileHistoryCompare";
+import { DisclosurePanel } from "./common";
 
 export interface ProfileRecordSectionProps {
   record: ProfileRecord;
@@ -31,6 +31,16 @@ export interface ProfileRecordSectionProps {
   onAnnounce?: (message: string) => void;
 }
 
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+    overflow: "hidden",
+  },
+});
+
 function dateLabel(iso: string): string {
   return new Date(iso).toISOString().slice(0, 10);
 }
@@ -49,6 +59,7 @@ export default function ProfileRecordSection({
   onChange,
   onAnnounce,
 }: ProfileRecordSectionProps): React.ReactNode {
+  const styles = useStyles();
   const [announcement, setAnnouncement] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   /**
@@ -127,156 +138,155 @@ export default function ProfileRecordSection({
   }
 
   return (
-    <section aria-labelledby="profile-record-heading" className="tf-collapsible">
-      <h2 id="profile-record-heading">Profile revisions</h2>
-      <p className="tf-sub">
-        This profile has one editable draft and a list of published versions. Published versions are
-        immutable; restoring one creates a new draft. Documents are checked against the active
-        published revision.
-      </p>
-
-      <p className="tf-sub" data-testid="record-summary">
-        Draft: {record.draft ? `revision ${record.draft.revision}` : "none"} · Published versions:{" "}
-        {total} · Active revision: {active ? active.revision : "—"}
-      </p>
-
-      <div className="tf-lifecycle-actions">
-        <Button
-          appearance="primary"
-          onClick={handlePublish}
-          disabled={!record.draft}
-          aria-describedby="publish-draft-hint"
-        >
-          Publish draft
-        </Button>
-        <Button onClick={handleDiscard} disabled={!record.draft}>
-          Discard draft
-        </Button>
-      </div>
-      <p id="publish-draft-hint" className="tf-sub">
-        {record.draft
-          ? "Publishing creates a new immutable version and activates it."
-          : "Create or edit a draft to publish a version."}
-      </p>
-
-      {total === 0 ? (
+    <section aria-labelledby="profile-record-heading">
+      <Card className={styles.root} appearance="outline">
+        <h2 id="profile-record-heading">Profile revisions</h2>
         <p className="tf-sub">
-          No published versions yet. Until you publish a draft, documents are checked against the
-          draft, and there is no published version to restore from — use <strong>Recall</strong> in
-          the revision audit trail below to bring any earlier revision back as a new draft.
+          This profile has one editable draft and a list of published versions. Published versions
+          are immutable; restoring one creates a new draft. Documents are checked against the active
+          published revision.
         </p>
-      ) : (
-        <ul aria-label="Published versions" className="tf-published-list">
-          {published.map((entry, index) => {
-            const isActive = entry.revision === record.activePublishedRevision;
-            return (
-              <li key={entry.revision} className="tf-published-item">
-                <span>
-                  Revision {entry.revision} · {dateLabel(entry.at)} · version {index + 1} of {total}
-                </span>
-                {isActive ? (
-                  <span className="tf-published-active">Active version</span>
-                ) : (
+
+        <p className="tf-sub" data-testid="record-summary">
+          Draft: {record.draft ? `revision ${record.draft.revision}` : "none"} · Published versions:{" "}
+          {total} · Active revision: {active ? active.revision : "—"}
+        </p>
+
+        <div className="tf-lifecycle-actions">
+          <Button
+            appearance="primary"
+            onClick={handlePublish}
+            disabled={!record.draft}
+            aria-describedby="publish-draft-hint"
+          >
+            Publish draft
+          </Button>
+          <Button onClick={handleDiscard} disabled={!record.draft}>
+            Discard draft
+          </Button>
+        </div>
+        <p id="publish-draft-hint" className="tf-sub">
+          {record.draft
+            ? "Publishing creates a new immutable version and activates it."
+            : "Create or edit a draft to publish a version."}
+        </p>
+
+        {total === 0 ? (
+          <p className="tf-sub">
+            No published versions yet. Until you publish a draft, documents are checked against the
+            draft, and there is no published version to restore from — use <strong>Recall</strong>{" "}
+            in the revision audit trail below to bring any earlier revision back as a new draft.
+          </p>
+        ) : (
+          <ul aria-label="Published versions" className="tf-published-list">
+            {published.map((entry, index) => {
+              const isActive = entry.revision === record.activePublishedRevision;
+              return (
+                <li key={entry.revision} className="tf-published-item">
+                  <span>
+                    Revision {entry.revision} · {dateLabel(entry.at)} · version {index + 1} of{" "}
+                    {total}
+                  </span>
+                  {isActive ? (
+                    <span className="tf-published-active">Active version</span>
+                  ) : (
+                    <Button
+                      onClick={() => handleActivate(entry.revision)}
+                      aria-label={`Activate published revision ${entry.revision}`}
+                    >
+                      Activate
+                    </Button>
+                  )}
                   <Button
-                    onClick={() => handleActivate(entry.revision)}
-                    aria-label={`Activate published revision ${entry.revision}`}
+                    onClick={() => handleRestore(entry.revision)}
+                    aria-label={`Restore published revision ${entry.revision} as a draft`}
                   >
-                    Activate
+                    Restore as draft
                   </Button>
-                )}
-                <Button
-                  onClick={() => handleRestore(entry.revision)}
-                  aria-label={`Restore published revision ${entry.revision} as a draft`}
-                >
-                  Restore as draft
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
-      <section aria-labelledby="revision-trail-heading">
-        <h3 id="revision-trail-heading">Revision audit trail</h3>
-        <p className="tf-sub">
-          Every recorded revision keeps a full copy of the profile. Recall copies one back into a
-          new draft; it does not activate anything, so publishing stays an explicit second step.
-        </p>
-        {/*
+        <section aria-labelledby="revision-trail-heading">
+          <h3 id="revision-trail-heading">Revision audit trail</h3>
+          <p className="tf-sub">
+            Every recorded revision keeps a full copy of the profile. Recall copies one back into a
+            new draft; it does not activate anything, so publishing stays an explicit second step.
+          </p>
+          {/*
           The trail is collapsed by default and the count is stated before it is
           hidden. A record with twenty revisions pushed the Typography and House
           style controls below the fold, and a list nobody scrolls to is the
           same as a list that is not there — so the count is always visible even
           when the rows are not.
         */}
-        {revisions.length > 0 && (
-          <Button
-            appearance="subtle"
-            className="tf-collapsible-header"
-            aria-expanded={showAllRevisions}
-            onClick={() => setShowAllRevisions((open) => !open)}
-          >
-            {showAllRevisions ? "Hide revisions" : "Show all revisions"}{" "}
-            <span>{revisions.length}</span>
-          </Button>
-        )}
-        {revisions.length === 0 ? (
-          <p className="tf-sub">No revisions recorded yet.</p>
-        ) : !showAllRevisions ? null : (
-          <ol aria-label="Revision audit trail" className="tf-revision-list">
-            {revisions.map((entry) => {
-              const isCurrentDraft = record.draft?.revision === entry.revision;
-              return (
-                <li
-                  key={`${entry.revision}-${entry.action}-${entry.at}`}
-                  className="tf-published-item"
-                >
-                  <span>
-                    Revision {entry.revision} · {dateLabel(entry.at)} · {entry.detail}
-                  </span>
-                  <Button
-                    onClick={() => handleRecall(entry.revision)}
-                    disabled={isCurrentDraft}
-                    aria-label={`Recall revision ${entry.revision} as a new draft`}
-                    title={
-                      isCurrentDraft
-                        ? "This revision is already the current draft."
-                        : "Copy this revision into a new editable draft."
-                    }
-                  >
-                    Recall
-                  </Button>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </section>
+          {revisions.length === 0 ? (
+            <p className="tf-sub">No revisions recorded yet.</p>
+          ) : (
+            <DisclosurePanel
+              title={showAllRevisions ? "Hide revisions" : "Show all revisions"}
+              headerSlot={<span>{revisions.length}</span>}
+              open={showAllRevisions}
+              onToggle={setShowAllRevisions}
+            >
+              <ol aria-label="Revision audit trail" className="tf-revision-list">
+                {revisions.map((entry) => {
+                  const isCurrentDraft = record.draft?.revision === entry.revision;
+                  return (
+                    <li
+                      key={`${entry.revision}-${entry.action}-${entry.at}`}
+                      className="tf-published-item"
+                    >
+                      <span>
+                        Revision {entry.revision} · {dateLabel(entry.at)} · {entry.detail}
+                      </span>
+                      <Button
+                        onClick={() => handleRecall(entry.revision)}
+                        disabled={isCurrentDraft}
+                        aria-label={`Recall revision ${entry.revision} as a new draft`}
+                        title={
+                          isCurrentDraft
+                            ? "This revision is already the current draft."
+                            : "Copy this revision into a new editable draft."
+                        }
+                      >
+                        Recall
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </DisclosurePanel>
+          )}
+        </section>
 
-      {total > 1 && firstPublished && lastPublished ? (
-        <ProfileHistoryCompare
-          left={firstPublished.profile}
-          right={lastPublished.profile}
-          leftLabel={`First published (r${firstPublished.revision})`}
-          rightLabel={`Latest published (r${lastPublished.revision})`}
-        />
-      ) : null}
+        {total > 1 && firstPublished && lastPublished ? (
+          <ProfileHistoryCompare
+            left={firstPublished.profile}
+            right={lastPublished.profile}
+            leftLabel={`First published (r${firstPublished.revision})`}
+            rightLabel={`Latest published (r${lastPublished.revision})`}
+          />
+        ) : null}
 
-      {/*
+        {/*
         Rendered only when this component owns the page's region. A caller with
         its own live region passes `onAnnounce` and this div must not appear, or
         the pane has two regions that update independently.
       */}
-      {onAnnounce === undefined && (
-        <div role="status" aria-live="polite" className="tf-sub">
-          {announcement}
-        </div>
-      )}
-      {error && (
-        <MessageBar intent="error" role="alert">
-          {error}
-        </MessageBar>
-      )}
+        {onAnnounce === undefined && (
+          <div role="status" aria-live="polite" className="tf-sub">
+            {announcement}
+          </div>
+        )}
+        {error && (
+          <MessageBar intent="error" role="alert">
+            {error}
+          </MessageBar>
+        )}
+      </Card>
     </section>
   );
 }

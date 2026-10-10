@@ -18,8 +18,19 @@
  */
 
 import React from "react";
-import { Button } from "@fluentui/react-components";
+import { Button, makeStyles, tokens } from "@fluentui/react-components";
 import type { IgnoredFinding } from "../../core/domain/Finding";
+import { DisclosurePanel } from "./common";
+
+const useStyles = makeStyles({
+  root: {
+    marginTop: tokens.spacingVerticalM,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+    overflow: "hidden",
+  },
+});
 
 export interface IgnoredFindingsProps {
   entries: readonly IgnoredFinding[];
@@ -44,6 +55,7 @@ export default function IgnoredFindings({
   entries,
   onRestore,
 }: IgnoredFindingsProps): React.ReactNode {
+  const styles = useStyles();
   // Rows are keyed on the occurrence, not the fingerprint: two ignored rows of
   // the same rule share a fingerprint, and a React key collision there means one
   // row silently replaces the other in the DOM.
@@ -55,14 +67,17 @@ export default function IgnoredFindings({
   if (entries.length === 0) return null;
 
   return (
-    <section className="tf-collapsible" aria-label="Ignored findings section">
-      <Button
-        appearance="subtle"
-        onClick={() => setOpen((previous) => !previous)}
-        aria-expanded={open}
-      >
-        Ignored findings <span>{entries.length}</span>
-      </Button>
+    <DisclosurePanel
+      title={
+        <>
+          Ignored findings <span>{entries.length}</span>
+        </>
+      }
+      ariaLabel="Ignored findings section"
+      open={open}
+      onToggle={setOpen}
+      className={styles.root}
+    >
       {open && (
         <>
           {/*
@@ -90,6 +105,6 @@ export default function IgnoredFindings({
           </ul>
         </>
       )}
-    </section>
+    </DisclosurePanel>
   );
 }
