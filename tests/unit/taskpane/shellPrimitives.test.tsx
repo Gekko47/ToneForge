@@ -1,6 +1,6 @@
 import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { PageContainer, PageHeader, Section } from "../../../src/taskpane/shell";
+import { PageContainer, Section } from "../../../src/taskpane/shell";
 import { renderWithFluent, resetGriffelStyles } from "../../helpers/fluentV9";
 
 /**
@@ -18,26 +18,6 @@ describe("shell primitives", () => {
     );
     expect(screen.getByText("content")).toBeInTheDocument();
     expect(document.querySelector('[data-page="home"]')).not.toBeNull();
-    resetGriffelStyles();
-  });
-
-  it("gives PageHeader a level-one heading and its description", () => {
-    renderWithFluent(<PageHeader title="Home" description="Your review command centre" />);
-    expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
-    expect(screen.getByText("Your review command centre")).toBeInTheDocument();
-    resetGriffelStyles();
-  });
-
-  it("renders PageHeader actions and status when supplied", () => {
-    renderWithFluent(
-      <PageHeader
-        title="Home"
-        actions={<button type="button">Refresh</button>}
-        status={<span>Ready</span>}
-      />,
-    );
-    expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
-    expect(screen.getByText("Ready")).toBeInTheDocument();
     resetGriffelStyles();
   });
 

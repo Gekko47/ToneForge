@@ -21,7 +21,6 @@ export default function LlmSettings({ onBack, parent }: LlmSettingsProps): React
   return (
     <div data-page="llm-settings">
       <Breadcrumb parent={parent} onBack={onBack} />
-      <h2 className="tf-title">LLM Settings</h2>
       <SettingsDashboard state={state} onStateChange={handleStateChange} />
     </div>
   );

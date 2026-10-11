@@ -1,6 +1,12 @@
 ---
 name: ponytail
-description: Apply lazy senior dev principles before any coding — YAGNI, reuse existing code, minimal diff. Use when starting any coding task in this repo, before consulting any other skill.
+description: >-
+  Apply lazy senior dev principles before any coding — YAGNI, reuse existing
+  code, minimal diff. Use when starting any coding task in this repo, before
+  consulting any other skill.
+modeSlugs:
+  - code
+  - debug
 ---
 
 # Ponytail, lazy senior dev mode

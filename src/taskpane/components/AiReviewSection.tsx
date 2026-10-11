@@ -117,17 +117,15 @@ export default function AiReviewSection({
 
   return (
     <section aria-label="Consistency Review" className="tf-governance-reformat">
-      <h2>Consistency Review</h2>
       <p>
-        Checks whether different parts of the document disagree with each other — the same figure
+        Checks whether different parts of the document disagree with each other - the same figure
         given two values, two different dates for one event, a term used two ways.
       </p>
       <p className="tf-sub">
         This review always covers the whole document at once, because a cross-part comparison over
-        part of a document is a different and far less meaningful check. Deterministic governance,
-        formatting checks, and safe reformat run on every keystroke and send nothing externally;
-        this is the only part of ToneForge that can send document text to a provider. It runs only
-        when you choose it, and you can withdraw consent in Settings at any time.
+        part of a document is a different and far less meaningful check. This is the only part of
+        ToneForge that can send document text to a provider. It runs only when you choose it, and
+        you can withdraw consent in Settings at any time.
       </p>
 
       {blocker !== null ? (

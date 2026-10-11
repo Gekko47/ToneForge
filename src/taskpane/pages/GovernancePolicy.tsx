@@ -44,12 +44,6 @@ export default function GovernancePolicy({ onBack }: GovernancePolicyProps): Rea
   return (
     <div data-page="governance-policy">
       <Breadcrumb parent={parentRoute("governance-policy")} onBack={onBack} />
-      <h1 className="tf-title">Governance Policy</h1>
-      <p className="tf-sub">
-        How strict each check is, and which corrections ToneForge may apply without asking.
-        Mandatory checks become tracked Word revisions after you approve them. Advisory checks are
-        reported and never rewritten.
-      </p>
       {context.record === null || policy === null ? (
         <p className="tf-sub">
           No policy to show. A policy is created when a style profile is first saved — open the

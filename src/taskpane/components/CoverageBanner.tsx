@@ -22,7 +22,7 @@
  */
 
 import React from "react";
-import { Button, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import type {
   CoverageBlocker,
@@ -119,6 +119,23 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground2,
     overflow: "hidden",
   },
+  /*
+   * One surface, not two. The panel used to draw its own border and fill and
+   * then wrap its detail in a `.tf-coverage` div that drew a second border and
+   * fill inside it — a box inside a box, with the inner one's 12px padding
+   * subtracted from the outer one's. The verdict is carried by the border
+   * colour alone, which is the same signal the collapsed header already shows,
+   * so the inner surface was decoration rather than information.
+   */
+  incomplete: {
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorStatusDangerBorder1}`,
+  },
+  complete: {
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorStatusSuccessBorder1}`,
+  },
+  detail: {
+    padding: tokens.spacingHorizontalM,
+  },
 });
 
 export default function CoverageBanner({
@@ -169,7 +186,11 @@ export default function CoverageBanner({
       ariaLabel={`Coverage ${verdictLabel(verdict)}`}
       open={open}
       onToggle={() => onToggle()}
-      className={styles.root}
+      className={
+        incomplete
+          ? mergeClasses(styles.root, styles.incomplete)
+          : mergeClasses(styles.root, styles.complete)
+      }
     >
       {/*
         The panel keeps its own border and background so the verdict is
@@ -178,7 +199,7 @@ export default function CoverageBanner({
         theme's surface so it can never disagree with the page it sits on.
       */}
       {open && (
-        <div className={incomplete ? "tf-coverage tf-coverage-incomplete" : "tf-coverage"}>
+        <div className={styles.detail}>
           {/*
             The blocker list comes first, and it is the only thing here that
             stops Apply. A reader who fixes nothing else will read it; a reader

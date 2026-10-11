@@ -324,7 +324,12 @@ describe("PendingChanges apply readiness", () => {
     expect(onRemove).not.toHaveBeenCalled();
     expect(await screen.findByText("Remove this change?")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Remove change" }));
+    // hidden: true — the Fluent Dialog surface keeps aria-hidden="true" during its
+    // opening animation, so the button is in the DOM but not in the accessibility
+    // tree yet. findByText above confirms the dialog is mounted; this includes it.
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove change", hidden: true }),
+    );
     expect(onRemove).toHaveBeenCalledWith("44444444-4444-4444-4444-444444444444");
   });
 

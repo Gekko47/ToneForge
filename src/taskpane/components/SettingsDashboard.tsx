@@ -133,12 +133,6 @@ export function SettingsDashboard({
 
   return (
     <div className="tf-settings-dashboard">
-      <h2 className="tf-title">LLM connections</h2>
-      <p className="tf-sub">
-        Two independent LLM roles. The general LLM handles semantic review and consistency
-        extraction; the decision LLM adjudicates bounded ambiguity. Each role binds to its own
-        connection, or the decision role can reuse the general connection with a different model.
-      </p>
       {views.map((view) => (
         <RoleConnectionCard
           key={view.role}

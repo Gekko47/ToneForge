@@ -52,12 +52,6 @@ export default function ReviewWithoutProfile({
     <div data-page="review">
       <Breadcrumb parent={parentRoute("review")} onBack={onBack} />
 
-      <h1 className="tf-title">Deterministic Review</h1>
-      <p className="tf-sub">
-        This page compares the document against a deterministic style profile. No profile is active,
-        so there is nothing to compare against and nothing to apply.
-      </p>
-
       {/*
         This page's one live region (ADR-0062). The remedy is an ordinary button
         beside the sentence that explains it, not a second region, so opening the

@@ -125,7 +125,10 @@ describe(
       await userEvent.click(screen.getByRole("button", { name: "Troubleshooting" }));
 
       expect(
-        await screen.findByRole("heading", { name: "Troubleshooting & diagnostics" }, LAZY_PAGE),
+        await screen.findByRole("heading", { name: "Troubleshooting" }, LAZY_PAGE),
+      ).toBeInTheDocument();
+      expect(
+        await screen.findByRole("heading", { name: "Troubleshooting" }, LAZY_PAGE),
       ).toBeInTheDocument();
     });
 
@@ -255,7 +258,7 @@ describe(
       await userEvent.click(screen.getByRole("button", { name: "Open navigation" }));
       await userEvent.click(screen.getByRole("button", { name: "Governance" }));
       expect(
-        await screen.findByRole("heading", { name: "Governance Policy" }, LAZY_PAGE),
+        await screen.findByRole("heading", { name: "Governance" }, LAZY_PAGE),
       ).toBeInTheDocument();
 
       await userEvent.click(screen.getByRole("button", { name: "Open navigation" }));
@@ -265,7 +268,10 @@ describe(
       );
 
       expect(
-        await screen.findByRole("heading", { name: "Governance Policy" }, LAZY_PAGE),
+        await screen.findByRole("heading", { name: "Governance" }, LAZY_PAGE),
+      ).toBeInTheDocument();
+      expect(
+        await screen.findByRole("heading", { name: "Governance" }, LAZY_PAGE),
       ).toBeInTheDocument();
     });
 

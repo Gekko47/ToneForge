@@ -1,5 +1,40 @@
 # ToneForge — Changelog
 
+## Unreleased — Pane-specific header system (2026-10-10)
+
+- **The header no longer repeats the pane's own name.** Every pane rendered a
+  brand lockup reading "ToneForge" directly beneath the host's native pane
+  title, so the prime position in the pane was spent on information the user
+  already had. It is replaced by one
+  [`PaneHeader.tsx`](src/taskpane/shell/PaneHeader.tsx) that promotes the page
+  title into that position, followed by a marker strip of pane-specific
+  metadata and an optional warning. The `.tf-brand-lockup` CSS is deleted.
+- **The duplicated page titles are gone.** Each page also carried its own
+  `<h1>` below the header, so the pane announced the same page twice. The page
+  title now lives in exactly one place — the header — and
+  `tests/unit/taskpane/singleH1.test.tsx` asserts one h1 per pane.
+- **One layout, four levels.** `landing`, `review`, `workspace`, and `utility`
+  share the same frame and differ only in the icon the level chooses, so the
+  pane reads consistently while each surface still names itself. Titles come
+  from `routeLabel()`, the single source of truth (ADR-0131).
+- **Markers are a uniform frame around distinct facts.** Active style and
+  revision, last scan time, document scope, issue counts by severity, and scan
+  status render as one definition list, so a value is never colour alone and a
+  truncated value is recoverable from its `title`. The marker data comes from
+  the pure [`headerMarkers.ts`](src/taskpane/shell/headerMarkers.ts) mappers,
+  which are unit-tested without a host.
+- **A warning is a note, not an interruption.** The header's warning renders as
+  `role="note"` and never as a live region, so it does not compete with the
+  pane's one announcement channel (ADR-0062).
+- **Narrow panes lose the labels, not the values.** Below 300px the marker
+  labels are visually hidden while staying in the DOM, so the strip remains a
+  definition list for assistive technology and the values keep their `title`.
+  The strip is capped at two lines, so a dense pane cannot grow the header
+  without limit.
+- ADR-0138 records the decision. Per ADR-0051, the human Word-host gate remains
+  open: the header's truncation and wrapping behaviour is checked by a person in
+  a real host, not by this automated run.
+
 ## Unreleased — Accessibility and high-contrast pass (2026-10-10)
 
 - **Icon-only buttons are named.** `tests/unit/taskpane/accessibleNames.test.ts`

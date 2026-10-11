@@ -19,11 +19,6 @@ vi.mock("../../../../src/taskpane/components/SettingsDashboard", () => ({
 }));
 
 describe("LlmSettings", () => {
-  it("is titled LLM Settings", () => {
-    render(<LlmSettings onBack={vi.fn()} parent="landing" />);
-    expect(screen.getByRole("heading", { name: "LLM Settings" })).toBeInTheDocument();
-  });
-
   it("renders the LLM dashboard body", () => {
     render(<LlmSettings onBack={vi.fn()} parent="landing" />);
     expect(screen.getByTestId("settings-dashboard")).toBeInTheDocument();

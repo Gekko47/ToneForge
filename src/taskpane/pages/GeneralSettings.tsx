@@ -27,7 +27,6 @@ export default function GeneralSettings({ onBack, parent }: GeneralSettingsProps
   return (
     <div data-page="general-settings">
       <Breadcrumb parent={parent} onBack={onBack} />
-      <h2 className="tf-title">General Settings</h2>
       <ScanningSettingsSection />
       <TrackedEditingSettingsSection />
       <StylingSettingsSection />

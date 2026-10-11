@@ -42,11 +42,6 @@ beforeEach(() => {
 });
 
 describe("GeneralSettings", () => {
-  it("is titled General Settings", () => {
-    render(<GeneralSettings onBack={vi.fn()} parent="landing" />);
-    expect(screen.getByRole("heading", { name: "General Settings" })).toBeInTheDocument();
-  });
-
   it("mounts the scanning, tracked editing, and styling controls", () => {
     render(<GeneralSettings onBack={vi.fn()} parent="landing" />);
 

@@ -96,10 +96,6 @@ export default function Home({ state, onNavigate }: HomeProps): React.ReactNode 
 
   return (
     <div className={styles.root} data-page="home">
-      <Text weight="semibold" size={500}>
-        ToneForge
-      </Text>
-
       <div className={styles.cards}>
         <ReviewModeCard
           mode="deterministic"

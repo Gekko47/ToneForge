@@ -276,11 +276,6 @@ export default function DebuggingPanel({
   return (
     <div data-page="debugging">
       <Breadcrumb parent={parentRoute("troubleshooting")} onBack={onBack} />
-      <h1 className="tf-title">Troubleshooting & diagnostics</h1>
-      <p className="tf-sub">
-        Technical inspection for the current Word host. These checks are not required for normal
-        document governance and do not change the document.
-      </p>
       <Accordion multiple defaultOpenItems={["host", "why", "coverage", "mutation"]}>
         <AccordionItem value="host">
           <AccordionHeader>Host inspection</AccordionHeader>

@@ -1,7 +1,15 @@
 import { afterEach, vi } from "vitest";
+import { configure } from "@testing-library/dom";
 import { createOfficeLoad } from "./fixtures/officeLoad";
 import "@testing-library/jest-dom/vitest";
 import { initializeIcons } from "@fluentui/react/lib/Icons";
+
+// Raise the async-query timeout from the 1000ms default to 10s. Under parallel
+// load (238 test files), a findByRole call can take >1s to resolve when the
+// event loop is saturated — the default timeout is too tight and causes
+// intermittent "Unable to find" failures that pass in isolation. This is the
+// single global fix; per-test timeouts are unnecessary.
+configure({ asyncUtilTimeout: 10_000 });
 
 // Register Fluent UI icons (ChevronDown, etc.) before any component renders.
 // Without this, every ComboBox/Dropdown/Icon in the test suite emits

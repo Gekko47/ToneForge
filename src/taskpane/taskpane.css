@@ -569,27 +569,10 @@ h4 {
   gap: var(--tf-space-3);
 }
 
-/* The coverage verdict. It was an inline style object carrying a light-theme
-   palette, so in dark mode it painted a near-white panel with dark text. The
-   border carries the verdict in `--tf-danger`/`--tf-success`, and the panel
-   itself uses the theme's own surface so it can never disagree with the page
-   it sits on. */
-.tf-coverage {
-  margin-top: 1rem;
-  padding: 0.75rem;
-  border: 1px solid var(--tf-border);
-  border-radius: 4px;
-  background-color: var(--tf-surface);
-}
-
-.tf-coverage-complete {
-  border-color: var(--tf-success);
-}
-
-.tf-coverage-incomplete {
-  border-color: var(--tf-danger);
-}
-
+/* The coverage verdict's reason lines. The panel that carries them is styled
+   in Fluent v9 (`CoverageBanner.tsx`), so the verdict's border colour is a
+   theme token rather than a bespoke palette — the old `.tf-coverage` surface
+   was a second box inside that panel and is gone. */
 .tf-coverage-reason {
   color: var(--tf-danger);
 }
@@ -807,43 +790,22 @@ h4 {
   z-index: 5;
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
-  align-items: center;
+  /* The trigger is pinned to the top of the bar, not centred against the whole
+     pane header. Centred, it floats to the vertical middle of a tall header and
+     reads as belonging to the marker strip rather than to the title row it
+     actually opens. */
+  align-items: start;
   gap: 10px;
-  min-height: 56px;
+  /* The bar is a frame, not a card: 6px top and bottom is enough to keep the
+     pane header off the border, and 40px is the height of the nav trigger
+     column beside it, so the bar never grows past its own content. */
+  min-height: 40px;
   border-bottom: 1px solid var(--tf-border);
-  padding: 8px 0 12px;
+  padding: 6px 0;
   /* The shell's PageContainer owns the gutter now, so the header no longer
      cancels a card's padding with a negative margin. */
   margin: 0 0 16px;
   background: var(--tf-surface);
-}
-
-.tf-brand-lockup {
-  min-width: 0;
-}
-
-.tf-brand-lockup .tf-title {
-  margin-bottom: 2px;
-}
-
-.tf-active-profile {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 5px;
-  min-width: 0;
-  margin: 0;
-  color: var(--tf-muted);
-  font-size: 12px;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.tf-active-profile strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--tf-text);
-  text-overflow: ellipsis;
 }
 
 .tf-nav-overlay {
@@ -1080,14 +1042,6 @@ h4 {
 }
 
 @media (max-width: 420px) {
-  .tf-active-profile {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .tf-active-profile-label {
-    display: none;
-  }
-
   .tf-published-item {
     flex-direction: column;
     align-items: flex-start;

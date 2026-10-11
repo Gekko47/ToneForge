@@ -5594,3 +5594,66 @@ uses (ADR-0031), applied to the theme layer itself.
   [`src/taskpane/shell/Breadcrumb.tsx`](../src/taskpane/shell/Breadcrumb.tsx);
   `tests/unit/taskpane/routes.test.ts`; `tests/unit/taskpane/breadcrumb.test.tsx`;
   `tests/unit/taskpane/pages/DashboardNoProfile.test.tsx`; ADR-0131, ADR-0135.
+
+  ## ADR-0138 — One h1 per pane: the page title is promoted into the header, and the redundant brand title is removed
+  - **Status**: Accepted (2026-10-10)
+  - **Context**: The task pane header rendered `<h1>ToneForge</h1>` on every page,
+    and each page rendered its own `<h1 className="tf-title">Page Title</h1>`
+    beneath it. Two h1s per pane is a screen-reader navigation problem (the first
+    h1 a user hears is the product name, not the page they are on) and a visual
+    hierarchy problem (the product name outranks the page title). The brand title
+    also duplicates the native pane title the host environment already provides,
+    wasting critical vertical space in a dense developer tool. The per-page h1
+    text was the only thing that changed between pages, so the header carried no
+    pane-specific information at all.
+  - **Decision**: One h1 per pane, owned by a single `PaneHeader` primitive in
+    `src/taskpane/shell`. The header renders the page title as the h1 and
+    surfaces pane-specific metadata (active profile, revision, last scan, issue
+    counts, scan status, staleness) in a consistent layout across all panes. The
+    brand title is removed from the header; the product name lives in the native
+    pane title and the navigation drawer. Four header levels cover the four pane
+    roles — `landing`, `review`, `workspace`, and `utility` — but the layout is
+    identical across all four; the level chooses the icon and nothing else, so
+    the visual language is uniform. A pure `headerMarkers` mapper derives status
+    markers from pane state so the header stays a presentational component.
+    Styling is Fluent v9 `makeStyles` over design tokens (ADR-0130), not bespoke
+    CSS classes.
+  - **Consequences**:
+    - Positive: one h1 per pane, so a screen reader announces the page title
+      first and the heading ramp is unambiguous.
+    - Positive: the header carries pane-specific information (profile, revision,
+      scan time, issue counts) that was previously scattered across pages or
+      missing entirely.
+    - Positive: one consistent layout, component structure, and visual language
+      across all panes, matching the header patterns of VS Code, Linear, and
+      JetBrains IDEs.
+    - Positive: vertical space is reclaimed by removing the redundant brand
+      title, which matters in a dense developer tool.
+    - Cost: pages no longer own their title; they receive it from the shell.
+      A page that needs a different title must go through the header config, not
+      render its own h1.
+    - Cost: the header is slightly more complex than the old brand lockup, but
+      the complexity is centralized in one primitive rather than distributed
+      across eleven pages.
+    - Positive: truncation is recoverable by construction. The title, the
+      description, and every marker value are one line with an ellipsis and each
+      carries its full value in `title`, so a value cut off by a narrow docked
+      pane is still readable on hover.
+    - Positive: the header warning is `role="note"`, never a live region. The
+      pane's one live region stays in `AppShell` (ADR-0062), so a header warning
+      cannot announce over a scan result.
+    - Cost: below 300 px the marker labels are visually hidden rather than
+      unmounted, because a `<dl>` whose `<dt>` disappears is no longer a
+      definition list — the screen reader would read a bare run of values with
+      nothing to attach them to. The strip is bounded at two lines by
+      `max-height`, so a pane carrying many markers cannot grow the header
+      without limit.
+    - **Not claimed**: the visual result in a real Word host is human evidence
+      in `docs/manual-verification.md`; a green automated run is not a release
+      (ADR-0051).
+  - **Evidence**: [`plans/pane-header-system-implementation-plan.md`](../plans/pane-header-system-implementation-plan.md);
+    `src/taskpane/shell/PaneHeader.tsx`; `src/taskpane/shell/headerMarkers.ts`;
+    `src/taskpane/components/TaskPaneHeader.tsx` (the `paneHeader` slot);
+    `tests/unit/taskpane/singleH1.test.tsx`;
+    `tests/unit/taskpane/shell/paneHeader.test.tsx`; ADR-0130, ADR-0135,
+    ADR-0137, ADR-0062.

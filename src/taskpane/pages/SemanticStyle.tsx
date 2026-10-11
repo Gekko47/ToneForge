@@ -265,12 +265,6 @@ export default function SemanticStyle({
     <div data-page="semantic-style">
       <Breadcrumb parent={parentRoute("semantic-style")} onBack={onBack} />
 
-      <h1 className="tf-title">Semantic Style</h1>
-      <p className="tf-sub">
-        How the writing should sound, rather than how it is punctuated. These values are what a
-        semantic review reasons about. Editing them here sends nothing anywhere.
-      </p>
-
       <LearnSemanticStyle
         gateInput={gateInput}
         onOpenSettings={onOpenSettings}

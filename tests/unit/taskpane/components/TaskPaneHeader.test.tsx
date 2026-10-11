@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import TaskPaneHeader from "../../../../src/taskpane/components/TaskPaneHeader";
+import { PaneHeader } from "../../../../src/taskpane/shell";
 
 describe("TaskPaneHeader", () => {
   it("opens a responsive navigation panel and marks the active destination", async () => {
@@ -10,16 +11,14 @@ describe("TaskPaneHeader", () => {
     render(
       <TaskPaneHeader
         activePage="review"
-        profileName="Corporate editorial"
-        profileRevision={241}
         onNavigate={onNavigate}
+        paneHeader={<PaneHeader title="Deterministic Review" />}
       />,
     );
 
     const trigger = screen.getByRole("button", { name: "Open navigation" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByText("Corporate editorial")).toBeInTheDocument();
-    expect(screen.getByText("r241")).toBeInTheDocument();
+    expect(screen.getByText("Deterministic Review")).toBeInTheDocument();
 
     await user.click(trigger);
     const navigation = screen.getByRole("navigation", { name: "Task pane navigation" });
@@ -35,14 +34,7 @@ describe("TaskPaneHeader", () => {
 
   it("closes on Escape and returns focus to the menu trigger", async () => {
     const user = userEvent.setup();
-    render(
-      <TaskPaneHeader
-        activePage="review"
-        profileName="Corporate editorial"
-        profileRevision={7}
-        onNavigate={vi.fn()}
-      />,
-    );
+    render(<TaskPaneHeader activePage="review" onNavigate={vi.fn()} paneHeader={null} />);
     const trigger = screen.getByRole("button", { name: "Open navigation" });
     await user.click(trigger);
     expect(screen.getByRole("dialog", { name: "ToneForge navigation" })).toBeInTheDocument();
@@ -55,14 +47,7 @@ describe("TaskPaneHeader", () => {
 
   it("traps keyboard focus in the open navigation dialog", async () => {
     const user = userEvent.setup();
-    render(
-      <TaskPaneHeader
-        activePage="review"
-        profileName="Corporate editorial"
-        profileRevision={7}
-        onNavigate={vi.fn()}
-      />,
-    );
+    render(<TaskPaneHeader activePage="review" onNavigate={vi.fn()} paneHeader={null} />);
     const trigger = screen.getByRole("button", { name: "Open navigation" });
     await user.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "ToneForge navigation" });
@@ -77,14 +62,7 @@ describe("TaskPaneHeader", () => {
 
   it("returns focus to the menu trigger when navigation closes", async () => {
     const user = userEvent.setup();
-    render(
-      <TaskPaneHeader
-        activePage="review"
-        profileName="Corporate editorial"
-        profileRevision={7}
-        onNavigate={vi.fn()}
-      />,
-    );
+    render(<TaskPaneHeader activePage="review" onNavigate={vi.fn()} paneHeader={null} />);
     const trigger = screen.getByRole("button", { name: "Open navigation" });
     await user.click(trigger);
     const closeButton = screen.getByRole("button", { name: "Close navigation" });
@@ -93,66 +71,36 @@ describe("TaskPaneHeader", () => {
     await vi.waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  describe("the scan time", () => {
-    it("says when the document was last scanned, without an observer there is none", () => {
-      /*
-       * On the stale banner the time could only appear when something was
-       * already wrong, so the moment it was worth most — just after a
-       * successful scan, with no banner rendered — it was nowhere on screen.
-       */
-      const { rerender } = render(
-        <TaskPaneHeader
-          activePage="review"
-          profileName="Corporate editorial"
-          profileRevision={7}
-          onNavigate={vi.fn()}
-          lastScan="2026-09-26T09:30:00.000Z"
-        />,
-      );
-      expect(screen.getByText(/^Last scan:/)).toBeInTheDocument();
-
-      // `undefined` means no observer is running on this page. Printing a time
-      // there would be a claim about a scan that never happened.
-      rerender(
-        <TaskPaneHeader
-          activePage="llm-settings"
-          profileName="Corporate editorial"
-          profileRevision={7}
-          onNavigate={vi.fn()}
-        />,
-      );
-      expect(screen.queryByText(/^Last scan:/)).not.toBeInTheDocument();
-    });
-
-    it("says never rather than a date when nothing has been scanned", () => {
+  describe("the pane header slot", () => {
+    it("renders the pane header content the caller supplies", () => {
       render(
         <TaskPaneHeader
           activePage="review"
-          profileName="Corporate editorial"
-          profileRevision={7}
           onNavigate={vi.fn()}
-          lastScan={null}
+          paneHeader={
+            <PaneHeader
+              title="Deterministic Review"
+              markers={[
+                {
+                  key: "profile",
+                  label: "Style",
+                  value: "Corporate editorial · r241",
+                  tone: "neutral",
+                },
+                { key: "scan", label: "Last scan", value: "10/10/2026, 4:30:00 PM" },
+              ]}
+            />
+          }
         />,
       );
-      expect(screen.getByText("Last scan: never")).toBeInTheDocument();
+      expect(screen.getByText("Deterministic Review")).toBeInTheDocument();
+      expect(screen.getByText(/Corporate editorial/)).toBeInTheDocument();
+      expect(screen.getByText(/Last scan/)).toBeInTheDocument();
     });
 
-    it("is plain text, not a second live region", () => {
-      /*
-       * The pane speaks from one live region. A second one here would read the
-       * scan time over whatever the pane was actually announcing.
-       */
-      render(
-        <TaskPaneHeader
-          activePage="review"
-          profileName="Corporate editorial"
-          profileRevision={7}
-          onNavigate={vi.fn()}
-          lastScan="2026-09-26T09:30:00.000Z"
-        />,
-      );
-      expect(screen.getByText(/^Last scan:/)).not.toHaveAttribute("aria-live");
-      expect(screen.getByText(/^Last scan:/)).not.toHaveAttribute("role", "status");
+    it("renders no pane header when none is supplied", () => {
+      render(<TaskPaneHeader activePage="review" onNavigate={vi.fn()} />);
+      expect(screen.queryByText("Deterministic Review")).not.toBeInTheDocument();
     });
   });
 
@@ -172,9 +120,8 @@ describe("TaskPaneHeader", () => {
       const { rerender } = render(
         <TaskPaneHeader
           activePage="semantic-review"
-          profileName="Corporate editorial"
-          profileRevision={7}
           onNavigate={onNavigate}
+          paneHeader={<PaneHeader title="Semantic Review" />}
         />,
       );
 
@@ -194,9 +141,8 @@ describe("TaskPaneHeader", () => {
       rerender(
         <TaskPaneHeader
           activePage="semantic-style"
-          profileName="Corporate editorial"
-          profileRevision={7}
           onNavigate={onNavigate}
+          paneHeader={<PaneHeader title="Semantic Style" />}
         />,
       );
       await user.click(screen.getByRole("button", { name: "Open navigation" }));
@@ -212,9 +158,8 @@ describe("TaskPaneHeader", () => {
       render(
         <TaskPaneHeader
           activePage="review"
-          profileName="Corporate editorial"
-          profileRevision={7}
           onNavigate={vi.fn()}
+          paneHeader={<PaneHeader title="Deterministic Review" />}
         />,
       );
 
@@ -251,9 +196,8 @@ describe("TaskPaneHeader", () => {
       render(
         <TaskPaneHeader
           activePage="review"
-          profileName="Corporate editorial"
-          profileRevision={7}
           onNavigate={onNavigate}
+          paneHeader={<PaneHeader title="Deterministic Review" />}
         />,
       );
 
@@ -286,9 +230,8 @@ describe("TaskPaneHeader", () => {
       render(
         <TaskPaneHeader
           activePage="review"
-          profileName="Corporate editorial"
-          profileRevision={7}
           onNavigate={vi.fn()}
+          paneHeader={<PaneHeader title="Deterministic Review" />}
         />,
       );
 

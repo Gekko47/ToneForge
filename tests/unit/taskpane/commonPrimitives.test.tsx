@@ -264,7 +264,7 @@ describe("common primitives", () => {
     renderWithFluent(<ConfirmHost />);
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(await screen.findByText("Delete profile")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm", hidden: true }));
     await waitFor(() => expect(screen.getByText("confirmed")).toBeInTheDocument());
     resetGriffelStyles();
   });

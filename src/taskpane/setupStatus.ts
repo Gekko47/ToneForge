@@ -113,8 +113,7 @@ export function setupStatus(state: PersistedState, providerUsable: boolean): Set
       ready: providerUsable,
       blocked: providerUsable
         ? null
-        : "The consistency check and semantic review are unavailable until a provider is " +
-          "connected. Deterministic review, scanning, and applying corrections are unaffected.",
+        : "The consistency check and semantic review are unavailable until a provider is connected.",
       destination: "llm-settings",
       control: "LLM Settings → LLM connections → Connect a provider",
     },

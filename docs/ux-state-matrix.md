@@ -14,7 +14,10 @@ plan they display. Once Safe Reformat previews a plan, its report is the single
 current Governance/findings source until Apply or a new scan supersedes it.
 Reformat preview is not a mutation action; Pending Changes owns the single
 plan-level Apply and Reject workflow. A fixed header contains a Fluent hamburger
-navigation panel and a non-wrapping active-profile summary. The header and
+navigation panel and, beneath it, the pane's own header: the page title as the
+pane's single h1, a marker strip of pane-specific metadata (active style,
+revision, last scan, issue counts, scan status), and an optional warning
+(ADR-0138). The header and
 LLM Settings/General Settings/Troubleshooting navigation remain available on the
 first-run profile setup state, so a user is not locked out of the AI Review
 consent before they have a profile. Capability probes and coverage acquisition

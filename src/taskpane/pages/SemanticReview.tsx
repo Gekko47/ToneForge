@@ -486,13 +486,6 @@ export default function SemanticReview({
     <div data-page="semantic-review">
       <Breadcrumb parent={parentRoute("semantic-review")} onBack={onBack} />
 
-      <h1 className="tf-title">Semantic Review</h1>
-      <p className="tf-sub">
-        Click into the paragraph you want checked, or select text. What is read here is sent to your
-        configured provider only when you press Review, and nothing is written until you press
-        Apply.
-      </p>
-
       {/*
         This page's one live region (ADR-0062). Blockers are rendered as ordinary
         text beside their control rather than in a region, so the pane does not

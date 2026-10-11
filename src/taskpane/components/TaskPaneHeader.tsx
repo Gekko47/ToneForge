@@ -12,28 +12,22 @@ export { TASKPANE_DESTINATIONS, type TaskPaneDestination };
 
 interface TaskPaneHeaderProps {
   activePage: TaskPaneDestination;
-  profileName: string;
-  profileRevision: number;
   onNavigate: (destination: TaskPaneDestination) => void;
   /**
-   * When the document was last scanned, as an ISO timestamp; `null` for never,
-   * and `undefined` where there is no observer to ask.
+   * The pane-specific header content, rendered by the caller.
    *
-   * In the header rather than under the findings, because it answers "is what I
-   * am looking at current?" before the user has found the list, not after. It
-   * used to live on the stale banner, which renders nothing at all unless
-   * something is wrong — so the one time the answer is worth having most, the
-   * moment a scan has just happened and there is no banner, it was absent.
+   * The brand lockup that used to live here — the ToneForge h1, the active
+   * profile, the last scan — is removed (ADR-0138). The page title and its
+   * metadata now live in a `PaneHeader` the caller renders, so the header
+   * carries pane-specific information rather than a redundant product name.
    */
-  lastScan?: string | null | undefined;
+  paneHeader?: React.ReactNode | undefined;
 }
 
 export default function TaskPaneHeader({
   activePage,
-  profileName,
-  profileRevision,
   onNavigate,
-  lastScan,
+  paneHeader,
 }: TaskPaneHeaderProps): React.ReactNode {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLDivElement | null>(null);
@@ -75,6 +69,7 @@ export default function TaskPaneHeader({
       <div ref={triggerRef}>
         <Button
           appearance="subtle"
+          size="small"
           icon={<Navigation24Regular />}
           title="Open navigation"
           aria-label="Open navigation"
@@ -82,21 +77,7 @@ export default function TaskPaneHeader({
           onClick={() => setIsOpen(true)}
         />
       </div>
-      <div className="tf-brand-lockup">
-        <h1 className="tf-title">ToneForge</h1>
-        <p className="tf-active-profile" title={`${profileName}, revision ${profileRevision}`}>
-          <span className="tf-active-profile-label">Active profile</span>
-          <strong>{profileName}</strong>
-          <span>r{profileRevision}</span>
-        </p>
-        {/* Plain text, not live: the pane speaks from one live region, and a
-            second one here would read the scan time over the announcement. */}
-        {lastScan !== undefined && (
-          <p className="tf-sub tf-last-scan">
-            Last scan: {lastScan === null ? "never" : new Date(lastScan).toLocaleString()}
-          </p>
-        )}
-      </div>
+      {paneHeader}
       {isOpen && (
         <div
           className="tf-nav-overlay"

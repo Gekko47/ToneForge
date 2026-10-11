@@ -28,14 +28,13 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof AiReviewSe
 }
 
 describe("AiReviewSection", () => {
-  it("presents one review with one heading and one action", () => {
+  it("presents one review with one labelled section and one action", () => {
     renderSection();
-    const headings = screen.getAllByRole("heading", { level: 2 });
-    expect(headings).toHaveLength(1);
-    // Named for what it does, and matching the consent it is gated on, which is
-    // `consistencyReviewConsent`. "AI Review" described the mechanism rather than
-    // the check, and invited the reading that some other review was elsewhere.
-    expect(headings[0]).toHaveTextContent("Consistency Review");
+    // The section is labelled for what it does, matching the consent it is gated
+    // on (`consistencyReviewConsent`). The h2 was removed per ADR-0138 (one h1
+    // per pane); the aria-label carries the name instead.
+    const section = screen.getByRole("region", { name: "Consistency Review" });
+    expect(section).toBeInTheDocument();
     // Exactly one trigger. The page used to offer three buttons, each carrying
     // its own copy of the same consent sentence.
     expect(screen.getAllByRole("button", { name: "Check Consistency" })).toHaveLength(1);

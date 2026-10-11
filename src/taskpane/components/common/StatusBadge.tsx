@@ -63,6 +63,12 @@ export function statusTone(status: ToneForgeStatus): StatusTone {
 
 export interface StatusBadgeProps {
   status: ToneForgeStatus;
+  /**
+   * The hover tooltip. The heading-row pill has no label beside it — the marker
+   * strip's labels hide below 370px, and this pill is not in the strip at all —
+   * so the tooltip is the only place that can say what the status is about.
+   */
+  title?: string | undefined;
   className?: string | undefined;
 }
 
@@ -71,7 +77,7 @@ export interface StatusBadgeProps {
  * thing that decides colour and icon, so a status can never be colour-only
  * (spec §15).
  */
-export function StatusBadge({ status, className }: StatusBadgeProps): React.ReactNode {
+export function StatusBadge({ status, title, className }: StatusBadgeProps): React.ReactNode {
   const tone = statusTone(status);
   const Icon = toneForgeIcons[STATUS_TONE_ICON[tone]];
   return (
@@ -81,6 +87,15 @@ export function StatusBadge({ status, className }: StatusBadgeProps): React.Reac
       color={STATUS_TONE_COLOR[tone]}
       icon={<Icon />}
       shape="rounded"
+      /*
+       * `large` — 24px tall with a 16px icon. The default `medium` is 20px with
+       * a 12px icon, which is too small to house the icon beside a status word
+       * without the icon crowding the text. This is the heading-row pill; the
+       * `ToneBadge` below stays at the default size, because it sits in body
+       * copy rather than beside a 16px title.
+       */
+      size="large"
+      title={title}
     >
       {status}
     </Badge>

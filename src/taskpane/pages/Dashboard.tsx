@@ -21,7 +21,19 @@ import {
 } from "../../shared/office/taskpaneNavigation";
 import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
-import { AppShell, Breadcrumb } from "../shell";
+import {
+  AppShell,
+  Breadcrumb,
+  PaneHeader,
+  reviewHeaderMarkers,
+  styleHeaderMarkers,
+  semanticReviewHeaderMarkers,
+  consistencyHeaderMarkers,
+  governanceHeaderMarkers,
+  scanPhaseStatus,
+  type PaneHeaderProps,
+  type PaneMarker,
+} from "../shell";
 import { LoadingState } from "../components/common/LoadingState";
 import { DisclosurePanel } from "../components/common";
 import ReviewWithoutProfile from "./ReviewWithoutProfile";
@@ -48,11 +60,12 @@ import {
   saveReviewDecision,
 } from "../../core/state/reviewSession";
 import { reviewIdentity, occurrenceKey } from "../occurrenceIdentity";
-import { setupStatusFromState } from "../setupStatus";
+import { setupStatusFromState, type SetupStatus } from "../setupStatus";
 import {
   describeCategoryGroups,
   describeOpenFindings,
   summarizeOpenFindings,
+  type OpenFindingsSummary,
 } from "../findingsSummary";
 import { reformatDocument } from "../../reformat";
 import {
@@ -71,7 +84,7 @@ import { selectActiveProfile } from "../../core/state/profileSelectors";
 import { usePersistedState } from "../state/usePersistedState";
 import { useAnnouncement } from "../settings/useAnnouncement";
 import { usePageNavigation } from "../usePageNavigation";
-import { parentRoute } from "../routes";
+import { parentRoute, routeLabel } from "../routes";
 import { deriveAnnouncement } from "../state/announcement";
 import { applyReadiness, hostReadinessMessage } from "../settings/applyReadiness";
 import { StyleProfileSchema, type StyleProfile } from "../../core/domain/StyleProfile";
@@ -260,6 +273,238 @@ function skippedIdentities(state: PersistedState): ReadonlySet<string> {
  * deterministic profile â€” but it is now stated on the Home page as a warning
  * with a link, rather than enforced by making half the app unreachable.
  */
+/** The governance markers for the active stored policy, or the house default. */
+function governanceMarkersFromState(state: PersistedState): PaneMarker[] {
+  const id = state.activeGovernanceProfileId;
+  const stored = id === null ? undefined : state.governanceProfiles[id];
+  return governanceHeaderMarkers({
+    profileName: stored === undefined ? null : "Authored policy",
+    policyRevision: stored === undefined ? null : stored.version,
+    protectedRangeCount: stored?.protection.userLockedRanges.length ?? 0,
+  });
+}
+
+/** Everything the pane header reads, gathered from state the Dashboard holds. */
+interface PaneHeaderData {
+  page: TaskPaneDestination;
+  setup: SetupStatus;
+  profile: { name: string; revision: number } | null;
+  semanticProfile: { name: string; revision: number } | null;
+  observerStatus: DocumentObserverStatus | null;
+  openSummary: OpenFindingsSummary | null;
+  governanceMarkers: readonly PaneMarker[];
+  trackedEditingEnabled: boolean;
+  selectionChars: number | null;
+  consistencyRan: boolean;
+  consistencyComplete: boolean;
+}
+
+/**
+ * Build the pane header for a destination (ADR-0138).
+ *
+ * One builder, called with state the Dashboard already holds, so the header and
+ * the page body cannot disagree: both read the same `observerStatus`,
+ * `openSummary`, and profile. The title is `routeLabel(page)`, the same source
+ * the drawer and the ribbon read, so the heading cannot drift from them.
+ *
+ * The switch is exhaustive over `TaskPaneDestination` on purpose: a new
+ * destination must pick a header level here, which is how the routing invariant
+ * (ADR-0102) stays true for the header too.
+ */
+function buildPaneHeader(data: PaneHeaderData): React.ReactNode {
+  const { page } = data;
+  const title = routeLabel(page);
+  const providerConfigured =
+    data.setup.items.find((item) => item.id === "llmProvider")?.ready ?? false;
+
+  switch (page) {
+    case "landing": {
+      const markers: PaneMarker[] = [
+        {
+          key: "deterministic",
+          label: "Deterministic style",
+          value:
+            data.profile === null ? "None yet" : `${data.profile.name} · r${data.profile.revision}`,
+          tone: "neutral",
+          title: data.profile === null ? "No deterministic style profile exists yet." : undefined,
+        },
+        {
+          key: "semantic",
+          label: "Semantic style",
+          value:
+            data.semanticProfile === null
+              ? "None yet"
+              : `${data.semanticProfile.name} · r${data.semanticProfile.revision}`,
+          tone: "neutral",
+          title:
+            data.semanticProfile === null ? "No semantic style profile exists yet." : undefined,
+        },
+      ];
+      return (
+        <PaneHeader
+          title={title}
+          status={{
+            label: data.setup.complete ? "Ready" : "Incomplete",
+            title: data.setup.complete
+              ? "Setup is complete: a deterministic style profile, a semantic style profile, and an AI provider are all in place."
+              : "Setup is incomplete: at least one of the deterministic style profile, the semantic style profile, or the AI provider is still missing.",
+          }}
+          markers={markers}
+        />
+      );
+    }
+    case "review": {
+      const observer = data.observerStatus;
+      return (
+        <PaneHeader
+          title={title}
+          status={{
+            label: observer === null ? "Not checked" : scanPhaseStatus(observer.phase),
+            title:
+              observer === null
+                ? "The document has not been scanned yet."
+                : `The last scan is ${scanPhaseStatus(observer.phase).toLowerCase()}.`,
+          }}
+          markers={reviewHeaderMarkers({
+            profileName: data.profile?.name ?? null,
+            profileRevision: data.profile?.revision ?? null,
+            lastScan: observer?.lastScan ?? null,
+            examinedScopes: observer?.deterministicCoverage?.examinedScopes ?? [],
+            phase: observer?.phase ?? "notStarted",
+            stale: observer?.stale ?? false,
+            hostUnavailable: observer?.hostUnavailable ?? false,
+            findingCount: data.openSummary?.total ?? 0,
+            errorCount: data.openSummary?.mandatory ?? 0,
+            warningCount: data.openSummary?.advisory ?? 0,
+            coverageComplete: observer?.deterministicCoverage?.complete ?? false,
+          })}
+        />
+      );
+    }
+    case "semantic-review":
+      return (
+        <PaneHeader
+          title={title}
+          markers={semanticReviewHeaderMarkers({
+            styleName: data.semanticProfile?.name ?? null,
+            styleRevision: data.semanticProfile?.revision ?? null,
+            selectionChars: data.selectionChars,
+            providerConfigured,
+          })}
+        />
+      );
+    case "consistency":
+      return (
+        <PaneHeader
+          title={title}
+          markers={consistencyHeaderMarkers({
+            ran: data.consistencyRan,
+            complete: data.consistencyComplete,
+            providerConfigured,
+          })}
+        />
+      );
+    case "profile":
+      return (
+        <PaneHeader
+          title={title}
+          markers={styleHeaderMarkers({
+            profileName: data.profile?.name ?? null,
+            profileRevision: data.profile?.revision ?? null,
+            hasDraft: false,
+          })}
+        />
+      );
+    case "semantic-style":
+      return (
+        <PaneHeader
+          title={title}
+          markers={styleHeaderMarkers({
+            profileName: data.semanticProfile?.name ?? null,
+            profileRevision: data.semanticProfile?.revision ?? null,
+            hasDraft: false,
+          })}
+        />
+      );
+    case "governance-policy":
+      return <PaneHeader title={title} markers={data.governanceMarkers} />;
+    case "llm-settings": {
+      const blocked = data.setup.items.find((item) => item.id === "llmProvider")?.blocked ?? null;
+      return (
+        <PaneHeader
+          title={title}
+          status={{
+            label: providerConfigured ? "Ready" : "Unavailable",
+            title: providerConfigured
+              ? "An AI provider is connected."
+              : "No AI provider is connected. Semantic Review and the consistency check are unavailable.",
+          }}
+          warning={
+            blocked === null
+              ? null
+              : { tone: "warning", title: "No provider connected", body: blocked }
+          }
+        />
+      );
+    }
+    case "general-settings": {
+      const blockedProfile =
+        data.setup.items.find((item) => item.id === "deterministicProfile")?.blocked ?? null;
+      const warning: PaneHeaderProps["warning"] = !data.trackedEditingEnabled
+        ? {
+            tone: "warning",
+            title: "Tracked editing is off",
+            body: hostReadinessMessage({
+              trackedEditingEnabled: false,
+              capabilities: null,
+            }).message,
+          }
+        : blockedProfile === null
+          ? null
+          : { tone: "warning", title: "No deterministic style profile", body: blockedProfile };
+      return (
+        <PaneHeader
+          title={title}
+          status={{
+            label: data.setup.complete ? "Ready" : "Incomplete",
+            title: data.setup.complete
+              ? "Setup is complete: a deterministic style profile, a semantic style profile, and an AI provider are all in place."
+              : "Setup is incomplete: at least one of the deterministic style profile, the semantic style profile, or the AI provider is still missing.",
+          }}
+          warning={warning}
+        />
+      );
+    }
+    case "troubleshooting": {
+      const openItems = data.setup.items.filter((item) => !item.ready);
+      return (
+        <PaneHeader
+          title={title}
+          status={{
+            label: data.setup.complete ? "Complete" : "Incomplete",
+            title: data.setup.complete
+              ? "Every setup item is ready."
+              : `${openItems.length} setup item${openItems.length === 1 ? "" : "s"} still to set up: ${openItems
+                  .map((item) => item.label)
+                  .join(", ")}.`,
+          }}
+          warning={
+            openItems.length === 0
+              ? null
+              : {
+                  tone: "warning",
+                  title: "Setup is incomplete",
+                  body: `${openItems.length} item${openItems.length === 1 ? "" : "s"} still to set up: ${openItems
+                    .map((item) => item.label)
+                    .join(", ")}.`,
+                }
+          }
+        />
+      );
+    }
+  }
+}
+
 export interface DashboardProps {
   /** The page this pane opens on. Defaults to the landing page. */
   initialPage?: DashboardInitialPage;
@@ -314,13 +559,32 @@ function DashboardWithoutProfile({
   const { page, navigate, parent, goToParent } = usePageNavigation(initialPage);
   const persisted = usePersistedState();
   const status = setupStatusFromState(persisted);
+  const semanticProfileRecord = selectActiveProfile(persisted, "semantic");
+  const semanticProfileSummary =
+    semanticProfileRecord === null
+      ? null
+      : { name: semanticProfileRecord.name, revision: semanticProfileRecord.revision };
 
   const header = (
     <TaskPaneHeader
       activePage={page}
-      profileName={activeProfile?.name ?? "None yet"}
-      profileRevision={activeProfile?.revision ?? 0}
       onNavigate={navigate}
+      paneHeader={buildPaneHeader({
+        page,
+        setup: status,
+        profile:
+          activeProfile === null
+            ? null
+            : { name: activeProfile.name, revision: activeProfile.revision },
+        semanticProfile: semanticProfileSummary,
+        observerStatus: null,
+        openSummary: null,
+        governanceMarkers: governanceMarkersFromState(persisted),
+        trackedEditingEnabled: isTrackedEditingEnabled(),
+        selectionChars: null,
+        consistencyRan: false,
+        consistencyComplete: false,
+      })}
     />
   );
 
@@ -519,6 +783,11 @@ function DashboardWithProfile({
    */
   const autoScan = persisted.settings.autoScan;
   const activeGovernanceProfile = resolveGovernanceProfile(persisted, activeProfile);
+  const activeSemanticProfileRecord = selectActiveProfile(persisted, "semantic");
+  const semanticProfileSummary =
+    activeSemanticProfileRecord === null
+      ? null
+      : { name: activeSemanticProfileRecord.name, revision: activeSemanticProfileRecord.revision };
   const { page, navigate, parent, goToParent } = usePageNavigation(initialPage);
   /*
    * Open by default, and opened *for* the user when findings arrive.
@@ -1505,9 +1774,20 @@ function DashboardWithProfile({
         header={
           <TaskPaneHeader
             activePage={page}
-            profileName={activeProfile.name}
-            profileRevision={activeProfile.revision}
             onNavigate={navigate}
+            paneHeader={buildPaneHeader({
+              page,
+              setup: setupStatusFromState(persisted),
+              profile: { name: activeProfile.name, revision: activeProfile.revision },
+              semanticProfile: semanticProfileSummary,
+              observerStatus: status,
+              openSummary: null,
+              governanceMarkers: governanceMarkersFromState(persisted),
+              trackedEditingEnabled: isTrackedEditingEnabled(),
+              selectionChars: semanticReviewStatus?.heldChars ?? null,
+              consistencyRan: consistencyResult !== null,
+              consistencyComplete: consistencyResult?.coverage.complete ?? false,
+            })}
           />
         }
       >
@@ -1605,21 +1885,27 @@ function DashboardWithProfile({
         name: activeProfile.name,
         revision: activeProfile.revision,
       },
-      activeSemanticProfile: selectActiveProfile(persisted, "semantic")
-        ? {
-            name: selectActiveProfile(persisted, "semantic")!.name,
-            revision: selectActiveProfile(persisted, "semantic")!.revision,
-          }
-        : null,
+      activeSemanticProfile: semanticProfileSummary,
     };
     return (
       <AppShell
         header={
           <TaskPaneHeader
             activePage="landing"
-            profileName={activeProfile.name}
-            profileRevision={activeProfile.revision}
             onNavigate={navigate}
+            paneHeader={buildPaneHeader({
+              page: "landing",
+              setup: homeState.setup,
+              profile: { name: activeProfile.name, revision: activeProfile.revision },
+              semanticProfile: semanticProfileSummary,
+              observerStatus: status,
+              openSummary: null,
+              governanceMarkers: governanceMarkersFromState(persisted),
+              trackedEditingEnabled: isTrackedEditingEnabled(),
+              selectionChars: semanticReviewStatus?.heldChars ?? null,
+              consistencyRan: consistencyResult !== null,
+              consistencyComplete: consistencyResult?.coverage.complete ?? false,
+            })}
           />
         }
       >
@@ -1762,13 +2048,20 @@ function DashboardWithProfile({
       header={
         <TaskPaneHeader
           activePage={page}
-          profileName={activeProfile.name}
-          profileRevision={activeProfile.revision}
           onNavigate={navigate}
-          // Only where an observer is actually running. On the pages that have
-          // none, a "Last scan" reading the profile's own revision would be a
-          // claim about a scan that never happened.
-          lastScan={status === null ? undefined : (status.lastScan ?? null)}
+          paneHeader={buildPaneHeader({
+            page,
+            setup: setupStatusFromState(persisted),
+            profile: { name: activeProfile.name, revision: activeProfile.revision },
+            semanticProfile: semanticProfileSummary,
+            observerStatus: status,
+            openSummary,
+            governanceMarkers: governanceMarkersFromState(persisted),
+            trackedEditingEnabled: isTrackedEditingEnabled(),
+            selectionChars: semanticReviewStatus?.heldChars ?? null,
+            consistencyRan: consistencyResult !== null,
+            consistencyComplete: consistencyResult?.coverage.complete ?? false,
+          })}
         />
       }
       announcement={announcement.message ?? undefined}

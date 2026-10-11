@@ -927,9 +927,16 @@ or wide — is not a pane.
    heading above a large one was the original defect (D-3, D-4), and roughly
    twenty-five bare `<h2>`s used to render at the browser's own 24px default
    beside a 14px "h1".
-2. **The brand lockup in the header.** It followed `.tf-title` from 14px to 21px
-   as a consequence of D-d. It was never looked at. Confirm it does not crowd the
-   header at 329px or clip against the navigation control.
+2. **The pane header (ADR-0138).** The brand lockup this item used to describe is
+   deleted; what occupies the space now is the page title as the pane's single
+   h1, a marker strip of pane-specific metadata, and an optional warning. Confirm
+   at 329px that the title truncates with an ellipsis rather than wrapping to a
+   second line, that the marker strip wraps instead of overflowing, and that a
+   long marker value is recoverable on hover from its `title`. Then dock the pane
+   below 300px and confirm the marker labels disappear while the values remain,
+   and that the strip never grows past two lines.
+   Walk every page: the header must read as the page you are on, not as the
+   product name.
 3. **The Deterministic Style page's section structure.** Four collapsible
    sections, each divided into groups, with Language opening and the rest closed.
    Confirm each group's disclosure is reachable by keyboard, that the summary is
