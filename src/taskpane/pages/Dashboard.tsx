@@ -87,7 +87,7 @@ import { usePageNavigation } from "../usePageNavigation";
 import { parentRoute, routeLabel } from "../routes";
 import { deriveAnnouncement } from "../state/announcement";
 import { applyReadiness, hostReadinessMessage } from "../settings/applyReadiness";
-import { StyleProfileSchema, type StyleProfile } from "../../core/domain/StyleProfile";
+import type { StyleProfile, StyleProfileSchema } from "../../core/domain/StyleProfile";
 import type { Finding } from "../../core/domain/Finding";
 import type { ApplyOutcome } from "../../reformat/orchestrator";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
@@ -169,11 +169,6 @@ type DashboardPage = TaskPaneDestination;
  * where to go; the page it loads is the instruction. (ADR-0109, on ADR-0107.)
  */
 export type DashboardInitialPage = DashboardPage;
-
-function resolveActiveProfile(): StyleProfile | null {
-  const profile = selectActiveProfile(loadState());
-  return profile ? StyleProfileSchema.parse(profile) : null;
-}
 
 export function resolveGovernanceProfile(
   state: PersistedState,
@@ -511,20 +506,13 @@ export interface DashboardProps {
 }
 
 export default function Dashboard({ initialPage = "landing" }: DashboardProps): React.ReactNode {
-  // Held in state rather than resolved on every render so a profile created in
-  // the profile editor can be picked up without reloading the task pane. A
-  // reload would discard the Office runtime, the capability probe, and the
-  // document observer the dashboard already established.
-  const [activeProfile, setActiveProfile] = useState<StyleProfile | null>(resolveActiveProfile);
+  // Derived from the store, not snapshotted once at mount: a publish/activate
+  // must swap the review to the new revision without a task-pane reload.
+  const persisted = usePersistedState();
+  const activeProfile = selectActiveProfile(persisted);
 
   if (!activeProfile) {
-    return (
-      <DashboardWithoutProfile
-        onProfileCreated={() => setActiveProfile(resolveActiveProfile())}
-        activeProfile={activeProfile}
-        initialPage={initialPage}
-      />
-    );
+    return <DashboardWithoutProfile activeProfile={activeProfile} initialPage={initialPage} />;
   }
 
   return (
@@ -543,16 +531,14 @@ export default function Dashboard({ initialPage = "landing" }: DashboardProps): 
  * being redirected. What the missing profile removes is stated, once, on the
  * Home page, with a link to the control that resolves it.
  *
- * `activeProfile` is passed through rather than resolved again so the parent can
- * swap this component for the full dashboard the moment a profile is created,
- * without a re-render racing the two.
+ * `activeProfile` is passed through rather than resolved again; the parent derives
+ * it from the store and swaps this component for the full dashboard the moment a
+ * profile is created.
  */
 function DashboardWithoutProfile({
-  onProfileCreated,
   activeProfile,
   initialPage,
 }: {
-  onProfileCreated: () => void;
   activeProfile: StyleProfile | null;
   initialPage: DashboardInitialPage;
 }): React.ReactNode {
@@ -596,17 +582,13 @@ function DashboardWithoutProfile({
    */
 
   /**
-   * Leaving the profile editor with no profile still returns to the checklist.
+   * Leaving the profile editor with no profile returns to the checklist.
    *
-   * `onProfileCreated` alone is not enough. It re-resolves the active profile and
-   * calls `setActiveProfile(null)`, which is the value the state already holds, so
-   * React bails out of the re-render and this component never re-renders to
-   * restore its own `page` state. The user is left on the editor with the header
-   * as the only way out — the same lockout S1 removed, reintroduced through the
-   * back button. Navigating here is what makes "Back" mean back.
+   * Navigating here is what makes "Back" mean back: it restores this
+   * component's own `page` state, which would otherwise leave the user on the
+   * editor with the header as the only way out.
    */
   function leaveProfileEditor(): void {
-    onProfileCreated();
     navigate("landing");
   }
 

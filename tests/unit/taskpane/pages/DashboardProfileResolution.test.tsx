@@ -18,6 +18,34 @@ const mocks = vi.hoisted(() => ({
   isTrackedEditingEnabled: vi.fn(() => true),
 }));
 
+/**
+ * Live subscribers captured by the mocked `subscribeToState`, plus a driver that
+ * fires them the way a real `saveState` would.
+ *
+ * The active profile is now derived from `usePersistedState()`, so adoption only
+ * happens when a store write notifies subscribers. These tests flip `loadState`
+ * to simulate the persisted record appearing; `notifyStore()` publishes that
+ * write to the mounted component, which is the mechanism the production
+ * `saveProfileRecord` → `saveState` → `subscribeToState` chain exercises.
+ */
+const storeHarness = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  return {
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    notify(): void {
+      for (const listener of [...listeners]) listener();
+    },
+    clear(): void {
+      listeners.clear();
+    },
+  };
+});
+
 // The ignore writers are listed because the Dashboard calls them directly.
 // A partial mock would leave them undefined and fail on first use, which reads
 // as a component bug rather than the fixture gap it is.
@@ -43,7 +71,7 @@ vi.mock("../../../../src/core/state/persistence", () => ({
 vi.mock("../../../../src/core/state", () => ({
   loadState: () => mocks.loadState(),
   saveState: vi.fn(),
-  subscribeToState: () => () => undefined,
+  subscribeToState: (listener: () => void) => storeHarness.subscribe(listener),
 }));
 
 vi.mock("../../../../src/word/documentObserver", () => ({
@@ -95,6 +123,8 @@ vi.mock("../../../../src/taskpane/pages/Profile", () => ({
   },
 }));
 
+import { __resetPersistedStore } from "../../../../src/taskpane/state/usePersistedState";
+
 import Dashboard from "../../../../src/taskpane/pages/Dashboard";
 
 function emptyState() {
@@ -120,6 +150,10 @@ function emptyState() {
 describe("Dashboard profile resolution", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    storeHarness.clear();
+    // The store's snapshot cache is module-level, so a record published by one
+    // test would otherwise be seen by the next test's first render.
+    __resetPersistedStore();
     window.localStorage.clear();
     // A reload would silently satisfy the old behaviour, so make it observable.
     Object.defineProperty(window, "location", {
@@ -147,6 +181,9 @@ describe("Dashboard profile resolution", () => {
       activeProfileId: record.id,
     });
     await user.click(await screen.findByRole("button", { name: "Leave profile setup" }));
+    // The profile is persisted by the editor; publish that write so the
+    // store-derived `activeProfile` picks the record up.
+    storeHarness.notify();
 
     await waitFor(() => expect(mocks.prepareReformatHost).toHaveBeenCalled());
     expect(mocks.reload).not.toHaveBeenCalled();
