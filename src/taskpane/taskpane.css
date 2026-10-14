@@ -120,7 +120,6 @@ body {
 /* The toolbar's selected position has to be visible somewhere. `aria-current`
    alone leaves a sighted user with an announced number and no highlighted card. */
 .tf-finding-card.is-selected {
-  border-color: var(--tf-accent);
   box-shadow: inset 3px 0 0 var(--tf-accent);
 }
 

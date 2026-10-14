@@ -832,14 +832,6 @@ function DashboardWithProfile({
   /** The preview run's own findings, matched to a reviewed finding by key. */
   const previewFindingsRef = useRef<readonly Finding[]>([]);
   /*
-   * Temporary diagnostic (remove after host verification): the overlay positions
-   * by index into `overlayGroup.findings`, which is re-derived from the observer
-   * on every render. This holds the last shape logged, so a list that shrinks
-   * beneath `overlayPosition` during a post-apply refresh is visible in the host
-   * console exactly once per change.
-   */
-  const overlayShapeRef = useRef<string | null>(null);
-  /*
    * Set when an apply has just written and the observer's refreshed findings are
    * on their way. The overlay must then re-anchor on the post-refresh group,
    * never advance an index against the pre-refresh one: the applied finding
@@ -897,6 +889,17 @@ function DashboardWithProfile({
    */
   const [overlayGroupKey, setOverlayGroupKey] = useState<string | null>(null);
   const [overlayPosition, setOverlayPosition] = useState(0);
+  /** Refs mirroring overlay state, read by the re-anchor effect. */
+  const overlayGroupKeyRef = useRef<string | null>(null);
+  const overlayPositionRef = useRef(0);
+  const updateOverlayGroupKey = (key: string | null): void => {
+    overlayGroupKeyRef.current = key;
+    setOverlayGroupKey(key);
+  };
+  const updateOverlayPosition = (pos: number): void => {
+    overlayPositionRef.current = pos;
+    setOverlayPosition(pos);
+  };
   /*
    * The finished consistency report, and nothing else about the review.
    *
@@ -1110,21 +1113,30 @@ function DashboardWithProfile({
   useEffect(() => {
     if (status !== null && status.phase !== "scanning") {
       /*
+       * Clear refreshingAfterApply on terminal error/failure phases so Accept
+       * is not permanently disabled when a scan fails or is skipped.
+       */
+      if (status.phase === "failed" || status.phase === "stale") {
+        setRefreshingAfterApply(false);
+      }
+      /*
        * Re-anchor the overlay after an apply. `status.findings` is the refreshed
        * scan, so the applied finding has already left the group and the same index
        * names the next finding. The group is recomputed here rather than read from
        * the render's `overlayGroup`: that binding is declared below an early
        * return, so a status change landing while another page shows would touch it
-       * before it is initialised. Navigate to the next finding; close when the
-       * group is spent (the index is past the end, or the group has gone).
+       * before it is initialised. Read the latest overlay group key and position
+       * from refs rather than the render's captured closure values, so the effect
+       * sees the most recent navigation state. Navigate to the next finding;
+       * close when the group is spent.
        */
       if (resumeOverlayAfterRefreshRef.current) {
         resumeOverlayAfterRefreshRef.current = false;
         const refreshedGroup =
           projectFindingsByType(withoutIgnored(status.findings, persisted.ignoredFindings)).find(
-            (group) => group.key === overlayGroupKey,
+            (group) => group.key === overlayGroupKeyRef.current,
           ) ?? null;
-        const current = refreshedGroup?.findings[overlayPosition];
+        const current = refreshedGroup?.findings[overlayPositionRef.current];
         if (current) {
           void goToFinding(current);
         } else {
@@ -1391,8 +1403,9 @@ function DashboardWithProfile({
    * Open the overlay for a type group, starting at its first finding.
    */
   function openOverlayGroup(group: FindingTypeGroup): void {
-    setOverlayGroupKey(group.key);
-    setOverlayPosition(0);
+    updateOverlayGroupKey(group.key);
+    updateOverlayPosition(0);
+    setReviewNote(null);
     const first = group.findings[0];
     if (first) void goToFinding(first);
   }
@@ -1401,8 +1414,9 @@ function DashboardWithProfile({
    * Close the overlay and reset its state.
    */
   function closeOverlay(): void {
-    setOverlayGroupKey(null);
-    setOverlayPosition(0);
+    updateOverlayGroupKey(null);
+    updateOverlayPosition(0);
+    setReviewNote(null);
   }
 
   /**
@@ -1415,12 +1429,11 @@ function DashboardWithProfile({
    * navigations and let the later one win.
    */
   function overlayPrevious(): void {
-    setOverlayPosition((prev) => {
-      const next = Math.max(0, prev - 1);
-      const finding = overlayGroup?.findings[next];
-      if (finding) void goToFinding(finding);
-      return next;
-    });
+    const next = Math.max(0, overlayPosition - 1);
+    const finding = overlayGroup?.findings[next];
+    if (finding) void goToFinding(finding);
+    updateOverlayPosition(next);
+    setReviewNote(null);
   }
 
   /**
@@ -1428,13 +1441,12 @@ function DashboardWithProfile({
    * it. See `overlayPrevious` for why the document moves too.
    */
   function overlayNext(): void {
-    setOverlayPosition((prev) => {
-      if (overlayGroup === null) return prev;
-      const next = Math.min(overlayGroup.findings.length - 1, prev + 1);
-      const finding = overlayGroup.findings[next];
-      if (finding) void goToFinding(finding);
-      return next;
-    });
+    if (overlayGroup === null) return;
+    const next = Math.min(overlayGroup.findings.length - 1, overlayPosition + 1);
+    const finding = overlayGroup.findings[next];
+    if (finding) void goToFinding(finding);
+    updateOverlayPosition(next);
+    setReviewNote(null);
   }
 
   /**
@@ -1449,7 +1461,7 @@ function DashboardWithProfile({
     if (overlayGroup && nextPosition < overlayGroup.findings.length) {
       const nextFinding = overlayGroup.findings[nextPosition];
       if (nextFinding) void goToFinding(nextFinding);
-      setOverlayPosition(nextPosition);
+      updateOverlayPosition(nextPosition);
     } else {
       closeOverlay();
     }
@@ -1496,24 +1508,6 @@ function DashboardWithProfile({
       return;
     }
     const match = changeForFinding(finding, plan, previewFindingsRef.current);
-    /*
-     * Temporary diagnostic (remove after host verification): record whether the
-     * plan/finding join found a change and the sizes on each side.
-     */
-    console.warn(
-      "overlay accept diagnostic " +
-        JSON.stringify({
-          findingId: finding.id,
-          findingKind: finding.kind,
-          findingCategory: finding.category,
-          planChangeCount: plan.changes.length,
-          previewFindingCount: previewFindingsRef.current.length,
-          matched: match !== null,
-          refusal: match?.refusal ?? null,
-          changeFindingIds: plan.changes.map((change) => change.findingId ?? null),
-          previewFindingIds: previewFindingsRef.current.map((entry) => entry.id),
-        }),
-    );
     if (match === null) {
       setReviewNote(
         "The preview proposes no correction for this finding, so there is nothing to apply.",
@@ -1895,30 +1889,6 @@ function DashboardWithProfile({
   const findings = observerFindings;
   const overlayGroups = projectFindingsByType(findings);
   const overlayGroup = overlayGroups.find((group) => group.key === overlayGroupKey) ?? null;
-  /*
-   * Temporary diagnostic (remove after host verification): log the overlay's live
-   * shape whenever it changes. If the applied finding leaves the refreshed list,
-   * the length drops and the id at `overlayPosition` changes underneath a fixed
-   * index — which is the reported skip.
-   */
-  const overlayShape =
-    overlayGroup === null
-      ? null
-      : `${overlayGroup.key}|${overlayGroup.findings.length}|${overlayGroup.findings[overlayPosition]?.id ?? "none"}`;
-  if (overlayShape !== overlayShapeRef.current) {
-    overlayShapeRef.current = overlayShape;
-    if (overlayGroupKey !== null) {
-      console.warn(
-        "overlay shape diagnostic " +
-          JSON.stringify({
-            groupKey: overlayGroupKey,
-            length: overlayGroup?.findings.length ?? null,
-            overlayPosition,
-            idAtPosition: overlayGroup?.findings[overlayPosition]?.id ?? null,
-          }),
-      );
-    }
-  }
   /*
    * Counted over the list the user can actually see, with the same ignore
    * predicate the filtering above used. Recomputed from `findings` rather than

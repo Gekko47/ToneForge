@@ -233,6 +233,7 @@ async function resolveStructuralRange(
       // The slot type (Primary/FirstPage/EvenPages) is not carried on the finding;
       // the primary slot is the one a header/footer finding is about in practice.
       const slot = unit === "header" ? section.getHeader("Primary") : section.getFooter("Primary");
+      if (!slot || typeof slot.getRange !== "function") return null;
       return slot.getRange("Whole");
     }
     default:

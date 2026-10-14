@@ -351,14 +351,15 @@ describe("readBodyTextIn", () => {
   });
 
   it("treats an empty accept-all view as a real result, not a failure", async () => {
-    // No getReviewedText here: the fallback path must still answer.
+    const reviewedRange = { value: "", load: vi.fn() };
     const context = contextWithBody({
       text: "everything is pending deletion",
       load: vi.fn(),
+      getReviewedText: vi.fn().mockReturnValue(reviewedRange),
     });
 
     const text = await readBodyTextIn(context as never);
-    expect(text).toBe("everything is pending deletion");
+    expect(text).toBe("");
   });
 });
 

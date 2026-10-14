@@ -188,17 +188,8 @@ export async function readBodyTextIn(context: Office.Context): Promise<string> {
 
 export async function readReviewedText(): Promise<ReviewedText> {
   return runInWord(async (context) => {
-    const body = context.document.body as unknown as ReviewableBody;
-    if (typeof body.getReviewedText === "function") {
-      try {
-        const reviewed = body.getReviewedText("Current") as { value: string };
-        return { text: reviewed.value, reviewed: true };
-      } catch {
-        // Fall through to raw text
-      }
-    }
-    const text = await readBodyTextIn(context);
-    return { text, reviewed: false };
+    const views = await readBodyTextViews(context);
+    return { text: views.fullText, reviewed: views.reviewed };
   });
 }
 

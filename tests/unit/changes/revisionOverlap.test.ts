@@ -44,7 +44,7 @@ describe("assessRevisionOverlap", () => {
           target: { kind: "paragraph", index: 99, nodeId: "p99" },
         },
       }),
-      ALL_REVISIONS,
+      [TONE_FORGE_REVISION, FOREIGN_REVISION],
     );
 
     expect(result.kind).toBe("none");

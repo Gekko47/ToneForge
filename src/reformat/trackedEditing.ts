@@ -130,12 +130,18 @@ export async function prepareTrackedEditing(
 
   const unsupportedChangeIds = getUnsupportedChangeIds(changes, capabilities);
   setStage01Passed(unsupportedChangeIds.length === 0, capabilities);
-  // Missing optional capabilities are warnings, not errors — they degrade the
-  // revision authoring path but do not prevent otherwise-valid plans from
-  // applying. Unsupported change IDs remain the only hard rejection.
+  // Unsupported change IDs and missing required capabilities are errors — they
+  // prevent the plan from being verified before it applies.
   const warnings: string[] = [];
   if (capabilities.supportsTrackedChangeInspection === false) {
-    warnings.push("tracked change inspection (revision-overlap preflight will be skipped)");
+    return {
+      enabled: true,
+      capabilities,
+      unsupportedChangeIds: changes.map((change) => change.id),
+      error:
+        "This Word host does not support tracked change inspection, so revision overlap cannot be verified.",
+      warnings,
+    };
   }
   if (capabilities.supportsInsertOoxml === false) {
     warnings.push("OOXML insertion (revisions will be authored under the signed-in user)");

@@ -234,7 +234,15 @@ export async function applyChangePlan(
 
     const overlapFailures: Array<{ change: Change; overlap: RevisionOverlap }> = [];
     for (const change of orderedChanges) {
-      const overlap = assessRevisionOverlap(change, revisions);
+      // Locate the live target first so we assess the real document position,
+      // not the planned offsets which may be stale.
+      const located = await locateLiveTarget(change);
+      const overlap = assessRevisionOverlap(
+        located.ok
+          ? { ...change, range: { ...change.range, start: located.start, end: located.end } }
+          : change,
+        revisions,
+      );
       if (overlap.kind !== "none") {
         overlapFailures.push({ change, overlap });
       }

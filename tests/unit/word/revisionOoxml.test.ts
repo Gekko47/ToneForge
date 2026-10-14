@@ -73,7 +73,7 @@ describe("buildTrackedRevisionOoxml", () => {
     expect(xml).toContain("xml:space=" + DQ + "preserve" + DQ);
   });
 
-  it("uses w:delText for deleted runs", () => {
+  it("routes deleteRange through Replace handling with empty inserted content", () => {
     const xml = buildTrackedRevisionOoxml(
       change({
         type: "deleteRange",
@@ -83,9 +83,9 @@ describe("buildTrackedRevisionOoxml", () => {
       ctx(),
     );
 
-    expect(xml).toContain("w:delText");
+    expect(xml).toContain("<w:ins");
+    expect(xml).not.toContain("<w:del");
     expect(xml).toContain("xml:space=" + DQ + "preserve" + DQ);
-    expect(xml).not.toContain("<w:t>");
   });
 
   it("returns null for formatting-only changes", () => {
@@ -141,7 +141,7 @@ describe("buildTrackedRevisionOoxml", () => {
     expect(xml).not.toContain("old</w:delText>");
   });
 
-  it("produces only w:del for deleteRange", () => {
+  it("produces only w:ins (no del) for deleteRange", () => {
     const xml = buildTrackedRevisionOoxml(
       change({
         type: "deleteRange",
@@ -151,9 +151,8 @@ describe("buildTrackedRevisionOoxml", () => {
       ctx(),
     );
 
-    expect(xml).toContain("<w:del");
-    expect(xml).not.toContain("<w:ins");
-    expect(xml).toContain(">remove me</w:delText>");
+    expect(xml).toContain("<w:ins");
+    expect(xml).not.toContain("<w:del");
   });
 
   it("escapes XML special characters in text content", () => {

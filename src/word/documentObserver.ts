@@ -9,6 +9,8 @@
 
 import { debounce } from "../shared/utils/debounce";
 import { describeError, logger } from "../shared/utils/logger";
+import { hashText } from "../shared/utils/text";
+import { runInWord } from "../shared/office/officeHelpers";
 import { createRunId } from "../analysis/incrementalCoordinator";
 import { runDeterministicReview } from "../analysis/deterministic/deterministicReviewEngine";
 import { buildCoverage } from "../analysis/coverage";
@@ -441,7 +443,30 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       return;
     }
     const handler = (): void => {
-      scheduleScan();
+      // Skip the content guard before the first scan completes — we haven't
+      // recorded a document version yet, so we cannot know whether content changed.
+      if (state.documentVersion === "") {
+        scheduleScan();
+        return;
+      }
+      void runInWord(async (context) => {
+        const body = context.document.body;
+        body.load("text");
+        await context.sync();
+        const text = body.text;
+        // If the host did not serve body text, we cannot compare content —
+        // scan conservatively rather than skip.
+        if (text === undefined || text === null || text === "") {
+          scheduleScan();
+          return;
+        }
+        const currentHash = hashText(text);
+        if (currentHash === state.documentVersion) return;
+        scheduleScan();
+      }).catch(() => {
+        // If the content check itself fails, scan conservatively.
+        scheduleScan();
+      });
     };
     state.eventHandler = handler;
     hostDocument.addHandlerAsync("documentSelectionChanged", handler, (asyncResult) => {

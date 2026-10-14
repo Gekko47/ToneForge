@@ -755,8 +755,10 @@ async function acquireScope(
       try {
         await context.sync();
         syncCount++;
-      } catch {
-        // sync failure: offsets unavailable; buildSnapshot falls back.
+      } catch (syncError) {
+        logger.warn("Paragraph offset sync failed; offsets will be unavailable", {
+          ...describeError(syncError),
+        });
       }
       paragraphOffsets = rangeProxies.map((range) => {
         if (range && typeof range.start === "number" && typeof range.end === "number") {

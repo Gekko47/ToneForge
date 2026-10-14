@@ -70,18 +70,6 @@ export async function readTrackedRevisions(): Promise<TrackedRevisionRead> {
     }
 
     const items = Array.isArray(collection.items) ? collection.items : [];
-    /*
-     * Temporary diagnostic (remove after host verification): the reader returned
-     * an empty list on a document that had tracked changes, so record what the
-     * collection actually served before any per-row filtering.
-     */
-    console.warn(
-      "revision inspection diagnostic " +
-        JSON.stringify({
-          rawItemCount: items.length,
-          itemsIsArray: Array.isArray(collection.items),
-        }),
-    );
     const revisions: TrackedRevision[] = [];
 
     let index = 0;
@@ -105,16 +93,6 @@ export async function readTrackedRevisions(): Promise<TrackedRevisionRead> {
         index++;
         continue;
       }
-      console.warn(
-        "revision item diagnostic " +
-          JSON.stringify({
-            index,
-            author: item.author,
-            type: item.type,
-            text: String(item.text ?? "").slice(0, 40),
-          }),
-      );
-
       let range: { start: number; end: number } | null = null;
       try {
         if (typeof item.getRange === "function") {

@@ -148,12 +148,18 @@ export default function IgnoredFindings({
   };
 
   const handleRestore = (finding: Finding): void => {
-    const entry = entries.find((e) => e.findingId === finding.id);
-    if (!entry) return;
+    // Find the entry at the current position within the selected group.
+    // `groupIgnoredByType` preserves entry order within each group, so the entry
+    // at `position` is the one the overlay is displaying — not the first match
+    // by findingId, which could be a different occurrence of the same rule.
+    const groupEntries =
+      selectedGroup !== null ? entries.filter((e) => e.category === selectedGroup.key) : [];
+    const entry = groupEntries[position];
+    if (!entry || entry.findingId !== finding.id) return;
     const occurrence = entry.occurrenceKey.length > 0 ? entry.occurrenceKey : entry.fingerprint;
     onRestore(occurrence);
     // After removal, derive the live group from current entries using the key.
-    const remainingEntries = entries.filter((e) => e.findingId !== finding.id);
+    const remainingEntries = entries.filter((e) => e !== entry);
     const liveGroups = groupIgnoredByType(remainingEntries);
     const liveGroup = liveGroups.find((g) => g.key === selectedGroup?.key) ?? null;
     const liveRemaining = liveGroup?.findings.length ?? 0;

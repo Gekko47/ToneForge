@@ -311,6 +311,7 @@ describe("documentObserver", () => {
 
   it("triggers a scan when the document selection changes", async () => {
     let selectionCallback: (() => void) | undefined;
+    let bodyText = "hello world";
     const addHandlerAsync = vi.fn((_eventType: string, callback: () => void) => {
       selectionCallback = callback;
       return Promise.resolve({ value: { id: "handler-1" } });
@@ -322,7 +323,9 @@ describe("documentObserver", () => {
         func({
           document: {
             body: {
-              text: "hello world",
+              get text() {
+                return bodyText;
+              },
               load: vi.fn(),
               paragraphs: { load: vi.fn(), items: [] },
               getRange: vi.fn(() => ({
@@ -385,7 +388,8 @@ describe("documentObserver", () => {
     await vi.runAllTimersAsync();
     onStatus.mockClear();
 
-    // Simulate a document change event
+    // Simulate a document content change
+    bodyText = "hello world changed";
     selectionCallback?.();
     await vi.runAllTimersAsync();
 

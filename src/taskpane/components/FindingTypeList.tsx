@@ -46,6 +46,7 @@ export default function FindingTypeList({
             appearance="transparent"
             className="tf-finding-type-row"
             onClick={() => onSelect(group)}
+            role="listitem"
             aria-label={`${ariaLabelPrefix} ${group.ruleName}, ${group.count} finding${group.count === 1 ? "" : "s"}`}
           >
             <span className="tf-finding-type-row-icon" aria-hidden="true">

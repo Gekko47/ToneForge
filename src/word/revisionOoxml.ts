@@ -80,29 +80,6 @@ function insMarkup(id: number, ctx: RevisionMarkupContext, text: string): string
   return "<w:ins " + attrs + "><w:r>" + runText(text) + "</w:r></w:ins>";
 }
 
-function delMarkup(id: number, ctx: RevisionMarkupContext, text: string): string {
-  const attrs =
-    "w:id=" +
-    DBL_QUOTE +
-    id +
-    DBL_QUOTE +
-    " w:author=" +
-    DBL_QUOTE +
-    escapeXmlText(ctx.author) +
-    DBL_QUOTE +
-    " w:date=" +
-    DBL_QUOTE +
-    escapeXmlText(normalizeDate(ctx.date)) +
-    DBL_QUOTE;
-  return (
-    "<w:del " +
-    attrs +
-    "><w:r>" +
-    runText(text).replace("<w:t ", "<w:delText ").replace("</w:t>", "</w:delText>") +
-    "</w:r></w:del>"
-  );
-}
-
 /**
  * Build the single `<w:p>` body paragraph carrying the tracked revision runs,
  * or `null` for formatting-only changes.
@@ -125,8 +102,11 @@ function buildRevisionParagraph(change: Change, ctx: RevisionMarkupContext): str
       return "<w:p>" + insMarkup(ctx.nextId(), ctx, newText) + "</w:p>";
     }
     case "deleteRange": {
-      const oldText = change.precondition?.kind === "text" ? change.precondition.expectedText : "";
-      return "<w:p>" + delMarkup(ctx.nextId(), ctx, oldText) + "</w:p>";
+      // Route through Replace with empty inserted content so the target range
+      // is replaced by nothing (a deletion). This creates the tracked deletion
+      // via the replace mechanism, preserving the signed-in user as the author,
+      // rather than emitting a second delMarkup which would double-track.
+      return "<w:p>" + insMarkup(ctx.nextId(), ctx, "") + "</w:p>";
     }
     default:
       return null;
