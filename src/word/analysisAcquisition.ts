@@ -66,8 +66,6 @@ interface ParagraphView {
     start?: number;
     end?: number;
   };
-  startOffset?: number;
-  endOffset?: number;
 }
 
 interface FontView {
@@ -245,9 +243,6 @@ export const LOADABLE_PARAGRAPH_PROPERTIES = [
   "rightIndent",
   "firstLineIndent",
   "font",
-  // Range offsets for locating findings in the raw body text (ADR-0144).
-  "startOffset",
-  "endOffset",
 ] as const;
 
 /** One property name a `Word.Paragraph` can serve. */
@@ -582,6 +577,8 @@ interface AcquiredScope {
    * scope ToneForge chose not to read.
    */
   pageSetupRefused: boolean;
+  /** Per-paragraph range offsets, indexed by paragraph index. */
+  paragraphOffsets: Array<{ start: number; end: number } | null>;
 }
 
 /**
@@ -739,6 +736,7 @@ async function acquireScope(
      * paragraph costs that paragraph's offsets, not the whole scan. Paragraphs
      * without served offsets fall back to `indexOf` in `buildSnapshot`.
      */
+    let paragraphOffsets: Array<{ start: number; end: number } | null> = [];
     if (context.requirements?.isSetSupported?.("WordApiDesktop", "1.4") === true) {
       const rangeProxies: Array<{ start?: number; end?: number } | null> = [];
       paragraphItems.forEach((paragraph) => {
@@ -760,12 +758,11 @@ async function acquireScope(
       } catch {
         // sync failure: offsets unavailable; buildSnapshot falls back.
       }
-      paragraphItems.forEach((paragraph, i) => {
-        const range = rangeProxies[i];
+      paragraphOffsets = rangeProxies.map((range) => {
         if (range && typeof range.start === "number" && typeof range.end === "number") {
-          paragraph.startOffset = range.start;
-          paragraph.endOffset = range.end;
+          return { start: range.start, end: range.end };
         }
+        return null;
       });
     }
 
@@ -853,6 +850,7 @@ async function acquireScope(
       paragraphItems,
       styleItems,
       syncCount,
+      paragraphOffsets,
       tableItems: plan.tableCollection
         ? tableItems.map((table) => ({
             style: readStructural(true, () => table.style) ?? undefined,
@@ -1120,6 +1118,14 @@ export async function acquireAnalysisContext(
 /** What the DTO builders need, so neither re-declares the acquired shape. */
 type AcquiredForBuilders = Omit<AcquiredScope, "syncCount">;
 
+function paragraphOffsetAt(
+  acquired: AcquiredForBuilders,
+  index: number,
+): { start: number; end: number } | null {
+  const offsets = acquired.paragraphOffsets[index];
+  return offsets ?? null;
+}
+
 function buildSnapshot(
   acquired: AcquiredForBuilders & { rawText: string },
   maxChars: number,
@@ -1163,8 +1169,9 @@ function buildSnapshot(
      * after a tracked deletion land too early in the raw view — the navigation,
      * precondition and mutation passes inherited the same wrong offset. See ADR-0144.
      */
-    const rangeStart = paragraph.startOffset;
-    const rangeEnd = paragraph.endOffset;
+    const offsets = paragraphOffsetAt(acquired, index);
+    const rangeStart = offsets?.start;
+    const rangeEnd = offsets?.end;
     let startOffset: number;
     if (rangeStart !== undefined) {
       startOffset = rangeStart;

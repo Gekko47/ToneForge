@@ -36,7 +36,14 @@ function revision(overrides: Partial<TrackedRevision> = {}): TrackedRevision {
 describe("assessRevisionOverlap", () => {
   it("returns none when no revision overlaps the change target", () => {
     const result = assessRevisionOverlap(
-      change({ range: { start: 100, end: 105 } }),
+      change({
+        range: {
+          start: 100,
+          end: 105,
+          unit: "character",
+          target: { kind: "paragraph", index: 99, nodeId: "p99" },
+        },
+      }),
       ALL_REVISIONS,
     );
 

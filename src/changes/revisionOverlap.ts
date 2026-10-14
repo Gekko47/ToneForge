@@ -131,7 +131,7 @@ export function assessRevisionOverlap(
     if (changeId === null) return true;
     const revId = revisionIdentity(revision);
     if (revId === null) return true;
-    return revId === changeId;
+    return false;
   });
   if (hasUnresolved) {
     return {

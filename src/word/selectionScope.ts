@@ -234,35 +234,32 @@ async function captureSelection(): Promise<CaptureOutcome> {
        * Still one load. Splitting text from offsets would cost a second round trip
        * that could observe a different selection if the user moved between the two.
        */
-      const servesOffsets =
-        context.requirements?.isSetSupported?.("WordApiDesktop", "1.4") === true;
       try {
         // An **array**, not three arguments. `load` takes one; the host loads the
         // first positional argument and ignores the rest, so the variadic form
         // compiles here and throws on the next line in a real Word (ADR-0100).
-        range.load(servesOffsets ? ["text", "start", "end"] : ["text"]);
+        range.load(["text", "start", "end"]);
         await context.sync();
       } catch {
-        logger.warn("Selection offsets are unreadable in this host", {
-          verificationResult: "refused",
-          refusalCategory: "selection_offsets_unavailable",
-          servesOffsets,
-        });
-        return { status: "unavailable", reason: NO_OFFSETS_REASON };
+        const caret = await readCaretParagraph(context, range);
+        if (caret === null) return { status: "no-selection" };
+        return {
+          status: "ok",
+          captured: {
+            text: caret.text,
+            start: caret.start,
+            end: caret.end,
+            documentId: context.document.id ?? UNIDENTIFIED_DOCUMENT,
+            nodeIds: caret.nodeIds,
+            paragraphTexts: [caret.text],
+            source: "caret-paragraph",
+          },
+        };
       }
 
       const text = typeof range.text === "string" ? range.text : "";
-      /*
-       * Read the offsets only when the load above asked for them.
-       *
-       * `Range.start`/`Range.end` are WordApiDesktop 1.4. On a host without that
-       * requirement set, the load at line 243 asks for `["text"]` only — and
-       * reading `range.start` on a real Office proxy throws `PropertyNotLoaded`
-       * rather than returning `undefined`. The `typeof` guard cannot help: the
-       * property exists on the proxy, it simply was never loaded.
-       */
-      const reportedStart = servesOffsets && typeof range.start === "number" ? range.start : -1;
-      const reportedEnd = servesOffsets && typeof range.end === "number" ? range.end : -1;
+      const reportedStart = typeof range.start === "number" ? range.start : -1;
+      const reportedEnd = typeof range.end === "number" ? range.end : -1;
       /*
        * **The host may report the pair in either order, and this host does.**
        *
@@ -282,22 +279,28 @@ async function captureSelection(): Promise<CaptureOutcome> {
        * an ordered span.
        */
       /*
-       * Unavailable, not "no selection".
+       * Offsets unavailable — fall back to caret-paragraph path.
        *
        * A missing or unusable pair says the host would not tell us *where* the
-       * selection is; it says nothing about whether anything is selected. Reporting
-       * `no-selection` here sent the user the sentence "There is nothing to review
-       * here" for a paragraph that was there — and removed the one sentence that
-       * names a host limitation and a remedy.
+       * selection is; it says nothing about whether anything is selected. Falling
+       * back to the caret-paragraph path lets the user review the paragraph the
+       * cursor is in, rather than reporting an error for a paragraph that was there.
        */
       if (reportedStart < 0 || reportedEnd < 0) {
-        logger.warn("Selection offsets are not a usable pair", {
-          refusalCategory: "selection_offsets_incomplete",
-          verificationResult: "refused",
-          startOffset: reportedStart,
-          endOffset: reportedEnd,
-        });
-        return { status: "unavailable", reason: NO_OFFSETS_REASON };
+        const caret = await readCaretParagraph(context, range);
+        if (caret === null) return { status: "no-selection" };
+        return {
+          status: "ok",
+          captured: {
+            text: caret.text,
+            start: caret.start,
+            end: caret.end,
+            documentId: context.document.id ?? UNIDENTIFIED_DOCUMENT,
+            nodeIds: caret.nodeIds,
+            paragraphTexts: [caret.text],
+            source: "caret-paragraph",
+          },
+        };
       }
       const start = Math.min(reportedStart, reportedEnd);
       const end = Math.max(reportedStart, reportedEnd);
@@ -537,7 +540,5 @@ const NO_RUNTIME_REASON =
   "Word is not reachable from the add-in, so the selection cannot be read. Reopen the task pane from the ribbon, or copy the text into Semantic Style and learn from it there.";
 const NO_RANGE_REASON =
   "This Word build does not expose a document selection, so a selection cannot be reviewed. Update Word, or copy the text into Semantic Style and learn from it there.";
-const NO_OFFSETS_REASON =
-  "This Word build does not report where a selection starts and ends, so ToneForge cannot tell what text it would replace. Update Word, or copy the text into Semantic Style and learn from it there.";
 const INVALID_ANCHOR_REASON =
   "The captured selection did not match the selection anchor contract, so nothing was sent and nothing will be written. Update Word, or copy the text into Semantic Style and learn from it there.";

@@ -590,6 +590,17 @@ textarea:focus-visible,
 }
 
 /*
+ * ReviewWithoutProfile: horizontal inset for content outside the Card.
+ * The pane is full-bleed; these elements need horizontal padding.
+ */
+.tf-review-no-profile-status {
+  padding: 0 16px;
+}
+.tf-review-no-profile-actions {
+  padding: 0 16px;
+}
+
+/*
  * The profile editor's own layout, moved out of JavaScript (S6).
  *
  * These four rules replace `sectionStyle`, `sectionHeadingStyle`, `gridStyle` and

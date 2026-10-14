@@ -228,6 +228,7 @@ export async function applyApprovedSemanticRevision(
   const result = await applyReviewedPlan({
     plan,
     ...(options.maxChars === undefined ? {} : { maxChars: options.maxChars }),
+    skipRemainingFindingsRefresh: true,
   });
 
   return {

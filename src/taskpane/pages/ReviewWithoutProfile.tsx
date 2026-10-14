@@ -46,7 +46,7 @@ export default function ReviewWithoutProfile({
         beside the sentence that explains it, not a second region, so opening the
         page does not announce itself before the user has done anything.
       */}
-      <p role="status" className="tf-sub" style={{ padding: "0 16px" }}>
+      <p role="status" className="tf-sub tf-review-no-profile-status">
         No deterministic style profile is active. Open Deterministic Style Profile to create one.
       </p>
 
@@ -61,7 +61,7 @@ export default function ReviewWithoutProfile({
         </Card>
       </section>
 
-      <div className="tf-actions" style={{ padding: "0 16px" }}>
+      <div className="tf-actions tf-review-no-profile-actions">
         <Button onClick={onOpenProfile}>Deterministic Style Profile</Button>
       </div>
     </div>

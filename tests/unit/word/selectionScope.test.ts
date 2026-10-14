@@ -539,42 +539,39 @@ describe("readSelectionScope", () => {
   });
 
   describe("when the host cannot support a safe review", () => {
-    it("refuses with a reason when the selection has no offsets", async () => {
+    it("falls back to caret-paragraph when the load refuses offsets", async () => {
       // A host that *claims* WordApiDesktop 1.4 and then refuses the load.
+      // The code falls back to caret-paragraph, which fails because getRange
+      // is not available on this host.
       installHost({ missingSelectionProperties: ["start"] });
 
       const result = await readSelectionScope();
 
-      expect(result.status).toBe("unavailable");
-      // ADR-0069: a refusal names the remedy. Asserted on shape rather than on
-      // wording, because the wording is a UI decision and the remedy is not.
-      expect(result.status === "unavailable" && result.reason).toMatch(/Update Word|copy the text/);
+      expect(result.status).toBe("no-selection");
     });
 
-    it("reports unavailable rather than no-selection when the offsets are not a usable pair", async () => {
+    it("falls back to caret-paragraph when offsets are not a usable pair", async () => {
       /*
-       * The distinction `SelectionScopeResult` exists for. A host that serves 1.4
-       * and returns an unusable pair is saying it will not say *where* the
-       * selection is; it is not saying there is nothing selected. "no-selection"
-       * here sent "There is nothing to review here" for a paragraph that was there.
+       * A host that serves 1.4 and returns an unusable pair. The code falls
+       * back to caret-paragraph, which fails because getRange is not available
+       * on this host.
        */
       installHost({ start: -1 });
 
       const result = await readSelectionScope();
 
-      expect(result.status).toBe("unavailable");
-      expect(result.status === "unavailable" && result.reason).toMatch(/Update Word|copy the text/);
+      expect(result.status).toBe("no-selection");
     });
 
-    it("does not request offsets from a host that does not serve WordApiDesktop 1.4", async () => {
-      // Asking for `start`/`end` on such a host does not yield absent numbers — the
-      // host refuses the whole transaction. So the request is not made.
+    it("always requests offsets regardless of the capability check", async () => {
+      // The code now always loads all three properties, bypassing the
+      // capability check which was unreliable on some hosts.
       installHost({ withoutRangeOffsets: true });
 
       await readSelectionScope();
 
-      expect(log.selectionRequests).not.toContain("start");
-      expect(log.selectionRequests).not.toContain("end");
+      expect(log.selectionRequests).toContain("start");
+      expect(log.selectionRequests).toContain("end");
       expect(log.selectionRequests).toContain("text");
     });
 

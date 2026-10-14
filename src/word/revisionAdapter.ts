@@ -232,32 +232,6 @@ export async function applyChangePlan(
       return results;
     }
 
-    /*
-     * Temporary diagnostic (remove after host verification): capture the
-     * revision set the preflight matched against, with each revision's offsets,
-     * and the ordered change ranges, so a false or over-broad revision overlap
-     * is visible in the console rather than inferred.
-     */
-    console.warn(
-      "revision preflight diagnostic " +
-        JSON.stringify({
-          planId: plan.id,
-          revisions: revisions.map((revision) => ({
-            author: revision.author,
-            type: revision.type,
-            range: revision.range,
-            text: revision.text.substring(0, 40),
-          })),
-          changes: orderedChanges.map((change) => ({
-            id: change.id,
-            type: change.type,
-            start: change.range.start,
-            end: change.range.end,
-            unit: change.range.unit,
-          })),
-        }),
-    );
-
     const overlapFailures: Array<{ change: Change; overlap: RevisionOverlap }> = [];
     for (const change of orderedChanges) {
       const overlap = assessRevisionOverlap(change, revisions);
@@ -933,20 +907,6 @@ async function locateLiveTarget(change: Change): Promise<LiveTarget> {
      * (`word/sourceLocator`), which relocates a finding's text the same way.
      */
     const located = nearestOccurrence(live, expected, change.range.start);
-    /*
-     * Temporary diagnostic (remove after host verification): show the planned
-     * offsets against where the recorded text was actually located, so the
-     * relocation is visible rather than inferred.
-     */
-    console.warn(
-      "locate live target diagnostic " +
-        JSON.stringify({
-          changeId: change.id,
-          planned: { start: change.range.start, end: change.range.end },
-          located: located === -1 ? null : { start: located, end: located + expected.length },
-          expected,
-        }),
-    );
     if (located === -1) {
       return {
         ok: false,
