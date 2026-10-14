@@ -77,6 +77,8 @@ const SERVED_VALUES: Record<string, unknown> = {
     italic: false,
     underline: false,
   },
+  startOffset: 0,
+  endOffset: 12,
 };
 
 /**

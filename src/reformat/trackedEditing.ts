@@ -9,6 +9,7 @@ export interface TrackedEditingPreparation {
   capabilities: WordCapabilities | null;
   unsupportedChangeIds: string[];
   error: string | null;
+  warnings: string[];
 }
 
 function readEnabled(): boolean {
@@ -108,6 +109,7 @@ export async function prepareTrackedEditing(
       capabilities: null,
       unsupportedChangeIds: [],
       error: "Tracked editing is disabled. Enable it in Settings before applying.",
+      warnings: [],
     };
   }
 
@@ -122,21 +124,21 @@ export async function prepareTrackedEditing(
       capabilities,
       unsupportedChangeIds: changes.map((change) => change.id),
       error: "This Word host does not expose the revision capability required for tracked editing.",
+      warnings: [],
     };
   }
 
   const unsupportedChangeIds = getUnsupportedChangeIds(changes, capabilities);
   setStage01Passed(unsupportedChangeIds.length === 0, capabilities);
-  const missingCapabilities: string[] = [];
+  // Missing optional capabilities are warnings, not errors — they degrade the
+  // revision authoring path but do not prevent otherwise-valid plans from
+  // applying. Unsupported change IDs remain the only hard rejection.
+  const warnings: string[] = [];
   if (capabilities.supportsTrackedChangeInspection === false) {
-    missingCapabilities.push(
-      "tracked change inspection (revision-overlap preflight will be skipped)",
-    );
+    warnings.push("tracked change inspection (revision-overlap preflight will be skipped)");
   }
   if (capabilities.supportsInsertOoxml === false) {
-    missingCapabilities.push(
-      "OOXML insertion (revisions will be authored under the signed-in user)",
-    );
+    warnings.push("OOXML insertion (revisions will be authored under the signed-in user)");
   }
   return {
     enabled: true,
@@ -144,9 +146,8 @@ export async function prepareTrackedEditing(
     unsupportedChangeIds,
     error:
       unsupportedChangeIds.length === 0
-        ? missingCapabilities.length === 0
-          ? null
-          : `This Word host does not support: ${missingCapabilities.join(", ")}.`
+        ? null
         : "The Word host does not support every operation required by this plan.",
+    warnings,
   };
 }

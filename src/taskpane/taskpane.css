@@ -579,13 +579,14 @@ textarea:focus-visible,
 }
 
 /*
- * The pane's own <main> is focusable (it is the pane's keyboard surface), so the
- * rule above draws a 2px outline around the entire pane — a border at the very
- * edge of the bleed. That outline is the pane's frame, not a control's focus
- * indicator, so it is removed here. Every real control keeps its own outline.
+ * The pane's own <main> is focusable (it is the pane's keyboard surface), so it
+ * needs a visible focus indicator. The outline is drawn inset (outline-offset:
+ * -2px) so it is contained within the main pane rather than bleeding past the
+ * pane edge. Every real control keeps its own outline.
  */
 .tf-app-main:focus-visible {
-  outline: none;
+  outline: 2px solid var(--tf-focus, currentColor);
+  outline-offset: -2px;
 }
 
 /*

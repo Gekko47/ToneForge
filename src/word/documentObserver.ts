@@ -444,25 +444,15 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       scheduleScan();
     };
     state.eventHandler = handler;
-    try {
-      hostDocument.addHandlerAsync("documentSelectionChanged", handler);
-      /*
-       * Temporary diagnostic (remove after host verification): confirms in the
-       * console that the selection event actually subscribed, since a silent
-       * failure here is exactly what left auto-scan dead.
-       */
-      console.warn("document selection subscription registered (auto-scan live)");
-    } catch (error: unknown) {
-      state.eventHandler = null;
-      console.warn(
-        "document selection subscription REFUSED " +
-          JSON.stringify({ message: error instanceof Error ? error.message : String(error) }),
-      );
-      logger.warn("Word refused the document-selection subscription", {
-        verificationResult: "refused",
-        refusalCategory: "selection_event_refused",
-      });
-    }
+    hostDocument.addHandlerAsync("documentSelectionChanged", handler, (asyncResult) => {
+      if (asyncResult?.status === Office.AsyncResultStatus.Failed) {
+        state.eventHandler = null;
+        logger.warn("Word refused the document-selection subscription", {
+          verificationResult: "refused",
+          refusalCategory: "selection_event_refused",
+        });
+      }
+    });
   }
 
   /** Remove the document-selection event handler, if one was registered. */

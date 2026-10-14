@@ -28,6 +28,15 @@ declare global {
       Replace = 4,
     }
 
+    /**
+     * Office.AsyncResultStatus — the status of an async operation.
+     * Used in `addHandlerAsync` callbacks to detect refusal.
+     */
+    enum AsyncResultStatus {
+      Succeeded = 0,
+      Failed = 1,
+    }
+
     interface Context {
       document: Document;
       host: {
@@ -85,7 +94,7 @@ declare global {
       addHandlerAsync?: (
         eventType: string,
         handler: (event: { type: string; source?: unknown }) => void,
-        options?: unknown,
+        callback?: (asyncResult: { status: Office.AsyncResultStatus; error?: unknown }) => void,
       ) => void;
       removeHandlerAsync?: (
         eventType: string,

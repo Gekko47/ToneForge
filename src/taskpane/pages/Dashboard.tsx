@@ -1531,10 +1531,11 @@ function DashboardWithProfile({
         plan: narrowPlanToChanges(plan, [match.change]),
         currentGovernancePolicyRevision: currentGovernance.version,
         governanceProfile: currentGovernance,
-        coverage: pendingPlan?.coverage ?? null,
+        coverage: reformatResult?.sharedCoverage ?? null,
         allowConflictingApply: false,
         profile: activeProfile,
         capabilities: caps ? toAnalysisCapabilities(caps) : UNPROBED_CAPABILITIES,
+        skipRemainingFindingsRefresh: true,
       });
       /*
        * Temporary diagnostic (remove after host verification): record what
@@ -1653,14 +1654,18 @@ function DashboardWithProfile({
         plan: narrowPlanToChanges(plan, changes),
         currentGovernancePolicyRevision: currentGovernance.version,
         governanceProfile: currentGovernance,
-        coverage: pendingPlan?.coverage ?? null,
+        coverage: reformatResult?.sharedCoverage ?? null,
         allowConflictingApply: false,
         profile: activeProfile,
         capabilities: caps ? toAnalysisCapabilities(caps) : UNPROBED_CAPABILITIES,
+        skipRemainingFindingsRefresh: true,
       });
       if (result.applied && result.verified) {
         setReviewNote(`Applied ${changes.length} change(s) of this type.`);
         announcement.announce(`Applied ${changes.length} change(s) of this type.`);
+        previewedDocHashRef.current = null;
+        setRefreshingAfterApply(true);
+        observerRef.current?.onDocumentChanged(true);
         closeOverlay();
       } else {
         setReviewNote(
@@ -1983,7 +1988,6 @@ function DashboardWithProfile({
     projection.kind === "reviewed" ? { ...reviewedOnly!, plan: projection.plan } : null;
   previewPlanRef.current = reviewedOnly?.plan ?? null;
   previewFindingsRef.current = previewFindings;
-  const pendingPlan = pendingPlanRef.current;
   return (
     <AppShell
       header={
@@ -2040,8 +2044,8 @@ function DashboardWithProfile({
                 {expiredDecisionCount > 0 && (
                   <p className="tf-sub">
                     {expiredDecisionCount} review decision{expiredDecisionCount === 1 ? "" : "s"}{" "}
-                    expired because the document or review policy changed. Review the findings again
-                    before adding changes to Pending changes.
+                    expired because the document or review policy changed. Review the findings
+                    again.
                   </p>
                 )}
               </>

@@ -120,24 +120,24 @@ export function assessRevisionOverlap(
   }
 
   /*
-   * A revision whose offsets are missing and whose node identity did not match
-   * is not evidence of overlap — but if *every* overlapping candidate lacked
-   * offsets *and* identity, the matcher did not actually verify a clear run.
+   * A revision whose offsets are missing cannot be assessed by position.
+   * Return unknown when either identity is null (cannot determine overlap);
+   * return none when both identities are known and differ (different target).
    * The adapter inspects the returned `unknown` reason before refusing, so a
    * plan with no candidates at all still reaches `none` here.
    */
-  const anyUnresolved = revisions.some(
-    (revision) =>
-      revision.range === null &&
-      changeId !== null &&
-      revisionIdentity(revision) !== null &&
-      revisionIdentity(revision) !== changeId,
-  );
-  if (anyUnresolved) {
+  const hasUnresolved = revisions.some((revision) => {
+    if (revision.range !== null) return false;
+    if (changeId === null) return true;
+    const revId = revisionIdentity(revision);
+    if (revId === null) return true;
+    return revId === changeId;
+  });
+  if (hasUnresolved) {
     return {
       kind: "unknown",
       reason:
-        "A tracked revision's offsets are unavailable and its node identity does not match the change target; overlap cannot be determined",
+        "A tracked revision's offsets are unavailable and its node identity cannot confirm or rule out overlap with the change target",
     };
   }
 

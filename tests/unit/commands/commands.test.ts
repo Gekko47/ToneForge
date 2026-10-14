@@ -160,7 +160,7 @@ describe("command entry points", () => {
    * shared runtime's own function file, which is blank. Its console identified
    * it, logging `syncSemanticRibbon` with `ControlIdNotFound`, a message only
    * `commands.ts` emits. So a function command opening a pane is not a degraded
-   * result, it is a second pane \u2014 and ADR-0144 and ADR-0104 are both right that
+   * result, it is a second pane \u2014 and ADR-0101 and ADR-0104 are both right that
    * this add-in must have exactly one.
    *
    * Not one call, for any command, whatever the pane is doing.

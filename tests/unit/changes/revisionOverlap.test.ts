@@ -61,7 +61,7 @@ describe("assessRevisionOverlap", () => {
     }
   });
 
-  it("returns unknown when a revision has no offsets and node identity does not match", () => {
+  it("returns none when a revision has no offsets but node identities are known and differ", () => {
     const result = assessRevisionOverlap(
       change({
         range: {
@@ -72,6 +72,31 @@ describe("assessRevisionOverlap", () => {
         },
       }),
       [UNRESOLVED_REVISION],
+    );
+
+    expect(result.kind).toBe("none");
+  });
+
+  it("returns unknown when a revision has no target and offsets are unavailable", () => {
+    const noTarget: TrackedRevision = {
+      index: 3,
+      type: "Added",
+      author: "Bob",
+      date: null,
+      text: "bob's edit",
+      range: null,
+      target: undefined,
+    };
+    const result = assessRevisionOverlap(
+      change({
+        range: {
+          start: 0,
+          end: 5,
+          unit: "character",
+          target: { kind: "paragraph", index: 0, nodeId: "p1" },
+        },
+      }),
+      [noTarget],
     );
 
     expect(result.kind).toBe("unknown");

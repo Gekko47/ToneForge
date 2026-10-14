@@ -53,7 +53,10 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
        * findings resolve to their element's whole range instead.
        */
       if (unit !== "character") {
-        const structural = resolveStructuralRange(context, finding) as NavigableRange | null;
+        const structural = (await resolveStructuralRange(
+          context,
+          finding,
+        )) as NavigableRange | null;
         if (structural === null) {
           return {
             navigated: false,
@@ -130,24 +133,6 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
       const targetStart = located === -1 ? start : located;
       const targetEnd = located === -1 ? end : located + expected.length;
 
-      /*
-       * Temporary diagnostic (remove after host verification): the reviewed
-       * offsets the finding carries, against where its text actually sits in the
-       * raw view `Range.set` counts.
-       */
-      console.warn(
-        "navigate highlight diagnostic " +
-          JSON.stringify({
-            findingId: finding.id,
-            reviewedOffsets: { start, end },
-            expected,
-            located,
-            rawLength: views.rawText.length,
-            reviewedLength: views.fullText.length,
-            reviewedView: views.reviewed,
-          }),
-      );
-
       range.set({ start: targetStart, end: targetEnd });
       if (typeof range.select !== "function") {
         return {
@@ -194,31 +179,47 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
  * predates `target` is still resolvable, because for those units `range.start`
  * *is* the element index and `unit` says which collection to read it from.
  *
+ * Loads and syncs each collection before indexing its items, so the proxy
+ * objects are populated by the host before access.
+ *
  * Returns null when the host does not expose the collection, the index is out of
  * range, or the element cannot produce a Range — so navigation degrades to a
  * stated refusal rather than a wrong highlight.
  */
-function resolveStructuralRange(context: Office.Context, finding: Finding): Office.Range | null {
+async function resolveStructuralRange(
+  context: Office.Context,
+  finding: Finding,
+): Promise<Office.Range | null> {
   const { unit, start } = finding.range;
   const target = finding.target;
   const body = context.document.body;
-  const sectionAt = (index: number): Office.Section | undefined =>
-    context.document.sections?.items[index];
+  const sectionAt = async (index: number): Promise<Office.Section | undefined> => {
+    const sections = context.document.sections;
+    sections?.load("items");
+    await context.sync();
+    return sections?.items[index];
+  };
 
   switch (unit) {
     case "paragraph": {
+      const paragraphs = body.paragraphs;
+      paragraphs?.load("items");
+      await context.sync();
       const index = target?.kind === "paragraph" ? target.index : start;
-      const paragraph = body.paragraphs?.items[index];
+      const paragraph = paragraphs?.items[index];
       return paragraph?.getRange ? paragraph.getRange("Whole") : null;
     }
     case "table": {
+      const tables = body.tables;
+      tables?.load("items");
+      await context.sync();
       const index = target?.kind === "table" ? target.index : start;
-      const table = body.tables?.items[index];
+      const table = tables?.items[index];
       return table?.getRange ? table.getRange("Whole") : null;
     }
     case "section": {
       const index = target?.kind === "section" ? target.index : start;
-      const section = sectionAt(index);
+      const section = await sectionAt(index);
       return section ? section.body.getRange("Whole") : null;
     }
     case "header":
@@ -227,7 +228,7 @@ function resolveStructuralRange(context: Office.Context, finding: Finding): Offi
       if (target !== undefined && (target.kind === "header" || target.kind === "footer")) {
         sectionIndex = target.sectionIndex;
       }
-      const section = sectionAt(sectionIndex);
+      const section = await sectionAt(sectionIndex);
       if (section === undefined) return null;
       // The slot type (Primary/FirstPage/EvenPages) is not carried on the finding;
       // the primary slot is the one a header/footer finding is about in practice.

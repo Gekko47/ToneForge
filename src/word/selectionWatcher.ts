@@ -104,7 +104,16 @@ export async function watchDocumentSelection(
      * `addHandlerAsync` is callback-style and returns `void` — there is no
      * registration id to keep. Removal is by handler reference.
      */
-    context.addHandlerAsync(DOCUMENT_SELECTION_CHANGED, handler);
+    context.addHandlerAsync(DOCUMENT_SELECTION_CHANGED, handler, (asyncResult) => {
+      if (asyncResult?.status === Office.AsyncResultStatus.Failed) {
+        registered = null;
+        notify = null;
+        logger.warn("Word refused the document-selection subscription", {
+          verificationResult: "refused",
+          refusalCategory: "selection_event_refused",
+        });
+      }
+    });
     registered = { context, handler };
     notify = onChanged;
     return true;

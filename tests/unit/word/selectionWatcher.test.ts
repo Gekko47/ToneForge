@@ -82,6 +82,7 @@ describe("the document-selection watcher", () => {
     expect(context.addHandlerAsync).toHaveBeenCalledWith(
       "documentSelectionChanged",
       expect.any(Function),
+      expect.anything(),
     );
     expect(isWatchingDocumentSelection()).toBe(true);
   });

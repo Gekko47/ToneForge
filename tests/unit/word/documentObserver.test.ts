@@ -286,6 +286,7 @@ describe("documentObserver", () => {
       expect(addHandlerAsync).toHaveBeenCalledWith(
         "documentSelectionChanged",
         expect.any(Function),
+        expect.anything(),
       );
     });
   });

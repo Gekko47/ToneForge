@@ -150,6 +150,12 @@ export async function readBodyTextViews(context: Office.Context): Promise<BodyTe
   body.load("text");
   await context.sync();
   const rawText = body.text ?? "";
+  /*
+   * `getReviewedText` availability is detected by method presence, not by
+   * requirement-set version: the same method is exposed under different
+   * requirement sets on Word Desktop and Word Web, so a version gate is
+   * unreliable. If the method exists, call it; otherwise fall back to raw text.
+   */
   if (typeof body.getReviewedText !== "function") {
     return { fullText: rawText, rawText, reviewed: false };
   }
@@ -165,7 +171,12 @@ export async function readBodyTextViews(context: Office.Context): Promise<BodyTe
     load?: (prop: string) => unknown;
   };
   reviewedRange.load?.("value");
-  await context.sync();
+  try {
+    await context.sync();
+  } catch {
+    // The reviewed-range sync can fail on a real host; fall back to raw text.
+    return { fullText: rawText, rawText, reviewed: false };
+  }
   // An empty reviewed text is a legitimate result, not a failure: the accept-all
   // view of a body whose every paragraph is a pending deletion is empty.
   return { fullText: reviewedRange.value ?? "", rawText, reviewed: true };
@@ -178,9 +189,16 @@ export async function readBodyTextIn(context: Office.Context): Promise<string> {
 export async function readReviewedText(): Promise<ReviewedText> {
   return runInWord(async (context) => {
     const body = context.document.body as unknown as ReviewableBody;
-    const reviewed = typeof body.getReviewedText === "function";
+    if (typeof body.getReviewedText === "function") {
+      try {
+        const reviewed = body.getReviewedText("Current") as { value: string };
+        return { text: reviewed.value, reviewed: true };
+      } catch {
+        // Fall through to raw text
+      }
+    }
     const text = await readBodyTextIn(context);
-    return { text, reviewed };
+    return { text, reviewed: false };
   });
 }
 
@@ -361,28 +379,34 @@ export async function getStructuredSnapshot(
      * The read is isolated per paragraph: a host that refuses `getRange` for one
      * paragraph costs that paragraph's offsets, not the whole scan.
      */
-    items.forEach((paragraph) => {
-      if (typeof paragraph.getRange !== "function") return;
+    if (context.requirements?.isSetSupported?.("WordApiDesktop", "1.4") === true) {
+      const rangeProxies: Array<{ start?: number; end?: number } | null> = [];
+      items.forEach((paragraph) => {
+        if (typeof paragraph.getRange !== "function") {
+          rangeProxies.push(null);
+          return;
+        }
+        try {
+          const range = paragraph.getRange("Whole");
+          range?.load?.(["start", "end"]);
+          rangeProxies.push(range);
+        } catch {
+          rangeProxies.push(null);
+        }
+      });
       try {
-        const range = paragraph.getRange("Whole");
-        range?.load?.(["start", "end"]);
+        await context.sync();
       } catch {
-        // Offsets unavailable for this paragraph; the loop below falls back.
+        // sync failure: offsets unavailable; the loop below falls back.
       }
-    });
-    await context.sync();
-    items.forEach((paragraph) => {
-      if (typeof paragraph.getRange !== "function") return;
-      try {
-        const range = paragraph.getRange("Whole");
+      items.forEach((paragraph, i) => {
+        const range = rangeProxies[i];
         if (range && typeof range.start === "number" && typeof range.end === "number") {
           paragraph.startOffset = range.start;
           paragraph.endOffset = range.end;
         }
-      } catch {
-        // Offsets unavailable for this paragraph; the loop below falls back.
-      }
-    });
+      });
+    }
 
     const fromCollection = items.length > 0;
     let paragraphOffset = 0;

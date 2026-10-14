@@ -527,6 +527,14 @@ export interface ApplyReviewedPlanOptions {
   profile?: StyleProfile;
   /** The capabilities the plan was built under, for the same refresh. */
   capabilities?: AnalysisCapabilities;
+  /**
+   * Skip the post-apply remaining-findings refresh.
+   *
+   * The overlay accept flows trigger an observer re-scan immediately after
+   * `applyReviewedPlan` returns, and that re-scan runs the same full read +
+   * review. Skipping the internal refresh avoids the duplicate work.
+   */
+  skipRemainingFindingsRefresh?: boolean;
 }
 
 /**
@@ -1048,7 +1056,7 @@ export async function applyReviewedPlan(
    * than the one that planned the fix is not evidence about this document.
    */
   const remaining =
-    options.profile === undefined
+    options.profile === undefined || options.skipRemainingFindingsRefresh === true
       ? { report: null as DeterministicReviewReport | null }
       : await refreshRemainingFindings(
           options.profile,

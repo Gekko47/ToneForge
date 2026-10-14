@@ -245,6 +245,9 @@ export const LOADABLE_PARAGRAPH_PROPERTIES = [
   "rightIndent",
   "firstLineIndent",
   "font",
+  // Range offsets for locating findings in the raw body text (ADR-0144).
+  "startOffset",
+  "endOffset",
 ] as const;
 
 /** One property name a `Word.Paragraph` can serve. */
@@ -736,28 +739,35 @@ async function acquireScope(
      * paragraph costs that paragraph's offsets, not the whole scan. Paragraphs
      * without served offsets fall back to `indexOf` in `buildSnapshot`.
      */
-    paragraphItems.forEach((paragraph) => {
-      if (typeof paragraph.getRange !== "function") return;
+    if (context.requirements?.isSetSupported?.("WordApiDesktop", "1.4") === true) {
+      const rangeProxies: Array<{ start?: number; end?: number } | null> = [];
+      paragraphItems.forEach((paragraph) => {
+        if (typeof paragraph.getRange !== "function") {
+          rangeProxies.push(null);
+          return;
+        }
+        try {
+          const range = paragraph.getRange("Whole");
+          range?.load?.(["start", "end"]);
+          rangeProxies.push(range);
+        } catch {
+          rangeProxies.push(null);
+        }
+      });
       try {
-        const range = paragraph.getRange("Whole");
-        range?.load?.(["start", "end"]);
+        await context.sync();
+        syncCount++;
       } catch {
-        // Offsets unavailable for this paragraph; buildSnapshot falls back.
+        // sync failure: offsets unavailable; buildSnapshot falls back.
       }
-    });
-    await context.sync();
-    paragraphItems.forEach((paragraph) => {
-      if (typeof paragraph.getRange !== "function") return;
-      try {
-        const range = paragraph.getRange("Whole");
+      paragraphItems.forEach((paragraph, i) => {
+        const range = rangeProxies[i];
         if (range && typeof range.start === "number" && typeof range.end === "number") {
           paragraph.startOffset = range.start;
           paragraph.endOffset = range.end;
         }
-      } catch {
-        // Offsets unavailable for this paragraph; buildSnapshot falls back.
-      }
-    });
+      });
+    }
 
     /*
      * List levels, per-paragraph and only where a list exists.

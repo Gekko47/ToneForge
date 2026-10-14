@@ -24,7 +24,7 @@
 import React from "react";
 import { makeStyles, tokens } from "@fluentui/react-components";
 import type { Finding, IgnoredFinding } from "../../core/domain/Finding";
-import { iconForCategory, type FindingTypeGroup } from "../findingsByType";
+import { describeCategory, iconForCategory, type FindingTypeGroup } from "../findingsByType";
 import { DisclosurePanel } from "./common";
 import FindingTypeList from "./FindingTypeList";
 import FindingDetailOverlay from "./FindingDetailOverlay";
@@ -94,20 +94,12 @@ function groupIgnoredByType(entries: readonly IgnoredFinding[]): FindingTypeGrou
       existing.findings.push(finding);
       return;
     }
-    const domain = entry.category.startsWith("typography.")
-      ? "Typography"
-      : entry.category.startsWith("language.")
-        ? "Language"
-        : entry.category.startsWith("formatting.")
-          ? "Document formatting"
-          : entry.category.startsWith("houseStyle.")
-            ? "House style"
-            : "Style";
+    const { parent, ruleName } = describeCategory(entry.category);
     const group: FindingTypeGroup = {
       key,
       label: entry.category,
-      ruleName: entry.category.split(".").pop() ?? entry.category,
-      parent: domain,
+      ruleName,
+      parent,
       icon: iconForCategory(entry.category),
       count: 1,
       findings: [finding],
@@ -160,9 +152,15 @@ export default function IgnoredFindings({
     if (!entry) return;
     const occurrence = entry.occurrenceKey.length > 0 ? entry.occurrenceKey : entry.fingerprint;
     onRestore(occurrence);
-    // Advance to the next ignored finding of this type, or close if none remain.
-    const nextPosition = position + 1;
-    if (nextPosition < remaining - 1) {
+    // After removal, derive the live group from current entries using the key.
+    const remainingEntries = entries.filter((e) => e.findingId !== finding.id);
+    const liveGroups = groupIgnoredByType(remainingEntries);
+    const liveGroup = liveGroups.find((g) => g.key === selectedGroup?.key) ?? null;
+    const liveRemaining = liveGroup?.findings.length ?? 0;
+    // Keep position at the index of the next finding, clamped to new length.
+    const nextPosition = Math.min(position, Math.max(0, liveRemaining - 1));
+    if (liveRemaining > 0) {
+      setSelectedGroup(liveGroup);
       setPosition(nextPosition);
     } else {
       handleClose();

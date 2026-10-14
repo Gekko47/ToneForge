@@ -164,7 +164,7 @@ describe("navigateToFinding", () => {
             text: "one\ntwo\nthree",
             load: vi.fn(),
             getRange: vi.fn(() => rangeMock),
-            paragraphs: { items: [{ getRange: () => paragraphRange }] },
+            paragraphs: { load: vi.fn(), items: [{ getRange: () => paragraphRange }] },
           },
         },
         sync: vi.fn(),

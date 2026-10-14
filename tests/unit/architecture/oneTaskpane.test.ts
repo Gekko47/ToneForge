@@ -6,7 +6,7 @@
  * long-lifetime shared runtime, which supports exactly one. The id therefore
  * created a second identity, and `Office.addin.showAsTaskpane()` \u2014 which every
  * command calls \u2014 opened the shared runtime's function file as a blank add-in
- * pane beside the live one. (ADR-0104, amending ADR-0144.)
+ * pane beside the live one. (ADR-0104, amending ADR-0101.)
  *
  * The XML manifest gave eight ribbon controls a `ShowTaskpane` action against
  * `TaskpaneId` `ButtonId1`, while the context menu ran an `ExecuteFunction`,
@@ -14,7 +14,7 @@
  * add-in, and Word resolved it by opening a second blank pane beside the live
  * one — the live pane still received the selection over the `storage` event
  * (ADR-0079), so the duplication looked like a harmless extra window and the
- * original pane behaved correctly throughout. (ADR-0144.)
+ * original pane behaved correctly throughout. (ADR-0101.)
  *
  * These are assertions over the manifests rather than over a component, because
  * the defect *is* in the manifests: nothing in TypeScript can observe how many
