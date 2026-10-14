@@ -1005,7 +1005,7 @@ export default function DeterministicStyleSections({
             hint="Sets the default numeric date shape. A preferred date format set elsewhere always wins."
           >
             <Dropdown
-              value={`${profile.language.locale} — dates as ${LOCALE_DATE_SHAPES[profile.language.locale].format}`}
+              value={`${profile.language.locale} — ${LOCALE_DATE_SHAPES[profile.language.locale].format}`}
               selectedOptions={[profile.language.locale]}
               onOptionSelect={(_event, data) => {
                 if (data.optionValue !== undefined) tryPatchLanguage({ locale: data.optionValue });
@@ -1015,9 +1015,9 @@ export default function DeterministicStyleSections({
                 <Option
                   key={locale}
                   value={locale}
-                  text={`${locale} — dates as ${LOCALE_DATE_SHAPES[locale].format}`}
+                  text={`${locale} — ${LOCALE_DATE_SHAPES[locale].format}`}
                 >
-                  {locale} — dates as {LOCALE_DATE_SHAPES[locale].format}
+                  {locale} — {LOCALE_DATE_SHAPES[locale].format}
                 </Option>
               ))}
             </Dropdown>

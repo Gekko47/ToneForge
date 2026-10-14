@@ -252,8 +252,17 @@ async function captureSelection(): Promise<CaptureOutcome> {
       }
 
       const text = typeof range.text === "string" ? range.text : "";
-      const reportedStart = typeof range.start === "number" ? range.start : -1;
-      const reportedEnd = typeof range.end === "number" ? range.end : -1;
+      /*
+       * Read the offsets only when the load above asked for them.
+       *
+       * `Range.start`/`Range.end` are WordApiDesktop 1.4. On a host without that
+       * requirement set, the load at line 243 asks for `["text"]` only — and
+       * reading `range.start` on a real Office proxy throws `PropertyNotLoaded`
+       * rather than returning `undefined`. The `typeof` guard cannot help: the
+       * property exists on the proxy, it simply was never loaded.
+       */
+      const reportedStart = servesOffsets && typeof range.start === "number" ? range.start : -1;
+      const reportedEnd = servesOffsets && typeof range.end === "number" ? range.end : -1;
       /*
        * **The host may report the pair in either order, and this host does.**
        *

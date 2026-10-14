@@ -13,17 +13,27 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { ErrorBoundary } from "react-error-boundary";
-import { initializeIcons } from "@fluentui/react/lib/Icons";
 import App from "./App";
 import "./taskpane.css";
 import type { DashboardInitialPage } from "./pages/Dashboard";
 
-// Register Fluent UI icons (ChevronDown, etc.) before any component renders.
-// Without this call, Fluent UI emits "icon not registered" warnings for every
-// ComboBox, Dropdown, and icon-bearing control in the taskpane. The ComboBox
-// caret is the default ChevronDown icon once fonts are registered; no custom
-// buttonIconProps is needed.
-initializeIcons();
+/*
+ * The ResizeObserver loop error is a benign browser warning, not a real
+ * failure. It fires as a `window` `error` event when a ResizeObserver
+ * callback triggers a layout change that the observer cannot deliver in the
+ * same frame — common with Fluent v9 components that observe their own
+ * reflow. The dev overlay surfaces it as an uncaught runtime error, so we
+ * filter only that specific signal here. Any other error event is left
+ * alone.
+ */
+window.addEventListener("error", (event) => {
+  if (
+    event.message.includes("ResizeObserver loop completed with undelivered notifications") ||
+    event.message.includes("ResizeObserver loop limit exceeded")
+  ) {
+    event.stopImmediatePropagation();
+  }
+});
 
 function renderFallback(): React.ReactNode {
   return (

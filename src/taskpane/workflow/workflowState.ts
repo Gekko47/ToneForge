@@ -1,4 +1,3 @@
-import type { CapabilityEvidenceTier } from "../../word/capabilityEvidence";
 import type { CoverageReport, Finding } from "../../core/domain";
 
 export type ScanStatus =
@@ -11,8 +10,6 @@ export interface WorkflowState {
     documentId: string | null;
     version: string | null;
     selection: { text: string; start: number; end: number } | null;
-    changedNodeIds: string[];
-    capabilityTier: CapabilityEvidenceTier | "unsupported";
   };
   analysis: {
     profileId: string | null;
@@ -37,10 +34,8 @@ export type WorkflowAction =
       type: "document/context";
       documentId: string;
       version: string;
-      capabilityTier: WorkflowState["document"]["capabilityTier"];
     }
   | { type: "document/selection"; selection: WorkflowState["document"]["selection"] }
-  | { type: "document/changedNodes"; nodeIds: string[] }
   | { type: "analysis/policy"; profileId: string; policyRevision: number }
   | { type: "analysis/scan"; scanStatus: ScanStatus; coverage?: CoverageReport | null }
   | { type: "analysis/findings"; findings: Finding[] }
@@ -58,8 +53,6 @@ export function createWorkflowState(): WorkflowState {
       documentId: null,
       version: null,
       selection: null,
-      changedNodeIds: [],
-      capabilityTier: "unsupported",
     },
     analysis: {
       profileId: null,
@@ -94,16 +87,10 @@ export function workflowReducer(state: WorkflowState, action: WorkflowAction): W
           ...state.document,
           documentId: action.documentId,
           version: action.version,
-          capabilityTier: action.capabilityTier,
         },
       };
     case "document/selection":
       return { ...state, document: { ...state.document, selection: action.selection } };
-    case "document/changedNodes":
-      return {
-        ...state,
-        document: { ...state.document, changedNodeIds: [...new Set(action.nodeIds)] },
-      };
     case "analysis/policy":
       return {
         ...state,

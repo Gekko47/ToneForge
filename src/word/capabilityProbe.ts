@@ -70,6 +70,29 @@ export interface WordCapabilities {
   supportsHeadersFooters: boolean;
   /** Whether `document.sections` is reachable. Spec §8.5. */
   supportsSections: boolean;
+  /**
+   * Whether `Body.getTrackedChanges()` (WordApi 1.6) is reachable.
+   *
+   * This is the canonical way to inspect revisions — it gives author, date,
+   * text, type, and range for each tracked change. Probed rather than assumed
+   * because the requirement-set member does not exist on older hosts; the
+   * inspector degrades to a stated refusal when it is absent.
+   *
+   * Optional: absent means "not probed", which the adapter treats as false.
+   */
+  supportsTrackedChangeInspection?: boolean;
+  /**
+   * Whether `Range.insertOoxml(ooxml, insertLocation)` (WordApi 1.1) is
+   * reachable.
+   *
+   * This is the canonical way to author a tracked revision under the
+   * ToneForge name — the markup carries w:author, w:date, w:id. Probed
+   * rather than assumed because the requirement-set member does not exist
+   * on older hosts; the adapter falls back to plain insertText when absent.
+   *
+   * Optional: absent means "not probed", which the adapter treats as false.
+   */
+  supportsInsertOoxml?: boolean;
   hostName: "Word" | "Excel" | "PowerPoint" | "unknown";
   hostVersion: string | null;
 }
@@ -109,6 +132,8 @@ export function toAnalysisCapabilities(capabilities: WordCapabilities): Analysis
     supportsTables: capabilities.supportsTables,
     supportsHeadersFooters: capabilities.supportsHeadersFooters,
     supportsSections: capabilities.supportsSections,
+    supportsTrackedChangeInspection: capabilities.supportsTrackedChangeInspection ?? false,
+    supportsInsertOoxml: capabilities.supportsInsertOoxml ?? false,
     hostName: capabilities.hostName,
     hostVersion: capabilities.hostVersion,
   };
@@ -143,6 +168,8 @@ const DEFAULT_CAPABILITIES: WordCapabilities = {
   supportsTables: false,
   supportsHeadersFooters: false,
   supportsSections: false,
+  supportsTrackedChangeInspection: false,
+  supportsInsertOoxml: false,
   hostName: "unknown",
   hostVersion: null,
 };
@@ -413,6 +440,26 @@ export async function probeWordCapabilities(): Promise<WordCapabilities> {
           sections.load("items");
           await context.sync();
           return Array.isArray(sections.items);
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsTrackedChangeInspection",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const body = context.document.body;
+          return hasMethod(body, "getTrackedChanges");
+        });
+        return result === true;
+      },
+    ],
+    [
+      "supportsInsertOoxml",
+      async () => {
+        const result = await runInWordSafe(async (context) => {
+          const range = getProbeRange(context);
+          return range !== null && hasMethod(range, "insertOoxml");
         });
         return result === true;
       },

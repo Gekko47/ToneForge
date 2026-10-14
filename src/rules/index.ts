@@ -3,7 +3,6 @@ export { findHouseStyleIssues } from "./houseStyle";
 export {
   detectQuotedRanges,
   detectCaptionNodes,
-  detectTrackedDeletionRanges,
   detectCommentRanges,
   isProtectedNode,
   isProtectedRange,

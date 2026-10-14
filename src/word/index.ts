@@ -8,9 +8,7 @@ export {
   resolveSourceRange,
   hashDocument,
   type DocumentSnapshot,
-  type ParagraphRange,
   type LiveSelection,
-  splitParagraphRanges,
 } from "./documentReader";
 export { getFormattingSnapshot, type FormattingReadOptions } from "./formattingReader";
 export { applyChangePlan, validatePlanBeforeApply, type RevisionResult } from "./revisionAdapter";

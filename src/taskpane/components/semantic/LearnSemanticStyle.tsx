@@ -1,5 +1,5 @@
 import React from "react";
-import { Button, Card, Checkbox, Textarea, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, Card, Checkbox, Textarea } from "@fluentui/react-components";
 import { evaluateSampleQuality, type SampleQuality } from "../../../style/sampleQuality";
 import {
   MAX_TEXT_FILE_BYTES,
@@ -38,16 +38,6 @@ export interface LearnSemanticStyleProps {
   busy: boolean;
 }
 
-const useStyles = makeStyles({
-  root: {
-    marginTop: tokens.spacingVerticalM,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground2,
-    overflow: "hidden",
-  },
-});
-
 type Source = "pasted" | "file" | "document";
 
 export default function LearnSemanticStyle({
@@ -56,7 +46,6 @@ export default function LearnSemanticStyle({
   onLearn,
   busy,
 }: LearnSemanticStyleProps): React.ReactNode {
-  const styles = useStyles();
   const [pasted, setPasted] = React.useState("");
   const [sample, setSample] = React.useState<CapturedSample | null>(null);
   const [source, setSource] = React.useState<Source>("pasted");
@@ -156,7 +145,7 @@ export default function LearnSemanticStyle({
 
   return (
     <section aria-labelledby="learn-style-heading">
-      <Card className={styles.root} appearance="outline">
+      <Card className="tf-section" appearance="subtle">
         <h2 id="learn-style-heading">Learn a style</h2>
 
         {/*

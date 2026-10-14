@@ -2,7 +2,6 @@ import { afterEach, vi } from "vitest";
 import { configure } from "@testing-library/dom";
 import { createOfficeLoad } from "./fixtures/officeLoad";
 import "@testing-library/jest-dom/vitest";
-import { initializeIcons } from "@fluentui/react/lib/Icons";
 
 // Raise the async-query timeout from the 1000ms default to 10s. Under parallel
 // load (238 test files), a findByRole call can take >1s to resolve when the
@@ -12,13 +11,7 @@ import { initializeIcons } from "@fluentui/react/lib/Icons";
 configure({ asyncUtilTimeout: 10_000 });
 
 // Register Fluent UI icons (ChevronDown, etc.) before any component renders.
-// Without this, every ComboBox/Dropdown/Icon in the test suite emits
-// "icon not registered" warnings to stderr. Guard with a module-level flag so
-// re-registration across test files is idempotent instead of warning.
-if (!(globalThis as { __toneforgeIconsInitialized?: boolean }).__toneforgeIconsInitialized) {
-  initializeIcons();
-  (globalThis as { __toneforgeIconsInitialized?: boolean }).__toneforgeIconsInitialized = true;
-}
+// Fluent v9 icons self-register via @fluentui/react-icons; no initializeIcons needed.
 
 /**
  * Backing store for the `roamingSettings` mock.
@@ -241,6 +234,43 @@ globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
   }
   return originalFetch(input);
 }) as typeof fetch;
+
+// jsdom does not implement `NodeFilter`. Fluent's Drawer uses tabster for focus
+// trapping, which references it during mutation observation. Without this polyfill,
+// mounting a Drawer throws "NodeFilter is not defined" and any test that opens the
+// FindingDetailOverlay times out waiting for the dialog to appear.
+// Define it directly on the window/global object — vi.stubGlobal would be undone
+// by the `restoreMocks: true` vitest config before the test body runs.
+const nodeFilterStub = {
+  FILTER_ACCEPT: 1,
+  FILTER_REJECT: 2,
+  FILTER_SKIP: 3,
+  SHOW_ALL: 0xffffffff,
+  SHOW_ELEMENT: 0x1,
+  SHOW_ATTRIBUTE: 0x2,
+  SHOW_TEXT: 0x4,
+  SHOW_CDATA_SECTION: 0x8,
+  SHOW_ENTITY_REFERENCE: 0x10,
+  SHOW_ENTITY: 0x20,
+  SHOW_PROCESSING_INSTRUCTION: 0x40,
+  SHOW_COMMENT: 0x80,
+  SHOW_DOCUMENT: 0x100,
+  SHOW_DOCUMENT_TYPE: 0x200,
+  SHOW_DOCUMENT_FRAGMENT: 0x400,
+  SHOW_NOTATION: 0x800,
+} as unknown as typeof NodeFilter;
+Object.defineProperty(globalThis, "NodeFilter", {
+  value: nodeFilterStub,
+  writable: true,
+  configurable: true,
+});
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "NodeFilter", {
+    value: nodeFilterStub,
+    writable: true,
+    configurable: true,
+  });
+}
 
 // jsdom does not implement `window.matchMedia`. The Fluent v9 provider reads it
 // for the system colour-scheme and reduced-motion preferences, so every test

@@ -74,7 +74,7 @@ export function ReviewModeCard({
   const styles = useStyles();
   const Icon = toneForgeIcons[icon];
   return (
-    <Card className={mergeClasses(styles.root, className)} aria-label={mode}>
+    <Card className={mergeClasses(styles.root, className)} appearance="subtle" aria-label={mode}>
       <CardHeader
         className={styles.header}
         image={

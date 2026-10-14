@@ -62,7 +62,7 @@ describe("command and manifest contracts", () => {
      * pane beside the live one whenever the context menu was used. The field
      * looked like a description of a difference that was intentional; it was a
      * description of a difference nobody had checked, because nothing failed
-     * when it happened. (ADR-0101.)
+     * when it happened. (ADR-0144.)
      */
     expect(definitions.every((definition) => definition.xmlAction === "ExecuteFunction")).toBe(
       true,
@@ -149,7 +149,7 @@ describe("command and manifest contracts", () => {
 
     /*
      * The destination belongs to the one control that opens the pane. Before
-     * ADR-0101 every ribbon control named it, so a function control that named
+     * ADR-0144 every ribbon control named it, so a function control that named
      * none looked wrong; now that every command reaches the pane by function,
      * asking a command for a destination would be the wrong question.
      */
@@ -180,7 +180,7 @@ describe("command and manifest contracts", () => {
     ).toContain("manifest.xml is missing destination resource Taskpane.Url for ToneForgeTaskpane");
   });
 
-  describe("the single task pane (ADR-0101)", () => {
+  describe("the single task pane (ADR-0144)", () => {
     const manifest = JSON.parse(readFileSync(repositoryPath("manifest.json"), "utf8")) as object;
     const xml = readFileSync(repositoryPath("manifest.xml"), "utf8");
 

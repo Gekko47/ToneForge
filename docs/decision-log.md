@@ -5657,3 +5657,326 @@ uses (ADR-0031), applied to the theme layer itself.
     `tests/unit/taskpane/singleH1.test.tsx`;
     `tests/unit/taskpane/shell/paneHeader.test.tsx`; ADR-0130, ADR-0135,
     ADR-0137, ADR-0062.
+
+## ADR-0139 — Analysis reads the accept-all view, so an applied correction is not re-reported
+
+- **Status**: Accepted (2026-10-11)
+- **Context**: Every deterministic analysis read `body.text`. Word keeps text marked
+  for deletion by a tracked revision in `body.text` until that revision is accepted,
+  so after ToneForge applied a correction the next scan still saw the original
+  (red-lined) wording and re-reported the same finding. The pane was stuck in a
+  red-line loop: accept a correction, rescan, watch the same finding return. The
+  protection detector only matched a synthetic marker, so it could not catch this
+  either. The staleness hash compounded it — keyed on `body.text`, it never changed
+  when a pending deletion was the only difference, so a rescan looked "fresh" while
+  reading text the user no longer had.
+- **Decision**: Analysis reads the accept-all view. `Body.getReviewedText("Current")`
+  (WordApi 1.4) returns only what is currently in the document, omitting text marked
+  for deletion and text in pending insertions, so the scan reads exactly what
+  ToneForge has accepted and written. The capability is probed, not assumed: hosts
+  older than WordApi 1.4 have no `getReviewedText`, so the read falls back to
+  `body.text` and reports that it did so (`reviewed: false`) rather than claiming a
+  clean document. All four analysis read sites —
+  [`getDocumentSnapshot`](src/word/documentReader.ts) (both the full and scoped
+  variants), [`acquireAnalysisScope`](src/word/analysisAcquisition.ts), and
+  [`readFormattingSnapshot`](src/word/formattingReader.ts) — use the shared
+  [`readBodyTextIn`](src/word/documentReader.ts) helper, which runs inside the
+  caller's existing `runInWord` transaction (nesting `Word.run` is not supported).
+  The staleness hash is re-keyed to this read, because it derives from the same
+  `fullText`. The two mutation-path reads in
+  [`revisionAdapter`](src/word/revisionAdapter.ts) deliberately keep `body.text`:
+  they validate change bounds and preconditions against the authoritative document
+  as Word sees it, where the deletion still lives.
+- **Consequences**:
+  - Positive: an applied correction no longer reappears as a finding on rescan. The
+    red-line loop is broken at the read, not patched at each consumer.
+  - Positive: the staleness hash now changes when a pending deletion is accepted or
+    rejected, so a rescan is correctly seen as fresh or stale.
+  - Positive: one shared helper keeps the four read sites consistent, and the
+    fallback keeps the add-in working on hosts without WordApi 1.4.
+  - Cost: `readBodyTextIn` takes a context rather than starting its own
+    `runInWord`, so callers that already hold a transaction use it directly; the
+    standalone [`readReviewedText`](src/word/documentReader.ts) wraps it for callers
+    that do not. This is a deliberate consequence of `Word.run` not being
+    re-entrant, not an abstraction.
+  - **Documented limitation**: revisions ToneForge applies are authored as the
+    signed-in user, so `getReviewedText("Current")` also reads a _pending_ revision
+    the user made as accepted. The accept-all view cannot distinguish "ToneForge
+    wrote this" from "the user wrote this and it is not yet accepted". This is a
+    Word platform behaviour, recorded here rather than hidden in the reader.
+  - **Not claimed**: the red-line loop is closed in a real Word host only when a
+    human verifies it. A mocked host proves the read path, not the host behaviour;
+    a green automated run is not a release (ADR-0051).
+- **Evidence**: [`src/word/documentReader.ts`](../src/word/documentReader.ts)
+  (`readBodyTextIn`, `readReviewedText`);
+  [`src/word/analysisAcquisition.ts`](../src/word/analysisAcquisition.ts);
+  [`src/word/formattingReader.ts`](../src/word/formattingReader.ts);
+  [`tests/unit/word/documentReader.test.ts`](../tests/unit/word/documentReader.test.ts)
+  (the red-line regression suite); ADR-0056, ADR-0065.
+
+## ADR-0140 — One border-less .tf-section surface rule, so a box cannot be reintroduced
+
+- **Status**: Accepted (2026-10-12)
+- **Context**: The task pane had a boxed look — every section appeared in a card
+  with a border, fill, and rounded corners. The cause was not one rule but the
+  repeated `styles.root` box pattern applied across ten call sites: each
+  `styles.root` definition carried the same border, fill, radius, and shadow.
+  Removing the box from one site left nine others still boxed. The header was
+  the same pattern: a sticky bar with a box border that doubled as a divider,
+  creating a visible frame around the entire pane content.
+- **Decision**: One border-less `.tf-section` surface rule replaces every
+  `styles.root` box definition. A section is a block of content on the pane's
+  own surface, separated by whitespace and an optional top divider
+  (`.tf-section-divider`). No border, no fill, no radius. The eight remaining
+  `styles.root` definitions across the pane are repointed at this shared rule.
+  The anti-regression guard is a test in
+  [`inlineType.test.ts`](../tests/unit/taskpane/inlineType.test.ts) that asserts
+  `.tf-section` declares no border, fill, or radius.
+- **Consequences**:
+  - Positive: the boxed look is gone. Sections sit on the pane surface, separated
+    by whitespace and dividers, not nested cards.
+  - Positive: the convention is enforceable. A new section uses `.tf-section`
+    and the box cannot be reintroduced without a deliberate edit to that one
+    rule — which the test catches.
+  - Positive: the header is flattened. The sticky bar keeps only a bottom
+    divider, so the pane content is not framed by a box border.
+  - Cost: `.tf-section` is a single point of change. If a future section needs
+    a visual treatment beyond whitespace and a divider, that is a new rule, not
+    a reversion to the box pattern.
+- **Evidence**: [`src/taskpane/taskpane.css`](../src/taskpane/taskpane.css)
+  (`.tf-section`, `.tf-section-divider`);
+  [`tests/unit/taskpane/inlineType.test.ts`](../tests/unit/taskpane/inlineType.test.ts)
+  (the section surface rule suite).
+
+## ADR-0141 — Accept applies then advances; Accept all of this type applies every change and closes
+
+- **Status**: Accepted (2026-10-12)
+- **Context**: The review page needed a clear action model for the finding detail
+  overlay. The old flow queued changes into a Pending Changes list for later
+  review, which added a step between "I agree with this correction" and "it is
+  written". The user's intent at the overlay is immediate: they are looking at a
+  finding and want to act on it.
+- **Decision**: The overlay offers four actions:
+  - **Accept**: narrows the preview plan to that one change, calls
+    `applyReviewedPlan`, then advances to the next finding in the group. The
+    change is written as a tracked revision immediately.
+  - **Accept all of this type**: applies every change in the group in one plan,
+    then closes the overlay.
+  - **Skip**: records a skip and advances without applying.
+  - **Ignore**: moves the finding to the Ignored list and advances.
+    Accept and Accept all are disabled with the coverage reason when coverage is
+    incomplete. The Pending Changes section and the ApplyResultBlock are removed;
+    the apply pipeline runs through the overlay directly.
+- **Consequences**:
+  - Positive: the path from "I agree" to "it is written" is one press. No
+    intermediate queue, no second review step.
+  - Positive: Accept all of this type is a genuine batch action — it applies
+    every change of the group in one plan, not just the visible finding.
+  - Positive: the overlay steps within the group, so the user can review
+    findings one at a time without reopening the list.
+  - Cost: the Pending Changes section is gone. A user who preferred to review
+    all changes in one list before applying must now act per-type. This is a
+    deliberate trade: the overlay is the review surface, not a queue.
+  - **Not claimed**: the overlay action flow is verified in a real Word host
+    only when a human verifies it. A mocked host proves the wiring, not the
+    host behaviour (ADR-0051).
+- **Evidence**: [`src/taskpane/pages/Dashboard.tsx`](../src/taskpane/pages/Dashboard.tsx)
+  (`overlayAccept`, `overlayAcceptAll`);
+  [`src/taskpane/components/FindingDetailOverlay.tsx`](../src/taskpane/components/FindingDetailOverlay.tsx);
+  [`tests/unit/taskpane/components/findingDetailOverlay.test.tsx`](../tests/unit/taskpane/components/findingDetailOverlay.test.tsx).
+
+## ADR-0142 — React 18 is replaced by React 19, and `inert` is a supported attribute
+
+- **Status**: Accepted (2026-10-12)
+- **Context**: Fluent v9's `AccordionPanel` sets `inert: true` on a collapsed panel
+  root (`@fluentui/react-accordion` → `useAccordionPanel`). React 18's development
+  build treats `inert` as an unknown attribute and warns "Received `true` for a
+  non-boolean attribute `inert`" for every collapsed `DisclosurePanel` (ADR-0136).
+  React 19 supports `inert` as a boolean attribute, rendering `inert=""`. The
+  warning was dev-server noise only: the production bundle strips React's dev
+  validation and never emitted it.
+- **Decision**: Upgrade `react` and `react-dom` to `19.3.0`,
+  `@types/react` and `@types/react-dom` to `19.3.0`, `@testing-library/react`
+  to `16.3.3`, and `react-error-boundary` to `6.1.6`. Remove the `initializeIcons`
+  call from [`tests/setup.ts`](../tests/setup.ts): it is a Fluent v8 API
+  (`@fluentui/react/lib/Icons`) that the v9 migration removed (ADR-0130), and v9
+  icons self-register, so the call was dead.
+- **Consequences**:
+  - Positive: a collapsed disclosure renders `inert` as a boolean, so its content
+    is removed from the accessibility tree with no dev-console warning.
+  - Positive: the toolchain is on a supported React line.
+  - Cost: `react-error-boundary` crossed two majors (4 → 6). `ErrorBoundary` with
+    `fallbackRender` is unchanged, and the full suite passes.
+  - **Not claimed**: the `inert` warning is a development-only symptom. This is a
+    maintenance decision, not a release gate.
+- **Evidence**: [`package.json`](../package.json);
+  [`tests/setup.ts`](../tests/setup.ts);
+  [`src/taskpane/bootstrap.tsx`](../src/taskpane/bootstrap.tsx) (`ErrorBoundary`);
+  ADR-0130, ADR-0136.
+
+## ADR-0143 — `listItem` is read per-paragraph, never in the bulk request
+
+- **Status**: Accepted (2026-10-12)
+- **Context**: `acquireAnalysisContext` builds one load plan and applies it to every
+  paragraph in a single request. The `supportsListLevel` capability group requested
+  both `isListItem` and `listItem`. `Word.Paragraph.listItem` throws `ItemNotFound`
+  when the paragraph is not part of a list. A document with any non-list paragraph —
+  which is essentially every document — therefore refused the whole rich request,
+  and every scan degraded to the text-only scope (ADR-0056). The Office.js
+  `debugInfo.statement` diagnostic added to the fallback log named the cause
+  exactly: `officeLocation: "Paragraph.listItem"`.
+- **Decision**: Keep `listItem` in the list capability group but strip it from the
+  bulk request (`PER_PARAGRAPH_PROPERTIES`). `isListItem`, a boolean that never
+  throws, still rides in the bulk request. After the bulk sync, `acquireScope` loads
+  `listItem` in a separate, isolated transaction for the paragraphs the host reported
+  as `isListItem: true`, and the DTO reads a level only for those.
+- **Consequences**:
+  - Positive: a document with any non-list paragraph no longer degrades the rich
+    scope, so styles, paragraph format, character format, lists and structural
+    scopes are read in one transaction.
+  - Positive: the load contract no longer carries a property that can reject the batch.
+  - Positive: a list item's level is read again, so the list-level integrity check
+    and list-style comparison produce findings instead of silently passing.
+  - Cost: one extra `context.sync()` per scan, and only when the document has at
+    least one list item. The read is isolated, so a host that refuses it costs the
+    levels, not the scan.
+  - **Not claimed**: that the per-paragraph read works in a real Word host. It is
+    unit-verified against a host double that refuses `listItem` for a non-list
+    paragraph, and remains a human step in [`manual-verification.md`](manual-verification.md)
+    (ADR-0051).
+- **Evidence**: [`src/word/analysisAcquisition.ts`](../src/word/analysisAcquisition.ts)
+  (`CAPABILITY_PROPERTY_GROUPS`, `PER_PARAGRAPH_PROPERTIES`, `describeOfficeRefusal`);
+  [`tests/unit/word/analysisAcquisitionLoads.test.ts`](../tests/unit/word/analysisAcquisitionLoads.test.ts);
+  [`tests/unit/word/analysisAcquisitionDegradedScope.test.ts`](../tests/unit/word/analysisAcquisitionDegradedScope.test.ts);
+  Microsoft Learn `Word.Paragraph.listItem` (WordApi 1.3, "Throws an `ItemNotFound`
+  error if the paragraph isn't part of a list"); ADR-0056, ADR-0084.
+
+---
+
+## ADR-0144 — Finding offsets are located in the raw body text, not the accept-all view
+
+- **Status**: Accepted (2026-10-12), superseded in part by ADR-0145
+- **Amendment (2026-10-13)**: The `indexOf` reconstruction this ADR introduced is
+  superseded by ADR-0145. Paragraph offsets now come from the Word range API
+  (`Paragraph.getRange("Whole")` → `Range.start`/`Range.end`), so the host supplies
+  offsets that already live in the raw-text coordinate space. `readBodyTextViews`
+  still supplies the accept-all text for detection (ADR-0139), but the offset
+  reconstruction is no longer needed. The dual-view read is retained for detection,
+  not for offset location.
+- **Context**: ADR-0139 established that analysis reads the accept-all view
+  (`getReviewedText("Current")`), so an applied correction is not re-reported. The
+  accept-all view omits text a tracked revision has marked for deletion. Findings were
+  addressed by `body.getRange("Whole").set({ start, end })`, and `Range.set` /
+  `Range.select` count every character Word holds, including that deleted text — so an
+  offset located against the accept-all view landed too early in the raw view, and the
+  error grew with every character of tracked deletion preceding it. Navigation,
+  precondition and mutation all inherited the same wrong offset.
+
+  ADR-0139's own words are the boundary this preserves: "a real host **is** needed before
+  either conclusion is treated as established" and "the automated suite proves the
+  plumbing, not the host". This ADR does not claim otherwise.
+
+- **Decision**: Analysis reads **both** body views in one `body.load("text")`
+  ([`readBodyTextViews()`](../src/word/documentReader.ts)), so a caller holding a
+  transaction issues one full-body read rather than two:
+
+  - Detection keeps the accept-all view (`fullText`) — an applied correction must not
+    reappear as a finding.
+  - Finding offsets are located against the raw view (`rawText`, `body.text`), which is
+    the space `Range.set` and `Range.select` count.
+
+  `reviewed` reports whether the host served the accept-all view; a host whose
+  `getReviewedText` is absent makes no distinction between the two, so the accept-all
+  text doubles as the raw text and `reviewed: false` says so.
+
+- **Consequences**:
+  - Positive: navigation, precondition and mutation address the same coordinates the
+    range API counts, so an Accept, Accept all, or navigation no longer targets the
+    wrong text when the document holds tracked deletions.
+  - Positive: the earlier `reviewedToRawOffset` translation — which read
+    `body.trackedChanges` in the middle of a `runInWord` transaction and failed in the
+    real host — is removed rather than repaired, along with its module and test.
+  - Cost: analysis requests both views in a single load. A host that refuses the
+    `getReviewedText` call costs nothing it did not cost before, because the read is one
+    load and the accept-all view degrades to the raw view.
+  - **Not claimed**: that both views behave as described in a real Word host. It is
+    unit-verified against a host double that serves distinct accept-all and raw views,
+    and remains a human step in [`manual-verification.md`](manual-verification.md)
+    (ADR-0051).
+- **Evidence**: [`src/word/documentReader.ts`](../src/word/documentReader.ts)
+  (`readBodyTextViews`); [`src/word/analysisAcquisition.ts`](../src/word/analysisAcquisition.ts)
+  (`AcquiredScope.rawText`, `buildSnapshot`); [`src/word/sourceLocator.ts`](../src/word/sourceLocator.ts);
+  [`src/word/revisionAdapter.ts`](../src/word/revisionAdapter.ts);
+  [`tests/unit/word/documentReader.test.ts`](../tests/unit/word/documentReader.test.ts);
+  [`tests/unit/analysis/analysisContext.test.ts`](../tests/unit/analysis/analysisContext.test.ts);
+  Microsoft Learn `Word.Body.getReviewedText`; ADR-0056, ADR-0139.
+
+## ADR-0145 — Word APIs are the first choice; hand-rolled adjustments are a last resort
+
+- **Status**: Accepted (2026-10-13)
+- **Context**: The scan and apply flows contained several hand-rolled adjustments
+  that reconstructed what the Word API already provides. These were introduced when
+  the API surface was less certain, and each carried a silent failure mode: a wrong
+  offset, a fabricated paragraph boundary, a synthetic deletion marker. The
+  revision-aware apply plan (steps 1-30) systematically replaced each with the
+  native API, and removed the dead code that remained.
+
+  The principle: read and track changes through the Word API. A hand-rolled
+  adjustment is permitted only where the host exposes no API for the task — and
+  then it must refuse rather than guess.
+
+- **Decision**: The following hand-rolled adjustments were replaced or removed:
+
+  | Where                                               | Was                                                                 | Now                                                                                |
+  | --------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+  | `analysisAcquisition.buildSnapshot`                 | `rawText.indexOf(text, bodyCursor)` reconstructed paragraph offsets | `Paragraph.getRange("Whole")` → `Range.start`/`Range.end`                          |
+  | `documentReader.getStructuredSnapshot`              | same `indexOf` locating                                             | same range API                                                                     |
+  | `documentReader.splitParagraphRanges`               | split body text on `/\n\s*\n/` to fabricate paragraphs              | **Removed.** `body.paragraphs` is the real collection                              |
+  | `rules/protection.ts` `detectTrackedDeletionRanges` | matched a synthetic `{{ DELETE … }}` marker                         | **Deleted.** `TrackedChange.type === "Deleted"` from `body.getTrackedChanges()`    |
+  | `revisionAdapter.verifyLivePrecondition`            | sliced `body.text` at `[start, end]`                                | `body.getRange("Whole").set({start,end})` then `load("text")`                      |
+  | `revisionAdapter.countRecordedRevisions`            | re-read `getTrackedChanges().items.length`                          | delegates to `readTrackedRevisions()`                                              |
+  | `wordParagraphEvents.ts` / `capabilityEvidence.ts`  | paragraph-event adapter + capability evidence tier                  | **Deleted.** No reliable document-level change API (ADR-0094)                      |
+  | `documentObserver` incremental narrowing            | narrowed scan to changed nodes only                                 | **Removed.** Full rescan on every change; `onDocumentChanged()` takes no arguments |
+
+  Hand-rolled code that stays, because no API exists:
+
+  | Where                                                | Why it stays                                                                                                        |
+  | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+  | `revisionAdapter.orderChanges`                       | Word has no batch-apply API; changes applied one at a time, end-first                                               |
+  | `revisionAdapter.resolveBreakEnums`                  | Desktop Word does not expose `Office.InsertBreakBehavior`                                                           |
+  | `enableRevisionTracking` / `restoreRevisionTracking` | already native (`changeTrackingMode` / `trackRevisions`)                                                            |
+  | `analysisAcquisition.readBodyTextViews`              | reads `getReviewedText("Current")` + `body.text`; both native; detection still needs the accept-all view (ADR-0139) |
+  | `revisionAdapter.preservationLiterals`               | a content-preservation check, not an Office read/write                                                              |
+  | `documentObserver` full rescan + debounce            | no reliable document-level change API (ADR-0094)                                                                    |
+
+- **Consequences**:
+  - Positive: paragraph offsets come from the host, so they are correct by
+    construction rather than reconstructed and hoped-for.
+  - Positive: the raw-vs-accept-all offset mismatch ADR-0144 worked around stops
+    being a mismatch — the host's own offsets already count the characters
+    `Range.set` counts. ADR-0144 is amended, not contradicted.
+  - Positive: the paragraph-event path, capability evidence tier, and incremental
+    narrowing are removed, eliminating dead code and the silent failure modes
+    they carried.
+  - Positive: `countRecordedRevisions` delegates to `readTrackedRevisions()`,
+    so there is one reader and one truth.
+  - Cost: the observer always does a full rescan on change. This is the correct
+    trade: a partial scan that retains findings from a previous run would
+    present ranges and text that the edit may have moved.
+  - **Not claimed**: that the range API behaves as described in a real Word
+    host. It is unit-verified against a host double, and remains a human step
+    in [`manual-verification.md`](manual-verification.md) (ADR-0051).
+- **Evidence**: [`src/word/revisionAdapter.ts`](../src/word/revisionAdapter.ts);
+  [`src/word/documentObserver.ts`](../src/word/documentObserver.ts);
+  [`src/word/analysisAcquisition.ts`](../src/word/analysisAcquisition.ts);
+  [`src/word/documentReader.ts`](../src/word/documentReader.ts);
+  [`src/word/revisionInspection.ts`](../src/word/revisionInspection.ts);
+  [`src/word/revisionOoxml.ts`](../src/word/revisionOoxml.ts);
+  [`src/changes/revisionOverlap.ts`](../src/changes/revisionOverlap.ts);
+  [`tests/unit/word/revisionAdapter.apply.test.ts`](../tests/unit/word/revisionAdapter.apply.test.ts);
+  [`tests/unit/word/autoScanInvariants.test.ts`](../tests/unit/word/autoScanInvariants.test.ts);
+  [`tests/unit/word/revisionInspection.test.ts`](../tests/unit/word/revisionInspection.test.ts);
+  [`tests/unit/word/revisionOoxml.test.ts`](../tests/unit/word/revisionOoxml.test.ts);
+  [`tests/unit/changes/revisionOverlap.test.ts`](../tests/unit/changes/revisionOverlap.test.ts);
+  Microsoft Learn `Word.Paragraph.getRange`, `Word.Range.set`, `Word.Body.getTrackedChanges`,
+  `Word.Range.insertOoxml`; ADR-0051, ADR-0094, ADR-0139, ADR-0144.

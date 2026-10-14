@@ -3,7 +3,6 @@ import {
   getSelectedParagraphText,
   getStructuredSnapshot,
   resolveSourceRange,
-  splitParagraphRanges,
 } from "../../../src/word/documentReader";
 
 function setOffice(office: unknown) {
@@ -88,11 +87,27 @@ describe("getStructuredSnapshot", () => {
             body: {
               text: "First paragraph.\n\nSecond paragraph.",
               load: vi.fn(),
+              paragraphs: {
+                load: vi.fn(),
+                items: [
+                  {
+                    text: "First paragraph.",
+                    load: vi.fn(),
+                    getRange: vi.fn(() => ({ load: vi.fn(), start: 0, end: 16 })),
+                  },
+                  {
+                    text: "Second paragraph.",
+                    load: vi.fn(),
+                    getRange: vi.fn(() => ({ load: vi.fn(), start: 18, end: 35 })),
+                  },
+                ],
+              },
             },
             sync: vi.fn(),
           },
           sync: vi.fn(),
         }),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
     });
 
     const snapshot = await getStructuredSnapshot();
@@ -110,11 +125,28 @@ describe("getStructuredSnapshot", () => {
             body: {
               text: "Heading 1: Introduction\n\nNormal paragraph.",
               load: vi.fn(),
+              paragraphs: {
+                load: vi.fn(),
+                items: [
+                  {
+                    text: "Heading 1: Introduction",
+                    styleBuiltIn: "Heading 1",
+                    load: vi.fn(),
+                    getRange: vi.fn(() => ({ load: vi.fn(), start: 0, end: 21 })),
+                  },
+                  {
+                    text: "Normal paragraph.",
+                    load: vi.fn(),
+                    getRange: vi.fn(() => ({ load: vi.fn(), start: 23, end: 39 })),
+                  },
+                ],
+              },
             },
             sync: vi.fn(),
           },
           sync: vi.fn(),
         }),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
     });
 
     const snapshot = await getStructuredSnapshot();
@@ -127,14 +159,12 @@ describe("getStructuredSnapshot", () => {
       run: async (func: (context: unknown) => Promise<unknown>) =>
         func({
           document: {
-            body: {
-              text: "Some text.",
-              load: vi.fn(),
-            },
+            body: { text: "Some text.", load: vi.fn() },
             sync: vi.fn(),
           },
           sync: vi.fn(),
         }),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
     });
 
     const snapshot = await getStructuredSnapshot();
@@ -150,11 +180,27 @@ describe("getStructuredSnapshot", () => {
             body: {
               text: "Para one.\n\nPara two.",
               load: vi.fn(),
+              paragraphs: {
+                load: vi.fn(),
+                items: [
+                  {
+                    text: "Para one.",
+                    load: vi.fn(),
+                    getRange: vi.fn(() => ({ load: vi.fn(), start: 0, end: 8 })),
+                  },
+                  {
+                    text: "Para two.",
+                    load: vi.fn(),
+                    getRange: vi.fn(() => ({ load: vi.fn(), start: 10, end: 18 })),
+                  },
+                ],
+              },
             },
             sync: vi.fn(),
           },
           sync: vi.fn(),
         }),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
     });
 
     const snapshot = await getStructuredSnapshot();
@@ -192,15 +238,5 @@ describe("resolveSourceRange", () => {
     expect(result.structuralPath).toBe("body/paragraph/0");
     expect(result.start).toBeUndefined();
     expect(result.end).toBeUndefined();
-  });
-});
-
-describe("splitParagraphRanges", () => {
-  it("preserves exact document offsets around trimmed paragraph whitespace", () => {
-    const ranges = splitParagraphRanges("  first  \n\n  second  ");
-    expect(ranges).toEqual([
-      { text: "first", start: 2, end: 7 },
-      { text: "second", start: 13, end: 19 },
-    ]);
   });
 });

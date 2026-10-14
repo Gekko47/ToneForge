@@ -129,9 +129,35 @@ describe("inline type in the task pane", () => {
 
     expect(files.length).toBeGreaterThan(5);
     expect(files).toEqual(
-      expect.arrayContaining(["ApplyResultBlock.tsx", "CoverageBanner.tsx", "PendingChanges.tsx"]),
+      expect.arrayContaining([
+        "CoverageBanner.tsx",
+        "PendingChanges.tsx",
+        "FindingDetailOverlay.tsx",
+      ]),
     );
     expect(blockOf(".tf-detail")).not.toBe("");
+  });
+});
+
+describe("the section surface rule", () => {
+  it("declares no border, fill, or radius on .tf-section", () => {
+    /*
+     * The boxed look was the repeated styles.root pattern across ten call
+     * sites. The fix is one border-less .tf-section rule, and this test is the
+     * anti-regression guard: a section is a block of content on the pane's own
+     * surface, separated by whitespace and an optional top divider.
+     */
+    const block = blockOf(".tf-section");
+    expect(block).not.toMatch(/border\s*:/);
+    expect(block).not.toMatch(/background\s*:/);
+    expect(block).not.toMatch(/border-radius\s*:/);
+  });
+
+  it("separates sections by whitespace and an optional top divider", () => {
+    const block = blockOf(".tf-section");
+    expect(block).toContain("margin-top: 12px");
+    const divider = blockOf(".tf-section-divider");
+    expect(divider).toContain("border-top: 1px solid var(--tf-border)");
   });
 });
 
@@ -158,8 +184,6 @@ describe("the detail line", () => {
     const users = files.filter((file) => readFileSync(file, "utf8").includes("tf-detail"));
     const names = users.map((file) => file.replace(/\\/g, "/").split("/").pop());
 
-    expect(names).toEqual(
-      expect.arrayContaining(["ApplyResultBlock.tsx", "CoverageBanner.tsx", "PendingChanges.tsx"]),
-    );
+    expect(names).toEqual(expect.arrayContaining(["CoverageBanner.tsx", "PendingChanges.tsx"]));
   });
 });

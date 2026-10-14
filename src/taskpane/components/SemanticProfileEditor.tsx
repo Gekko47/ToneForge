@@ -212,13 +212,6 @@ function LinesField(props: {
 }
 
 const useSectionStyles = makeStyles({
-  root: {
-    marginTop: tokens.spacingVerticalL,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground2,
-    overflow: "hidden",
-  },
   body: {
     padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalL}`,
   },
@@ -240,7 +233,7 @@ function Section(props: {
 }): React.ReactNode {
   const styles = useSectionStyles();
   return (
-    <DisclosurePanel title={props.title} className={styles.root}>
+    <DisclosurePanel title={props.title} className="tf-section">
       <div className={styles.body}>
         <p className={styles.summary}>{props.summary}</p>
         <div className={styles.fields}>{props.children}</div>

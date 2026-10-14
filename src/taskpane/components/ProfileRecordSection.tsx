@@ -1,5 +1,5 @@
 import React from "react";
-import { Button, Card, MessageBar, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, Card, MessageBar } from "@fluentui/react-components";
 import {
   activatePublished,
   discardDraft,
@@ -31,16 +31,6 @@ export interface ProfileRecordSectionProps {
   onAnnounce?: (message: string) => void;
 }
 
-const useStyles = makeStyles({
-  root: {
-    marginTop: tokens.spacingVerticalM,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground2,
-    overflow: "hidden",
-  },
-});
-
 function dateLabel(iso: string): string {
   return new Date(iso).toISOString().slice(0, 10);
 }
@@ -59,7 +49,6 @@ export default function ProfileRecordSection({
   onChange,
   onAnnounce,
 }: ProfileRecordSectionProps): React.ReactNode {
-  const styles = useStyles();
   const [announcement, setAnnouncement] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   /**
@@ -139,7 +128,7 @@ export default function ProfileRecordSection({
 
   return (
     <section aria-labelledby="profile-record-heading">
-      <Card className={styles.root} appearance="outline">
+      <Card className="tf-section" appearance="subtle">
         <h2 id="profile-record-heading">Profile revisions</h2>
         <p className="tf-sub">
           This profile has one editable draft and a list of published versions. Published versions

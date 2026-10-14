@@ -4,6 +4,8 @@ import {
   getDocumentSnapshot,
   getLiveSelection,
   getParagraphRange,
+  readBodyTextIn,
+  readReviewedText,
 } from "../../../src/word/documentReader";
 
 describe("hashDocument", () => {
@@ -260,5 +262,143 @@ describe("getParagraphRange", () => {
 
     const result = await getParagraphRange(1, 2);
     expect(result).toEqual(["one", "two"]);
+  });
+});
+
+/**
+ * The red-line regression.
+ *
+ * `body.text` keeps text marked for deletion by a tracked revision until that
+ * revision is accepted. A scan reading it re-reports a finding whose correction
+ * ToneForge already applied. These tests pin the accept-all read that fixes it.
+ */
+describe("readBodyTextIn", () => {
+  /** Build a minimal host context exposing `body`, as `runInWord` would. */
+  function contextWithBody(body: {
+    text: string;
+    load: ReturnType<typeof vi.fn>;
+    getReviewedText?: ReturnType<typeof vi.fn>;
+  }): unknown {
+    return { document: { body }, sync: vi.fn() };
+  }
+
+  it("returns the accept-all text, excluding a red-line deletion", async () => {
+    // body.text still holds the deleted span; the accept-all view does not.
+    const context = contextWithBody({
+      text: "The quick brown fox jumps over the lazy dog",
+      load: vi.fn(),
+      getReviewedText: vi.fn(() => ({
+        value: "The quick fox jumps over the lazy dog",
+        load: vi.fn(),
+      })),
+    });
+
+    const text = await readBodyTextIn(context as never);
+    expect(text).toBe("The quick fox jumps over the lazy dog");
+    expect(text).not.toContain("brown");
+  });
+
+  it("invokes getReviewedText on the body, so the host receives its `this`", async () => {
+    /*
+     * The host-only regression. Office.js client-object methods read their
+     * request context from `this`. Extracting `body.getReviewedText` into a local
+     * and calling it detached makes `this` undefined, and the real method then
+     * throws inside Word (`Cannot read properties of undefined (reading
+     * '_nextId')`). A mock built from an arrow function ignores `this` and hides
+     * the defect — so this double records the receiver it was called with.
+     */
+    const receivers: unknown[] = [];
+    const body = {
+      text: "raw body text",
+      load: vi.fn(),
+      getReviewedText(this: unknown, version?: string) {
+        receivers.push(this);
+        return { value: version === "Current" ? "accept-all" : "", load: vi.fn() };
+      },
+    };
+    const context = { document: { body }, sync: vi.fn() };
+
+    await expect(readBodyTextIn(context as never)).resolves.toBe("accept-all");
+    // A detached call would push `undefined` here and the test would fail.
+    expect(receivers).toEqual([body]);
+  });
+
+  it("loads value on the returned range before reading it", async () => {
+    /*
+     * Regression for ValueNotLoaded on a real host. `getReviewedText` returns
+     * a Range client object whose `value` property must be loaded independently.
+     * The mock verifies that `load("value")` was called before `.value` was read.
+     */
+    const load = vi.fn();
+    const context = contextWithBody({
+      text: "raw",
+      load: vi.fn(),
+      getReviewedText: vi.fn(() => ({ value: "accept-all", load })),
+    });
+
+    await readBodyTextIn(context as never);
+    expect(load).toHaveBeenCalledWith("value");
+  });
+
+  it("falls back to body.text when the host has no getReviewedText", async () => {
+    const context = contextWithBody({
+      text: "literal body text",
+      load: vi.fn(),
+    });
+
+    const text = await readBodyTextIn(context as never);
+    expect(text).toBe("literal body text");
+  });
+
+  it("treats an empty accept-all view as a real result, not a failure", async () => {
+    // No getReviewedText here: the fallback path must still answer.
+    const context = contextWithBody({
+      text: "everything is pending deletion",
+      load: vi.fn(),
+    });
+
+    const text = await readBodyTextIn(context as never);
+    expect(text).toBe("everything is pending deletion");
+  });
+});
+
+describe("readReviewedText", () => {
+  afterEach(() => {
+    setOffice({
+      run: <T>(func: (context: unknown) => Promise<T>): Promise<T> =>
+        func({ document: { body: { text: "", load: vi.fn() } }, sync: vi.fn() }),
+    });
+  });
+
+  it("reports reviewed: true when the host serves the accept-all view", async () => {
+    setOffice({
+      run: async (func: (context: unknown) => Promise<unknown>) =>
+        func({
+          document: {
+            body: {
+              text: "with deletion",
+              load: vi.fn(),
+              getReviewedText: vi.fn(() => ({ value: "accepted" })),
+            },
+          },
+          sync: vi.fn(),
+        }),
+    });
+
+    const result = await readReviewedText();
+    expect(result).toEqual({ text: "accepted", reviewed: true });
+  });
+
+  it("reports reviewed: false on a host without getReviewedText", async () => {
+    setOffice({
+      run: async (func: (context: unknown) => Promise<unknown>) =>
+        func({
+          document: { body: { text: "literal", load: vi.fn() } },
+          sync: vi.fn(),
+        }),
+    });
+
+    const result = await readReviewedText();
+    expect(result).toEqual({ text: "literal", reviewed: false });
   });
 });

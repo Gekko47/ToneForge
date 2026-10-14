@@ -50,10 +50,19 @@ export interface FluentV9ProviderProps {
  * new status on every attempt, so each of those emissions would restyle the
  * whole pane if the theme identity churned.
  *
- * It also owns the theme *preference* (light/dark/system), the reduced-motion
- * preference, and the canvas background. The `tf-theme-dark`/`tf-theme-light`
- * classes are applied to `documentElement` so the stylesheet's `--tf-*` tokens
- * — still used by not-yet-migrated components — flip with the theme.
+ * It also owns the theme *preference* (light/dark/system) and the reduced-motion
+ * preference. The `tf-theme-dark`/`tf-theme-light` classes are applied to
+ * `documentElement` so the stylesheet's `--tf-*` tokens — still used by
+ * not-yet-migrated components — flip with the theme.
+ *
+ * `applyStylesToPortals={false}` is load-bearing. A v9 `Dropdown`/`Combobox`
+ * renders its listbox through a `Portal` whose mount node is created in
+ * `document.body`; `FluentProvider` copies its root class list onto that node
+ * by default, which would drag this provider's `height: 100%` and canvas
+ * background into a full-pane grey slab at `z-index: 1000000` covering the
+ * task pane every time a dropdown opened. With it off, portals keep only the
+ * theme-variable class, and the canvas background and height live on the plain
+ * wrapper below instead.
  */
 export function FluentV9Provider({ children }: FluentV9ProviderProps): React.ReactNode {
   const [reducedMotion, setReducedMotion] = React.useState(false);
@@ -102,12 +111,18 @@ export function FluentV9Provider({ children }: FluentV9ProviderProps): React.Rea
 
   return (
     <ThemeContext.Provider value={contextValue}>
-      <FluentProvider
-        theme={isDark ? toneForgeDarkTheme : toneForgeLightTheme}
-        className={styles.root}
-      >
-        {children}
-      </FluentProvider>
+      {/* Height and canvas on a plain wrapper, not on the provider: the
+          provider's root class list is copied onto portal mount nodes in
+          document.body, and a `height: 100%` there would paint a full-pane grey
+          slab over the task pane whenever a dropdown opened. */}
+      <div className={styles.root}>
+        <FluentProvider
+          theme={isDark ? toneForgeDarkTheme : toneForgeLightTheme}
+          applyStylesToPortals={false}
+        >
+          {children}
+        </FluentProvider>
+      </div>
     </ThemeContext.Provider>
   );
 }

@@ -3,7 +3,6 @@ import { v4 as uuidv4 } from "uuid";
 import {
   detectQuotedRanges,
   detectCaptionNodes,
-  detectTrackedDeletionRanges,
   detectCommentRanges,
   isProtectedNode,
   isProtectedRange,
@@ -53,18 +52,6 @@ describe("detectCaptionNodes", () => {
 
   it("returns empty for no captions", () => {
     expect(detectCaptionNodes([makeNode("paragraph")])).toEqual([]);
-  });
-});
-
-describe("detectTrackedDeletionRanges", () => {
-  it("detects tracked deletion markers", () => {
-    const findings = detectTrackedDeletionRanges("text {{DELETE old}} more text");
-    expect(findings).toHaveLength(1);
-    expect(findings[0]!.protectionReason).toBe("tracked-deletion");
-  });
-
-  it("returns empty for no deletions", () => {
-    expect(detectTrackedDeletionRanges("no deletions")).toEqual([]);
   });
 });
 

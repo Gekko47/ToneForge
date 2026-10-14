@@ -829,7 +829,7 @@ before the run.
 
 **Goal.** Stop rescanning the whole document on every keystroke burst.
 
-**Current state.** [`wordParagraphEvents.ts:62`](../src/word/wordParagraphEvents.ts)
+**Current state.** `wordParagraphEvents.ts:62`
 normalises `uniqueLocalIds` and computes `requiresFullRescan`.
 [`Dashboard.tsx:236`](../src/taskpane/pages/Dashboard.tsx) wires the adapter
 and line 237 discards the change payload entirely, calling `onDocumentChanged()`.

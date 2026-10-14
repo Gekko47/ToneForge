@@ -25,8 +25,8 @@ import { DisclosurePanel } from "./common";
 const useStyles = makeStyles({
   root: {
     marginTop: tokens.spacingVerticalS,
-    borderLeft: `${tokens.strokeWidthThick} solid ${tokens.colorNeutralStroke1}`,
-    paddingLeft: tokens.spacingHorizontalMNudge,
+    borderTop: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
+    paddingTop: tokens.spacingVerticalS,
   },
   body: {
     padding: `${tokens.spacingVerticalSNudge} 0 ${tokens.spacingVerticalXS}`,

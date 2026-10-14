@@ -31,7 +31,7 @@ function finding(id: string): Finding {
 function reduceAll(): ReturnType<typeof createWorkflowState> {
   const initial = createWorkflowState();
   const actions: WorkflowAction[] = [
-    { type: "document/context", documentId: "doc", version: "1", capabilityTier: "api-present" },
+    { type: "document/context", documentId: "doc", version: "1" },
     { type: "analysis/policy", profileId: uuidv4(), policyRevision: 3 },
     { type: "analysis/scan", scanStatus: "scanning" },
     { type: "analysis/findings", findings: [finding(uuidv4()), finding(uuidv4())] },
@@ -43,7 +43,6 @@ function reduceAll(): ReturnType<typeof createWorkflowState> {
 describe("workflowState", () => {
   it("projects document, analysis, plan, and apply state from one store", () => {
     let state = reduceAll();
-    expect(state.document.capabilityTier).toBe("api-present");
     expect(state.analysis.policyRevision).toBe(3);
     expect(state.analysis.findings).toHaveLength(2);
     expect(selectCurrentTask(state).nextAction).toBe("Review findings");

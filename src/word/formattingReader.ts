@@ -5,7 +5,7 @@
  */
 
 import { runInWord } from "../shared/office/officeHelpers";
-import { hashDocument } from "./documentReader";
+import { hashDocument, readBodyTextIn } from "./documentReader";
 import { buildParagraphNodeId } from "../core/domain/DocumentSnapshot";
 import type {
   FormattingParagraph,
@@ -59,12 +59,12 @@ export async function getFormattingSnapshot(
       const body = context.document.body;
       const paragraphs = body.paragraphs;
       const styles = context.document.styles;
-      body.load("text");
+      // Accept-all view: an applied correction must not reappear as a finding.
+      const fullText = await readBodyTextIn(context);
       paragraphs?.load("items");
       styles?.load("items");
       await context.sync();
 
-      const fullText = body.text ?? "";
       const text = fullText.slice(0, maxChars);
       const items = Array.isArray(paragraphs?.items) ? (paragraphs.items as ParagraphView[]) : [];
       const styleItems = Array.isArray(styles?.items) ? (styles.items as StyleView[]) : [];

@@ -51,16 +51,149 @@ export interface ChunkOptions {
 }
 
 /**
+ * Read the body as Word currently sees it — `body.text`, revisions and all.
+ *
+ * Kept separate from `readReviewedText` so callers that need the literal text
+ * (for example a scope that is about the document as typed) can say so. Analysis
+ * must NOT use this: `body.text` still contains text marked for deletion by a
+ * tracked revision until that revision is accepted.
+ */
+export async function readBodyText(): Promise<string> {
+  return runInWord(async (context) => {
+    const body = context.document.body;
+    body.load("text");
+    await context.sync();
+    return body.text ?? "";
+  });
+}
+
+export interface ReviewedText {
+  /** The accept-all body text: only what is currently in the document. */
+  text: string;
+  /**
+   * Whether the host served the accept-all view.
+   *
+   * `false` means this host predates WordApi 1.4 `getReviewedText`, so `text`
+   * is the fallback `body.text` and may still contain text marked for deletion.
+   * Every consumer that exists to catch a red-line must treat that as "unknown",
+   * never as "clean".
+   */
+  reviewed: boolean;
+}
+
+/**
+ * Read the body as a reviewer sees it — the accept-all view.
+ *
+ * Word keeps text marked for deletion in `body.text` until the tracked revision
+ * is accepted. A deterministic scan reading `body.text` therefore re-reports a
+ * finding whose correction ToneForge already applied, which is the red-line
+ * loop the pane was stuck in. `Body.getReviewedText("Current")` (WordApi 1.4)
+ * omits that text, so the scan reads exactly what ToneForge has accepted and
+ * written.
+ *
+ * The capability is probed, not assumed: hosts older than WordApi 1.4 have no
+ * `getReviewedText`, and calling it would throw. When it is absent the reader
+ * falls back to `body.text` and says so through `reviewed: false`, so callers
+ * can degrade to "unknown" rather than claim a clean document.
+ *
+ * One documented consequence: revisions ToneForge applies are authored as the
+ * signed-in user, so `Current` also reads a pending revision the user made as
+ * accepted. That is recorded in an ADR, not hidden here.
+ */
+/** The subset of `Word.Body` this reader needs, so the module stays `Word`-free. */
+type ReviewableBody = {
+  text: string;
+  load: (prop: string | string[]) => unknown;
+  getReviewedText?: (version?: string) => { value: string; load?: (prop: string) => unknown };
+};
+
+/**
+ * Read the accept-all body text inside an existing `runInWord` transaction.
+ *
+ * Convenience wrapper over [`readBodyTextViews`] for callers that need only the
+ * accept-all view.
+ */
+/**
+ * Both body views, read by a single `body.load("text")`.
+ *
+ * Findings are addressed by `body.getRange("Whole").set({start, end})`, and
+ * `Range.set`/`Range.select` count every character Word holds, including text a
+ * tracked revision has marked for deletion. `getReviewedText("Current")` omits
+ * that text, so an offset located against the accept-all view lands too early in
+ * the raw view — and the offset error grows with every character of tracked
+ * deletion that precedes it. Detection reads the accept-all view (an applied
+ * correction must not reappear); offsets read the raw view. See ADR-0144.
+ *
+ * The two views are read from one `load` so a caller that already holds a
+ * transaction issues one full-body read, not two.
+ *
+ * `getReviewedText` is called as a method on `body`, and never extracted into a
+ * local first: Office.js client-object methods read their request context from
+ * `this`, and an unbound call throws inside the host — which a mock whose
+ * `getReviewedText` is an arrow function (ignoring `this`) can never reproduce.
+ *
+ * A host whose `getReviewedText` is absent makes no distinction between the two
+ * views, so the accept-all text doubles as the raw text and `reviewed: false` says
+ * so; callers must treat that as "unknown", never as "clean".
+ */
+export interface BodyTextViews {
+  /** Accept-all text: only what is currently in the document. */
+  fullText: string;
+  /** Raw text (`body.text`): every character Word holds, revisions and all. */
+  rawText: string;
+  /** Whether the host served the accept-all view. */
+  reviewed: boolean;
+}
+
+export async function readBodyTextViews(context: Office.Context): Promise<BodyTextViews> {
+  const body = context.document.body as unknown as ReviewableBody;
+  body.load("text");
+  await context.sync();
+  const rawText = body.text ?? "";
+  if (typeof body.getReviewedText !== "function") {
+    return { fullText: rawText, rawText, reviewed: false };
+  }
+  /*
+   * `getReviewedText` returns a Range client object whose `value` property
+   * must be loaded independently — `body.load("text")` does not automatically
+   * load properties on child objects. Load `value` on the returned range and
+   * sync again before reading it. Without the second sync, reading `.value`
+   * throws `ValueNotLoaded` on a real host.
+   */
+  const reviewedRange = body.getReviewedText("Current") as {
+    value?: string;
+    load?: (prop: string) => unknown;
+  };
+  reviewedRange.load?.("value");
+  await context.sync();
+  // An empty reviewed text is a legitimate result, not a failure: the accept-all
+  // view of a body whose every paragraph is a pending deletion is empty.
+  return { fullText: reviewedRange.value ?? "", rawText, reviewed: true };
+}
+
+export async function readBodyTextIn(context: Office.Context): Promise<string> {
+  return (await readBodyTextViews(context)).fullText;
+}
+
+export async function readReviewedText(): Promise<ReviewedText> {
+  return runInWord(async (context) => {
+    const body = context.document.body as unknown as ReviewableBody;
+    const reviewed = typeof body.getReviewedText === "function";
+    const text = await readBodyTextIn(context);
+    return { text, reviewed };
+  });
+}
+
+/**
  * Read the document body in chunks to avoid exceeding Word JS limits
  * on very large documents.
  */
 export async function getDocumentSnapshot(opts: ChunkOptions = {}): Promise<DocumentSnapshot> {
   const maxChars = opts.maxChars ?? 500_000;
   return runInWord(async (context) => {
-    const body = context.document.body;
-    body.load("text");
-    await context.sync();
-    const fullText = body.text ?? "";
+    // The accept-all view, so a correction ToneForge already applied is not
+    // re-reported on the next scan (see `readReviewedText`).
+    const fullText = await readBodyTextIn(context);
     const analysisText = fullText.slice(0, maxChars);
     const analysisStart = 0;
     const analysisEnd = analysisText.length;
@@ -179,6 +312,13 @@ interface WordParagraphView {
   uniqueLocalId?: string;
   isListItem?: boolean;
   load?: (properties: string | string[]) => unknown;
+  getRange?: (rangeLocation: string) => {
+    load?: (properties: string | string[]) => unknown;
+    start?: number;
+    end?: number;
+  };
+  startOffset?: number;
+  endOffset?: number;
 }
 
 /**
@@ -193,11 +333,16 @@ export async function getStructuredSnapshot(
   return runInWord(async (context) => {
     const body = context.document.body;
     const paragraphs = body.paragraphs;
-    body.load("text");
+    /*
+     * Both views in one read. Detection uses the accept-all view — an applied
+     * correction must not reappear as a finding — while finding offsets are located
+     * against the raw view, which is what `Range.set`/`Range.select` count.
+     * See ADR-0144.
+     */
+    const { fullText, rawText } = await readBodyTextViews(context);
     paragraphs?.load("items");
     await context.sync();
 
-    const fullText = body.text ?? "";
     const analysisText = fullText.slice(0, maxChars);
     const items = Array.isArray(paragraphs?.items) ? (paragraphs.items as WordParagraphView[]) : [];
     items.forEach((paragraph) => {
@@ -205,15 +350,64 @@ export async function getStructuredSnapshot(
     });
     await context.sync();
 
+    /*
+     * Paragraph offsets from the Word range API.
+     *
+     * `Paragraph.getRange("Whole")` (WordApi 1.1) returns the paragraph's own range
+     * with `start`/`end` offsets in the raw body text — the same coordinate space
+     * `Range.set`/`Range.select` count. This replaces the `indexOf` reconstruction
+     * that previously searched for each paragraph's text in `rawText`.
+     *
+     * The read is isolated per paragraph: a host that refuses `getRange` for one
+     * paragraph costs that paragraph's offsets, not the whole scan.
+     */
+    items.forEach((paragraph) => {
+      if (typeof paragraph.getRange !== "function") return;
+      try {
+        const range = paragraph.getRange("Whole");
+        range?.load?.(["start", "end"]);
+      } catch {
+        // Offsets unavailable for this paragraph; the loop below falls back.
+      }
+    });
+    await context.sync();
+    items.forEach((paragraph) => {
+      if (typeof paragraph.getRange !== "function") return;
+      try {
+        const range = paragraph.getRange("Whole");
+        if (range && typeof range.start === "number" && typeof range.end === "number") {
+          paragraph.startOffset = range.start;
+          paragraph.endOffset = range.end;
+        }
+      } catch {
+        // Offsets unavailable for this paragraph; the loop below falls back.
+      }
+    });
+
     const fromCollection = items.length > 0;
-    const fallbackRanges = fromCollection ? [] : splitParagraphRanges(analysisText);
     let paragraphOffset = 0;
     const nodes: DocumentNode[] = items.map((paragraph, index) => {
       const node = buildParagraphNode(paragraph, index, fromCollection);
       const text = node.text ?? "";
-      const startOffset = fullText.indexOf(text, paragraphOffset);
-      const resolvedStart = startOffset >= 0 ? startOffset : paragraphOffset;
-      const endOffset = resolvedStart + text.length;
+      /*
+       * Offsets come from the Word range API (`Paragraph.getRange("Whole")`), which
+       * serves them in the raw body text — the same coordinate space
+       * `Range.set`/`Range.select` count. The `indexOf` fallback is kept only for
+       * hosts that do not serve range offsets.
+       *
+       * The range API counts every character Word holds, including text a tracked
+       * revision has marked for deletion. See ADR-0144.
+       */
+      const rangeStart = paragraph.startOffset;
+      const rangeEnd = paragraph.endOffset;
+      let resolvedStart: number;
+      if (rangeStart !== undefined) {
+        resolvedStart = rangeStart;
+      } else {
+        const startOffset = rawText.indexOf(text, paragraphOffset);
+        resolvedStart = startOffset >= 0 ? startOffset : paragraphOffset;
+      }
+      const endOffset = rangeEnd ?? resolvedStart + text.length;
       paragraphOffset = endOffset;
       return {
         ...node,
@@ -225,28 +419,6 @@ export async function getStructuredSnapshot(
           endOffset,
         },
       };
-    });
-    fallbackRanges.forEach(({ text, start, end }, index) => {
-      const nodeId = buildParagraphNodeId({ index, text });
-      const nodeType = /^(?:Heading\s*|\s*Heading)([1-9])\b/i.test(text) ? "heading" : "paragraph";
-      nodes.push(
-        DocumentNodeSchema.parse({
-          nodeId,
-          type: nodeType,
-          text,
-          sourcePath: `body/paragraph/${index}`,
-          sourceRange: {
-            nodeId,
-            paragraphIndex: index,
-            startOffset: start,
-            endOffset: end,
-            structuralPath: `body/paragraph/${index}`,
-          },
-          editable: true,
-          includedInGovernance: true,
-          includedInAIReview: true,
-        }),
-      );
     });
 
     const bodyNode = DocumentNodeSchema.parse({
@@ -321,39 +493,6 @@ function buildParagraphNode(paragraph: WordParagraphView, index: number, fromCol
     includedInAIReview: true,
     ...(fromCollection ? {} : {}),
   });
-}
-
-export interface ParagraphRange {
-  text: string;
-  start: number;
-  end: number;
-}
-
-/** Split paragraphs while retaining exact offsets into the full body text. */
-export function splitParagraphRanges(text: string): ParagraphRange[] {
-  const ranges: ParagraphRange[] = [];
-  const separator = /\n\s*\n/g;
-  let cursor = 0;
-  for (const match of text.matchAll(separator)) {
-    appendTrimmedRange(ranges, text, cursor, match.index ?? cursor);
-    cursor = (match.index ?? cursor) + match[0].length;
-  }
-  appendTrimmedRange(ranges, text, cursor, text.length);
-  return ranges;
-}
-
-function appendTrimmedRange(
-  ranges: ParagraphRange[],
-  text: string,
-  rawStart: number,
-  rawEnd: number,
-): void {
-  const leading = text.slice(rawStart, rawEnd).search(/\S/);
-  if (leading < 0) return;
-  const raw = text.slice(rawStart, rawEnd);
-  const trailingWhitespace = raw.length - raw.trimEnd().length;
-  const start = rawStart + leading;
-  ranges.push({ text: raw.trim(), start, end: rawEnd - trailingWhitespace });
 }
 
 /**

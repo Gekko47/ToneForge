@@ -22,7 +22,7 @@
  */
 
 import React from "react";
-import { Button, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Button, makeStyles, tokens } from "@fluentui/react-components";
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import type {
   CoverageBlocker,
@@ -112,27 +112,6 @@ function blockerLine(blocker: CoverageBlocker): string {
 }
 
 const useStyles = makeStyles({
-  root: {
-    marginTop: tokens.spacingVerticalM,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground2,
-    overflow: "hidden",
-  },
-  /*
-   * One surface, not two. The panel used to draw its own border and fill and
-   * then wrap its detail in a `.tf-coverage` div that drew a second border and
-   * fill inside it — a box inside a box, with the inner one's 12px padding
-   * subtracted from the outer one's. The verdict is carried by the border
-   * colour alone, which is the same signal the collapsed header already shows,
-   * so the inner surface was decoration rather than information.
-   */
-  incomplete: {
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorStatusDangerBorder1}`,
-  },
-  complete: {
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorStatusSuccessBorder1}`,
-  },
   detail: {
     padding: tokens.spacingHorizontalM,
   },
@@ -161,7 +140,6 @@ export default function CoverageBanner({
    */
   const verdictInput = { coverage: deterministicCoverage, openFindings };
   const verdict = coverageVerdict(verdictInput);
-  const incomplete = verdict === "incomplete";
   const blockers = deterministicCoverage?.blockers ?? [];
   /*
    * A scope the host cannot read is already named above, with the only remedy
@@ -186,18 +164,8 @@ export default function CoverageBanner({
       ariaLabel={`Coverage ${verdictLabel(verdict)}`}
       open={open}
       onToggle={() => onToggle()}
-      className={
-        incomplete
-          ? mergeClasses(styles.root, styles.incomplete)
-          : mergeClasses(styles.root, styles.complete)
-      }
+      className="tf-section"
     >
-      {/*
-        The panel keeps its own border and background so the verdict is
-        visible at a glance even when the detail is collapsed. The border
-        carries the verdict through the theme's own tokens; the panel uses the
-        theme's surface so it can never disagree with the page it sits on.
-      */}
       {open && (
         <div className={styles.detail}>
           {/*

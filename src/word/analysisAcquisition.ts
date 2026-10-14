@@ -22,7 +22,7 @@ import type { StyleProfile } from "../core/domain/StyleProfile";
 import { hashText } from "../shared/utils/text";
 import { describeError, logger } from "../shared/utils/logger";
 import { runInWord } from "../shared/office/officeHelpers";
-import { hashDocument } from "./documentReader";
+import { hashDocument, readBodyTextViews } from "./documentReader";
 import { normalizeAlignment } from "./formattingReader";
 import {
   createAnalysisContext,
@@ -61,6 +61,13 @@ interface ParagraphView {
   font?: FontView;
   listItem?: { level?: number };
   load?: (properties: string | string[]) => unknown;
+  getRange?: (rangeLocation: string) => {
+    load?: (properties: string | string[]) => unknown;
+    start?: number;
+    end?: number;
+  };
+  startOffset?: number;
+  endOffset?: number;
 }
 
 interface FontView {
@@ -246,12 +253,31 @@ export type ParagraphProperty = (typeof LOADABLE_PARAGRAPH_PROPERTIES)[number];
 /** Properties requested on every host. Text alone is the floor of any scope. */
 const BASE_PARAGRAPH_PROPERTIES: readonly ParagraphProperty[] = ["text", "uniqueLocalId"];
 
+/**
+ * Optional properties that must not ride in the bulk paragraph request.
+ *
+ * `Word.Paragraph.listItem` throws `ItemNotFound` when the paragraph is not part
+ * of a list, and one such paragraph refuses the entire batch — so every document
+ * with ordinary prose loses the rich scope. It is loaded per-paragraph afterwards
+ * instead, only where the host already reported `isListItem: true`, which is the
+ * set of paragraphs a `ListItem` is guaranteed to exist on.
+ */
+const PER_PARAGRAPH_PROPERTIES: readonly ParagraphProperty[] = ["listItem"];
+
 /** Optional property groups, each bound to one probed capability. */
 const CAPABILITY_PROPERTY_GROUPS: readonly {
   capability: keyof AnalysisCapabilities;
   properties: readonly ParagraphProperty[];
 }[] = [
   { capability: "supportsStyles", properties: ["style", "styleBuiltIn"] },
+  /*
+   * `listItem` is deliberately absent: it throws `ItemNotFound` when the paragraph
+   * is not part of a list, which rejects the whole request. `isListItem` is a
+   * boolean and never throws — it is sufficient for the node type and for
+   * coverage. A list item's actual level can be read per-paragraph afterwards
+   * where `isListItem` is true, but that is a second sync and not worth the
+   * degradation risk on hosts where `listItem` is unreliable.
+   */
   { capability: "supportsListLevel", properties: ["isListItem", "listItem"] },
   {
     capability: "supportsParagraphFormat",
@@ -522,6 +548,13 @@ export function planAcquisitionLoads(
 interface AcquiredScope {
   context: Office.Context;
   fullText: string;
+  /**
+   * The raw body text (`body.text`), read in the same transaction. Finding offsets
+   * are located against it because `Range.set`/`Range.select` count every character
+   * Word holds, including text a tracked revision has marked for deletion. See
+   * ADR-0144.
+   */
+  rawText: string;
   analysisText: string;
   paragraphItems: ParagraphView[];
   styleItems: StyleView[];
@@ -654,14 +687,20 @@ async function acquireScope(
     const styles = plan.styleCollection ? context.document.styles : undefined;
     const tables = plan.tableCollection ? body.tables : undefined;
     const sections = plan.sectionCollection ? context.document.sections : undefined;
-    body.load("text");
+    /*
+     * Both body views, read by a single `body.load("text")`. Detection reads the
+     * accept-all view — an applied correction must not reappear as a finding — while
+     * finding offsets are located against the raw view, because
+     * `Range.set`/`Range.select` count every character Word holds, including text a
+     * tracked revision has marked for deletion. See ADR-0144.
+     */
+    const { fullText, rawText } = await readBodyTextViews(context);
     paragraphs?.load("items");
     styles?.load("items");
     tables?.load("items");
     sections?.load("items");
     await context.sync();
 
-    const fullText = body.text ?? "";
     const analysisText = fullText.slice(0, maxChars);
     const paragraphItems = Array.isArray(paragraphs?.items)
       ? (paragraphs.items as ParagraphView[])
@@ -671,8 +710,11 @@ async function acquireScope(
     const sectionItems = Array.isArray(sections?.items) ? (sections.items as Office.Section[]) : [];
     let syncCount = 1;
 
+    const bulkProperties = plan.paragraphProperties.filter(
+      (property) => !PER_PARAGRAPH_PROPERTIES.includes(property),
+    );
     paragraphItems.forEach((paragraph) => {
-      paragraph.load?.([...plan.paragraphProperties]);
+      paragraph.load?.(bulkProperties);
     });
     styleItems.forEach((style) => style.load?.(["name", "nameLocal", "font"]));
     tableItems.forEach((table) => table.load?.([...LOADABLE_TABLE_PROPERTIES]));
@@ -680,6 +722,68 @@ async function acquireScope(
     // see `acquirePageSetup` for why it costs a transaction of its own.
     sectionItems.forEach((section) => section.load?.(["body/text"]));
     await context.sync();
+
+    /*
+     * Paragraph offsets from the Word range API.
+     *
+     * `Paragraph.getRange("Whole")` (WordApi 1.1) returns the paragraph's own range
+     * with `start`/`end` offsets in the raw body text — the same coordinate space
+     * `Range.set`/`Range.select` count. This replaces the `indexOf` reconstruction
+     * that previously searched for each paragraph's text in `rawText`, which could
+     * mislocate a paragraph whose text appeared earlier in the document.
+     *
+     * The read is isolated per paragraph: a host that refuses `getRange` for one
+     * paragraph costs that paragraph's offsets, not the whole scan. Paragraphs
+     * without served offsets fall back to `indexOf` in `buildSnapshot`.
+     */
+    paragraphItems.forEach((paragraph) => {
+      if (typeof paragraph.getRange !== "function") return;
+      try {
+        const range = paragraph.getRange("Whole");
+        range?.load?.(["start", "end"]);
+      } catch {
+        // Offsets unavailable for this paragraph; buildSnapshot falls back.
+      }
+    });
+    await context.sync();
+    paragraphItems.forEach((paragraph) => {
+      if (typeof paragraph.getRange !== "function") return;
+      try {
+        const range = paragraph.getRange("Whole");
+        if (range && typeof range.start === "number" && typeof range.end === "number") {
+          paragraph.startOffset = range.start;
+          paragraph.endOffset = range.end;
+        }
+      } catch {
+        // Offsets unavailable for this paragraph; buildSnapshot falls back.
+      }
+    });
+
+    /*
+     * List levels, per-paragraph and only where a list exists.
+     *
+     * `listItem` cannot ride in the bulk request above (see
+     * `PER_PARAGRAPH_PROPERTIES`), so it is read here for the paragraphs the host
+     * just reported as list items. The read is isolated: a host that accepts
+     * `isListItem` but refuses `listItem` for a particular paragraph costs the
+     * list levels, never the scan.
+     */
+    if (plan.paragraphProperties.includes("listItem")) {
+      const listItemParagraphs = paragraphItems.filter(
+        (paragraph) => paragraph.isListItem === true && typeof paragraph.load === "function",
+      );
+      if (listItemParagraphs.length > 0) {
+        try {
+          listItemParagraphs.forEach((paragraph) => paragraph.load?.(["listItem"]));
+          await context.sync();
+          syncCount += 1;
+        } catch (error: unknown) {
+          logger.warn("List levels could not be read; they will report as unknown", {
+            ...describeError(error),
+          });
+        }
+      }
+    }
 
     /*
      * A header or footer is a `Body` returned by a method call, not a collection
@@ -734,6 +838,7 @@ async function acquireScope(
     return {
       context,
       fullText,
+      rawText,
       analysisText,
       paragraphItems,
       styleItems,
@@ -872,6 +977,25 @@ export function __resetRefusedCapabilities(): void {
   refusedCapabilities = null;
 }
 
+/**
+ * Surface the request Office.js refused, not just the plan we asked for.
+ *
+ * When a rich scope is rejected the fallback logs `plan.paragraphProperties`,
+ * which cannot say whether the rejected name was a paragraph property or a
+ * structural collection (`tables`, `sections`, a header body). Office.js names
+ * the actual `load(...)` call in `debugInfo`, so the next run names the cause.
+ * Keys avoid the redaction patterns; values still pass credential redaction.
+ */
+function describeOfficeRefusal(error: unknown): Record<string, string> {
+  const debugInfo = (error as { debugInfo?: { errorLocation?: unknown; statement?: unknown } })
+    .debugInfo;
+  if (!debugInfo || typeof debugInfo !== "object") return {};
+  const context: Record<string, string> = {};
+  if (typeof debugInfo.errorLocation === "string") context.officeLocation = debugInfo.errorLocation;
+  if (typeof debugInfo.statement === "string") context.officeStatement = debugInfo.statement;
+  return context;
+}
+
 /** Acquire the complete analysis scope in one Word request transaction. */
 export async function acquireAnalysisContext(
   options: AnalysisAcquisitionOptions,
@@ -905,6 +1029,7 @@ export async function acquireAnalysisContext(
     // whole document instead of losing every scan to one rejected property.
     logger.warn("Analysis acquisition fell back to a text-only scope", {
       ...describeError(error),
+      ...describeOfficeRefusal(error),
       failedProperties: plan.paragraphProperties.join(","),
     });
     rememberRefusal(options.capabilities);
@@ -986,7 +1111,7 @@ export async function acquireAnalysisContext(
 type AcquiredForBuilders = Omit<AcquiredScope, "syncCount">;
 
 function buildSnapshot(
-  acquired: AcquiredForBuilders,
+  acquired: AcquiredForBuilders & { rawText: string },
   maxChars: number,
   plan: AcquisitionLoadPlan,
 ): DocumentSnapshot {
@@ -1016,9 +1141,28 @@ function buildSnapshot(
     const sourcePath = `body/paragraph/${index}`;
     const isQuoted = /"(?:[^"\\]|\\.)*"/.test(text);
     const isCaption = /^(?:caption|figure|table)\b/i.test(styleName);
-    const locatedStart = acquired.fullText.indexOf(text, bodyCursor);
-    const startOffset = locatedStart >= 0 ? locatedStart : offset;
-    const endOffset = startOffset + text.length;
+    /*
+     * Offsets come from the Word range API (`Paragraph.getRange("Whole")`), which
+     * serves them in the raw body text — the same coordinate space
+     * `Range.set`/`Range.select` count. The `indexOf` fallback is kept only for
+     * hosts that do not serve range offsets.
+     *
+     * `Range.set`/`Range.select` count every character Word holds, including text a
+     * tracked revision has marked for deletion, while `getReviewedText("Current")`
+     * omits it. Locating against the accept-all view therefore made every finding
+     * after a tracked deletion land too early in the raw view — the navigation,
+     * precondition and mutation passes inherited the same wrong offset. See ADR-0144.
+     */
+    const rangeStart = paragraph.startOffset;
+    const rangeEnd = paragraph.endOffset;
+    let startOffset: number;
+    if (rangeStart !== undefined) {
+      startOffset = rangeStart;
+    } else {
+      const locatedStart = acquired.rawText.indexOf(text, bodyCursor);
+      startOffset = locatedStart >= 0 ? locatedStart : offset;
+    }
+    const endOffset = rangeEnd ?? startOffset + text.length;
     bodyCursor = endOffset;
     nodes.push({
       nodeId,
@@ -1147,7 +1291,14 @@ function buildFormatting(
       text,
     });
     const font = readPlanned(plan, "font", () => paragraph.font);
-    const listLevel = readPlanned(plan, "listItem", () => paragraph.listItem?.level);
+    /*
+     * Read the level only for a paragraph the host reported as a list item.
+     * `listItem` is loaded per-paragraph (see `acquireScope`), so a read on a
+     * non-list paragraph would be a read of a property that was never requested.
+     */
+    const isListItem = readPlanned(plan, "isListItem", () => paragraph.isListItem);
+    const listLevel =
+      isListItem === true ? readPlanned(plan, "listItem", () => paragraph.listItem?.level) : null;
     /*
      * The flow controls are never read.
      *
@@ -1159,8 +1310,10 @@ function buildFormatting(
      * scope ToneForge chose is the mistake the unsupported-property list exists
      * to avoid.
      */
+    // A missing level is only a host shortfall when the paragraph *is* a list
+    // item; a non-list paragraph has no level to serve and is not a limitation.
     const unsupportedProperties: string[] =
-      listLevel === null && plan.paragraphProperties.includes("listItem") ? ["listLevel"] : [];
+      isListItem === true && listLevel === null ? ["listLevel"] : [];
     PLANNED_FLOW_PROPERTIES.forEach((property) => {
       const value = readPlanned(plan, property, () => paragraph[property]);
       if (value === null && plan.paragraphProperties.includes(property)) {

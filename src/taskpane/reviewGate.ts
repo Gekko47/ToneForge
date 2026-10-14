@@ -35,6 +35,22 @@ import type { Change } from "../core/domain/Change";
 import type { ChangePlan } from "../core/domain/ChangePlan";
 import type { Finding } from "../core/domain/Finding";
 import { reviewIdentity } from "./occurrenceIdentity";
+import { detectConflicts } from "../changes/conflictDetector";
+
+/**
+ * Narrow a plan to a set of changes, keeping `conflicts` consistent with them.
+ *
+ * `conflicts` describes the changes *in the plan*, so a plan narrowed to a
+ * subset must recompute it. The previewed plan carries the conflicts of the
+ * whole document; forwarding those unchanged after narrowing made the apply gate
+ * refuse a single, non-conflicting change with "Unresolved conflicts block
+ * application." — a false refusal for the change actually being applied.
+ *
+ * Pure, so the invariant is testable without a Word host.
+ */
+export function narrowPlanToChanges(plan: ChangePlan, changes: readonly Change[]): ChangePlan {
+  return { ...plan, changes: [...changes], conflicts: detectConflicts(changes) };
+}
 
 /** The change a reviewed finding contributes, when it has one. */
 export interface ReviewedChange {
@@ -96,6 +112,29 @@ export function findChangeForFinding(
   });
   if (change === undefined) return null;
   return { change, refusal: changeRefusalReason(change) };
+}
+
+/**
+ * The change that backs a finding on screen, when the plan carries one.
+ *
+ * The overlay's Accept and Accept-all need this. They used to match on
+ * `change.findingId === finding.id`, which can never succeed: the finding comes
+ * from the document observer's scan and the plan from the preview run, and the
+ * two issue separate uuids for the same problem. Accept therefore found nothing
+ * and returned silently — a live button that did nothing at all.
+ *
+ * Resolving through the occurrence identity is the fix, and it is the same
+ * resolver `findChangeForFinding` uses, so the two cannot drift apart.
+ *
+ * Returns `null` when the plan has no change for this finding, and a refusal
+ * when it has one that Apply would reject — the caller says which, in words.
+ */
+export function changeForFinding(
+  finding: Finding,
+  plan: ChangePlan | null,
+  planFindings: readonly Finding[] = [],
+): { change: Change; refusal: string | null } | null {
+  return findChangeForFinding(finding, plan, planFindings);
 }
 
 /**

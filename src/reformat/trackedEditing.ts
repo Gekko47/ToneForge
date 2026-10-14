@@ -127,13 +127,26 @@ export async function prepareTrackedEditing(
 
   const unsupportedChangeIds = getUnsupportedChangeIds(changes, capabilities);
   setStage01Passed(unsupportedChangeIds.length === 0, capabilities);
+  const missingCapabilities: string[] = [];
+  if (capabilities.supportsTrackedChangeInspection === false) {
+    missingCapabilities.push(
+      "tracked change inspection (revision-overlap preflight will be skipped)",
+    );
+  }
+  if (capabilities.supportsInsertOoxml === false) {
+    missingCapabilities.push(
+      "OOXML insertion (revisions will be authored under the signed-in user)",
+    );
+  }
   return {
     enabled: true,
     capabilities,
     unsupportedChangeIds,
     error:
       unsupportedChangeIds.length === 0
-        ? null
+        ? missingCapabilities.length === 0
+          ? null
+          : `This Word host does not support: ${missingCapabilities.join(", ")}.`
         : "The Word host does not support every operation required by this plan.",
   };
 }

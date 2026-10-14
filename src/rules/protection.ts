@@ -40,20 +40,6 @@ export function detectCaptionNodes(nodes: DocumentNode[]): ProtectionFinding[] {
     }));
 }
 
-/** Detect tracked deletion ranges. */
-export function detectTrackedDeletionRanges(text: string): ProtectionFinding[] {
-  const findings: ProtectionFinding[] = [];
-  const regex = /(\{\{\s*DELETE\s+.*?\}\})/g;
-  for (const _match of text.matchAll(regex)) {
-    findings.push({
-      nodeId: "",
-      protectionReason: "tracked-deletion",
-      nodeType: "paragraph",
-    });
-  }
-  return findings;
-}
-
 /** Detect comment ranges. */
 export function detectCommentRanges(nodes: DocumentNode[]): ProtectionFinding[] {
   return nodes

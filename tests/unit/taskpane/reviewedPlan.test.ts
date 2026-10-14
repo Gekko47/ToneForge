@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { v4 as uuidv4 } from "uuid";
-import { reviewFinding, reviewedPlan } from "../../../src/taskpane/reviewGate";
+import { narrowPlanToChanges, reviewFinding, reviewedPlan } from "../../../src/taskpane/reviewGate";
 import { reviewIdentity } from "../../../src/taskpane/occurrenceIdentity";
 import { createTestPlan } from "../../fixtures/changePlans";
 import type { Change } from "../../../src/core/domain/Change";
@@ -201,5 +201,40 @@ describe("reviewFinding", () => {
     const plan = createTestPlan("hash", "base", [change]);
 
     expect(reviewFinding(finding, plan, [finding]).kind).toBe("no-change");
+  });
+});
+
+/**
+ * `narrowPlanToChanges` is what both overlay apply paths use to narrow the
+ * previewed plan to the change(s) being applied.
+ *
+ * The previewed plan's `conflicts` describes the whole document. Narrowing the
+ * plan without recomputing that field left a single, non-conflicting change
+ * carrying the document's conflicts, and the apply gate refused it with
+ * "Unresolved conflicts block application." — the report the user saw for a
+ * change that had no conflict of its own.
+ */
+describe("narrowPlanToChanges", () => {
+  it("clears conflicts that describe changes no longer in the plan", () => {
+    const first = findingAt(10, "“");
+    const second = findingAt(10, "”");
+    const { plan, changes } = planOf([first, second]);
+    // The previewed plan carried the whole document's conflicts.
+    const previewed: ChangePlan = { ...plan, conflicts: ["whole-document conflict"] };
+
+    const narrowed = narrowPlanToChanges(previewed, [changes[0] as Change]);
+
+    expect(narrowed.changes).toHaveLength(1);
+    expect(narrowed.conflicts).toEqual([]);
+  });
+
+  it("keeps a conflict the narrowed set still contains", () => {
+    const first = findingAt(10, "“");
+    const second = findingAt(10, "”");
+    const { plan, changes } = planOf([first, second]);
+
+    const narrowed = narrowPlanToChanges(plan, changes);
+
+    expect(narrowed.conflicts.length).toBeGreaterThan(0);
   });
 });

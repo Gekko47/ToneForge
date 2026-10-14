@@ -1,5 +1,5 @@
 import React from "react";
-import { Button, Card, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, Card } from "@fluentui/react-components";
 import { Breadcrumb } from "../shell";
 import { parentRoute } from "../routes";
 
@@ -33,21 +33,10 @@ export interface ReviewWithoutProfileProps {
   onOpenProfile: () => void;
 }
 
-const useStyles = makeStyles({
-  root: {
-    marginTop: tokens.spacingVerticalM,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground2,
-    overflow: "hidden",
-  },
-});
-
 export default function ReviewWithoutProfile({
   onBack,
   onOpenProfile,
 }: ReviewWithoutProfileProps): React.ReactNode {
-  const styles = useStyles();
   return (
     <div data-page="review">
       <Breadcrumb parent={parentRoute("review")} onBack={onBack} />
@@ -62,7 +51,7 @@ export default function ReviewWithoutProfile({
       </p>
 
       <section aria-label="Findings section">
-        <Card className={styles.root} appearance="outline">
+        <Card className="tf-section" appearance="subtle">
           <h2>Findings</h2>
           <p className="tf-sub">
             No findings, because no scan has run against a profile. This is not the same as a

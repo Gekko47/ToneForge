@@ -9,6 +9,9 @@ const useStyles = makeStyles({
     alignItems: "center",
     gap: tokens.spacingHorizontalXS,
   },
+  button: {
+    padding: "6px",
+  },
 });
 
 export interface BreadcrumbProps {
@@ -37,7 +40,7 @@ export function Breadcrumb({ parent, onBack, className }: BreadcrumbProps): Reac
   if (parent === null) return null;
   return (
     <nav aria-label="Breadcrumb" className={mergeClasses(styles.root, className)}>
-      <Button appearance="subtle" icon={<BackIcon />} onClick={onBack}>
+      <Button appearance="subtle" icon={<BackIcon />} className={styles.button} onClick={onBack}>
         {`Back to ${routeLabel(parent)}`}
       </Button>
     </nav>

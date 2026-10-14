@@ -46,6 +46,18 @@ describe("planAcquisitionLoads", () => {
   });
 
   /*
+   * `Paragraph.listItem` throws `ItemNotFound` for a paragraph that is not in a
+   * list, so it can never ride in the bulk request. The plan still records it as
+   * part of the list capability; `acquireScope` strips it from the bulk load and
+   * reads it per-paragraph, only where `isListItem` is true.
+   */
+  it("plans listItem as part of the list capability, for a per-paragraph read", () => {
+    const plan = planAcquisitionLoads(ALL_ON);
+    expect(plan.paragraphProperties).toContain("isListItem");
+    expect(plan.paragraphProperties).toContain("listItem");
+  });
+
+  /*
    * Spec §9 and gate 23: a host gap is reported, not guessed around.
    *
    * The three families default to `false` at every call site, so until a probe

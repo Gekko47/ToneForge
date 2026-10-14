@@ -75,8 +75,6 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createEmptyProfile } from "../../../src/core/domain/StyleProfile";
 import { createGovernanceProfile } from "../../../src/core/domain/GovernanceProfile";
-import type { WordParagraphChange } from "../../../src/word/wordParagraphEvents";
-
 const NODE_IDS = ["n1", "n2", "n3"];
 
 function nodes() {
@@ -201,17 +199,6 @@ function report(count: number) {
   };
 }
 
-function change(overrides: Partial<WordParagraphChange> = {}): WordParagraphChange {
-  return {
-    kind: "changed",
-    uniqueLocalIds: ["n2"],
-    source: "local",
-    requiresFullRescan: false,
-    at: new Date().toISOString(),
-    ...overrides,
-  };
-}
-
 /** The fields the invariants below read, so the fixture stays small. */
 function shape(status: DocumentObserverStatus) {
   return {
@@ -222,24 +209,6 @@ function shape(status: DocumentObserverStatus) {
     examinedScopes: status.deterministicCoverage?.examinedScopes ?? [],
     contentHash: status.reviewSessionIdentity?.contentHash ?? null,
   };
-}
-
-/** Run one observer through a start scan and one change, collecting the statuses. */
-async function observe(
-  payload: WordParagraphChange | undefined,
-): Promise<ReturnType<typeof shape>[]> {
-  const statuses: Array<ReturnType<typeof shape>> = [];
-  const observer = createDocumentObserver({
-    debounceMs: 0,
-    onStatus: (status) => statuses.push(shape(status)),
-    profile: createEmptyProfile("Test"),
-  });
-  observer.startObserver();
-  await flush();
-  observer.onDocumentChanged(payload);
-  await flush();
-  observer.stopObserver();
-  return statuses;
 }
 
 async function flush(): Promise<void> {
@@ -280,7 +249,7 @@ describe("auto-scan invariants (spec §23)", () => {
     expect(statuses.at(-1)?.findingCount).toBe(3);
 
     count = 0;
-    observer.onDocumentChanged(change());
+    observer.onDocumentChanged();
     await flush();
     observer.stopObserver();
 
@@ -313,7 +282,7 @@ describe("auto-scan invariants (spec §23)", () => {
     });
     observer.startObserver();
     await flush();
-    observer.onDocumentChanged(change());
+    observer.onDocumentChanged();
     await flush();
     observer.stopObserver();
 
@@ -353,7 +322,7 @@ describe("auto-scan invariants (spec §23)", () => {
     });
     observer.startObserver();
     await flush();
-    observer.onDocumentChanged(change());
+    observer.onDocumentChanged();
     await flush();
     observer.stopObserver();
 
@@ -392,44 +361,6 @@ describe("auto-scan invariants (spec §23)", () => {
     expect(source).not.toMatch(/applyReviewedPlan/);
   });
 
-  it("never claims whole-document compliance from a narrowed scan", async () => {
-    /*
-     * The one an auto-scan is most likely to make, because it runs precisely
-     * when it has *not* seen the rest of the document: the user typed one
-     * character and the scan looked at one paragraph.
-     */
-    mocks.runDeterministicReview.mockImplementation(async (options: unknown) => {
-      const call = options as { incremental?: boolean; incrementalReason?: string };
-      return {
-        ...report(1),
-        coverage: {
-          ...report(1).coverage,
-          // The engine is asked to be honest; this case asserts the observer
-          // passes the declaration through rather than reporting the narrow run
-          // as a full one.
-          complete: call.incremental !== true,
-          examinedScopes: call.incremental === true ? ["body"] : ["body", "headings"],
-        },
-      };
-    });
-
-    const statuses = await observe(change());
-    expect(statuses.at(-1)?.coverageComplete).toBe(false);
-    expect(statuses.at(-1)?.examinedScopes).toEqual(["body"]);
-  });
-
-  it("passes the incremental declaration and the shortfall to the engine", async () => {
-    await observe(change());
-
-    const call = mocks.runDeterministicReview.mock.calls.at(-1)?.[0] as {
-      incremental?: boolean;
-      incrementalReason?: string;
-    };
-    expect(call.incremental).toBe(true);
-    // The engine cannot invent a sentence about a scan it never saw.
-    expect(call.incrementalReason).toMatch(/examined 1 of 3/);
-  });
-
   it("replaces the session identity when the document changes, invalidating decisions", async () => {
     /*
      * §16: decisions bind to a document identity, and a document that moved is
@@ -464,7 +395,7 @@ describe("auto-scan invariants (spec §23)", () => {
       documentIdentity: { ...report(1).documentIdentity, contentHash: "hash-2" },
     }));
 
-    observer.onDocumentChanged(change());
+    observer.onDocumentChanged();
     await flush();
     observer.stopObserver();
 
@@ -485,7 +416,7 @@ describe("auto-scan invariants (spec §23)", () => {
     await flush();
 
     mocks.acquireAnalysisContext.mockRejectedValue(new Error("the host said no"));
-    observer.onDocumentChanged(change());
+    observer.onDocumentChanged();
     await flush();
     observer.stopObserver();
 

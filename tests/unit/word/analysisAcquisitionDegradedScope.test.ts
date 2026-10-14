@@ -90,8 +90,9 @@ const SERVED_VALUES: Record<string, unknown> = {
  * what this transaction asked for — a real host rejects the whole `sync`, not
  * the individual `load()` call.
  */
-function createHostParagraph(requested: Set<string>): Record<string, unknown> {
+function createHostParagraph(requested: Set<string>, isList: boolean): Record<string, unknown> {
   const served = new Set<string>();
+  const rangeServed = new Set<string>();
   return new Proxy(
     {
       load: (properties: string | string[]) => {
@@ -100,6 +101,21 @@ function createHostParagraph(requested: Set<string>): Record<string, unknown> {
           requested.add(property);
         });
       },
+      getRange: () => ({
+        load: (properties: string | string[]) => {
+          (Array.isArray(properties) ? properties : [properties]).forEach((property) => {
+            rangeServed.add(property);
+          });
+        },
+        get start() {
+          if (!rangeServed.has("start")) throw propertyNotLoaded("start");
+          return 0;
+        },
+        get end() {
+          if (!rangeServed.has("end")) throw propertyNotLoaded("end");
+          return 10;
+        },
+      }),
     },
     {
       get(target, property: string | symbol) {
@@ -107,6 +123,14 @@ function createHostParagraph(requested: Set<string>): Record<string, unknown> {
           return Reflect.get(target, property);
         }
         READS.push(property);
+        /*
+         * `listItem` exists only for a paragraph that is in a list; asking a
+         * non-list paragraph for it is the `ItemNotFound` that refused the whole
+         * rich request before `PER_PARAGRAPH_PROPERTIES`. A double that served it
+         * for every paragraph could not catch that.
+         */
+        if (property === "isListItem") return isList;
+        if (property === "listItem" && !isList) throw propertyNotLoaded(property);
         if (!served.has(property)) throw propertyNotLoaded(property);
         return SERVED_VALUES[property];
       },
@@ -182,7 +206,7 @@ let TRANSACTIONS = 0;
  * recovered. `"always"` models a host that genuinely does not serve the family,
  * which is what a re-probe has to keep coping with. `false` never refuses.
  */
-function installHost(failRichScope: boolean | "always"): void {
+function installHost(failRichScope: boolean | "always", hostIsList = true): void {
   const failures = {
     remaining: failRichScope === "always" ? Number.POSITIVE_INFINITY : failRichScope ? 1 : 0,
   };
@@ -203,7 +227,7 @@ function installHost(failRichScope: boolean | "always"): void {
         paragraphs: {
           load: () => undefined,
           get items(): unknown[] {
-            return [createHostParagraph(requested)];
+            return [createHostParagraph(requested, hostIsList)];
           },
         },
       },
@@ -226,7 +250,20 @@ function installHost(failRichScope: boolean | "always"): void {
     sync: async () => {
       const unknown = [...requested].filter((property) => !HOST_PARAGRAPH_PROPERTIES.has(property));
       const askedOptional = [...requested].some((property) => !isBaseProperty(property));
+      const askedListItem = requested.has("listItem");
       requested.clear();
+      /*
+       * A non-list paragraph refuses `listItem` as `ItemNotFound` — the real
+       * behaviour that cost every rich scan its scope. Checked before the
+       * recoverable refusal, so a bulk request that wrongly carries `listItem`
+       * fails here rather than reading as an ordinary host limitation.
+       */
+      if (!hostIsList && askedListItem) {
+        throw hostError(
+          "The property 'listItem' is not available because the paragraph is not in a list.",
+          "ItemNotFound",
+        );
+      }
       if (unknown.length > 0) {
         throw hostError(
           `The property '${unknown[0]}' does not exist on Word.Paragraph.`,
@@ -297,7 +334,7 @@ describe("acquireAnalysisContext degraded scope", () => {
     expect(READS.filter((property) => !requested.has(property))).toEqual([]);
   });
 
-  it("reads a served list level when the host serves the rich scope", async () => {
+  it("reads a served list level, per-paragraph, when the host serves the rich scope", async () => {
     installHost(false);
 
     const context = await acquireAnalysisContext({
@@ -306,11 +343,31 @@ describe("acquireAnalysisContext degraded scope", () => {
     });
 
     const paragraph = context.formatting.paragraphs[0];
+    // `listItem` cannot ride in the bulk request, so it is read afterwards for
+    // the paragraphs the host reported as list items. The level arrives.
     expect(paragraph?.listLevel).toBe(2);
     expect(paragraph?.styleName).toBe("List Paragraph");
     expect(paragraph?.alignment).toBe("left");
     expect(paragraph?.fontName).toBe("Calibri");
     expect(paragraph?.unsupportedProperties ?? []).not.toContain("listLevel");
+  });
+
+  it("never reads listItem for a paragraph that is not a list item", async () => {
+    installHost(false, false);
+
+    const context = await acquireAnalysisContext({
+      profile: PROFILE,
+      capabilities: ALL_ON,
+    });
+
+    const paragraph = context.formatting.paragraphs[0];
+    // The rich scope still arrived: a non-list paragraph no longer refuses it.
+    expect(paragraph?.styleName).toBe("List Paragraph");
+    // No level, and that is not a host limitation — the paragraph has no list.
+    expect(paragraph?.listLevel).toBeNull();
+    expect(paragraph?.unsupportedProperties ?? []).not.toContain("listLevel");
+    // And the property was never requested at all, bulk or per-paragraph.
+    expect(READS).not.toContain("listItem");
   });
 
   it("does not blame the host for a list level the degraded scope never requested", async () => {

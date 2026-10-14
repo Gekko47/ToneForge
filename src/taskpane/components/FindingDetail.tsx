@@ -40,6 +40,7 @@ import type { Finding } from "../../core/domain/Finding";
 import { goToFinding } from "../findingNavigation";
 import { describeFindingLocation } from "../findingLocation";
 import { approvalControls } from "../approvalControls";
+import { describeCategory } from "../findingsByType";
 import EvidenceSplit from "./EvidenceSplit";
 import { DisclosurePanel } from "./common";
 
@@ -229,10 +230,12 @@ export default function FindingDetail({
     </>
   );
 
+  const { ruleName, parent } = describeCategory(finding.category);
+
   return (
     <div className="tf-finding-detail">
       <header className="tf-finding-card-header">
-        <strong className="tf-finding-category">{finding.category}</strong>
+        <strong className="tf-finding-category">{`${parent} - ${ruleName}`}</strong>
         <span className="tf-finding-meta">
           {/*
             Slim on the deterministic surface, full on the consistency one.

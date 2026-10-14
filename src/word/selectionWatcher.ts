@@ -39,9 +39,8 @@ const DOCUMENT_SELECTION_CHANGED = "documentSelectionChanged";
 const DEFAULT_DEBOUNCE_MS = 250;
 
 let registered: {
-  context: Office.Context;
+  context: Office.Document;
   handler: () => void;
-  registrationId: string | null;
 } | null = null;
 
 let pending: ReturnType<typeof setTimeout> | null = null;
@@ -101,13 +100,12 @@ export async function watchDocumentSelection(
   };
 
   try {
-    const registration = (await context.addHandlerAsync(DOCUMENT_SELECTION_CHANGED, handler)) as
-      { value?: { id?: string } } | undefined;
-    registered = {
-      context,
-      handler,
-      registrationId: typeof registration?.value?.id === "string" ? registration.value.id : null,
-    };
+    /*
+     * `addHandlerAsync` is callback-style and returns `void` — there is no
+     * registration id to keep. Removal is by handler reference.
+     */
+    context.addHandlerAsync(DOCUMENT_SELECTION_CHANGED, handler);
+    registered = { context, handler };
     notify = onChanged;
     return true;
   } catch {
@@ -155,10 +153,7 @@ export async function stopWatchingDocumentSelection(): Promise<void> {
   }
 
   try {
-    await active.context.removeHandlerAsync(
-      DOCUMENT_SELECTION_CHANGED,
-      active.registrationId === null ? undefined : { id: active.registrationId },
-    );
+    active.context.removeHandlerAsync(DOCUMENT_SELECTION_CHANGED, { handler: active.handler });
   } catch {
     // Unsubscribing is cleanup on a host that may already be tearing down. There
     // is nothing the user can do about a failure here, so it is logged and not
@@ -183,7 +178,12 @@ export function isWatchingDocumentSelection(): boolean {
  * pane and the Office runtime are different processes' worth of code paths, and
  * unit tests run with no Office at all.
  */
-function currentContext(): Office.Context | null {
+function currentContext(): Office.Document | null {
+  /*
+   * The Document object, not `Office.context`. The selection-changed event is
+   * registered with `Office.context.document.addHandlerAsync`; `Office.context`
+   * has no `addHandlerAsync`, so this read as "no event" and never subscribed.
+   */
   const office = (globalThis as { Office?: { context?: Office.Context } }).Office;
-  return office?.context ?? null;
+  return office?.context?.document ?? null;
 }

@@ -28,7 +28,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 }
 
 /** `.load(a, b)` \u2014 a second positional argument, which Office.js does not take. */
-const VARIADIC_LOAD = /\.load\(\s*[^,()]+,\s*[^,()]+\s*\)/;
+const VARIADIC_LOAD = /\.load\(\s*[^,()[\]]+,\s*[^,()[\]]+\s*\)/;
 
 describe("the variadic load guard", () => {
   it("no module calls load with more than one positional argument", () => {

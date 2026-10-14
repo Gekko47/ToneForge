@@ -53,6 +53,27 @@ export interface AnalysisCapabilities {
   supportsHeadersFooters: boolean;
   /** Whether the host serves section properties. Spec §8.5. */
   supportsSections: boolean;
+  /**
+   * Whether `Body.getTrackedChanges()` (WordApi 1.6) is reachable.
+   *
+   * Carried here because the revision-aware apply path needs to know whether
+   * it can inspect tracked revisions before writing. Defaults to `false`
+   * at every site that builds this object.
+   *
+   * Optional: absent means "not probed", which the adapter treats as false.
+   */
+  supportsTrackedChangeInspection?: boolean;
+  /**
+   * Whether `Range.insertOoxml(ooxml, insertLocation)` (WordApi 1.1) is
+   * reachable.
+   *
+   * Carried here because the revision-aware apply path needs to know whether
+   * it can author tracked revisions under the ToneForge name. Defaults to
+   * `false` at every site that builds this object.
+   *
+   * Optional: absent means "not probed", which the adapter treats as false.
+   */
+  supportsInsertOoxml?: boolean;
   hostName: "Word" | "Excel" | "PowerPoint" | "unknown";
   hostVersion: string | null;
 }

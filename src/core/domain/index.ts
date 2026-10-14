@@ -140,3 +140,11 @@ export {
   buildNodeId,
   computeStructuralHash,
 } from "./DocumentSnapshot";
+export {
+  TrackedRevisionSchema,
+  TrackedRevisionTypeSchema,
+  TrackedRevisionRangeSchema,
+  TONE_FORGE_REVISION_AUTHOR,
+  type TrackedRevision,
+  type TrackedRevisionType,
+} from "./TrackedRevision";

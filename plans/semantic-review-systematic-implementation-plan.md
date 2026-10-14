@@ -581,7 +581,7 @@ so it does not require an event.
 
 **Repository — what we actually know**: the typed Office surface in
 [`office.d.ts`](../src/types/office.d.ts) declares no selection-changed event, and
-[`wordParagraphEvents.ts`](../src/word/wordParagraphEvents.ts) registers only
+`wordParagraphEvents.ts` registers only
 `onParagraphAdded/Changed/Deleted`. But that file is **explicitly a loose subset** —
 ADR-0084 records that it is not an authority, and ADR-0084's own lesson is that a
 property name missing from our declarations costs us nothing and proves nothing.

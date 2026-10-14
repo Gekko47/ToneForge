@@ -7,8 +7,6 @@ import {
   Input,
   MessageBar,
   Option,
-  makeStyles,
-  tokens,
 } from "@fluentui/react-components";
 import { createProviderGatewayClient, GatewayError, SessionTokenStore } from "../../ai/gateway";
 import { isCatalogForConnection, resolveCatalogStatus } from "../../ai/gateway/modelCatalog";
@@ -59,16 +57,6 @@ export interface OpenRouterConnectionSettingsProps {
   selectedModel: string;
 }
 
-const useStyles = makeStyles({
-  root: {
-    marginTop: tokens.spacingVerticalM,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground2,
-    overflow: "hidden",
-  },
-});
-
 type Phase = "idle" | "connecting" | "loadingModels" | "ready" | "error";
 
 export default function OpenRouterConnectionSettings({
@@ -81,7 +69,6 @@ export default function OpenRouterConnectionSettings({
   onSelectModel,
   selectedModel,
 }: OpenRouterConnectionSettingsProps): React.ReactNode {
-  const styles = useStyles();
   const [apiKey, setApiKey] = React.useState("");
   const [baseUrl, setBaseUrl] = React.useState(OPENROUTER_DEFAULT_BASE_URL);
   const [phase, setPhase] = React.useState<Phase>("idle");
@@ -219,7 +206,7 @@ export default function OpenRouterConnectionSettings({
 
   return (
     <section aria-label="OpenRouter connection">
-      <Card className={styles.root} appearance="outline">
+      <Card className="tf-section" appearance="subtle">
         <MessageBar intent="info">
           Your OpenRouter API key is sent once to the local gateway and is not stored by ToneForge.
           Only the opaque connection reference the gateway returns is saved.

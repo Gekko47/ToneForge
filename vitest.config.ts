@@ -37,6 +37,10 @@ export default defineConfig({
     mockReset: true,
     clearMocks: true,
     restoreMocks: true,
+    // Must exceed the asyncUtilTimeout (10s) in tests/setup.ts — otherwise a
+    // findByRole that takes >5s under parallel load times out before the find
+    // completes, producing intermittent "Test timed out in 5000ms" failures.
+    testTimeout: 30_000,
   },
   resolve: {
     alias: {

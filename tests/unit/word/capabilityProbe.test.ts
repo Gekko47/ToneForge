@@ -11,13 +11,14 @@ function fullOffice(overrides: Record<string, unknown> = {}) {
     insertText: vi.fn(),
     insertBreak: vi.fn(),
     insertParagraph: vi.fn(),
+    insertOoxml: vi.fn(),
     load: vi.fn(),
   }));
   return {
     run: <T>(func: (context: unknown) => Promise<T>): Promise<T> =>
       func({
         document: {
-          body: { text: "", load: vi.fn(), getRange },
+          body: { text: "", load: vi.fn(), getRange, getTrackedChanges: vi.fn() },
           getSelection: vi.fn(() => ({ getRange })),
           styles: { name: "", load: vi.fn(), items: [{ name: "Normal" }] },
           load: vi.fn(),
@@ -332,6 +333,55 @@ describe("probeWordCapabilities", () => {
     expect(caps.supportsSections).toBe(true);
     expect(caps.supportsHeadersFooters).toBe(false);
   });
+
+  /*
+   * Tracked change inspection (WordApi 1.6) and OOXML insertion (WordApi 1.1).
+   * Both are the canonical Word APIs for revision-aware editing: inspection
+   * reads existing revisions, and OOXML authors new ones under the ToneForge
+   * name. Each defaults to false, so a host that hides the method produces
+   * a stated refusal rather than a silent pass.
+   */
+  it("detects tracked change inspection support", async () => {
+    setOffice(fullOffice());
+    expect((await probeWordCapabilities()).supportsTrackedChangeInspection).toBe(true);
+  });
+
+  it("reports no tracked change inspection on a host without the method", async () => {
+    setOffice(
+      fullOffice({
+        document: {
+          body: { text: "", load: vi.fn(), getRange: vi.fn() },
+          getSelection: vi.fn(() => ({
+            getRange: vi.fn(() => ({ insertText: vi.fn(), load: vi.fn() })),
+          })),
+          styles: { name: "", load: vi.fn(), items: [{ name: "Normal" }] },
+          load: vi.fn(),
+        },
+      }),
+    );
+    expect((await probeWordCapabilities()).supportsTrackedChangeInspection).toBe(false);
+  });
+
+  it("detects OOXML insertion support", async () => {
+    setOffice(fullOffice());
+    expect((await probeWordCapabilities()).supportsInsertOoxml).toBe(true);
+  });
+
+  it("reports no OOXML insertion on a host without the method", async () => {
+    setOffice(
+      fullOffice({
+        document: {
+          body: { text: "", load: vi.fn(), getRange: vi.fn() },
+          getSelection: vi.fn(() => ({
+            getRange: vi.fn(() => ({ insertText: vi.fn(), load: vi.fn() })),
+          })),
+          styles: { name: "", load: vi.fn(), items: [{ name: "Normal" }] },
+          load: vi.fn(),
+        },
+      }),
+    );
+    expect((await probeWordCapabilities()).supportsInsertOoxml).toBe(false);
+  });
 });
 
 /*
@@ -367,6 +417,8 @@ describe("toAnalysisCapabilities", () => {
       supportsTables: false,
       supportsHeadersFooters: false,
       supportsSections: false,
+      supportsTrackedChangeInspection: true,
+      supportsInsertOoxml: true,
       supportsRibbonUpdate: true,
       hostName: "Word" as const,
       hostVersion: "16.0",
@@ -376,6 +428,8 @@ describe("toAnalysisCapabilities", () => {
     expect(narrowed.supportsStyles).toBe(true);
     expect(narrowed.supportsParagraphFormat).toBe(true);
     expect(narrowed.supportsRevisions).toBe(true);
+    expect(narrowed.supportsTrackedChangeInspection).toBe(true);
+    expect(narrowed.supportsInsertOoxml).toBe(true);
     expect(narrowed.hostName).toBe("Word");
     expect(narrowed.hostVersion).toBe("16.0");
   });
@@ -401,6 +455,8 @@ describe("toAnalysisCapabilities", () => {
         supportsTables: false,
         supportsHeadersFooters: false,
         supportsSections: false,
+        supportsTrackedChangeInspection: false,
+        supportsInsertOoxml: false,
         supportsRibbonUpdate: false,
         hostName: "unknown" as const,
         hostVersion: null,
@@ -414,5 +470,7 @@ describe("toAnalysisCapabilities", () => {
     expect(narrowed.supportsInsertText).toBe(true);
     expect(narrowed.supportsStyles).toBe(false);
     expect(narrowed.supportsRevisions).toBe(false);
+    expect(narrowed.supportsTrackedChangeInspection).toBe(false);
+    expect(narrowed.supportsInsertOoxml).toBe(false);
   });
 });

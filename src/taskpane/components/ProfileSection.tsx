@@ -23,12 +23,6 @@ import { makeStyles, tokens } from "@fluentui/react-components";
 import { DisclosurePanel, ToneBadge } from "./common";
 
 const useStyles = makeStyles({
-  root: {
-    marginTop: tokens.spacingVerticalM,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground1,
-  },
   body: {
     padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM} ${tokens.spacingHorizontalM}`,
   },
@@ -114,7 +108,7 @@ export default function ProfileSection({
       title={title}
       id={id}
       defaultOpen={defaultOpen}
-      className={styles.root}
+      className="tf-section"
       headerSlot={
         marker ? (
           <ToneBadge

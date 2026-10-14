@@ -8,7 +8,6 @@ const useStyles = makeStyles({
     gap: tokens.spacingVerticalL,
     width: "100%",
     boxSizing: "border-box",
-    padding: `${tokens.spacingVerticalL} ${tokens.spacingHorizontalL}`,
   },
 });
 
@@ -17,12 +16,14 @@ export interface PageContainerProps extends React.HTMLAttributes<HTMLDivElement>
 }
 
 /**
- * The page gutter.
+ * The page body (full-bleed).
  *
- * Every page renders inside one of these, so the horizontal padding, the
- * vertical rhythm between sections, and the full-width box are decided once
- * rather than per page (spec §2, §5). It replaces the `.tf-card` wrapper each
- * page styled by hand.
+ * It owns only the vertical rhythm between a page's top-level elements; it adds
+ * **no horizontal inset**. Every page rings edge-to-edge so the sticky bar and
+ * each card reach the pane's own edge, and every surface owns its own padding
+ * rather than stacking a shell gutter on top of it — the "double padding" that
+ * inset every screen on all four sides. The sticky bar supplies the one inset a
+ * full-bleed bar still needs ([`taskpane.css`](../taskpane.css:800)).
  *
  * It is a plain `<div>`, not a `<main>`: the shell owns the single `<main>`
  * landmark, and a page that rendered its own would nest two. Extra attributes

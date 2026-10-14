@@ -56,9 +56,16 @@ const FULL_CAPABILITIES: WordCapabilities = {
   hostVersion: "16.0",
 };
 
-function makeRangeMock(onInsert?: (text: string) => void) {
+function makeRangeMock(onInsert?: (text: string) => void, textProvider?: () => string) {
+  let lastStart = 0;
+  let lastEnd = 0;
   return {
-    text: "",
+    get text() {
+      if (textProvider) {
+        return textProvider().slice(lastStart, lastEnd);
+      }
+      return "";
+    },
     insertText: vi.fn(function (this: unknown, text: string) {
       onInsert?.(text);
       return this;
@@ -70,7 +77,9 @@ function makeRangeMock(onInsert?: (text: string) => void) {
     paragraphFormat: { set: vi.fn() },
     listFormat: { set: vi.fn() },
     style: "",
-    set: vi.fn(function (this: unknown) {
+    set: vi.fn(function (this: unknown, opts: { start: number; end: number }) {
+      lastStart = opts.start;
+      lastEnd = opts.end;
       return this;
     }),
     load: vi.fn(),
@@ -93,9 +102,12 @@ function installOffice(
   textProvider?: () => string,
 ) {
   let currentText = bodyText;
-  const rangeMock = makeRangeMock((text) => {
-    currentText = `${currentText}${text}`;
-  });
+  const rangeMock = makeRangeMock(
+    (text) => {
+      currentText = `${currentText}${text}`;
+    },
+    () => currentText,
+  );
   const sharedDoc: Record<string, unknown> = {
     id: "doc-1",
     load: vi.fn(),
@@ -104,7 +116,18 @@ function installOffice(
   const body: Record<string, unknown> = {
     load: vi.fn(),
     getRange: vi.fn(() => rangeMock),
-    getTrackedChanges: vi.fn(() => ({ load: vi.fn(), items: [{}] })),
+    getTrackedChanges: vi.fn(() => ({
+      load: vi.fn(),
+      items: [
+        {
+          load: vi.fn(),
+          type: "Added",
+          author: "Test Author",
+          date: null,
+          text: "inserted text",
+        },
+      ],
+    })),
     paragraphs: {
       load: vi.fn(),
       items: [
