@@ -26,14 +26,18 @@ import type { DashboardInitialPage } from "./pages/Dashboard";
  * filter only that specific signal here. Any other error event is left
  * alone.
  */
-window.addEventListener("error", (event) => {
-  if (
-    event.message.includes("ResizeObserver loop completed with undelivered notifications") ||
-    event.message.includes("ResizeObserver loop limit exceeded")
-  ) {
-    event.stopImmediatePropagation();
-  }
-});
+window.addEventListener(
+  "error",
+  (event) => {
+    if (
+      event.message.includes("ResizeObserver loop completed with undelivered notifications") ||
+      event.message.includes("ResizeObserver loop limit exceeded")
+    ) {
+      event.stopImmediatePropagation();
+    }
+  },
+  true,
+);
 
 function renderFallback(): React.ReactNode {
   return (

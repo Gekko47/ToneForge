@@ -5927,16 +5927,16 @@ uses (ADR-0031), applied to the theme layer itself.
 
 - **Decision**: The following hand-rolled adjustments were replaced or removed:
 
-  | Where                                               | Was                                                                 | Now                                                                                |
-  | --------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-  | `analysisAcquisition.buildSnapshot`                 | `rawText.indexOf(text, bodyCursor)` reconstructed paragraph offsets | `Paragraph.getRange("Whole")` → `Range.start`/`Range.end`                          |
-  | `documentReader.getStructuredSnapshot`              | same `indexOf` locating                                             | same range API                                                                     |
-  | `documentReader.splitParagraphRanges`               | split body text on `/\n\s*\n/` to fabricate paragraphs              | **Removed.** `body.paragraphs` is the real collection                              |
-  | `rules/protection.ts` `detectTrackedDeletionRanges` | matched a synthetic `{{ DELETE … }}` marker                         | **Deleted.** `TrackedChange.type === "Deleted"` from `body.getTrackedChanges()`    |
-  | `revisionAdapter.verifyLivePrecondition`            | sliced `body.text` at `[start, end]`                                | `body.getRange("Whole").set({start,end})` then `load("text")`                      |
-  | `revisionAdapter.countRecordedRevisions`            | re-read `getTrackedChanges().items.length`                          | delegates to `readTrackedRevisions()`                                              |
-  | `wordParagraphEvents.ts` / `capabilityEvidence.ts`  | paragraph-event adapter + capability evidence tier                  | **Deleted.** No reliable document-level change API (ADR-0094)                      |
-  | `documentObserver` incremental narrowing            | narrowed scan to changed nodes only                                 | **Removed.** Full rescan on every change; `onDocumentChanged()` takes no arguments |
+  | Where                                               | Was                                                                 | Now                                                                                                                                                                   |
+  | --------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `analysisAcquisition.buildSnapshot`                 | `rawText.indexOf(text, bodyCursor)` reconstructed paragraph offsets | `Paragraph.getRange("Whole")` → `Range.start`/`Range.end`                                                                                                             |
+  | `documentReader.getStructuredSnapshot`              | same `indexOf` locating                                             | same range API                                                                                                                                                        |
+  | `documentReader.splitParagraphRanges`               | split body text on `/\n\s*\n/` to fabricate paragraphs              | **Removed.** `body.paragraphs` is the real collection                                                                                                                 |
+  | `rules/protection.ts` `detectTrackedDeletionRanges` | matched a synthetic `{{ DELETE … }}` marker                         | **Deleted.** `TrackedChange.type === "Deleted"` from `body.getTrackedChanges()`                                                                                       |
+  | `revisionAdapter.verifyLivePrecondition`            | sliced `body.text` at `[start, end]`                                | **Retains** slicing `body.text`: the range API returned text in a different coordinate space in the real host. `locateLiveTarget` now verifies character text changes |
+  | `revisionAdapter.countRecordedRevisions`            | re-read `getTrackedChanges().items.length`                          | delegates to `readTrackedRevisions()`                                                                                                                                 |
+  | `wordParagraphEvents.ts` / `capabilityEvidence.ts`  | paragraph-event adapter + capability evidence tier                  | **Deleted.** No reliable document-level change API (ADR-0094)                                                                                                         |
+  | `documentObserver` incremental narrowing            | narrowed scan to changed nodes only                                 | **Removed.** Full rescan on every change; `onDocumentChanged()` takes no arguments                                                                                    |
 
   Hand-rolled code that stays, because no API exists:
 

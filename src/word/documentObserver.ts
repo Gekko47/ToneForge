@@ -9,8 +9,8 @@
 
 import { debounce } from "../shared/utils/debounce";
 import { describeError, logger } from "../shared/utils/logger";
-import { hashText } from "../shared/utils/text";
 import { runInWord } from "../shared/office/officeHelpers";
+import { hashDocument, readBodyTextViews } from "./documentReader";
 import { createRunId } from "../analysis/incrementalCoordinator";
 import { runDeterministicReview } from "../analysis/deterministic/deterministicReviewEngine";
 import { buildCoverage } from "../analysis/coverage";
@@ -450,17 +450,24 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
         return;
       }
       void runInWord(async (context) => {
-        const body = context.document.body;
-        body.load("text");
-        await context.sync();
-        const text = body.text;
+        /*
+         * Compare against the same view and hash that produced
+         * `state.documentVersion`: the scan sets it from
+         * `report.documentIdentity.contentHash`, which is `hashDocument` over the
+         * accept-all view (`readBodyTextViews().fullText`). Hashing raw
+         * `body.text` here compared two different coordinate spaces, so a
+         * tracked deletion made the hashes disagree and every selection event
+         * scheduled a scan.
+         */
+        const views = await readBodyTextViews(context);
+        const text = views.fullText;
         // If the host did not serve body text, we cannot compare content —
         // scan conservatively rather than skip.
-        if (text === undefined || text === null || text === "") {
+        if (text.length === 0) {
           scheduleScan();
           return;
         }
-        const currentHash = hashText(text);
+        const currentHash = hashDocument(text);
         if (currentHash === state.documentVersion) return;
         scheduleScan();
       }).catch(() => {

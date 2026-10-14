@@ -1474,11 +1474,17 @@ function DashboardWithProfile({
    */
   function overlayIgnore(finding: Finding): void {
     ignoreFinding(finding);
-    const nextPosition = overlayPosition + 1;
-    if (overlayGroup && nextPosition < overlayGroup.findings.length) {
-      const nextFinding = overlayGroup.findings[nextPosition];
-      if (nextFinding) void goToFinding(nextFinding);
-      setOverlayPosition(nextPosition);
+    /*
+     * The ignored finding leaves the group, so every later finding shifts down
+     * one index. Select the finding that was at `overlayPosition + 1` *before*
+     * the group shrinks, and keep the position at `overlayPosition` so the
+     * overlay lands on it. `updateOverlayPosition` (not `setOverlayPosition`)
+     * keeps the position ref the re-anchor effect reads in sync.
+     */
+    const nextFinding = overlayGroup?.findings[overlayPosition + 1] ?? null;
+    if (nextFinding) {
+      void goToFinding(nextFinding);
+      updateOverlayPosition(overlayPosition);
     } else {
       closeOverlay();
     }
@@ -1531,21 +1537,6 @@ function DashboardWithProfile({
         capabilities: caps ? toAnalysisCapabilities(caps) : UNPROBED_CAPABILITIES,
         skipRemainingFindingsRefresh: true,
       });
-      /*
-       * Temporary diagnostic (remove after host verification): record what
-       * `applyReviewedPlan` returned before deciding how to proceed.
-       */
-      console.warn(
-        "overlay accept result diagnostic " +
-          JSON.stringify({
-            findingId: finding.id,
-            applied: result.applied,
-            verified: result.verified,
-            stale: result.stale,
-            verificationError: result.verificationError,
-            errors: result.results.map((item) => item.error ?? null),
-          }),
-      );
       if (result.applied && result.verified) {
         setReviewNote("Change applied.");
         announcement.announce("Change applied.");

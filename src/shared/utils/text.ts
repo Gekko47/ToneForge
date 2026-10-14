@@ -125,3 +125,35 @@ export function nearestOccurrence(haystack: string, needle: string, near: number
   }
   return best;
 }
+
+/**
+ * Locate `needle` in the raw view, searching forward from `from` and skipping
+ * occurrences that overlap a tracked deleted range.
+ *
+ * A reviewed-view offset names only roughly where the text sits in the raw view
+ * `Range.set` counts, because a tracked deletion before it shifts the position
+ * by the deleted length (ADR-0144). The occurrence the offset meant is the first
+ * one at or after `from` that is not itself inside text a revision marked for
+ * deletion — a deleted occurrence is not live text, so selecting it would
+ * highlight or rewrite something the user cannot see. Returns -1 when no live
+ * occurrence exists.
+ *
+ * Shared by the apply path (`word/revisionAdapter`) and the highlight path
+ * (`word/sourceLocator`) so the two agree on which occurrence is live.
+ */
+export function locateInRawView(
+  haystack: string,
+  needle: string,
+  from: number,
+  deletedRanges: readonly { start: number; end: number }[],
+): number {
+  if (needle.length === 0) return -1;
+  const overlapsDeleted = (start: number, end: number): boolean =>
+    deletedRanges.some((range) => start < range.end && range.start < end);
+  let cursor = haystack.indexOf(needle, Math.max(0, from));
+  while (cursor !== -1) {
+    if (!overlapsDeleted(cursor, cursor + needle.length)) return cursor;
+    cursor = haystack.indexOf(needle, cursor + 1);
+  }
+  return -1;
+}

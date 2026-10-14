@@ -10,7 +10,7 @@
 
 import { runInWord } from "../shared/office/officeHelpers";
 import { logger } from "../shared/utils/logger";
-import { nearestOccurrence } from "../shared/utils/text";
+import { locateInRawView } from "../shared/utils/text";
 import type { Finding } from "../core/domain/Finding";
 import { readBodyTextViews, resolveSourceRange } from "./documentReader";
 
@@ -128,8 +128,18 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
       }
 
       const expected = views.fullText.slice(start, end);
+      /*
+       * Search forward from the reviewed offset and skip occurrences that
+       * overlap a tracked deleted range: a deleted occurrence is not live text,
+       * so highlighting it would select something the user cannot see. Shared
+       * with the apply path (`word/revisionAdapter`) so the two agree on which
+       * occurrence is live.
+       */
+      const deletedRanges = await readDeletedRanges(context);
       const located =
-        expected.length === 0 ? start : nearestOccurrence(views.rawText, expected, start);
+        expected.length === 0
+          ? start
+          : locateInRawView(views.rawText, expected, start, deletedRanges);
       const targetStart = located === -1 ? start : located;
       const targetEnd = located === -1 ? end : located + expected.length;
 
@@ -168,6 +178,53 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
       method: "unsupported",
       message: `Finding ${finding.id} could not be selected: ${message}`,
     };
+  }
+}
+
+/**
+ * The tracked deleted ranges in the body, for skipping dead occurrences.
+ *
+ * A tracked deletion leaves its text in `body.text` but not in the accept-all
+ * view, so a reviewed-view offset can land on text the user cannot see. Reading
+ * the deleted ranges lets the relocation skip those occurrences. A host without
+ * `getTrackedChanges` (pre-WordApi 1.6) yields no ranges, and the relocation
+ * falls back to the first occurrence at or after the offset.
+ */
+async function readDeletedRanges(
+  context: Office.Context,
+): Promise<Array<{ start: number; end: number }>> {
+  const body = context.document.body as unknown as {
+    getTrackedChanges?: () => {
+      load?: (propertyNames: string | string[]) => unknown;
+      items?: Array<{
+        type?: string;
+        getRange?: () => { start?: number; end?: number; load?: (p: string | string[]) => unknown };
+      }>;
+    };
+  };
+  if (typeof body.getTrackedChanges !== "function") return [];
+  try {
+    const collection = body.getTrackedChanges();
+    if (!collection || typeof collection.load !== "function") return [];
+    collection.load("items");
+    await context.sync();
+    const items = Array.isArray(collection.items) ? collection.items : [];
+    const ranges: Array<{ start: number; end: number }> = [];
+    items.forEach((item) => {
+      if (item?.type !== "Deleted" || typeof item.getRange !== "function") return;
+      try {
+        const range = item.getRange();
+        range?.load?.(["start", "end"]);
+        ranges.push({ start: range?.start ?? -1, end: range?.end ?? -1 });
+      } catch {
+        // One unreadable range costs that revision's offsets, not the read.
+      }
+    });
+    await context.sync();
+    return ranges.filter((range) => range.start >= 0 && range.end >= range.start);
+  } catch {
+    // A host that refuses the read yields no ranges; relocation still works.
+    return [];
   }
 }
 

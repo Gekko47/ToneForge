@@ -385,18 +385,32 @@ export async function getStructuredSnapshot(
           rangeProxies.push(null);
         }
       });
+      let offsetsSynced = false;
       try {
         await context.sync();
+        offsetsSynced = true;
       } catch {
         // sync failure: offsets unavailable; the loop below falls back.
       }
-      items.forEach((paragraph, i) => {
-        const range = rangeProxies[i];
-        if (range && typeof range.start === "number" && typeof range.end === "number") {
-          paragraph.startOffset = range.start;
-          paragraph.endOffset = range.end;
-        }
-      });
+      /*
+       * A failed sync leaves every proxy unpopulated, so none of them can be
+       * trusted: skip the assignment entirely and let the `indexOf` fallback
+       * below resolve the offsets. Each read is guarded too, so one unreadable
+       * offset costs that paragraph's offsets rather than the whole scan.
+       */
+      if (offsetsSynced) {
+        items.forEach((paragraph, i) => {
+          const range = rangeProxies[i];
+          try {
+            if (range && typeof range.start === "number" && typeof range.end === "number") {
+              paragraph.startOffset = range.start;
+              paragraph.endOffset = range.end;
+            }
+          } catch {
+            // One unreadable offset costs that paragraph's offsets, not the scan.
+          }
+        });
+      }
     }
 
     const fromCollection = items.length > 0;

@@ -168,7 +168,6 @@ export default function FindingDetailOverlay({
                         void onIgnore({ ...finding, id: findingId });
                       }
                 }
-                onUndo={isIgnored ? onRestore : undefined}
               />
             )}
             {/*

@@ -539,28 +539,29 @@ describe("readSelectionScope", () => {
   });
 
   describe("when the host cannot support a safe review", () => {
-    it("falls back to caret-paragraph when the load refuses offsets", async () => {
+    it("reports unavailable when the load refuses offsets and no caret paragraph is available", async () => {
       // A host that *claims* WordApiDesktop 1.4 and then refuses the load.
       // The code falls back to caret-paragraph, which fails because getRange
-      // is not available on this host.
+      // is not available on this host — so the offsets are genuinely
+      // unavailable, and that is reported as such rather than as "nothing here".
       installHost({ missingSelectionProperties: ["start"] });
 
       const result = await readSelectionScope();
 
-      expect(result.status).toBe("no-selection");
+      expect(result.status).toBe("unavailable");
     });
 
-    it("falls back to caret-paragraph when offsets are not a usable pair", async () => {
+    it("reports unavailable when offsets are not a usable pair and no caret paragraph is available", async () => {
       /*
        * A host that serves 1.4 and returns an unusable pair. The code falls
        * back to caret-paragraph, which fails because getRange is not available
-       * on this host.
+       * on this host — so the offsets are genuinely unavailable.
        */
       installHost({ start: -1 });
 
       const result = await readSelectionScope();
 
-      expect(result.status).toBe("no-selection");
+      expect(result.status).toBe("unavailable");
     });
 
     it("always requests offsets regardless of the capability check", async () => {

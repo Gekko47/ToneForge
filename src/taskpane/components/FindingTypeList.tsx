@@ -41,25 +41,25 @@ export default function FindingTypeList({
       {groups.map((group) => {
         const Icon = toneForgeIcons[group.icon];
         return (
-          <Button
-            key={group.key}
-            appearance="transparent"
-            className="tf-finding-type-row"
-            onClick={() => onSelect(group)}
-            role="listitem"
-            aria-label={`${ariaLabelPrefix} ${group.ruleName}, ${group.count} finding${group.count === 1 ? "" : "s"}`}
-          >
-            <span className="tf-finding-type-row-icon" aria-hidden="true">
-              <Icon />
-            </span>
-            <span className="tf-finding-type-row-text">
-              <span className="tf-finding-type-row-label">{group.ruleName}</span>
-              <span className="tf-finding-type-row-parent">{group.parent}</span>
-            </span>
-            <span className="tf-finding-type-row-count" aria-hidden="true">
-              {group.count}
-            </span>
-          </Button>
+          <div key={group.key} role="listitem">
+            <Button
+              appearance="transparent"
+              className="tf-finding-type-row"
+              onClick={() => onSelect(group)}
+              aria-label={`${ariaLabelPrefix} ${group.ruleName}, ${group.count} finding${group.count === 1 ? "" : "s"}`}
+            >
+              <span className="tf-finding-type-row-icon" aria-hidden="true">
+                <Icon />
+              </span>
+              <span className="tf-finding-type-row-text">
+                <span className="tf-finding-type-row-label">{group.ruleName}</span>
+                <span className="tf-finding-type-row-parent">{group.parent}</span>
+              </span>
+              <span className="tf-finding-type-row-count" aria-hidden="true">
+                {group.count}
+              </span>
+            </Button>
+          </div>
         );
       })}
     </div>

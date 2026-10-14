@@ -72,6 +72,34 @@ export async function readTrackedRevisions(): Promise<TrackedRevisionRead> {
     const items = Array.isArray(collection.items) ? collection.items : [];
     const revisions: TrackedRevision[] = [];
 
+    /*
+     * Queue every item's property loads and range loads before a single sync, so
+     * the batch costs one or two host round trips rather than two per item. A
+     * batched sync that fails falls back to per-item loading below, so one bad
+     * revision costs only that row's data or offsets.
+     */
+    const rangeProxies = new Map<number, { start?: number; end?: number }>();
+    let batched = true;
+    try {
+      items.forEach((item, i) => {
+        if (!item || typeof item.load !== "function") return;
+        item.load(["author", "date", "text", "type"]);
+        if (typeof item.getRange !== "function") return;
+        try {
+          const changeRange = item.getRange();
+          if (changeRange && typeof changeRange.load === "function") {
+            changeRange.load(["start", "end"]);
+            rangeProxies.set(i, changeRange);
+          }
+        } catch {
+          // One bad range costs that row's offsets, not the batch.
+        }
+      });
+      await context.sync();
+    } catch {
+      batched = false;
+    }
+
     let index = 0;
     for (const item of items) {
       if (!item || typeof item.load !== "function") {
@@ -79,23 +107,34 @@ export async function readTrackedRevisions(): Promise<TrackedRevisionRead> {
         continue;
       }
 
-      try {
-        item.load(["author", "date", "text", "type"]);
-        await context.sync();
-      } catch (loadError) {
-        console.warn(
-          "revision item load failed " +
-            JSON.stringify({
-              index,
-              error: loadError instanceof Error ? loadError.message : String(loadError),
-            }),
-        );
-        index++;
-        continue;
+      if (!batched) {
+        try {
+          item.load(["author", "date", "text", "type"]);
+          await context.sync();
+        } catch (loadError) {
+          console.warn(
+            "revision item load failed " +
+              JSON.stringify({
+                index,
+                error: loadError instanceof Error ? loadError.message : String(loadError),
+              }),
+          );
+          index++;
+          continue;
+        }
       }
       let range: { start: number; end: number } | null = null;
       try {
-        if (typeof item.getRange === "function") {
+        if (batched) {
+          const changeRange = rangeProxies.get(index);
+          if (
+            changeRange &&
+            typeof changeRange.start === "number" &&
+            typeof changeRange.end === "number"
+          ) {
+            range = { start: changeRange.start, end: changeRange.end };
+          }
+        } else if (typeof item.getRange === "function") {
           const changeRange = item.getRange();
           if (changeRange && typeof changeRange.load === "function") {
             changeRange.load(["start", "end"]);

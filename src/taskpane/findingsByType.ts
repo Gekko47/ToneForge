@@ -94,7 +94,13 @@ export function describeCategory(category: string): { ruleName: string; parent: 
   const parts = category.split(".");
   if (parts.length === 1) return { ruleName: domain, parent: "Style" };
   const leaf = parts[parts.length - 1] ?? "";
-  return { ruleName: leaf.charAt(0).toUpperCase() + leaf.slice(1), parent: domain };
+  /*
+   * The leaf is a camelCase key (`emDash`, `headingCase`), not a sentence. Split
+   * the word boundaries so the heading reads "Em Dash" rather than "EmDash",
+   * then capitalise the first word only — the rest keep their own casing.
+   */
+  const words = leaf.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+  return { ruleName: words.charAt(0).toUpperCase() + words.slice(1), parent: domain };
 }
 
 /**

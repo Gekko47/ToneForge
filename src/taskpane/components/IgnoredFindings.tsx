@@ -120,22 +120,42 @@ export default function IgnoredFindings({
 }: IgnoredFindingsProps): React.ReactNode {
   const styles = useStyles();
   const [open, setOpen] = React.useState(false);
-  const [selectedGroup, setSelectedGroup] = React.useState<FindingTypeGroup | null>(null);
+  /*
+   * The selected group is stored by key, not as a snapshot. A snapshot holds the
+   * findings as they were when the row was pressed, so after a restore the
+   * overlay kept rendering the removed entry and `remaining` counted a finding
+   * that was no longer there. Deriving the group from `groups` on every render
+   * keeps `currentFinding` and `remaining` fresh.
+   */
+  const [selectedGroupKey, setSelectedGroupKey] = React.useState<string | null>(null);
   const [position, setPosition] = React.useState(0);
 
   if (entries.length === 0) return null;
 
   const groups = groupIgnoredByType(entries);
+  const selectedGroup = groups.find((group) => group.key === selectedGroupKey) ?? null;
   const currentFinding = selectedGroup?.findings[position] ?? null;
   const remaining = selectedGroup?.findings.length ?? 0;
 
+  /*
+   * Clear the selection when its group is no longer available. Without this the
+   * key would linger after the last entry of a group is restored, and the
+   * overlay would reopen by itself if an entry of that group reappeared.
+   */
+  React.useEffect(() => {
+    if (selectedGroupKey !== null && selectedGroup === null) {
+      setSelectedGroupKey(null);
+      setPosition(0);
+    }
+  }, [selectedGroupKey, selectedGroup]);
+
   const handleSelect = (group: FindingTypeGroup): void => {
-    setSelectedGroup(group);
+    setSelectedGroupKey(group.key);
     setPosition(0);
   };
 
   const handleClose = (): void => {
-    setSelectedGroup(null);
+    setSelectedGroupKey(null);
     setPosition(0);
   };
 
@@ -158,16 +178,16 @@ export default function IgnoredFindings({
     if (!entry || entry.findingId !== finding.id) return;
     const occurrence = entry.occurrenceKey.length > 0 ? entry.occurrenceKey : entry.fingerprint;
     onRestore(occurrence);
-    // After removal, derive the live group from current entries using the key.
+    // The group is derived from `entries` on the next render, so the removed
+    // entry drops out on its own. Clamp the position to the shrunk group; the
+    // effect above clears the selection if the group disappears entirely.
     const remainingEntries = entries.filter((e) => e !== entry);
-    const liveGroups = groupIgnoredByType(remainingEntries);
-    const liveGroup = liveGroups.find((g) => g.key === selectedGroup?.key) ?? null;
+    const liveGroup = groupIgnoredByType(remainingEntries).find(
+      (g) => g.key === selectedGroup?.key,
+    );
     const liveRemaining = liveGroup?.findings.length ?? 0;
-    // Keep position at the index of the next finding, clamped to new length.
-    const nextPosition = Math.min(position, Math.max(0, liveRemaining - 1));
     if (liveRemaining > 0) {
-      setSelectedGroup(liveGroup);
-      setPosition(nextPosition);
+      setPosition(Math.min(position, liveRemaining - 1));
     } else {
       handleClose();
     }

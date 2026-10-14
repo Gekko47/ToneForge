@@ -752,20 +752,34 @@ async function acquireScope(
           rangeProxies.push(null);
         }
       });
+      let offsetsSynced = false;
       try {
         await context.sync();
         syncCount++;
+        offsetsSynced = true;
       } catch (syncError) {
         logger.warn("Paragraph offset sync failed; offsets will be unavailable", {
           ...describeError(syncError),
         });
       }
-      paragraphOffsets = rangeProxies.map((range) => {
-        if (range && typeof range.start === "number" && typeof range.end === "number") {
-          return { start: range.start, end: range.end };
-        }
-        return null;
-      });
+      /*
+       * A failed sync leaves every proxy unpopulated, so none of them can be
+       * trusted: map them all to null and let `buildSnapshot` fall back to
+       * `indexOf`. Each read is guarded too, so one unreadable offset costs that
+       * paragraph's offsets rather than the whole scan.
+       */
+      paragraphOffsets = offsetsSynced
+        ? rangeProxies.map((range) => {
+            try {
+              if (range && typeof range.start === "number" && typeof range.end === "number") {
+                return { start: range.start, end: range.end };
+              }
+            } catch {
+              // One unreadable offset costs that paragraph's offsets, not the scan.
+            }
+            return null;
+          })
+        : rangeProxies.map(() => null);
     }
 
     /*

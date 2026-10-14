@@ -132,7 +132,7 @@ export function findChangeForFinding(
 export function changeForFinding(
   finding: Finding,
   plan: ChangePlan | null,
-  planFindings: readonly Finding[] = [],
+  planFindings: readonly Finding[],
 ): { change: Change; refusal: string | null } | null {
   return findChangeForFinding(finding, plan, planFindings);
 }

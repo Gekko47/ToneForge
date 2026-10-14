@@ -242,7 +242,7 @@ async function captureSelection(): Promise<CaptureOutcome> {
         await context.sync();
       } catch {
         const caret = await readCaretParagraph(context, range);
-        if (caret === null) return { status: "no-selection" };
+        if (caret === null) return { status: "unavailable", reason: NO_OFFSETS_REASON };
         return {
           status: "ok",
           captured: {
@@ -288,7 +288,7 @@ async function captureSelection(): Promise<CaptureOutcome> {
        */
       if (reportedStart < 0 || reportedEnd < 0) {
         const caret = await readCaretParagraph(context, range);
-        if (caret === null) return { status: "no-selection" };
+        if (caret === null) return { status: "unavailable", reason: NO_OFFSETS_REASON };
         return {
           status: "ok",
           captured: {
@@ -538,6 +538,8 @@ export function anchorMatches(anchor: SemanticSelectionAnchor, currentText: stri
 
 const NO_RUNTIME_REASON =
   "Word is not reachable from the add-in, so the selection cannot be read. Reopen the task pane from the ribbon, or copy the text into Semantic Style and learn from it there.";
+const NO_OFFSETS_REASON =
+  "This Word build did not report the selection's character offsets, so the selection cannot be reviewed safely. Update Word, or copy the text into Semantic Style and learn from it there.";
 const NO_RANGE_REASON =
   "This Word build does not expose a document selection, so a selection cannot be reviewed. Update Word, or copy the text into Semantic Style and learn from it there.";
 const INVALID_ANCHOR_REASON =

@@ -17,7 +17,7 @@ import { readTrackedRevisions } from "./revisionInspection";
 import { buildTrackedRevisionOoxml } from "./revisionOoxml";
 import { TONE_FORGE_REVISION_AUTHOR, type TrackedRevision } from "../core/domain/TrackedRevision";
 import { describeError, logger } from "../shared/utils/logger";
-import { nearestOccurrence } from "../shared/utils/text";
+import { locateInRawView } from "../shared/utils/text";
 import { type WordCapabilities } from "./capabilityProbe";
 import { isProtectedNode } from "../rules/protection";
 import type { DocumentNode } from "../core/domain/DocumentSnapshot";
@@ -201,6 +201,13 @@ export async function applyChangePlan(
 
   const orderedChanges = orderChanges(plan.changes);
 
+  /*
+   * The tracked deleted ranges, read once with the revisions and reused by the
+   * relocation below. A deleted occurrence is not live text, so relocating a
+   * change onto one would rewrite something the user cannot see.
+   */
+  let deletedRanges: Array<{ start: number; end: number }> = [];
+
   // Revision-overlap preflight: inspect tracked changes and refuse the whole
   // plan if any change overlaps a foreign or unknown revision.
   if (STAGE_01_CAPABILITIES?.supportsTrackedChangeInspection === true) {
@@ -209,6 +216,9 @@ export async function applyChangePlan(
       const readResult = await readTrackedRevisions();
       if (readResult.supported) {
         revisions = readResult.revisions;
+        deletedRanges = revisions
+          .filter((revision) => revision.type === "Deleted" && revision.range !== null)
+          .map((revision) => ({ start: revision.range!.start, end: revision.range!.end }));
       } else {
         for (const change of plan.changes) {
           results.push({
@@ -234,9 +244,25 @@ export async function applyChangePlan(
 
     const overlapFailures: Array<{ change: Change; overlap: RevisionOverlap }> = [];
     for (const change of orderedChanges) {
-      // Locate the live target first so we assess the real document position,
-      // not the planned offsets which may be stale.
-      const located = await locateLiveTarget(change);
+      /*
+       * Locate the live target first so we assess the real document position,
+       * not the planned offsets which may be stale. A paragraph-unit change
+       * carries a paragraph index in `range.start`, not a character offset, so
+       * it is resolved to the live paragraph's own character range before the
+       * overlap test — otherwise the index was compared against a revision's
+       * character offsets. Character text changes are located by their recorded
+       * text, unchanged.
+       */
+      const isParagraph = change.range.unit === "paragraph";
+      const located = isParagraph
+        ? await locateLiveParagraphTarget(change)
+        : await locateLiveTarget(change, deletedRanges);
+      if (isParagraph && !located.ok) {
+        // The live paragraph offsets could not be read; fail closed rather than
+        // compare a paragraph index against revision character offsets.
+        overlapFailures.push({ change, overlap: { kind: "unknown", reason: located.reason } });
+        continue;
+      }
       const overlap = assessRevisionOverlap(
         located.ok
           ? { ...change, range: { ...change.range, start: located.start, end: located.end } }
@@ -288,7 +314,7 @@ export async function applyChangePlan(
   }> = [];
   for (const change of orderedChanges) {
     try {
-      const located = await locateLiveTarget(change);
+      const located = await locateLiveTarget(change, deletedRanges);
       if (!located.ok) {
         preconditionResults.push({ change, matches: false, reason: located.reason });
         continue;
@@ -875,7 +901,10 @@ type LiveTarget = { ok: true; start: number; end: number } | { ok: false; reason
  * change (paragraph, formatting) keeps its planned offsets; its node/formatting
  * precondition is still checked by `verifyLivePrecondition`.
  */
-async function locateLiveTarget(change: Change): Promise<LiveTarget> {
+async function locateLiveTarget(
+  change: Change,
+  deletedRanges: readonly { start: number; end: number }[] = [],
+): Promise<LiveTarget> {
   const precondition = change.precondition;
   if (
     precondition?.kind !== "text" ||
@@ -909,12 +938,13 @@ async function locateLiveTarget(change: Change): Promise<LiveTarget> {
       return { ok: true, start: change.range.start, end: change.range.end };
     }
     /*
-     * The nearest occurrence, not merely the first: a tracked edit drifts the
-     * plan's offset by the length of the deleted text before it, so the closest
-     * occurrence is the one the plan meant. Shared with the highlight path
-     * (`word/sourceLocator`), which relocates a finding's text the same way.
+     * Search forward from the planned offset and skip occurrences that overlap a
+     * tracked deleted range: a deleted occurrence is not live text, so applying
+     * there would rewrite something the user cannot see. Shared with the
+     * highlight path (`word/sourceLocator`), which relocates a finding's text the
+     * same way.
      */
-    const located = nearestOccurrence(live, expected, change.range.start);
+    const located = locateInRawView(live, expected, change.range.start, deletedRanges);
     if (located === -1) {
       return {
         ok: false,
@@ -922,6 +952,49 @@ async function locateLiveTarget(change: Change): Promise<LiveTarget> {
       };
     }
     return { ok: true, start: located, end: located + expected.length };
+  });
+}
+
+/**
+ * Locate a paragraph-unit change's live character range.
+ *
+ * A paragraph-unit change carries a paragraph index in `range.start`, not a
+ * character offset, so it cannot be compared against a revision's character
+ * offsets directly. `Paragraph.getRange("Whole")` returns the paragraph's own
+ * range with `start`/`end` in the raw body text — the same coordinate space the
+ * revision offsets use. When either offset is unavailable the result is
+ * `ok: false`, so the overlap preflight fails closed rather than comparing a
+ * paragraph index against character offsets.
+ */
+async function locateLiveParagraphTarget(change: Change): Promise<LiveTarget> {
+  const target = change.range.target ?? { kind: "document" as const };
+  const index = target.kind === "paragraph" ? target.index : change.range.start;
+  return runInWord(async (context) => {
+    const paragraphs = context.document.body.paragraphs;
+    if (!paragraphs) {
+      return { ok: false, reason: "Paragraph-unit target requires the Word paragraph collection" };
+    }
+    paragraphs.load("items");
+    await context.sync();
+    const item = paragraphs.items[index] as unknown as
+      | {
+          getRange?: (location: "Whole") => {
+            start?: number;
+            end?: number;
+            load?: (p: string | string[]) => unknown;
+          };
+        }
+      | undefined;
+    if (!item || typeof item.getRange !== "function") {
+      return { ok: false, reason: `Paragraph target ${index} is unavailable` };
+    }
+    const range = item.getRange("Whole");
+    range?.load?.(["start", "end"]);
+    await context.sync();
+    if (typeof range?.start !== "number" || typeof range?.end !== "number") {
+      return { ok: false, reason: `Paragraph target ${index} served no character offsets` };
+    }
+    return { ok: true, start: range.start, end: range.end };
   });
 }
 
