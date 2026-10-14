@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { Button, makeStyles, tokens } from "@fluentui/react-components";
+import { Button } from "@fluentui/react-components";
 import { toAnalysisCapabilities, type WordCapabilities } from "../../word/capabilityProbe";
 import type { AnalysisCapabilities } from "../../analysis/analysisContext";
 import {
@@ -7,7 +7,6 @@ import {
   type GovernanceProfile,
 } from "../../core/domain/GovernanceProfile";
 import { createDocumentObserver, type DocumentObserverStatus } from "../../word/documentObserver";
-import { createWordParagraphEventAdapter } from "../../word/wordParagraphEvents";
 import {
   applyReviewedPlan,
   isTrackedEditingEnabled,
@@ -37,24 +36,22 @@ import {
 import { LoadingState } from "../components/common/LoadingState";
 import { DisclosurePanel } from "../components/common";
 import ReviewWithoutProfile from "./ReviewWithoutProfile";
-import FindingsList from "../components/FindingsList";
-import FindingsToolbar from "../components/FindingsToolbar";
-import { approveGroup, skipGroup } from "../batchApproval";
 import CoverageBanner, { scopeLabel } from "../components/CoverageBanner";
-import ApplyResultBlock from "../components/ApplyResultBlock";
 import StaleBanner from "../components/StaleBanner";
-import PendingChanges from "../components/PendingChanges";
 import IgnoredFindings from "../components/IgnoredFindings";
+import FindingTypeList from "../components/FindingTypeList";
+import FindingDetailOverlay from "../components/FindingDetailOverlay";
+import { projectFindingsByType, type FindingTypeGroup } from "../findingsByType";
 import type { ConsistencyReport } from "../../analysis/consistency";
 import type { buildCoverage } from "../../analysis/coverage";
 import { findingFingerprint } from "../findingFingerprint";
 import { isAnyIgnored, withoutIgnored } from "../isIgnoredFinding";
+import { goToFinding } from "../findingNavigation";
 import { decidePreview, isFullScan } from "../autoPreview";
-import { reviewFinding, reviewedPlan } from "../reviewGate";
-import { approvedIdentities, unapprovableReason } from "../approvalControls";
-import type { DeterministicFindingGroup } from "../../analysis/deterministic/contracts";
+import { reformatDocument } from "../../reformat";
+import { changeForFinding, narrowPlanToChanges, reviewedPlan } from "../reviewGate";
+import { approvedIdentities } from "../approvalControls";
 import {
-  clearReviewDecision,
   ensureReviewSession,
   loadReviewSession,
   saveReviewDecision,
@@ -67,14 +64,6 @@ import {
   summarizeOpenFindings,
   type OpenFindingsSummary,
 } from "../findingsSummary";
-import { reformatDocument } from "../../reformat";
-import {
-  createWorkflowState,
-  selectCurrentTask,
-  selectNextFindingIndex,
-  selectPreviousFindingIndex,
-  workflowReducer,
-} from "../workflow/workflowState";
 import {
   ignoreFinding as persistIgnore,
   loadState,
@@ -86,10 +75,10 @@ import { useAnnouncement } from "../settings/useAnnouncement";
 import { usePageNavigation } from "../usePageNavigation";
 import { parentRoute, routeLabel } from "../routes";
 import { deriveAnnouncement } from "../state/announcement";
-import { applyReadiness, hostReadinessMessage } from "../settings/applyReadiness";
+import { hostReadinessMessage } from "../settings/applyReadiness";
 import type { StyleProfile, StyleProfileSchema } from "../../core/domain/StyleProfile";
 import type { Finding } from "../../core/domain/Finding";
-import type { ApplyOutcome } from "../../reformat/orchestrator";
+import type { Change } from "../../core/domain/Change";
 import type { ChangePlan } from "../../core/domain/ChangePlan";
 import type { PersistedState } from "../../core/state/persistence";
 import type { SemanticReviewSession } from "../../core/domain/SemanticReviewSession";
@@ -103,19 +92,6 @@ const SemanticReview = lazy(() => import("./SemanticReview"));
 const SemanticStyle = lazy(() => import("./SemanticStyle"));
 const Home = lazy(() => import("./Home"));
 import type { HomeState } from "./homeState";
-
-/** Lets the findings toolbar's `aria-controls` point at the rendered list. */
-const FINDINGS_LIST_ID = "tf-findings-list";
-
-const useStyles = makeStyles({
-  root: {
-    marginTop: tokens.spacingVerticalM,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground2,
-    overflow: "hidden",
-  },
-});
 
 /**
  * What the pane knows about the host before the probe has answered.
@@ -748,7 +724,6 @@ function DashboardWithProfile({
   activeProfile: StyleProfile;
   initialPage: DashboardInitialPage;
 }): React.ReactNode {
-  const styles = useStyles();
   const [caps, setCaps] = useState<WordCapabilities | null>(null);
   // Persisted state is read through the store, not `loadState()`, so a consent
   // toggle or provider connection saved in Settings is visible here in the same
@@ -781,9 +756,18 @@ function DashboardWithProfile({
    * the difference between a default and a rule.
    */
   const [findingsOpen, setFindingsOpen] = useState(true);
-  const [pendingOpen, setPendingOpen] = useState(false);
   const [reformatResult, setReformatResult] = useState<ReformatResult | null>(null);
   const [status, setStatus] = useState<DocumentObserverStatus | null>(null);
+  /**
+   * True while the post-apply re-scan is in flight.
+   *
+   * An apply writes through the Word API, which moves no selection, so Word
+   * fires no `documentSelectionChanged` and the observer only re-reads because
+   * `overlayAccept` nudged it. Until that scan reports, the plan still holds the
+   * pre-apply offsets and an Accept would be refused as stale — so the button is
+   * held, with a reason, rather than reading as a silent no-op.
+   */
+  const [refreshingAfterApply, setRefreshingAfterApply] = useState(false);
   /*
    * No in-memory set of ignored fingerprints. It was the vehicle for the bug:
    * a fingerprint identifies a *rule*, so a set of them hid every occurrence of
@@ -847,6 +831,22 @@ function DashboardWithProfile({
   const previewPlanRef = useRef<ChangePlan | null>(null);
   /** The preview run's own findings, matched to a reviewed finding by key. */
   const previewFindingsRef = useRef<readonly Finding[]>([]);
+  /*
+   * Temporary diagnostic (remove after host verification): the overlay positions
+   * by index into `overlayGroup.findings`, which is re-derived from the observer
+   * on every render. This holds the last shape logged, so a list that shrinks
+   * beneath `overlayPosition` during a post-apply refresh is visible in the host
+   * console exactly once per change.
+   */
+  const overlayShapeRef = useRef<string | null>(null);
+  /*
+   * Set when an apply has just written and the observer's refreshed findings are
+   * on their way. The overlay must then re-anchor on the post-refresh group,
+   * never advance an index against the pre-refresh one: the applied finding
+   * leaves the refreshed list, so an advance double-counts and skips the finding
+   * the user should see next.
+   */
+  const resumeOverlayAfterRefreshRef = useRef(false);
   /** Why a reviewed finding did not become a pending change, if it did not. */
   const [reviewNote, setReviewNote] = useState<string | null>(null);
   const [expiredDecisionCount, setExpiredDecisionCount] = useState(0);
@@ -885,16 +885,18 @@ function DashboardWithProfile({
   const remainingScopes = [
     ...new Set((status?.deterministicCoverage?.blockers ?? []).map((blocker) => blocker.scope)),
   ];
-  /**
-   * The post-apply result block (spec §19).
+  /*
+   * The one-finding overlay state.
+  /*
+   * The one-finding overlay state.
    *
-   * State rather than a field on `reformatResult` because the block has to
-   * outlive the plan: the plan is cleared on success so Pending Changes empties,
-   * but the user still has to decide whether to keep each tracked revision. A
-   * result attached to the plan would disappear at the moment it became useful.
+   * `overlayGroupKey` is the rule identity of the type group being reviewed;
+   * the group itself is derived from the live findings on every render so it
+   * always reflects the document's current state. `overlayPosition` is the
+   * 0-based index within that group.
    */
-  const [applyOutcome, setApplyOutcome] = useState<ApplyOutcome | null>(null);
-  const [applyResultOpen, setApplyResultOpen] = useState(false);
+  const [overlayGroupKey, setOverlayGroupKey] = useState<string | null>(null);
+  const [overlayPosition, setOverlayPosition] = useState(0);
   /*
    * The finished consistency report, and nothing else about the review.
    *
@@ -957,14 +959,6 @@ function DashboardWithProfile({
     }
     setSemanticReviewStatus(null);
   }, [page]);
-  /*
-   * The in-flight flag lives in `PendingChanges`, beside the button it disables.
-   *
-   * It was duplicated here for a whole-pane "Apply all changes" button that no
-   * longer exists. Two copies of one flag are two chances for a button to be
-   * enabled while a write is in flight, and the copy guarding the button the
-   * user can actually press is the one that has to be right.
-   */
   /**
    * One live region for the whole pane.
    *
@@ -976,12 +970,6 @@ function DashboardWithProfile({
    * testable on its own.
    */
   const announcement = useAnnouncement();
-  const [workflow, dispatchWorkflow] = React.useReducer(
-    workflowReducer,
-    undefined,
-    createWorkflowState,
-  );
-  const currentTask = selectCurrentTask(workflow);
   const activeProfileKey = `${activeProfile.id}:${activeProfile.revision}`;
   /**
    * One host verdict, computed once and read by the banner, the announcement,
@@ -997,15 +985,6 @@ function DashboardWithProfile({
     capabilities: caps,
   });
   const hostBlocker = hostReadiness.verdict === "blocked" ? hostReadiness.message : null;
-
-  useEffect(() => {
-    const phase = status?.phase ?? "notStarted";
-    dispatchWorkflow({
-      type: "analysis/scan",
-      scanStatus: phase === "notStarted" ? "idle" : phase,
-    });
-    dispatchWorkflow({ type: "analysis/findings", findings: status?.findings ?? [] });
-  }, [status]);
 
   /**
    * Build the preview automatically once a whole-document scan settles.
@@ -1043,8 +1022,9 @@ function DashboardWithProfile({
       fullScan: isFullScan(status.coverage),
       // The document identity the *plan* would apply to, which is the scan's
       // own hash rather than the preview's: a plan is only valid for the text
-      // it was derived from.
-      docHash: status.documentVersion,
+      // it was derived from. Empty until the first scan has read the document,
+      // so it is treated as "no scan" rather than a hash to preview against.
+      docHash: status.documentVersion === "" ? null : status.documentVersion,
       previewedDocHash: previewedDocHashRef.current,
       previewing: previewingRef.current,
     });
@@ -1070,6 +1050,21 @@ function DashboardWithProfile({
       }
       return;
     }
+    /*
+     * Wait for the capability probe before building a preview.
+     *
+     * Without this guard, the first scan triggers a preview under
+     * FALLBACK_CAPABILITIES (all false), which makes `acquireAnalysisContext`
+     * choose scope `none` — the document text is not read, and the preview
+     * produces zero findings and zero changes. That empty plan is stored in
+     * state and shown to the user: the overlay opens, Accept finds no change
+     * to resolve, and the button reports "no correction" for a document the
+     * observer has already found findings in.
+     *
+     * Waiting costs one extra planning pass per document and ensures the
+     * single preview that runs is the only one the user ever sees.
+     */
+    if (caps === null) return;
     narrowFollowUpRef.current = null;
     setPreviewNote(null);
     previewingRef.current = true;
@@ -1082,44 +1077,18 @@ function DashboardWithProfile({
           // deterministic too, and this path has no provider parameter at all
           // — spec §3.2 moved semantic review out of the reformat pipeline.
           policy: resolveGovernanceProfile(persisted, activeProfile),
-          /*
-           * The probed capabilities, not a fallback.
-           *
-           * This call passed no `capabilities`, so the orchestrator used
-           * `FALLBACK_CAPABILITIES` — every flag false — and the preview
-           * therefore planned against a host that supports nothing. That is
-           * what put `styles, styleBuiltin, isListItem, listItem, alignment,
-           * lineSpacing, spaceAfter, spaceBefore, font` in the unsupported list
-           * of a report describing a Word host that serves all of them. The
-           * pane was asserting its own ignorance rather than the host's.
-           *
-           * `caps` is `null` until the probe resolves, and the observer already
-           * handles that with the same all-false set, so preview and scan can
-           * never disagree about what the host offers.
-           */
-          ...(caps === null ? {} : { capabilities: toAnalysisCapabilities(caps) }),
+          capabilities: toAnalysisCapabilities(caps),
         });
-        /*
-         * The held hash is claimed only once the host has been probed.
-         *
-         * A preview built before the probe answered planned against a host that
-         * supports nothing, so it is provisional by construction. Claiming the
-         * hash for it would make `decidePreview` treat the document as already
-         * previewed, and the corrected plan would never be built — the fallback
-         * would be permanent rather than momentary. Waiting costs one extra
-         * planning pass per document and removes a class of wrong report.
-         *
-         * Zero changes still claims the hash once capabilities are known: an
-         * unchanged document is a settled answer, not a reason to re-plan on
-         * every scan.
-         */
-        if (caps !== null) previewedDocHashRef.current = decision.docHash;
+        previewedDocHashRef.current = decision.docHash;
         setReformatResult(result);
-        setPendingOpen(true);
+        // A fresh plan has landed, so the post-apply Accept guard can drop.
+        setRefreshingAfterApply(false);
       } catch (error: unknown) {
         setApplyMessage(
           `Preview could not be built: ${error instanceof Error ? error.message : String(error)}`,
         );
+        // A preview that never lands must not leave Accept disabled forever.
+        setRefreshingAfterApply(false);
       } finally {
         previewingRef.current = false;
       }
@@ -1128,6 +1097,42 @@ function DashboardWithProfile({
     // lands. It is compared by identity, and `setCaps` receives one object per
     // probe, so this re-runs once per probe rather than per render.
   }, [status, activeProfile, caps]);
+
+  /*
+   * Re-anchor the overlay once the post-apply scan has settled.
+   *
+   * `overlayAccept` nudges the observer after a write; when the resulting scan
+   * reports, `status.findings` is the post-apply set. The Accept guard is *not*
+   * released here: it is held until the matching plan lands (in the preview
+   * effect), so an accept cannot be judged against the pre-apply plan and refused
+   * as stale.
+   */
+  useEffect(() => {
+    if (status !== null && status.phase !== "scanning") {
+      /*
+       * Re-anchor the overlay after an apply. `status.findings` is the refreshed
+       * scan, so the applied finding has already left the group and the same index
+       * names the next finding. The group is recomputed here rather than read from
+       * the render's `overlayGroup`: that binding is declared below an early
+       * return, so a status change landing while another page shows would touch it
+       * before it is initialised. Navigate to the next finding; close when the
+       * group is spent (the index is past the end, or the group has gone).
+       */
+      if (resumeOverlayAfterRefreshRef.current) {
+        resumeOverlayAfterRefreshRef.current = false;
+        const refreshedGroup =
+          projectFindingsByType(withoutIgnored(status.findings, persisted.ignoredFindings)).find(
+            (group) => group.key === overlayGroupKey,
+          ) ?? null;
+        const current = refreshedGroup?.findings[overlayPosition];
+        if (current) {
+          void goToFinding(current);
+        } else {
+          closeOverlay();
+        }
+      }
+    }
+  }, [status]);
 
   useEffect(() => {
     void prepareReformatHost()
@@ -1176,25 +1181,7 @@ function DashboardWithProfile({
      * never starting it would make the manual button inert too.
      */
     if (autoScan) observer.startObserver();
-    // The change payload is forwarded rather than discarded. It is what lets the
-    // observer examine only the paragraphs Word says changed, and it carries the
-    // evidence the observer needs to refuse that narrowing when the host did not
-    // report a complete set of ids.
-    const paragraphEvents = createWordParagraphEventAdapter({
-      onChange: (change) => observer.onDocumentChanged(change),
-    });
-    /*
-     * Gated with the observer, not independently.
-     *
-     * These events are the host's own notification that the text changed, so
-     * subscribing to them while auto-scan is off would re-enable exactly the
-     * automatic scanning the preference turns off â€” the setting would appear
-     * inert for every host that reports paragraph events, which is every
-     * current one.
-     */
-    if (autoScan) void paragraphEvents.start();
     return () => {
-      paragraphEvents.stop();
       observer.stopObserver();
       observerRef.current = null;
     };
@@ -1251,10 +1238,6 @@ function DashboardWithProfile({
         case "findings":
           navigate("review");
           setFindingsOpen(true);
-          break;
-        case "pending-changes":
-          navigate("review");
-          setPendingOpen(true);
           break;
         case "review":
           navigate("review");
@@ -1361,134 +1344,6 @@ function DashboardWithProfile({
     // keyed on fingerprints is exactly what caused the bug this replaces.
   }
 
-  async function applyPendingPlan(pendingPlan: PendingPlan | null): Promise<boolean> {
-    if (!pendingPlan) return false;
-    const { plan, coverage } = pendingPlan;
-    if (coverage?.complete !== true) {
-      setApplyMessage("Apply refused: analysis coverage is incomplete or unavailable.");
-      return false;
-    }
-    if (plan.schemaVersion !== 2) {
-      setApplyMessage("Apply refused: preview a schema version 2 plan first.");
-      return false;
-    }
-    if (plan.changes.some((change) => change.precondition === undefined)) {
-      setApplyMessage("Apply refused: one or more changes lack exact preconditions.");
-      return false;
-    }
-    if (
-      plan.changes.some((change) => change.approvalRequired && change.approvalState !== "approved")
-    ) {
-      setApplyMessage("Apply refused: one or more changes are still pending approval.");
-      return false;
-    }
-    setApplyMessage(null);
-    try {
-      const currentState = loadState();
-      const currentGovernance = resolveGovernanceProfile(currentState, activeProfile);
-      const result = await applyReviewedPlan({
-        plan,
-        currentGovernancePolicyRevision: currentGovernance.version,
-        // The revision number alone only proves the plan was built under this
-        // policy; the policy is what the protection check reads, so an author's
-        // protection override has to travel with it or it stops applying here.
-        governanceProfile: currentGovernance,
-        coverage,
-        allowConflictingApply: false,
-        // The profile and capabilities travel so the post-apply refresh runs
-        // the *same* review under the *same* policy the plan was built from. A
-        // refresh under different conditions is not evidence about this document.
-        profile: activeProfile,
-        capabilities: caps ? toAnalysisCapabilities(caps) : UNPROBED_CAPABILITIES,
-      });
-      /*
-       * The result block is set on every path, including the refusals.
-       *
-       * A refused apply is a result too, and its counts are how the pane says
-       * "0 of 4" rather than showing a message with nothing to attach it to. The
-       * block opens only when something went wrong, so a clean apply does not
-       * interrupt the flow of approving the next finding.
-       */
-      setApplyOutcome(result.outcome);
-      if (result.applied && result.verified) {
-        setApplyResultOpen(result.outcome.unverifiedCount > 0 || result.outcome.failedCount > 0);
-        setApplyMessage(
-          `Applied and verified ${result.results.filter((item) => item.applied).length} change(s).`,
-        );
-        setReformatResult(null);
-        setPendingOpen(false);
-        observerRef.current?.onDocumentChanged();
-        return true;
-      }
-
-      setApplyResultOpen(true);
-      setApplyMessage(
-        result.verificationError ??
-          result.results.find((item) => !item.applied)?.error ??
-          "Apply refused; preview the changes again.",
-      );
-      return false;
-    } catch (error: unknown) {
-      setApplyMessage(error instanceof Error ? error.message : String(error));
-      return false;
-    }
-  }
-
-  /**
-   * Review a finding: either it becomes a pending change, or the pane says why
-   * it cannot be one.
-   *
-   * This replaces a `markForReview` that only flipped a status label, which is
-   * why the button appeared to do nothing. The decision is delegated to
-   * `reviewGate` so the rule â€” never announce a change Apply will refuse â€” is
-   * testable without a host, and so the same conditions Apply enforces are the
-   * ones the gate reads.
-   */
-  function reviewOne(finding: Finding): void {
-    /*
-     * Judged against the *preview run's* plan and that run's own findings.
-     *
-     * The finding in front of the user comes from the observer's scan; the plan
-     * comes from the preview. The two are reconciled inside `reviewFinding`
-     * through the shared occurrence identity rather than here, so the gate and
-     * the pending projection cannot drift apart. Judging the observer's finding
-     * id against the preview's changes could never match: the two runs issue
-     * separate uuids, so every review reported "the planner proposes no
-     * correction" for a finding that had one.
-     */
-    const decision = reviewFinding(finding, previewPlanRef.current, previewFindingsRef.current);
-    if (decision.kind === "pending") {
-      try {
-        saveReviewDecision({
-          identity: reviewIdentity(finding),
-          ruleId: finding.ruleId ?? finding.category,
-          category: finding.category,
-          decision: "approved",
-          expected: finding.expected ?? null,
-          decidedAt: new Date().toISOString(),
-        });
-        setExpiredDecisionCount(0);
-      } catch (error: unknown) {
-        setReviewNote(
-          `That decision could not be recorded: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return;
-      }
-    }
-    /*
-     * Both outcomes speak through the one pane-wide live region rather than
-     * adding a second `role="status"` beside the list. A review that produced no
-     * pending change has to say so â€” otherwise the button looks broken again,
-     * which is exactly what the status label-only version of Review did.
-     */
-    setReviewNote(decision.message);
-    announcement.announce(decision.message);
-    if (decision.kind === "pending") {
-      setPendingOpen(true);
-      return;
-    }
-  }
-
   /**
    * Re-scan now, whether or not auto-scan is on.
    *
@@ -1533,189 +1388,298 @@ function DashboardWithProfile({
   }
 
   /**
-   * Undo decision: withdraw whatever was decided about this occurrence.
-   *
-   * Clears both records, because they are the same decision stored twice — the
-   * legacy review entry the projection narrows by, and the session entry the
-   * card reads. Clearing one and leaving the other would produce a card reading
-   * "Undecided" over a change that is still queued.
+   * Open the overlay for a type group, starting at its first finding.
    */
-  function undoOne(finding: Finding): void {
-    const identity = reviewIdentity(finding);
-    try {
-      clearReviewDecision(identity);
-      setExpiredDecisionCount(0);
-    } catch {
-      /*
-       * No session in force is the normal case here, not a failure.
-       *
-       * A review can exist without a session — the store carries both, and a
-       * session is only established by a full review run. Withdrawing the review
-       * is the part that matters for the plan, so a missing session is a no-op
-       * rather than a message on screen for a button that did the right thing.
-       */
-    }
-    setReviewNote("Decision undone. This occurrence can be reviewed again.");
-    announcement.announce("Decision undone.");
+  function openOverlayGroup(group: FindingTypeGroup): void {
+    setOverlayGroupKey(group.key);
+    setOverlayPosition(0);
+    const first = group.findings[0];
+    if (first) void goToFinding(first);
   }
 
   /**
-   * Approve every occurrence in a group, or none of them (spec §13, §15).
-   *
-   * **The all-or-nothing rule is not reimplemented here.** `approveGroup` decides
-   * it, and it is handed the *preview* plan and the preview run's own findings —
-   * the same pairing `reviewOne` uses, because a change names its finding by a
-   * uuid from the run that planned it. Handing it the observer's findings would
-   * match nothing and refuse every group for the wrong reason.
-   *
-   * The group's occurrences are the observer's, because that is the run whose
-   * findings the user is looking at. That is why the observer carries its groups:
-   * a group joined across runs would have every occurrence "missing", and
-   * `undecidedOccurrences` refuses exactly that.
-   *
-   * A refusal records nothing. That is the module's whole design and the reason it
-   * exists rather than a loop over `reviewFinding`: a group where some can be
-   * approved and some cannot is refused whole, so the button has one predictable
-   * outcome rather than a partial success depending on data the user cannot see.
+   * Close the overlay and reset its state.
    */
-  function approveGroupAll(group: DeterministicFindingGroup): void {
-    const outcome = approveGroup({
-      group,
-      findings,
-      plan: previewPlanRef.current,
-      planFindings: previewFindingsRef.current,
-      alreadyDecided: new Set([...reviewedKeys, ...skippedKeys]),
-      decidedAt: new Date().toISOString(),
+  function closeOverlay(): void {
+    setOverlayGroupKey(null);
+    setOverlayPosition(0);
+  }
+
+  /**
+   * Move to the previous finding in the overlay group, and take the document
+   * with it.
+   *
+   * The arrows used to move the pane only, so the finding on screen and the
+   * text it described were in two different places. The document follows the
+   * selection, through the shared guard, so a fast click cannot start two
+   * navigations and let the later one win.
+   */
+  function overlayPrevious(): void {
+    setOverlayPosition((prev) => {
+      const next = Math.max(0, prev - 1);
+      const finding = overlayGroup?.findings[next];
+      if (finding) void goToFinding(finding);
+      return next;
     });
-    if (outcome.kind === "refused") {
-      setReviewNote(outcome.message);
-      announcement.announce(outcome.message);
+  }
+
+  /**
+   * Move to the next finding in the overlay group, and take the document with
+   * it. See `overlayPrevious` for why the document moves too.
+   */
+  function overlayNext(): void {
+    setOverlayPosition((prev) => {
+      if (overlayGroup === null) return prev;
+      const next = Math.min(overlayGroup.findings.length - 1, prev + 1);
+      const finding = overlayGroup.findings[next];
+      if (finding) void goToFinding(finding);
+      return next;
+    });
+  }
+
+  /**
+   * Skip one finding in the overlay: record a skip and advance without applying.
+   *
+   * The inline FindingDetail renders this beside Go to text, not as a second
+   * copy under Accept.
+   */
+  function overlaySkip(finding: Finding): void {
+    skipOne(finding);
+    const nextPosition = overlayPosition + 1;
+    if (overlayGroup && nextPosition < overlayGroup.findings.length) {
+      const nextFinding = overlayGroup.findings[nextPosition];
+      if (nextFinding) void goToFinding(nextFinding);
+      setOverlayPosition(nextPosition);
+    } else {
+      closeOverlay();
+    }
+  }
+
+  /**
+   * Ignore one finding in the overlay: move it to the Ignored list and advance.
+   *
+   * Rendered inline by FindingDetail, beside Go to text.
+   */
+  function overlayIgnore(finding: Finding): void {
+    ignoreFinding(finding);
+    const nextPosition = overlayPosition + 1;
+    if (overlayGroup && nextPosition < overlayGroup.findings.length) {
+      const nextFinding = overlayGroup.findings[nextPosition];
+      if (nextFinding) void goToFinding(nextFinding);
+      setOverlayPosition(nextPosition);
+    } else {
+      closeOverlay();
+    }
+  }
+
+  /**
+   * Accept one finding in the overlay: apply it immediately, then advance.
+   *
+   * The change is resolved through the occurrence identity, not through
+   * `finding.id`. The finding comes from the document observer's scan and the
+   * plan from the preview run, and the two issue separate uuids for the same
+   * problem — so an id match never found anything, and a live button did
+   * nothing at all.
+   *
+   * Every way this can fail now says so. Returning silently was the bug: the
+   * press looked accepted, and the only evidence was that nothing happened.
+   */
+  async function overlayAccept(finding: Finding): Promise<void> {
+    if (!overlayGroup) {
       return;
     }
+    const plan = previewPlanRef.current;
+    if (!plan) {
+      setReviewNote(
+        "No change has been previewed for this document yet. Scan, or press Re-scan now.",
+      );
+      return;
+    }
+    const match = changeForFinding(finding, plan, previewFindingsRef.current);
     /*
-     * Persisted after the verdict, not before.
-     *
-     * The module returns the decisions to record; it deliberately does not write.
-     * Recording first would leave approvals in the store for a group the change
-     * checks then refused — Pending Changes would show occurrences the user never
-     * successfully approved.
+     * Temporary diagnostic (remove after host verification): record whether the
+     * plan/finding join found a change and the sizes on each side.
      */
-    try {
-      outcome.decisions.forEach((entry) => saveReviewDecision(entry));
-      setExpiredDecisionCount(0);
-    } catch (error: unknown) {
+    console.warn(
+      "overlay accept diagnostic " +
+        JSON.stringify({
+          findingId: finding.id,
+          findingKind: finding.kind,
+          findingCategory: finding.category,
+          planChangeCount: plan.changes.length,
+          previewFindingCount: previewFindingsRef.current.length,
+          matched: match !== null,
+          refusal: match?.refusal ?? null,
+          changeFindingIds: plan.changes.map((change) => change.findingId ?? null),
+          previewFindingIds: previewFindingsRef.current.map((entry) => entry.id),
+        }),
+    );
+    if (match === null) {
       setReviewNote(
-        `That decision could not be recorded: ${error instanceof Error ? error.message : String(error)}`,
+        "The preview proposes no correction for this finding, so there is nothing to apply.",
       );
       return;
     }
-    setReviewNote(outcome.message);
-    announcement.announce(outcome.message);
-    setPendingOpen(true);
+    if (match.refusal !== null) {
+      setReviewNote(`Cannot apply: ${match.refusal}.`);
+      return;
+    }
+    try {
+      const currentState = loadState();
+      const currentGovernance = resolveGovernanceProfile(currentState, activeProfile);
+      const result = await applyReviewedPlan({
+        plan: narrowPlanToChanges(plan, [match.change]),
+        currentGovernancePolicyRevision: currentGovernance.version,
+        governanceProfile: currentGovernance,
+        coverage: pendingPlan?.coverage ?? null,
+        allowConflictingApply: false,
+        profile: activeProfile,
+        capabilities: caps ? toAnalysisCapabilities(caps) : UNPROBED_CAPABILITIES,
+      });
+      /*
+       * Temporary diagnostic (remove after host verification): record what
+       * `applyReviewedPlan` returned before deciding how to proceed.
+       */
+      console.warn(
+        "overlay accept result diagnostic " +
+          JSON.stringify({
+            findingId: finding.id,
+            applied: result.applied,
+            verified: result.verified,
+            stale: result.stale,
+            verificationError: result.verificationError,
+            errors: result.results.map((item) => item.error ?? null),
+          }),
+      );
+      if (result.applied && result.verified) {
+        setReviewNote("Change applied.");
+        announcement.announce("Change applied.");
+        /*
+         * Re-scan after the apply. The write went through the Word API, which
+         * moves no selection, so Word fires no documentSelectionChanged and the
+         * observer would not refresh on its own. Clearing the recorded preview
+         * hash and nudging the observer makes the next settled scan rebuild both
+         * the plan and the findings from the changed document, so the next
+         * accept verifies against fresh offsets and highlights the right text.
+         * Accept is held until that scan reports.
+         */
+        previewedDocHashRef.current = null;
+        setRefreshingAfterApply(true);
+        // Immediate: the write fires no selection event, so there is no keystroke
+        // burst to debounce — waiting the debounce out only delays the refresh.
+        observerRef.current?.onDocumentChanged(true);
+        /*
+         * Do NOT advance the index here. The nudge above starts a rescan, and
+         * that scan no longer reports the finding just applied, so it leaves the
+         * live group and every later finding shifts down one index. Advancing
+         * against the pre-refresh list therefore overshoots by one once the
+         * refreshed list lands — the finding the user should see next is skipped.
+         * `resumeOverlayAfterRefreshRef` re-anchors the overlay on this same
+         * position when that refreshed list arrives, navigating to whatever now
+         * occupies it, or closing when the group is spent.
+         */
+        resumeOverlayAfterRefreshRef.current = true;
+      } else {
+        /*
+         * Name the cause, not a generic failure. `applyReviewedPlan` reports its
+         * refusal in `verificationError` (or per-change in `results`), and the
+         * pane previously discarded both, so a refused apply read as "Apply
+         * failed" with nothing in the console and nothing to act on (ADR-0069).
+         */
+        setReviewNote(
+          result.verificationError ??
+            result.results.find((item) => item.error !== undefined)?.error ??
+            "Apply failed. Try again or skip this finding.",
+        );
+      }
+    } catch (error: unknown) {
+      setReviewNote(error instanceof Error ? error.message : String(error));
+    }
   }
 
   /**
-   * Decline every occurrence in a group, for the same all-or-nothing reason.
+   * Accept every change of the overlay group in one plan, then close the overlay.
    *
-   * Needs no plan: declining is not consenting, and twenty banned terms left in
-   * the document carry no risk. A group the engine refused to *approve* as a batch
-   * can still be declined as one, which is why this does not consult
-   * `safeBatchApproval`.
+   * Each finding's change is resolved through the occurrence identity, for the
+   * same reason Accept is: the finding on screen and the plan's finding are
+   * from different runs, so an id join finds nothing.
+   *
+   * A finding with no correction is skipped and named; a change Apply would
+   * refuse is skipped and its reason reported. Neither is a silent no-op.
    */
-  function skipGroupAll(group: DeterministicFindingGroup): void {
-    const outcome = skipGroup({
-      group,
-      findings,
-      plan: previewPlanRef.current,
-      planFindings: previewFindingsRef.current,
-      alreadyDecided: new Set([...reviewedKeys, ...skippedKeys]),
-      decidedAt: new Date().toISOString(),
-    });
-    if (outcome.kind === "refused") {
-      setReviewNote(outcome.message);
-      announcement.announce(outcome.message);
-      return;
-    }
-    try {
-      outcome.decisions.forEach((entry) => saveReviewDecision(entry));
-      setExpiredDecisionCount(0);
-    } catch (error: unknown) {
+  async function overlayAcceptAll(group: FindingTypeGroup): Promise<void> {
+    const plan = previewPlanRef.current;
+    if (!plan) {
       setReviewNote(
-        `That decision could not be recorded: ${error instanceof Error ? error.message : String(error)}`,
+        "No change has been previewed for this document yet. Scan, or press Re-scan now.",
       );
       return;
     }
-    setReviewNote(outcome.message);
-    announcement.announce(outcome.message);
+    const changes: Change[] = [];
+    const withoutCorrection: string[] = [];
+    const refused: string[] = [];
+    group.findings.forEach((finding) => {
+      const match = changeForFinding(finding, plan, previewFindingsRef.current);
+      if (match === null) {
+        withoutCorrection.push(finding.message);
+        return;
+      }
+      if (match.refusal !== null) {
+        refused.push(match.refusal);
+        return;
+      }
+      changes.push(match.change);
+    });
+    if (changes.length === 0) {
+      const detail =
+        withoutCorrection.length > 0 && refused.length === 0
+          ? "The preview proposes no correction for these findings."
+          : refused.length > 0
+            ? `Cannot apply: ${[...new Set(refused)].join("; ")}.`
+            : "The preview proposes no correction for these findings.";
+      setReviewNote(detail);
+      return;
+    }
+    if (withoutCorrection.length > 0 || refused.length > 0) {
+      setReviewNote(
+        `Applying ${changes.length} of ${group.findings.length}. ` +
+          `${withoutCorrection.length} had no correction; ${refused.length} refused.`,
+      );
+    }
+    try {
+      const currentState = loadState();
+      const currentGovernance = resolveGovernanceProfile(currentState, activeProfile);
+      const result = await applyReviewedPlan({
+        plan: narrowPlanToChanges(plan, changes),
+        currentGovernancePolicyRevision: currentGovernance.version,
+        governanceProfile: currentGovernance,
+        coverage: pendingPlan?.coverage ?? null,
+        allowConflictingApply: false,
+        profile: activeProfile,
+        capabilities: caps ? toAnalysisCapabilities(caps) : UNPROBED_CAPABILITIES,
+      });
+      if (result.applied && result.verified) {
+        setReviewNote(`Applied ${changes.length} change(s) of this type.`);
+        announcement.announce(`Applied ${changes.length} change(s) of this type.`);
+        closeOverlay();
+      } else {
+        setReviewNote(
+          result.verificationError ??
+            result.results.find((item) => item.error !== undefined)?.error ??
+            "Apply failed. Try accepting individually.",
+        );
+      }
+    } catch (error: unknown) {
+      setReviewNote(error instanceof Error ? error.message : String(error));
+    }
   }
 
   function rescanNow(): void {
     previewedDocHashRef.current = null;
     setReformatResult(null);
-    setPendingOpen(false);
     setReviewNote(null);
-    observerRef.current?.onDocumentChanged();
+    observerRef.current?.onDocumentChanged(true);
     announcement.announce("Re-scanning the document.");
-  }
-
-  /**
-   * Build the preview on demand, for the case auto-preview declined.
-   *
-   * The auto-preview effect already handles the ordinary case, so this exists for
-   * a narrowed scan: a partial read cannot produce a whole-document plan, and the
-   * effect asks the observer for a full scan instead. Pressing Preview requests
-   * the same thing explicitly rather than presenting a control that duplicates a
-   * button the user cannot see.
-   */
-  function buildPreviewNow(): void {
-    previewedDocHashRef.current = null;
-    observerRef.current?.onDocumentChanged();
-    announcement.announce("Rebuilding the preview for this document.");
-  }
-
-  /**
-   * Take one change out of Pending Changes.
-   *
-   * This withdraws the review that admitted the change, so the reviewed-only
-   * projection drops it on the next render. It does not touch the document and
-   * does not reject the remaining changes — that is what "Reject all" is for.
-   *
-   * Resolved through the change's finding rather than through the change id,
-   * because the store is keyed on the occurrence identity the review gate uses,
-   * and a change id from the preview run is not an identity that store holds.
-   */
-  function removeOneFromPending(changeId: string): void {
-    const change = reviewedOnly?.plan.changes.find((entry) => entry.id === changeId);
-    if (change === undefined || change.findingId === undefined) {
-      setReviewNote("That change is no longer part of this review.");
-      return;
-    }
-    const owner = previewFindings.find((entry) => entry.id === change.findingId);
-    if (owner === undefined) {
-      setReviewNote("That change is no longer part of this review.");
-      return;
-    }
-    /*
-     * The store write is guarded, and the success note follows it.
-     *
-     * `clearReviewDecision` throws when there is no review session to clear —
-     * the session expires, or a profile change invalidated it — and can fail on
-     * the write itself. Unguarded, that escaped the click handler and the note
-     * was never set, so the card stayed in Pending Changes with nothing on
-     * screen to explain it: the click appeared to do nothing at all. Stating
-     * success before the store confirmed it was the worse half of the same
-     * bug — a change that was still queued, described as removed.
-     */
-    try {
-      clearReviewDecision(reviewIdentity(owner));
-    } catch (error: unknown) {
-      const detail = error instanceof Error ? error.message : String(error);
-      setReviewNote(
-        `That change could not be removed from Pending changes: ${detail}. Nothing was applied to the document.`,
-      );
-      return;
-    }
-    setReviewNote("Removed from Pending changes. Nothing was applied to the document.");
   }
 
   /*
@@ -1814,7 +1778,7 @@ function DashboardWithProfile({
              * the button itself: it is simply disabled, and nothing near it says
              * why. `reformatResult` and `reviewedKeys` are the state this page
              * already holds, read here rather than re-derived, so the panel
-             * cannot disagree with the pending-changes section below it.
+             * cannot disagree with the review list above it.
              */
             <DebuggingPanel
               onBack={goToParent}
@@ -1924,6 +1888,32 @@ function DashboardWithProfile({
    * the user is looking at.
    */
   const findings = observerFindings;
+  const overlayGroups = projectFindingsByType(findings);
+  const overlayGroup = overlayGroups.find((group) => group.key === overlayGroupKey) ?? null;
+  /*
+   * Temporary diagnostic (remove after host verification): log the overlay's live
+   * shape whenever it changes. If the applied finding leaves the refreshed list,
+   * the length drops and the id at `overlayPosition` changes underneath a fixed
+   * index — which is the reported skip.
+   */
+  const overlayShape =
+    overlayGroup === null
+      ? null
+      : `${overlayGroup.key}|${overlayGroup.findings.length}|${overlayGroup.findings[overlayPosition]?.id ?? "none"}`;
+  if (overlayShape !== overlayShapeRef.current) {
+    overlayShapeRef.current = overlayShape;
+    if (overlayGroupKey !== null) {
+      console.warn(
+        "overlay shape diagnostic " +
+          JSON.stringify({
+            groupKey: overlayGroupKey,
+            length: overlayGroup?.findings.length ?? null,
+            overlayPosition,
+            idAtPosition: overlayGroup?.findings[overlayPosition]?.id ?? null,
+          }),
+      );
+    }
+  }
   /*
    * Counted over the list the user can actually see, with the same ignore
    * predicate the filtering above used. Recomputed from `findings` rather than
@@ -1994,37 +1984,6 @@ function DashboardWithProfile({
   previewPlanRef.current = reviewedOnly?.plan ?? null;
   previewFindingsRef.current = previewFindings;
   const pendingPlan = pendingPlanRef.current;
-  /** Why the section is empty, in the words the three states each deserve. */
-  const pendingEmptyReason = projection.plan === null ? projection.reason : null;
-  /**
-   * How many changes exist in total, for the collapsed header.
-   *
-   * The header counts what the user has, not what they have reviewed, so
-   * "Pending changes 12" while the open section lists two would look like the
-   * other ten had been lost.
-   */
-  const totalPlannedChanges = reviewedOnly?.plan.changes.length ?? 0;
-  const reviewedChangeCount = pendingPlan?.plan.changes.length ?? 0;
-  /**
-   * A review that no longer describes anything in this document.
-   *
-   * A review is tied to exact text, so an edit anywhere above a reviewed finding
-   * moves it and the decision expires. The old behaviour was to let the pending
-   * list empty silently, which reads as the tool losing the user's work. Saying
-   * how many expired is the difference between a decision being respected and a
-   * decision being quietly forgotten.
-   */
-  /**
-   * One readiness decision, shared by the Apply button and the host banner.
-   *
-   * Computing it once is the point: two surfaces that each decided readiness
-   * separately is how a disabled control and a refusing gate end up disagreeing.
-   */
-  const readiness = applyReadiness({
-    trackedEditingEnabled: isTrackedEditingEnabled(),
-    capabilities: caps,
-    changes: pendingPlan?.plan.changes ?? [],
-  });
   return (
     <AppShell
       header={
@@ -2057,111 +2016,64 @@ function DashboardWithProfile({
             page uses (ADR-0137), so the label is the page the press lands on.
           */}
           <Breadcrumb parent={parentRoute("review")} onBack={goToParent} />
-          <DisclosurePanel
-            title={
+          <div className="tf-section">
+            <DisclosurePanel
+              title={
+                <>
+                  Findings <span>{findings.length}</span>
+                </>
+              }
+              ariaLabel="Findings section"
+              open={findingsOpen}
+              onToggle={setFindingsOpen}
+            >
               <>
-                Findings <span>{findings.length}</span>
-              </>
-            }
-            ariaLabel="Findings section"
-            open={findingsOpen}
-            onToggle={setFindingsOpen}
-            className={styles.root}
-          >
-            <>
-              {/*
-                The counts lead the list rather than sitting below it. A user
-                deciding whether to work through twenty findings needs to know
-                how many of them are mandatory before deciding to, not after.
-              */}
-              {/*
-                Spec §22: severity and category, because they answer different
-                questions. "How bad" tells a reader whether to stop reading;
-                "what kind" tells them where to start, and a document with four
-                hundred spacing findings and twenty structural ones cannot be
-                triaged from the first number alone.
-
-                Counted over the same filtered list the count above uses, so the
-                two lines cannot disagree about what is open.
-              */}
-              <p className="tf-sub">
-                {describeOpenFindings(openSummary)}
-                {describeCategoryGroups(openSummary.byGroup) !== "" &&
-                  ` / ${describeCategoryGroups(openSummary.byGroup)}`}
-              </p>
-              <FindingsToolbar
-                label={currentTask.label}
-                nextAction={currentTask.nextAction}
-                total={findings.length}
-                selectedIndex={workflow.planReview.selectedFindingIndex}
-                listId={FINDINGS_LIST_ID}
-                onPrevious={() =>
-                  dispatchWorkflow({
-                    type: "plan/selectFinding",
-                    index: selectPreviousFindingIndex(workflow),
-                  })
-                }
-                onNext={() =>
-                  dispatchWorkflow({
-                    type: "plan/selectFinding",
-                    index: selectNextFindingIndex(workflow),
-                  })
-                }
-              />
-              <FindingsList
-                id={FINDINGS_LIST_ID}
-                findings={findings}
-                /*
-                 * This run's own groups, not the preview report's.
-                 *
-                 * The list is the observer's findings (see above), and the two runs
-                 * issue separate uuids, so the preview's `occurrenceIds` name
-                 * occurrences that are not in this list. The observer carries the
-                 * groups from the same `runDeterministicReview` call that produced
-                 * these findings, so they address it exactly.
-                 */
-                groups={status?.groups ?? []}
-                onApproveAll={approveGroupAll}
-                onSkipAll={skipGroupAll}
-                selectedIndex={workflow.planReview.selectedFindingIndex}
-                reviewedKeys={reviewedKeys}
-                skippedKeys={skippedKeys}
-                onReview={reviewOne}
-                onSkip={skipOne}
-                onUndo={undoOne}
-                approveRefusal={unapprovableReason}
-                onIgnore={(findingId) => {
-                  const finding = findings.find((item) => item.id === findingId);
-                  if (finding) ignoreFinding(finding);
-                }}
-              />
-              {/*
-               * The gate's verdict, in a live region.
-
-               * A review that produced no pending change has to say so. The
-               * alternative is a button that appears to do nothing again â€” which
-               * is exactly what the status label-only version of Review did.
-               */}
-              {reviewNote !== null && <p className="tf-sub">{reviewNote}</p>}
-              {/*
-                Reviews that no longer describe anything in this document.
-
-                A review is tied to exact text, so an edit above a reviewed
-                finding moves it and the decision expires. Letting the pending
-                list empty quietly reads as the tool losing the user's work, so
-                the count is stated. Nothing is applied on the strength of an
-                expired review; the user reviews again, which is the direction
-                that fails safe.
-              */}
-              {expiredDecisionCount > 0 && (
                 <p className="tf-sub">
-                  {expiredDecisionCount} review decision{expiredDecisionCount === 1 ? "" : "s"}{" "}
-                  expired because the document or review policy changed. Review the findings again
-                  before adding changes to Pending changes.
+                  {describeOpenFindings(openSummary)}
+                  {describeCategoryGroups(openSummary.byGroup) !== "" &&
+                    ` / ${describeCategoryGroups(openSummary.byGroup)}`}
                 </p>
-              )}
-            </>
-          </DisclosurePanel>
+                <FindingTypeList
+                  groups={projectFindingsByType(findings)}
+                  onSelect={openOverlayGroup}
+                />
+                {expiredDecisionCount > 0 && (
+                  <p className="tf-sub">
+                    {expiredDecisionCount} review decision{expiredDecisionCount === 1 ? "" : "s"}{" "}
+                    expired because the document or review policy changed. Review the findings again
+                    before adding changes to Pending changes.
+                  </p>
+                )}
+              </>
+            </DisclosurePanel>
+          </div>
+          <FindingDetailOverlay
+            group={overlayGroup}
+            finding={overlayGroup?.findings[overlayPosition] ?? null}
+            remaining={overlayGroup ? overlayGroup.findings.length - overlayPosition - 1 : 0}
+            total={overlayGroup?.findings.length ?? 0}
+            position={overlayPosition + 1}
+            acceptDisabled={
+              coverageIncomplete || remainingScopes.length > 0 || refreshingAfterApply
+            }
+            acceptDisabledReason={
+              coverageIncomplete
+                ? "Coverage is incomplete. Re-scan the document before applying changes."
+                : remainingScopes.length > 0
+                  ? "Not all scopes are checked. Re-scan or adjust the governance policy."
+                  : refreshingAfterApply
+                    ? "Refreshing findings for the change just applied…"
+                    : null
+            }
+            applyNote={reviewNote}
+            onClose={closeOverlay}
+            onPrevious={overlayPrevious}
+            onNext={overlayNext}
+            onAccept={overlayAccept}
+            onAcceptAll={overlayAcceptAll}
+            onSkip={overlaySkip}
+            onIgnore={overlayIgnore}
+          />
         </>
       )}
       {/*
@@ -2182,7 +2094,7 @@ function DashboardWithProfile({
           <StaleBanner
             stale={status?.stale ?? false}
             hostUnavailable={status?.hostUnavailable ?? false}
-            onRescan={() => observerRef.current?.onDocumentChanged()}
+            onRescan={() => observerRef.current?.onDocumentChanged(true)}
           />
           {/*
             The host verdict, stated before any preview exists. It used to be a
@@ -2204,70 +2116,6 @@ function DashboardWithProfile({
             </p>
           )}
           {/*
-            Coverage sits directly under the findings because it qualifies them:
-            a list drawn from a partial analysis is not a smaller list of
-            problems, it is an unknown subset, and it reads as its own warning
-            rather than as a footnote on the findings above.
-          */}
-          {/*
-            Collapsible like Findings and Pending changes, and open by default
-            only when the scan is incomplete.
-
-            The asymmetry is deliberate: an incomplete analysis is a warning the
-            user has to act on, so it stays open; a complete one is a statement
-            of fact that has been true since the scan and needs no attention
-            until the next scan changes it. The verdict stays readable in the
-            collapsed header, so collapsing never hides *whether* it passed â€”
-            only the detail behind it.
-          */}
-          <CoverageBanner
-            coverage={status?.coverage ?? null}
-            deterministicCoverage={status?.deterministicCoverage ?? null}
-            /*
-             * The open count, so the verdict can be a compliance claim rather
-             * than only a coverage claim. `openSummary.total` is the same number
-             * the findings header prints — filtered for ignores, recomputed from
-             * the visible list — so the banner and the list cannot disagree about
-             * what is left to do.
-             */
-            openFindings={openSummary.total}
-            open={coverageIncomplete || coverageOpen}
-            onToggle={() => setCoverageOpen((open) => !open)}
-            onRescan={() => {
-              setCoverageOpen(true);
-              rescanNow();
-            }}
-          />
-          {/*
-            Repeated outside the collapsible so a collapsed banner never hides
-            the reason Apply is unavailable. A blocker that lives only behind a
-            disclosure triangle is a blocker the user will not find.
-          */}
-          {remainingScopes.length > 0 && (
-            <p className="tf-coverage-blocked" role="status">
-              Not checked: {remainingScopes.map(scopeLabel).join(", ")}. Apply stays unavailable
-              until the scope is read, or until you stop requiring it in the governance policy.
-            </p>
-          )}
-          {/*
-            The post-apply result block, immediately under the coverage verdict
-            and above the findings.
-
-            Placed here rather than beside Pending Changes because by the time it
-            exists Pending Changes is empty on success — the plan was consumed —
-            and the reader is already looking at the findings list to decide what
-            to do about the revisions Word just marked up.
-          */}
-          <ApplyResultBlock
-            outcome={applyOutcome}
-            open={applyResultOpen}
-            onToggle={() => setApplyResultOpen((open) => !open)}
-            onReviewRemaining={() => {
-              navigate("review");
-              setFindingsOpen(true);
-            }}
-          />
-          {/*
             The one thing auto-preview owes the user when it declines: the
             reason, and what would produce a preview instead. Silence here
             would read as "the pane is working" while nothing was planned.
@@ -2280,6 +2128,46 @@ function DashboardWithProfile({
           entries={persisted.ignoredFindings ?? []}
           onRestore={(occurrence) => restoreFinding(occurrence)}
         />
+      )}
+      {page === "review" && (
+        <div className="tf-section tf-section-divider">
+          {/*
+            Coverage sits at the bottom of the review page, under Ignored findings.
+            It qualifies the findings list above, but it is not a warning the user
+            must act on before reviewing — it is a statement about the analysis
+            that produced the list. Placing it at the bottom keeps the findings
+            list as the primary surface and lets the user review first, then
+            check coverage when they are ready to apply.
+          */}
+          {/*
+            Collapsible like Findings and Pending changes, and open by default
+            only when the scan is incomplete.
+
+            The asymmetry is deliberate: an incomplete analysis is a warning the
+            user has to act on, so it stays open; a complete one is a statement
+            of fact that has been true since the scan and needs no attention
+            until the next scan changes it. The verdict stays readable in the
+            collapsed header, so collapsing never hides *whether* it passed —
+            only the detail behind it.
+          */}
+          <CoverageBanner
+            coverage={status?.coverage ?? null}
+            deterministicCoverage={status?.deterministicCoverage ?? null}
+            openFindings={openSummary.total}
+            open={coverageIncomplete || coverageOpen}
+            onToggle={() => setCoverageOpen((open) => !open)}
+            onRescan={() => {
+              setCoverageOpen(true);
+              rescanNow();
+            }}
+          />
+          {remainingScopes.length > 0 && (
+            <p className="tf-coverage-blocked" role="status">
+              Not checked: {remainingScopes.map(scopeLabel).join(", ")}. Apply stays unavailable
+              until the scope is read, or until you stop requiring it in the governance policy.
+            </p>
+          )}
+        </div>
       )}
       {/*
        * Apply All and Re-scan Now, on one row below the findings navigation.
@@ -2304,60 +2192,6 @@ function DashboardWithProfile({
             {status?.phase === "scanning" ? "Re-scanningâ€¦" : "Re-scan now"}
           </Button>
         </div>
-      )}
-      {page === "review" && (
-        <DisclosurePanel
-          title={
-            <>
-              Pending changes <span>{totalPlannedChanges}</span>
-            </>
-          }
-          ariaLabel="Pending changes section"
-          open={pendingOpen}
-          onToggle={setPendingOpen}
-          className={styles.root}
-        >
-          <PendingChanges
-            plan={pendingPlan?.plan ?? null}
-            emptyReason={pendingEmptyReason}
-            totalCount={totalPlannedChanges}
-            reviewedCount={reviewedChangeCount}
-            /*
-             * Preview, offered only where the pane can build one. The effect above
-             * already previews automatically on a settled scan, so this control
-             * exists for the case that effect declines — a narrowed scan, which
-             * needs a full rescan before a plan can be built at all.
-             */
-            {...(pendingPlan === null ? { onPreview: buildPreviewNow } : {})}
-            /*
-             * Remove takes one change out of Pending Changes by withdrawing the
-             * review that put it there. It does not reject the rest, which is what
-             * "Reject all" is for.
-             */
-            onRemove={(changeId) => removeOneFromPending(changeId)}
-            /*
-             * The preview's findings, not the observer's, and deliberately so.
-             * Each change carries a `findingId` from the run that planned it, so
-             * the annotation is only found in that same run's findings. Passing
-             * the observer's would look up ids that were never issued and print
-             * every change as unexplained.
-             */
-            findings={reformatResult?.report.findings ?? findings}
-            coverage={pendingPlan?.coverage ?? null}
-            exportCoverage={reformatResult?.sharedCoverage ?? null}
-            applyDisabledReason={readiness.reason}
-            onOpenSettings={() => navigate("general-settings")}
-            onApply={() => applyPendingPlan(pendingPlan)}
-            onReject={() => {
-              setReformatResult(null);
-              setPendingOpen(false);
-              setApplyMessage("Changes rejected. Nothing was applied to the document.");
-            }}
-          />
-          {/* Visible but not live: the pane speaks this from the single region
-              above, and a second one here would say it twice. */}
-          {applyMessage && <p className="tf-readiness">{applyMessage}</p>}
-        </DisclosurePanel>
       )}
     </AppShell>
   );

@@ -28,6 +28,10 @@ function mockOffice(_findings: Finding[] = []): void {
             text: "The quick brown fox jumps over the lazy dog",
             load: vi.fn(),
             getRange: vi.fn(() => rangeMock),
+            getTrackedChanges: vi.fn(() => ({
+              load: vi.fn(),
+              items: [],
+            })),
           },
           getSelection: vi.fn(() => ({
             load: vi.fn(),
@@ -87,6 +91,8 @@ describe("navigateToFinding", () => {
     expect(result.message).toContain(finding.id);
     expect(result.message).toContain("abc123");
     const office = (globalThis as unknown as { Office: { run: ReturnType<typeof vi.fn> } }).Office;
+    // A single transaction: navigation reuses the runInWord context rather than
+    // starting a nested Word.run.
     expect(office.run).toHaveBeenCalledTimes(1);
     expect(rangeMock.set).toHaveBeenCalledWith({ start: 5, end: 15 });
   });
@@ -146,5 +152,35 @@ describe("navigateToFinding", () => {
     const finding = makeFinding();
     const result = await navigateToFinding({ finding, highlight: true });
     expect(result.navigated).toBe(true);
+  });
+
+  it("resolves a paragraph finding to its paragraph, not its index as an offset", async () => {
+    const paragraphRange = { select: vi.fn(), highlight: vi.fn() };
+    const office = (globalThis as unknown as { Office: { run: ReturnType<typeof vi.fn> } }).Office;
+    office.run.mockImplementation(async (func: (context: unknown) => Promise<unknown>) =>
+      func({
+        document: {
+          body: {
+            text: "one\ntwo\nthree",
+            load: vi.fn(),
+            getRange: vi.fn(() => rangeMock),
+            paragraphs: { items: [{ getRange: () => paragraphRange }] },
+          },
+        },
+        sync: vi.fn(),
+      }),
+    );
+
+    const result = await navigateToFinding({
+      finding: makeFinding({
+        range: { start: 2, end: 3, unit: "paragraph" },
+        target: { kind: "paragraph", index: 0 },
+      }),
+    });
+
+    expect(result).toMatchObject({ navigated: true, method: "nodeId" });
+    // The defect: index 2 was fed to Range.set as a character offset.
+    expect(rangeMock.set).not.toHaveBeenCalled();
+    expect(paragraphRange.select).toHaveBeenCalled();
   });
 });

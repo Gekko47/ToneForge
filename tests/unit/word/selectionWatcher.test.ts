@@ -42,7 +42,13 @@ function installOffice(context: FakeContext | null): FakeContext {
     addHandlerAsync: vi.fn(async () => ({ value: { id: "reg-1" } })),
     removeHandlerAsync: vi.fn(async () => undefined),
   };
-  (globalThis as { Office?: unknown }).Office = { context: installed };
+  /*
+   * The handlers live on `Office.context.document`, which is where Office
+   * registers the selection-changed event. `Office.context` itself has no
+   * `addHandlerAsync`, so installing them there is exactly the bug the module
+   * used to have and this suite used to model.
+   */
+  (globalThis as { Office?: unknown }).Office = { context: { document: installed } };
   return installed;
 }
 
@@ -117,8 +123,15 @@ describe("the document-selection watcher", () => {
   });
 
   it("declines when the host refuses the subscription", async () => {
+    /*
+     * The Document event API is callback-style and returns `void`; there is no
+     * promise to reject. A refusal is a synchronous throw (or a failed callback),
+     * so that is what this models.
+     */
     installOffice({
-      addHandlerAsync: vi.fn(async () => Promise.reject(new Error("no"))),
+      addHandlerAsync: vi.fn((): never => {
+        throw new Error("no");
+      }),
       removeHandlerAsync: vi.fn(async () => undefined),
     });
 
@@ -157,19 +170,19 @@ describe("the document-selection watcher", () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
-  it("unsubscribes using the registration the host handed back", async () => {
+  it("unsubscribes by handler reference, the way the Document event API removes one", async () => {
     const context = installOffice(null);
     await watchDocumentSelection(() => undefined, { debounceMs: 10 });
 
     await stopWatchingDocumentSelection();
 
     expect(context.removeHandlerAsync).toHaveBeenCalledWith("documentSelectionChanged", {
-      id: "reg-1",
+      handler: expect.any(Function),
     });
     expect(isWatchingDocumentSelection()).toBe(false);
   });
 
-  it("unsubscribes without an id when the host returned no registration", async () => {
+  it("still unsubscribes by handler when the host handed back no registration", async () => {
     const context = installOffice({
       addHandlerAsync: vi.fn(async () => undefined),
       removeHandlerAsync: vi.fn(async () => undefined),
@@ -178,7 +191,9 @@ describe("the document-selection watcher", () => {
 
     await stopWatchingDocumentSelection();
 
-    expect(context.removeHandlerAsync).toHaveBeenCalledWith("documentSelectionChanged", undefined);
+    expect(context.removeHandlerAsync).toHaveBeenCalledWith("documentSelectionChanged", {
+      handler: expect.any(Function),
+    });
   });
 
   it("drops a debounce still in flight, because the page it called is gone", async () => {

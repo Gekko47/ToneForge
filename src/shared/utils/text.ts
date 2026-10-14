@@ -101,3 +101,27 @@ export function hashText(text: string): string {
     .toString(16)
     .padStart(8, "0");
 }
+
+/**
+ * The position in `haystack` of the `needle` occurrence nearest to `near`.
+ *
+ * A tracked edit drifts a recorded offset by the length of the deleted text
+ * before it, so a recorded offset names only roughly where the text sits; the
+ * closest occurrence is the one that offset meant. Returns `near` itself when the
+ * text already sits exactly there, and -1 when `needle` is absent (or empty).
+ *
+ * Shared by the apply path (`word/revisionAdapter` relocating a change) and the
+ * highlight path (`word/sourceLocator` relocating a finding) so the two agree on
+ * where a reviewed-view offset lands in the raw view `Range.set` counts.
+ */
+export function nearestOccurrence(haystack: string, needle: string, near: number): number {
+  if (needle.length === 0) return -1;
+  if (haystack.slice(near, near + needle.length) === needle) return near;
+  let best = -1;
+  let cursor = haystack.indexOf(needle);
+  while (cursor !== -1) {
+    if (best === -1 || Math.abs(cursor - near) < Math.abs(best - near)) best = cursor;
+    cursor = haystack.indexOf(needle, cursor + 1);
+  }
+  return best;
+}

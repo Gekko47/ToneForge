@@ -25,6 +25,7 @@ declare global {
       After = 1,
       Start = 2,
       End = 3,
+      Replace = 4,
     }
 
     interface Context {
@@ -34,26 +35,6 @@ declare global {
         version: string;
       };
       sync(): Promise<void>;
-
-      /*
-       * Event subscription, declared narrowly and optionally.
-       *
-       * Optional because absence is the interesting case and must stay
-       * expressible: ADR-0094 recorded selection-change events as an open question
-       * precisely because "not in our declarations" is not "not in the API", so a
-       * required member would have forced a cast to talk to a host that may not
-       * have it. Narrow because this add-in subscribes to exactly one event type
-       * and models only the parts of the registration it uses.
-       *
-       * The event type is passed as the string Office documents
-       * (`"documentSelectionChanged"`), not as an `Office.EventType` value, so the
-       * declaration does not have to model a runtime class we never construct.
-       */
-      addHandlerAsync?: (
-        eventType: string,
-        callback: (event: { type: string; source?: unknown }) => void,
-      ) => Promise<unknown>;
-      removeHandlerAsync?: (eventType: string, options?: { id?: string }) => Promise<unknown>;
 
       /**
        * The host's requirement sets, and the question that matters for a member
@@ -84,6 +65,32 @@ declare global {
       url?: string;
       id?: string;
       getSelection(): Range;
+
+      /*
+       * Document-level event subscription.
+       *
+       * Reached as `Office.context.document.addHandlerAsync` — on the **Document**,
+       * not on `Office.Context`. Registering on `Office.context` always read as
+       * absent, so the selection event never fired and the pane refreshed only on
+       * a manual scan or on load. MS Learn: "Office.context.document.addHandlerAsync".
+       *
+       * **Callback-style, returns `void`** — not a promise. The real host returned
+       * `undefined`, so a `.then()` on the result crashed the pane. Removal is by
+       * handler reference (`{ handler }`), not by registration id.
+       *
+       * Declared narrowly and optionally: absence is the interesting case and must
+       * stay expressible, and the event type is the string Office documents
+       * (`"documentSelectionChanged"`), not an `Office.EventType` value.
+       */
+      addHandlerAsync?: (
+        eventType: string,
+        handler: (event: { type: string; source?: unknown }) => void,
+        options?: unknown,
+      ) => void;
+      removeHandlerAsync?: (
+        eventType: string,
+        options?: { handler?: unknown; id?: string },
+      ) => void;
     }
 
     interface SectionCollection {
@@ -144,6 +151,13 @@ declare global {
       values?: string[][];
       rowCount?: number;
       headerRowCount?: number;
+      /**
+       * Word JavaScript API (WordApi 1.3): `Table.getRange("Whole")` resolves the
+       * table to a Range, so a table finding can be navigated to (its `range`
+       * counts table indices, not characters, and must not be fed to `Range.set`).
+       * Optional because the requirement-set member is absent on older hosts.
+       */
+      getRange?: (rangeLocation: "Whole") => Range;
       load: (prop: string | string[]) => Table;
     }
 
@@ -151,6 +165,31 @@ declare global {
       text: string;
       load: (prop: string | string[]) => Body;
       paragraphs?: ParagraphCollection;
+      /**
+       * Word JavaScript API (WordApi 1.4): `Body.getReviewedText(version)`
+       * returns the body's text from one tracking perspective.
+       *
+       * `"Current"` is the accept-all view: text marked for deletion by a
+       * tracked revision is omitted, so it reads exactly what ToneForge has
+       * accepted and written. `body.text` keeps that text until the revision
+       * is accepted, which is why analysis must not read it.
+       *
+       * Declared optional because the requirement-set member does not exist
+       * on older hosts; the reader falls back to `body.text` when it is absent.
+       * The result is typed structurally (`{ value: string }`) rather than as
+       * `OfficeExtension.ClientResult` so the local declarations stay free of a
+       * namespace they do not otherwise define.
+       */
+      getReviewedText?: (version?: "Current" | "Original") => { value: string };
+      /**
+       * Word JavaScript API (WordApi 1.6): `Body.getTrackedChanges()`
+       * returns the tracked changes in the body. This is the canonical way
+       * to inspect revisions — it gives author, date, text, type, and range
+       * for each one. Optional because the requirement-set member does not
+       * exist on older hosts; the inspector degrades to a stated refusal
+       * when it is absent.
+       */
+      getTrackedChanges?: () => TrackedChangeCollection;
       /**
        * Word JavaScript API (WordApi 1.3): the tables in this body.
        */
@@ -165,6 +204,15 @@ declare global {
        * object). It is NOT a numeric (start, length) API.
        */
       getRange: (rangeLocation: RangeLocation) => Range;
+      /**
+       * Word JavaScript API (WordApi 1.1): `Body.insertOoxml(ooxml,
+       * insertLocation)` inserts OOXML markup at a location in the body.
+       * This is the canonical way to author tracked revisions under the
+       * ToneForge name — the markup carries w:author, w:date, w:id.
+       * Optional because the requirement-set member does not exist on older
+       * hosts; the adapter falls back to plain insertText when absent.
+       */
+      insertOoxml?: (ooxml: string, insertLocation: InsertLocation) => void;
     }
 
     /**
@@ -226,6 +274,18 @@ declare global {
        */
       load: (propertyNames: string | string[]) => Range;
       getRange?: (rangeLocation: RangeLocation) => Range;
+      /**
+       * Word JavaScript API (WordApi 1.1): `Range.insertOoxml(ooxml,
+       * insertLocation)` inserts OOXML markup at a range. This is the
+       * canonical way to author a tracked revision at a located position —
+       * the markup carries w:author, w:date, w:id. Optional because
+       * the requirement-set member does not exist on older hosts; the
+       * adapter falls back to plain insertText when absent.
+       */
+      insertOoxml?: (
+        ooxml: string,
+        insertLocation: InsertLocation | "Replace" | "Start" | "End" | "Before" | "After",
+      ) => void;
     }
 
     interface ParagraphCollection {
@@ -258,6 +318,37 @@ declare global {
       getRange?: (rangeLocation: "Whole") => Range;
       load: (prop: string) => Paragraph;
       insertText?: (text: string, insertMode?: string) => Paragraph;
+    }
+
+    /**
+     * Word JavaScript API (WordApi 1.6): a single tracked change (revision)
+     * in the document. author is read-only on the object, so the only way
+     * to author under a chosen name is insertOoxml with explicit w:ins
+     * or w:del markup carrying w:author.
+     *
+     * type is one of Added, Deleted, Formatted, or None.
+     * date is an ISO string or null when the host does not provide one.
+     * text is the inserted or deleted text. getRange() resolves the
+     * change to a Range for offset inspection; it may throw on a host that
+     * does not support it, so callers must guard per-row.
+     */
+    interface TrackedChange {
+      author: string;
+      date: string | null;
+      text: string;
+      type: string;
+      getRange: () => Range;
+      load: (propertyNames: string | string[]) => TrackedChange;
+    }
+
+    /**
+     * Word JavaScript API (WordApi 1.6): the collection of tracked changes
+     * returned by Body.getTrackedChanges(). items is the array of
+     * TrackedChange objects.
+     */
+    interface TrackedChangeCollection {
+      items: TrackedChange[];
+      load: (propertyNames: string | string[]) => TrackedChangeCollection;
     }
 
     interface ParagraphFormat {

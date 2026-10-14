@@ -39,9 +39,13 @@ const FULL_CAPABILITIES: WordCapabilities = {
   hostVersion: "16.0",
 };
 
-function makeRangeMock() {
+function makeRangeMock(bodyText = "") {
+  let lastStart = 0;
+  let lastEnd = 0;
   return {
-    text: "",
+    get text() {
+      return bodyText.slice(lastStart, lastEnd);
+    },
     insertText: vi.fn(function (this: unknown) {
       return this;
     }),
@@ -52,7 +56,9 @@ function makeRangeMock() {
     paragraphFormat: { set: vi.fn() },
     listFormat: { set: vi.fn() },
     style: "",
-    set: vi.fn(function (this: unknown) {
+    set: vi.fn(function (this: unknown, opts: { start: number; end: number }) {
+      lastStart = opts.start;
+      lastEnd = opts.end;
       return this;
     }),
     load: vi.fn(),
@@ -68,7 +74,7 @@ function defaultOfficeMock(): unknown {
             text: "",
             load: vi.fn(),
             paragraphs: { load: vi.fn(), items: [] },
-            getRange: vi.fn(() => makeRangeMock()),
+            getRange: vi.fn(() => makeRangeMock("")),
           },
           selection: {
             text: "",
@@ -188,6 +194,11 @@ describe("revisionAdapter", () => {
     it("logs per-change failures", async () => {
       setStage01Passed(true, FULL_CAPABILITIES);
 
+      const rangeMock = makeRangeMock("hello world");
+      rangeMock.insertText.mockImplementation(() => {
+        throw new Error("insertText failed");
+      });
+
       setOffice({
         run: async (func: (context: unknown) => Promise<unknown>) =>
           func({
@@ -195,9 +206,7 @@ describe("revisionAdapter", () => {
               body: {
                 text: "hello world",
                 load: vi.fn(),
-                getRange: vi.fn(() => {
-                  throw new Error("Range not found");
-                }),
+                getRange: vi.fn(() => rangeMock),
               },
             },
             sync: vi.fn(),
@@ -225,7 +234,7 @@ describe("revisionAdapter", () => {
               body: {
                 text: "hello world",
                 load: vi.fn(),
-                getRange: vi.fn(() => makeRangeMock()),
+                getRange: vi.fn(() => makeRangeMock("hello world")),
               },
             },
             sync: vi.fn(),
@@ -243,7 +252,7 @@ describe("revisionAdapter", () => {
 
     it("resolves offsets via body.getRange(Whole) plus range.set", async () => {
       setStage01Passed(true, FULL_CAPABILITIES);
-      const rangeMock = makeRangeMock();
+      const rangeMock = makeRangeMock("hello world");
       const getRange = vi.fn(() => rangeMock);
 
       setOffice({
@@ -276,7 +285,7 @@ describe("revisionAdapter", () => {
               body: {
                 text: "hi",
                 load: vi.fn(),
-                getRange: vi.fn(() => makeRangeMock()),
+                getRange: vi.fn(() => makeRangeMock("hi")),
               },
             },
             sync: vi.fn(),
@@ -315,7 +324,7 @@ describe("revisionAdapter", () => {
               body: {
                 text: "hello world",
                 load: vi.fn(),
-                getRange: vi.fn(() => makeRangeMock()),
+                getRange: vi.fn(() => makeRangeMock("hello world")),
               },
             },
             sync: vi.fn(),

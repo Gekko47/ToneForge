@@ -139,9 +139,11 @@ describe("applyChangePlan gate", () => {
 
 describe("applyChangePlan apply path", () => {
   let originalOffice: unknown;
+  let originalWord: unknown;
 
   beforeEach(() => {
     originalOffice = (globalThis as { Office?: unknown }).Office;
+    originalWord = (globalThis as { Word?: unknown }).Word;
     setStage01Passed(false);
     vi.spyOn(logger, "warn").mockImplementation(() => {});
     vi.spyOn(logger, "error").mockImplementation(() => {});
@@ -149,13 +151,18 @@ describe("applyChangePlan apply path", () => {
 
   afterEach(() => {
     (globalThis as { Office?: unknown }).Office = originalOffice;
+    (globalThis as { Word?: unknown }).Word = originalWord;
     setStage01Passed(false);
     vi.restoreAllMocks();
   });
 
-  function makeRangeMock() {
+  function makeRangeMock(bodyText: string) {
+    let lastStart = 0;
+    let lastEnd = 0;
     return {
-      text: "",
+      get text() {
+        return bodyText.slice(lastStart, lastEnd);
+      },
       insertText: vi.fn(function (this: unknown) {
         return this;
       }),
@@ -166,7 +173,9 @@ describe("applyChangePlan apply path", () => {
       paragraphFormat: { set: vi.fn() },
       listFormat: { set: vi.fn() },
       style: "",
-      set: vi.fn(function (this: unknown) {
+      set: vi.fn(function (this: unknown, opts: { start: number; end: number }) {
+        lastStart = opts.start;
+        lastEnd = opts.end;
         return this;
       }),
       load: vi.fn(),
@@ -174,10 +183,11 @@ describe("applyChangePlan apply path", () => {
   }
 
   function installApplyMock() {
-    const rangeMock = makeRangeMock();
+    const bodyText = "hello world";
+    const rangeMock = makeRangeMock(bodyText);
     const getRange = vi.fn(() => rangeMock);
     const body = {
-      text: "hello world",
+      text: bodyText,
       load: vi.fn(),
       getRange,
       paragraphs: { load: vi.fn(), items: [] },
@@ -233,18 +243,57 @@ describe("applyChangePlan apply path", () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
+  it("relocates a text change to where the recorded text actually sits in the live body", async () => {
+    setStage01Passed(true, FULL_CAPABILITIES);
+    // The plan says the "--" is at [2, 4); the live body holds it at [6, 8),
+    // the shape a tracked deletion leaves when it shifts later offsets.
+    const rangeMock = makeRangeMock("xxxxxx--yy");
+    const getRange = vi.fn(() => rangeMock);
+    const context = {
+      document: {
+        body: {
+          text: "xxxxxx--yy",
+          load: vi.fn(),
+          getRange,
+          paragraphs: { load: vi.fn(), items: [] },
+        },
+        getSelection: vi.fn(() => ({ getRange })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
+    };
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "replaceText",
+        range: { start: 2, end: 4 },
+        payload: { text: "—" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+        precondition: { kind: "text", expectedText: "--" },
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results[0]?.applied).toBe(true);
+    expect(rangeMock.set).toHaveBeenCalledWith({ start: 6, end: 8 });
+  });
+
   it("applies changes in reverse offset order", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
-    const seen: Array<{ start: number; end: number }> = [];
-    const rangeMock = makeRangeMock();
-    (
-      rangeMock.set as unknown as {
-        mockImplementation: (fn: (props: { start: number; end: number }) => unknown) => void;
-      }
-    ).mockImplementation((props: { start: number; end: number }) => {
-      seen.push({ ...props });
-      return rangeMock;
-    });
+    const rangeMock = makeRangeMock("hello world, hello world");
     const getRange = vi.fn(() => rangeMock);
     const context = {
       document: {
@@ -296,10 +345,12 @@ describe("applyChangePlan apply path", () => {
     const results = await applyChangePlan(plan, "hash-123");
     expect(results).toHaveLength(2);
     expect(results.every((r) => r.applied)).toBe(true);
-    expect(seen).toEqual([
-      { start: 13, end: 18 },
-      { start: 0, end: 5 },
-    ]);
+    // The last 2 set calls (from getRangeByChange during apply) should be in reverse order
+    const setCalls = (
+      rangeMock.set as unknown as { mock: { calls: Array<Array<{ start: number; end: number }>> } }
+    ).mock.calls;
+    const applyCalls = setCalls.slice(-2);
+    expect(applyCalls).toEqual([[{ start: 13, end: 18 }], [{ start: 0, end: 5 }]]);
   });
 
   it("applies all eight change kinds", async () => {
@@ -506,7 +557,10 @@ describe("applyChangePlan apply path", () => {
         text: "hello world",
         load: vi.fn(),
         getRange: vi.fn(() => rangeMock),
-        getTrackedChanges: vi.fn(() => ({ load: vi.fn(), items: [{}, {}, {}] })),
+        getTrackedChanges: vi.fn(() => ({
+          load: vi.fn(),
+          items: [{ load: vi.fn() }, { load: vi.fn() }, { load: vi.fn() }],
+        })),
       },
       getSelection: vi.fn(),
       styles: { load: vi.fn(), items: [] },
@@ -563,6 +617,7 @@ describe("applyChangePlan apply path", () => {
   it("leaves an already-tracking document untouched", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
     installApplyMock();
+    const rangeMock = makeRangeMock("hello world");
     const docMock: Record<string, unknown> = {
       load: vi.fn(),
       changeTrackingMode: "TrackAll",
@@ -574,11 +629,7 @@ describe("applyChangePlan apply path", () => {
             body: {
               text: "hello world",
               load: vi.fn(),
-              getRange: vi.fn(() => ({
-                insertText: vi.fn(),
-                load: vi.fn(),
-                set: vi.fn(),
-              })),
+              getRange: vi.fn(() => rangeMock),
             },
             getSelection: vi.fn(),
             styles: { load: vi.fn(), items: [] },
@@ -673,7 +724,7 @@ describe("applyChangePlan apply path", () => {
 
   it("isolates per-change failures", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
-    const goodRange = makeRangeMock();
+    const goodRange = makeRangeMock("hello world, hello world");
     let calls = 0;
     const getRange = vi.fn(() => {
       calls += 1;
@@ -830,7 +881,7 @@ describe("applyChangePlan apply path", () => {
 
   it("rejects a multi-paragraph range after its node precondition passes", async () => {
     setStage01Passed(true, FULL_CAPABILITIES);
-    const paragraphRange = makeRangeMock();
+    const paragraphRange = makeRangeMock("First\nSecond");
     const context = {
       document: {
         body: {
@@ -915,5 +966,424 @@ describe("applyChangePlan apply path", () => {
         actual: "different-hash",
       }),
     );
+  });
+
+  it("refuses when revision inspection is not supported by the host", async () => {
+    setStage01Passed(true, {
+      ...FULL_CAPABILITIES,
+      supportsTrackedChangeInspection: true,
+    });
+    const { rangeMock } = installApplyMock();
+    // Mock getTrackedChanges to return supported: false
+    const body = {
+      text: "hello world",
+      load: vi.fn(),
+      getRange: vi.fn(() => rangeMock),
+      paragraphs: { load: vi.fn(), items: [] },
+      getTrackedChanges: vi.fn(() => ({
+        load: vi.fn(() => {
+          throw new Error("no items");
+        }),
+        items: [],
+      })),
+    };
+    const context = {
+      document: {
+        body,
+        getSelection: vi.fn(() => ({ getRange: vi.fn(() => rangeMock) })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3, Replace: 4 },
+    };
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.error).toContain("not supported");
+    expect(rangeMock.insertText).not.toHaveBeenCalled();
+  });
+
+  it("refuses when a change overlaps a foreign tracked revision", async () => {
+    setStage01Passed(true, {
+      ...FULL_CAPABILITIES,
+      supportsTrackedChangeInspection: true,
+    });
+    const { rangeMock } = installApplyMock();
+    const body = {
+      text: "hello world",
+      load: vi.fn(),
+      getRange: vi.fn(() => rangeMock),
+      paragraphs: { load: vi.fn(), items: [] },
+      getTrackedChanges: vi.fn(() => ({
+        load: vi.fn(),
+        items: [
+          {
+            author: "John Doe",
+            date: "2026-01-01T00:00:00Z",
+            text: "hello",
+            type: "Added",
+            load: vi.fn(),
+            getRange: vi.fn(() => ({
+              start: 0,
+              end: 5,
+              load: vi.fn(),
+            })),
+          },
+        ],
+      })),
+    };
+    const context = {
+      document: {
+        body,
+        getSelection: vi.fn(() => ({ getRange: vi.fn(() => rangeMock) })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3, Replace: 4 },
+    };
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.error).toContain("overlaps a tracked revision by another author");
+    expect(rangeMock.insertText).not.toHaveBeenCalled();
+  });
+
+  it("refuses when a change overlaps a ToneForge revision already applied", async () => {
+    setStage01Passed(true, {
+      ...FULL_CAPABILITIES,
+      supportsTrackedChangeInspection: true,
+    });
+    const { rangeMock } = installApplyMock();
+    const body = {
+      text: "hello world",
+      load: vi.fn(),
+      getRange: vi.fn(() => rangeMock),
+      paragraphs: { load: vi.fn(), items: [] },
+      getTrackedChanges: vi.fn(() => ({
+        load: vi.fn(),
+        items: [
+          {
+            author: "ToneForge",
+            date: "2026-01-01T00:00:00Z",
+            text: "hello",
+            type: "Added",
+            load: vi.fn(),
+            getRange: vi.fn(() => ({
+              start: 0,
+              end: 5,
+              load: vi.fn(),
+            })),
+          },
+        ],
+      })),
+    };
+    const context = {
+      document: {
+        body,
+        getSelection: vi.fn(() => ({ getRange: vi.fn(() => rangeMock) })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3, Replace: 4 },
+    };
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.error).toContain("already applied");
+    expect(rangeMock.insertText).not.toHaveBeenCalled();
+  });
+
+  it("applies normally when revision inspection finds no overlapping revisions", async () => {
+    setStage01Passed(true, {
+      ...FULL_CAPABILITIES,
+      supportsTrackedChangeInspection: true,
+    });
+    const { rangeMock } = installApplyMock();
+    const body = {
+      text: "hello world",
+      load: vi.fn(),
+      getRange: vi.fn(() => rangeMock),
+      paragraphs: { load: vi.fn(), items: [] },
+      getTrackedChanges: vi.fn(() => ({
+        load: vi.fn(),
+        items: [
+          {
+            author: "John Doe",
+            date: "2026-01-01T00:00:00Z",
+            text: "far away",
+            type: "Added",
+            load: vi.fn(),
+            getRange: vi.fn(() => ({
+              start: 100,
+              end: 200,
+              load: vi.fn(),
+            })),
+          },
+        ],
+      })),
+    };
+    const context = {
+      document: {
+        body,
+        getSelection: vi.fn(() => ({ getRange: vi.fn(() => rangeMock) })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3, Replace: 4 },
+    };
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results[0]?.applied).toBe(true);
+    expect(rangeMock.insertText).toHaveBeenCalledWith("x", "Replace");
+  });
+
+  it("uses OOXML route when supportsInsertOoxml is true and range has insertOoxml", async () => {
+    setStage01Passed(true, {
+      ...FULL_CAPABILITIES,
+      supportsInsertOoxml: true,
+    });
+    const rangeMock = makeRangeMock("hello world");
+    (rangeMock as unknown as { insertOoxml: ReturnType<typeof vi.fn> }).insertOoxml = vi.fn();
+    const getRange = vi.fn(() => rangeMock);
+    const body = {
+      text: "hello world",
+      load: vi.fn(),
+      getRange,
+      paragraphs: { load: vi.fn(), items: [] },
+    };
+    const context = {
+      document: {
+        body,
+        getSelection: vi.fn(() => ({ getRange })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3, Replace: 4 },
+    };
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results[0]?.applied).toBe(true);
+    expect(
+      (rangeMock as unknown as { insertOoxml: ReturnType<typeof vi.fn> }).insertOoxml,
+    ).toHaveBeenCalled();
+    expect(rangeMock.insertText).not.toHaveBeenCalled();
+  });
+
+  it("resolves InsertLocation from the Word global when Office.InsertLocation is absent", async () => {
+    /*
+     * Real Desktop Word exposes the enum on the `Word` global and does not
+     * define `Office.InsertLocation` at runtime. Reading it directly threw
+     * `TypeError: Cannot read properties of undefined (reading 'Replace')` on
+     * every OOXML text change, so the adapter must resolve it from `Word`.
+     */
+    setStage01Passed(true, {
+      ...FULL_CAPABILITIES,
+      supportsInsertOoxml: true,
+    });
+    const rangeMock = makeRangeMock("hello world");
+    (rangeMock as unknown as { insertOoxml: ReturnType<typeof vi.fn> }).insertOoxml = vi.fn();
+    const getRange = vi.fn(() => rangeMock);
+    const body = {
+      text: "hello world",
+      load: vi.fn(),
+      getRange,
+      paragraphs: { load: vi.fn(), items: [] },
+    };
+    const context = {
+      document: {
+        body,
+        getSelection: vi.fn(() => ({ getRange })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    // Office carries break enums but NOT InsertLocation, matching Desktop Word.
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+    };
+    (globalThis as { Word?: unknown }).Word = {
+      InsertLocation: { before: 0, after: 1, start: 2, end: 3, replace: 4 },
+    };
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results[0]?.applied).toBe(true);
+    expect(
+      (rangeMock as unknown as { insertOoxml: ReturnType<typeof vi.fn> }).insertOoxml,
+    ).toHaveBeenCalledWith(expect.any(String), 4);
+    expect(rangeMock.insertText).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it("falls back to insertText when supportsInsertOoxml is true but range lacks insertOoxml", async () => {
+    setStage01Passed(true, {
+      ...FULL_CAPABILITIES,
+      supportsInsertOoxml: true,
+    });
+    const { rangeMock } = installApplyMock();
+    // rangeMock does NOT have insertOoxml
+    const getRange = vi.fn(() => rangeMock);
+    const body = {
+      text: "hello world",
+      load: vi.fn(),
+      getRange,
+      paragraphs: { load: vi.fn(), items: [] },
+    };
+    const context = {
+      document: {
+        body,
+        getSelection: vi.fn(() => ({ getRange })),
+        styles: { load: vi.fn(), items: [] },
+      },
+      host: { name: "Word", version: "16.0" },
+      sync: vi.fn(),
+    };
+    (globalThis as { Office?: unknown }).Office = {
+      run: <T>(func: (ctx: unknown) => Promise<T>): Promise<T> => func(context),
+      roamingSettings: { get: vi.fn(), set: vi.fn(), saveAsync: vi.fn() },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3, Replace: 4 },
+    };
+    const plan = createTestPlan("hash-123", "doc-1", [
+      {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        type: "insertText",
+        range: { start: 0, end: 5 },
+        payload: { text: "x" },
+        rationale: "test",
+        reversible: true,
+        source: "deterministic",
+        risk: "none",
+        approvalRequired: false,
+        dependsOn: [],
+      },
+    ]);
+
+    const results = await applyChangePlan(plan, "hash-123");
+    expect(results[0]?.applied).toBe(true);
+    expect(rangeMock.insertText).toHaveBeenCalledWith("x", "Replace");
   });
 });

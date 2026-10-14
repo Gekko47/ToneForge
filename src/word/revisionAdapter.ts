@@ -12,7 +12,12 @@ import { runInWord } from "../shared/office/officeHelpers";
 import { ChangePlanSchema, type ChangePlan } from "../core/domain/ChangePlan";
 import { type Change, type ChangeRange } from "../core/domain/Change";
 import { matchesChangePrecondition, validateChangePreconditions } from "../changes/preconditions";
-import { logger } from "../shared/utils/logger";
+import { assessRevisionOverlap, type RevisionOverlap } from "../changes/revisionOverlap";
+import { readTrackedRevisions } from "./revisionInspection";
+import { buildTrackedRevisionOoxml } from "./revisionOoxml";
+import { TONE_FORGE_REVISION_AUTHOR, type TrackedRevision } from "../core/domain/TrackedRevision";
+import { describeError, logger } from "../shared/utils/logger";
+import { nearestOccurrence } from "../shared/utils/text";
 import { type WordCapabilities } from "./capabilityProbe";
 import { isProtectedNode } from "../rules/protection";
 import type { DocumentNode } from "../core/domain/DocumentSnapshot";
@@ -195,6 +200,105 @@ export async function applyChangePlan(
   }
 
   const orderedChanges = orderChanges(plan.changes);
+
+  // Revision-overlap preflight: inspect tracked changes and refuse the whole
+  // plan if any change overlaps a foreign or unknown revision.
+  if (STAGE_01_CAPABILITIES?.supportsTrackedChangeInspection === true) {
+    let revisions: readonly TrackedRevision[] = [];
+    try {
+      const readResult = await readTrackedRevisions();
+      if (readResult.supported) {
+        revisions = readResult.revisions;
+      } else {
+        for (const change of plan.changes) {
+          results.push({
+            changeId: change.id,
+            applied: false,
+            error:
+              "Tracked change inspection is not supported by this host; cannot verify revision overlap",
+          });
+        }
+        return results;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      for (const change of plan.changes) {
+        results.push({
+          changeId: change.id,
+          applied: false,
+          error: `Revision inspection failed: ${message}`,
+        });
+      }
+      return results;
+    }
+
+    /*
+     * Temporary diagnostic (remove after host verification): capture the
+     * revision set the preflight matched against, with each revision's offsets,
+     * and the ordered change ranges, so a false or over-broad revision overlap
+     * is visible in the console rather than inferred.
+     */
+    console.warn(
+      "revision preflight diagnostic " +
+        JSON.stringify({
+          planId: plan.id,
+          revisions: revisions.map((revision) => ({
+            author: revision.author,
+            type: revision.type,
+            range: revision.range,
+            text: revision.text.substring(0, 40),
+          })),
+          changes: orderedChanges.map((change) => ({
+            id: change.id,
+            type: change.type,
+            start: change.range.start,
+            end: change.range.end,
+            unit: change.range.unit,
+          })),
+        }),
+    );
+
+    const overlapFailures: Array<{ change: Change; overlap: RevisionOverlap }> = [];
+    for (const change of orderedChanges) {
+      const overlap = assessRevisionOverlap(change, revisions);
+      if (overlap.kind !== "none") {
+        overlapFailures.push({ change, overlap });
+      }
+    }
+
+    if (overlapFailures.length > 0) {
+      const first = overlapFailures[0]!;
+      const category: RefusalCategory =
+        first.overlap.kind === "foreign"
+          ? "revision_overlap"
+          : first.overlap.kind === "own"
+            ? "already_applied"
+            : "revision_inspection_unavailable";
+      logger.warn("Revision overlap preflight failed; refusing the entire plan", {
+        planId: plan.id,
+        changeIds: overlapFailures.map((result) => result.change.id),
+        refusalCategory: category,
+        governancePolicyRevision: plan.governancePolicyRevision,
+        verificationResult: "refused",
+      });
+      for (const change of plan.changes) {
+        const failure = overlapFailures.find((result) => result.change.id === change.id);
+        results.push({
+          changeId: change.id,
+          applied: false,
+          error: failure
+            ? failure.overlap.kind === "foreign"
+              ? `Change overlaps a tracked revision by another author: ${failure.overlap.revision.text.substring(0, 80)}`
+              : failure.overlap.kind === "own"
+                ? "Change overlaps a ToneForge revision already applied"
+                : `Cannot determine revision overlap: ${failure.overlap.kind === "unknown" ? failure.overlap.reason : "unknown"}`
+            : "Plan refused because another change overlaps a tracked revision",
+        });
+      }
+      return results;
+    }
+  }
+  const locatedTargets = new Map<string, { start: number; end: number }>();
   const preconditionResults: Array<{
     change: Change;
     matches: boolean;
@@ -202,7 +306,25 @@ export async function applyChangePlan(
   }> = [];
   for (const change of orderedChanges) {
     try {
-      preconditionResults.push({ change, ...(await verifyLivePrecondition(change)) });
+      const located = await locateLiveTarget(change);
+      if (!located.ok) {
+        preconditionResults.push({ change, matches: false, reason: located.reason });
+        continue;
+      }
+      locatedTargets.set(change.id, { start: located.start, end: located.end });
+      const verifiedByText =
+        change.precondition?.kind === "text" &&
+        (change.range.unit === undefined || change.range.unit === "character");
+      if (verifiedByText) {
+        /*
+         * A located text target is verified by construction: it was found by
+         * the recorded text. A second read would only re-measure the same bytes.
+         */
+        preconditionResults.push({ change, matches: true });
+      } else {
+        const preResult = await verifyLivePrecondition(change);
+        preconditionResults.push({ change, ...preResult });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       preconditionResults.push({ change, matches: false, reason: message });
@@ -228,14 +350,23 @@ export async function applyChangePlan(
       };
     });
   }
-
   for (const change of orderedChanges) {
+    const located = locatedTargets.get(change.id);
     try {
-      await applySingleChange(change);
+      await applySingleChange(
+        located
+          ? { ...change, range: { ...change.range, start: located.start, end: located.end } }
+          : change,
+      );
       results.push({ changeId: change.id, applied: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.error("Failed to apply change", { changeId: change.id, message });
+      /*
+       * `describeError` (not a bare `message` key) because the content redaction
+       * rule matches `/message/i`, which turned every host failure into
+       * `[REDACTED_CONTENT]` and made the cause unrecoverable in the console.
+       */
+      logger.error("Failed to apply change", { changeId: change.id, ...describeError(err) });
       results.push({ changeId: change.id, applied: false, error: message });
     }
   }
@@ -426,21 +557,8 @@ async function restoreRevisionTracking(state: TrackingEnablement): Promise<strin
 }
 
 async function countRecordedRevisions(): Promise<number | undefined> {
-  try {
-    return await runInWord(async (context) => {
-      const body = context.document.body as unknown as {
-        getTrackedChanges?: () => { load?: (props: string) => void; items?: unknown[] };
-      };
-      if (typeof body.getTrackedChanges !== "function") return undefined;
-      const collection = body.getTrackedChanges();
-      if (!collection || typeof collection.load !== "function") return undefined;
-      collection.load("items");
-      await context.sync();
-      return Array.isArray(collection.items) ? collection.items.length : undefined;
-    });
-  } catch {
-    return undefined;
-  }
+  const read = await readTrackedRevisions();
+  return read.supported ? read.revisions.length : undefined;
 }
 
 async function applySingleChange(change: Change): Promise<void> {
@@ -451,18 +569,65 @@ async function applySingleChange(change: Change): Promise<void> {
       case "insertText": {
         requireVerifiedCapability(change.id, "supportsInsertText", "insertText");
         const range = await getRangeByChange(context, change.range);
+        // Prefer OOXML route when the host supports it, so the revision is
+        // authored under the ToneForge name.
+        if (
+          STAGE_01_CAPABILITIES?.supportsInsertOoxml === true &&
+          typeof range.insertOoxml === "function"
+        ) {
+          let nextId = 1;
+          const markup = buildTrackedRevisionOoxml(change, {
+            author: TONE_FORGE_REVISION_AUTHOR,
+            date: new Date().toISOString(),
+            nextId: () => nextId++,
+          });
+          if (markup !== null) {
+            range.insertOoxml!(markup, resolveInsertLocation());
+            break;
+          }
+        }
         range.insertText(String(change.payload.text), "Replace");
         break;
       }
       case "replaceText": {
         requireVerifiedCapability(change.id, "supportsReplaceText", "replaceText");
         const range = await getRangeByChange(context, change.range);
+        if (
+          STAGE_01_CAPABILITIES?.supportsInsertOoxml === true &&
+          typeof range.insertOoxml === "function"
+        ) {
+          let nextId = 1;
+          const markup = buildTrackedRevisionOoxml(change, {
+            author: TONE_FORGE_REVISION_AUTHOR,
+            date: new Date().toISOString(),
+            nextId: () => nextId++,
+          });
+          if (markup !== null) {
+            range.insertOoxml!(markup, resolveInsertLocation());
+            break;
+          }
+        }
         range.insertText(String(change.payload.text), "Replace");
         break;
       }
       case "deleteRange": {
         requireVerifiedCapability(change.id, "supportsReplaceText", "deleteRange");
         const range = await getRangeByChange(context, change.range);
+        if (
+          STAGE_01_CAPABILITIES?.supportsInsertOoxml === true &&
+          typeof range.insertOoxml === "function"
+        ) {
+          let nextId = 1;
+          const markup = buildTrackedRevisionOoxml(change, {
+            author: TONE_FORGE_REVISION_AUTHOR,
+            date: new Date().toISOString(),
+            nextId: () => nextId++,
+          });
+          if (markup !== null) {
+            range.insertOoxml!(markup, resolveInsertLocation());
+            break;
+          }
+        }
         range.insertText("", "Replace");
         break;
       }
@@ -632,6 +797,29 @@ function resolveBreakEnums(changeId: string): {
 }
 
 /**
+ * Resolve the live `InsertLocation` used to replace a range (OOXML route).
+ *
+ * Real Desktop Word (WebView2, 2026-10-13 diagnostics) exposes the enum on
+ * the `Word` global with LOWERCASE members (`replace`, `start`, `end`,
+ * `before`, `after`), while `Office.InsertLocation` is only a TypeScript
+ * namespace merge and is absent at runtime. Reading the capital `Replace`
+ * member threw `TypeError: Cannot read properties of undefined (reading
+ * 'Replace')`, and a later guard reported "insert location enum is
+ * unavailable". `insertOoxml` also accepts the string literal "Replace", so a
+ * host with no enum degrades to that instead of failing.
+ */
+function resolveInsertLocation(): Office.InsertLocation {
+  const globals = globalThis as unknown as {
+    Word?: { InsertLocation?: { replace?: Office.InsertLocation } };
+  };
+  const replace = globals.Word?.InsertLocation?.replace;
+  if (replace === undefined) {
+    return "Replace" as unknown as Office.InsertLocation;
+  }
+  return replace;
+}
+
+/**
  * Resolve a Range by character offset within the document body.
  *
  * Uses the documented Word JavaScript API: `body.getRange("Whole")` returns
@@ -678,24 +866,122 @@ async function getRangeByChange(
     throw new Error("Section-unit changes are not yet resolvable by the Word adapter");
   }
   const whole = body.getRange("Whole");
+  /*
+   * The change's offsets are raw coordinates — the analysis locates them in
+   * `body.text`, the same space `range.set()` counts. No translation is needed.
+   */
   whole.set({ start: range.start, end: range.end });
   return whole;
+}
+
+/** A change's target located in the live document, in `body.text` offsets. */
+type LiveTarget = { ok: true; start: number; end: number } | { ok: false; reason: string };
+
+/**
+ * Locate a change's target in the live document before any write.
+ *
+ * The plan's recorded offsets come from the scan, but the document may have
+ * moved since — in particular a prior tracked replacement leaves the deleted
+ * text in `body.text` while `getReviewedText("Current")` omits it, so a finding
+ * planned against the accept-all view lands a few characters short of where
+ * `body.text` actually holds the text (ADR-0144). This resolves the target
+ * against the live document: the planned position when the live text still
+ * matches it, otherwise the occurrence of the recorded text nearest the planned
+ * offset. It refuses only when that text cannot be found at all.
+ *
+ * Character-unit text changes are located by their recorded text. Every other
+ * change (paragraph, formatting) keeps its planned offsets; its node/formatting
+ * precondition is still checked by `verifyLivePrecondition`.
+ */
+async function locateLiveTarget(change: Change): Promise<LiveTarget> {
+  const precondition = change.precondition;
+  if (
+    precondition?.kind !== "text" ||
+    (change.range.unit !== undefined && change.range.unit !== "character")
+  ) {
+    return { ok: true, start: change.range.start, end: change.range.end };
+  }
+  const expected = precondition.expectedText;
+  return runInWord(async (context) => {
+    const body = context.document.body;
+    body.load("text");
+    await context.sync();
+    const live = body.text ?? "";
+    /*
+     * A planned range outside the live text is a stale or corrupt plan, not a
+     * target to relocate: refuse it as the bounds guard in `getRangeByChange`
+     * always has, rather than silently applying at a position the plan never
+     * named.
+     */
+    if (
+      change.range.start < 0 ||
+      change.range.end > live.length ||
+      change.range.start > change.range.end
+    ) {
+      return {
+        ok: false,
+        reason: `Range [${change.range.start}, ${change.range.end}] is out of bounds for document of length ${live.length}`,
+      };
+    }
+    if (expected.length === 0) {
+      return { ok: true, start: change.range.start, end: change.range.end };
+    }
+    /*
+     * The nearest occurrence, not merely the first: a tracked edit drifts the
+     * plan's offset by the length of the deleted text before it, so the closest
+     * occurrence is the one the plan meant. Shared with the highlight path
+     * (`word/sourceLocator`), which relocates a finding's text the same way.
+     */
+    const located = nearestOccurrence(live, expected, change.range.start);
+    /*
+     * Temporary diagnostic (remove after host verification): show the planned
+     * offsets against where the recorded text was actually located, so the
+     * relocation is visible rather than inferred.
+     */
+    console.warn(
+      "locate live target diagnostic " +
+        JSON.stringify({
+          changeId: change.id,
+          planned: { start: change.range.start, end: change.range.end },
+          located: located === -1 ? null : { start: located, end: located + expected.length },
+          expected,
+        }),
+    );
+    if (located === -1) {
+      return {
+        ok: false,
+        reason: `expected text ${JSON.stringify(expected)} was not found in the live document`,
+      };
+    }
+    return { ok: true, start: located, end: located + expected.length };
+  });
 }
 
 async function verifyLivePrecondition(
   change: Change,
 ): Promise<{ matches: boolean; reason?: string }> {
   const precondition = change.precondition;
-  if (precondition === undefined) return { matches: true };
+  if (precondition === undefined) {
+    return { matches: true };
+  }
   return runInWord(async (context) => {
     const body = context.document.body;
     body.load("text");
     const paragraphs = body.paragraphs;
     if (precondition.kind === "text") {
       await context.sync();
-      return matchesChangePrecondition(change, {
-        text: (body.text ?? "").slice(change.range.start, change.range.end),
+      /*
+       * Read the text by slicing body.text at the change's offsets. The offsets
+       * come from the analysis, which locates them in body.text — the same space
+       * the slice counts. The range API was tried here and served text in a
+       * different coordinate space in the real host, causing precondition
+       * mismatches on every apply.
+       */
+      const liveText = (body.text ?? "").slice(change.range.start, change.range.end);
+      const result = matchesChangePrecondition(change, {
+        text: liveText,
       });
+      return result;
     }
     if (!paragraphs) {
       return matchesChangePrecondition(change, {});
@@ -725,7 +1011,9 @@ async function verifyLivePrecondition(
           load?: (properties: string | string[]) => unknown;
         }
       | undefined;
-    if (!paragraph) return matchesChangePrecondition(change, {});
+    if (!paragraph) {
+      return matchesChangePrecondition(change, {});
+    }
     paragraph.load?.([
       "text",
       "uniqueLocalId",
@@ -747,7 +1035,7 @@ async function verifyLivePrecondition(
       typeof paragraph.uniqueLocalId === "string" && paragraph.uniqueLocalId.trim().length > 0
         ? `word-paragraph-${paragraph.uniqueLocalId.trim()}`
         : undefined;
-    return matchesChangePrecondition(change, {
+    const liveState = {
       ...(typeof paragraph.text === "string" ? { text: paragraph.text } : {}),
       ...(liveNodeId === undefined ? {} : { nodeId: liveNodeId }),
       ...(styleName === undefined ? {} : { styleName }),
@@ -765,7 +1053,9 @@ async function verifyLivePrecondition(
         italic: paragraph.font?.italic ?? null,
         underline: paragraph.font?.underline ?? null,
       },
-    });
+    };
+    const result = matchesChangePrecondition(change, liveState);
+    return result;
   });
 }
 
@@ -787,7 +1077,10 @@ export type RefusalCategory =
   | "unresolved_semantic_span"
   | "partial_coverage"
   | "approval_required"
-  | "conflict";
+  | "conflict"
+  | "revision_inspection_unavailable"
+  | "revision_overlap"
+  | "already_applied";
 
 export interface RefusalDiagnostic {
   category: RefusalCategory;

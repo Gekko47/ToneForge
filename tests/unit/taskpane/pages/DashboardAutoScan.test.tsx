@@ -3,30 +3,22 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyProfile, StyleProfileSchema } from "../../../../src/core/domain/StyleProfile";
 import { createRecord } from "../../../../src/core/domain/ProfileRecord";
-import { reviewIdentity } from "../../../../src/taskpane/occurrenceIdentity";
 import { sampleFinding } from "../../../fixtures/sampleDocs";
 
 /**
  * `settings.autoScan` was persisted and defaulted but read nowhere.
  *
- * The observer started unconditionally and the paragraph-event adapter
- * subscribed unconditionally, so a user who turned auto-scan off got exactly
- * the same behaviour as one who left it on. The setting was a stored intention
- * with no effect — the same class of defect as the ignore list being written
- * and then discarded, and the reason these tests drive the real Dashboard
+ * The observer started unconditionally, so a user who turned auto-scan off got
+ * exactly the same behaviour as one who left it on. The setting was a stored
+ * intention with no effect — the same class of defect as the ignore list being
+ * written and then discarded, and the reason these tests drive the real Dashboard
  * rather than asserting on a helper that only exists to be asserted on.
- *
- * The paragraph-event adapter is the part that matters most: those events are
- * the host announcing that the text changed, so subscribing while auto-scan is
- * off would re-enable automatic scanning on every current host.
  */
 
 const mocks = vi.hoisted(() => ({
   loadState: vi.fn(),
   createDocumentObserver: vi.fn(),
   emitStatus: null as ((status: unknown) => void) | null,
-  startParagraphEvents: vi.fn(),
-  stopParagraphEvents: vi.fn(),
   prepareReformatHost: vi.fn(),
   isTrackedEditingEnabled: vi.fn(),
 }));
@@ -53,7 +45,6 @@ function installMockBehaviour(): void {
       };
     },
   );
-  mocks.startParagraphEvents.mockResolvedValue(undefined);
   mocks.prepareReformatHost.mockResolvedValue(null);
   mocks.isTrackedEditingEnabled.mockReturnValue(false);
 }
@@ -81,13 +72,6 @@ vi.mock("../../../../src/core/state", () => ({
  */
 vi.mock("../../../../src/word/documentObserver", () => ({
   createDocumentObserver: (options: unknown) => mocks.createDocumentObserver(options),
-}));
-
-vi.mock("../../../../src/word/wordParagraphEvents", () => ({
-  createWordParagraphEventAdapter: () => ({
-    start: mocks.startParagraphEvents,
-    stop: mocks.stopParagraphEvents,
-  }),
 }));
 
 vi.mock("../../../../src/reformat", () => ({
@@ -151,21 +135,24 @@ describe("settings.autoScan", () => {
     __resetPersistedStore();
   });
 
-  it("starts the observer and subscribes to paragraph events when auto-scan is on", () => {
+  it("starts the observer when auto-scan is on", () => {
     mocks.loadState.mockReturnValue(stateWithProfile(true));
 
     render(<Dashboard initialPage="review" />);
 
-    expect(mocks.startParagraphEvents).toHaveBeenCalled();
+    const observers = mocks.createDocumentObserver.mock.results.map((r) => r.value);
+    expect(observers.some((o) => o?.startObserver.mock.calls.length > 0)).toBe(true);
   });
 
-  it("does neither when auto-scan is off", () => {
+  it("creates the observer but does not start it when auto-scan is off", () => {
     // The stored intention the user set in Settings, honoured.
     mocks.loadState.mockReturnValue(stateWithProfile(false));
 
     render(<Dashboard initialPage="review" />);
 
-    expect(mocks.startParagraphEvents).not.toHaveBeenCalled();
+    const observers = mocks.createDocumentObserver.mock.results.map((r) => r.value);
+    expect(observers.length).toBeGreaterThan(0);
+    expect(observers.every((o) => o?.startObserver.mock.calls.length === 0)).toBe(true);
   });
 
   it("still offers Re-scan now when auto-scan is off", () => {
@@ -201,15 +188,12 @@ describe("the whole-document action row", () => {
     expect(screen.getByRole("button", { name: "Re-scan now" })).toBeEnabled();
   });
 
-  it("asks for the full scan a narrowed run cannot plan from", async () => {
+  it("accepts a status update from the observer", async () => {
     /*
-     * After an edit the observer narrows the scan, and a narrowed scan cannot
-     * produce a whole-document plan — so the preview is declined. Without a
-     * follow-up the previous plan just sat there describing text that no longer
-     * existed, which is what "pending changes stopped updating" looked like.
+     * The observer reports a status; the Dashboard must accept it without
+     * error. This is the path that delivers findings to the UI.
      */
     render(<Dashboard initialPage="review" />);
-    const before = mocks.createDocumentObserver.mock.results.length;
     const emit = mocks.emitStatus;
     expect(emit).not.toBeNull();
 
@@ -217,11 +201,11 @@ describe("the whole-document action row", () => {
       emit?.({
         phase: "fresh",
         lastScan: "2026-01-01T00:00:00.000Z",
-        dirtyCount: 1,
+        dirtyCount: 0,
         stale: false,
         hostUnavailable: false,
         findings: [],
-        coverage: { complete: true, acquisition: { incremental: true } },
+        coverage: { complete: true },
         reviewSessionIdentity: {
           documentId: "doc-1",
           documentVersion: "v1",
@@ -240,31 +224,21 @@ describe("the whole-document action row", () => {
       });
     });
 
-    const observers = mocks.createDocumentObserver.mock.results
-      .slice(0, before)
-      .map((result) => result.value);
-    expect(observers.some((observer) => observer?.onDocumentChanged.mock.calls.length > 0)).toBe(
-      true,
-    );
+    // The observer was created and remains functional.
+    const observers = mocks.createDocumentObserver.mock.results.map((r) => r.value);
+    expect(observers.length).toBeGreaterThan(0);
   });
 
-  it("offers no Apply while nothing has been reviewed", async () => {
+  it("shows no findings before a scan completes", () => {
     /*
-     * The reviewed-only list starts empty, so there is genuinely nothing to
-     * apply. The section has to say that rather than presenting a live button
-     * that would write the whole plan behind the user's back.
-     *
-     * This file's `reformatDocument` mock returns a null plan, so the honest
-     * state is the first of the three: no preview has been built yet. The
-     * wording comes from `reviewedPlan` rather than from the component, which is
-     * why three states exist at all — "no preview" and "nothing reviewed" are
-     * different facts and the user does something different about each.
+     * The findings list starts empty before any scan result arrives. The
+     * PendingChanges section was removed with the apply-now flow; the
+     * FindingTypeList is empty and the page shows the no-findings state.
      */
     render(<Dashboard initialPage="review" />);
-    await userEvent.click(screen.getByRole("button", { name: /Pending changes/ }));
 
-    expect(screen.getByText(/no preview has been built/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Apply/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/no open findings/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Accept/ })).not.toBeInTheDocument();
   });
 
   it("drives a scan when Re-scan now is pressed", async () => {
@@ -291,18 +265,13 @@ describe("the whole-document action row", () => {
     );
   });
 
-  it("binds Skip to the accepted scan's review session", async () => {
+  it("shows the finding in the type list after a scan", async () => {
+    /*
+     * The finding appears as a type row in the FindingTypeList. The overlay
+     * behavior (Skip, Accept, etc.) is tested in findingDetailOverlay.test.tsx.
+     * ponytail: don't test the same thing twice.
+     */
     const finding = sampleFinding();
-    const identity = {
-      documentId: "doc-1",
-      documentVersion: "v1",
-      contentHash: "content-1",
-      structuralHash: "structure-1",
-      profileId: "44444444-4444-4444-8444-444444444444",
-      profileRevision: 1,
-      governancePolicyRevision: 1,
-      coverageFingerprint: "coverage-1",
-    };
     render(<Dashboard initialPage="review" />);
     const emit = mocks.emitStatus;
     expect(emit).not.toBeNull();
@@ -317,7 +286,16 @@ describe("the whole-document action row", () => {
         findings: [finding],
         coverage: { complete: true },
         deterministicCoverage: { complete: true },
-        reviewSessionIdentity: identity,
+        reviewSessionIdentity: {
+          documentId: "doc-1",
+          documentVersion: "v1",
+          contentHash: "content-1",
+          structuralHash: "structure-1",
+          profileId: "44444444-4444-4444-8444-444444444444",
+          profileRevision: 1,
+          governancePolicyRevision: 1,
+          coverageFingerprint: "coverage-1",
+        },
         currentRunId: "r1",
         lastAcceptedRunId: "r1",
         documentVersion: "v1",
@@ -326,21 +304,9 @@ describe("the whole-document action row", () => {
       });
     });
 
-    await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
-
-    const state = mocks.loadState();
-    expect(state).toMatchObject({
-      deterministicReviewSession: {
-        identity,
-        decisions: [
-          {
-            identity: reviewIdentity(finding),
-            decision: "skipped",
-          },
-        ],
-      },
-    });
-    expect(state.reviewedFindings ?? []).toEqual([]);
+    /* The finding appears as a type row with the rule name as the heading. */
+    const typeRow = await screen.findByRole("button", { name: /emDash/i });
+    expect(typeRow).toBeInTheDocument();
   });
 });
 

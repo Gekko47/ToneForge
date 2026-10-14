@@ -10,8 +10,9 @@
 
 import { runInWord } from "../shared/office/officeHelpers";
 import { logger } from "../shared/utils/logger";
+import { nearestOccurrence } from "../shared/utils/text";
 import type { Finding } from "../core/domain/Finding";
-import { resolveSourceRange } from "./documentReader";
+import { readBodyTextViews, resolveSourceRange } from "./documentReader";
 
 export interface NavigateOptions {
   finding: Finding;
@@ -43,12 +44,70 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
 
   try {
     const outcome = await runInWord(async (context) => {
-      const body = context.document.body;
-      body.load("text");
-      await context.sync();
+      /*
+       * Character offsets are the only unit `Range.set` counts. A paragraph,
+       * section, table, header, or footer finding counts in its own unit — its
+       * `start` is an index, not a character position — so feeding it to `set`
+       * selected an unrelated span. That is the "incorrect placement": a
+       * paragraph finding at index 2 highlighted characters 2–3. Structural
+       * findings resolve to their element's whole range instead.
+       */
+      if (unit !== "character") {
+        const structural = resolveStructuralRange(context, finding) as NavigableRange | null;
+        if (structural === null) {
+          return {
+            navigated: false,
+            method: "unsupported" as const,
+            message: `This Word host cannot locate the ${unit} this finding is about.`,
+          };
+        }
+        if (typeof structural.select !== "function") {
+          return {
+            navigated: false,
+            method: "unsupported" as const,
+            message: `This Word host cannot select a finding range.`,
+          };
+        }
 
-      const bodyLength = body.text.length;
-      if (start > bodyLength || end > bodyLength || end < start) {
+        structural.select();
+        if (highlight && typeof structural.highlight === "function") {
+          structural.highlight();
+        }
+        await context.sync();
+
+        const structuralPath =
+          finding.target !== undefined && finding.target.kind !== "text"
+            ? finding.target.structuralPath
+            : undefined;
+        const resolved = resolveSourceRange(
+          finding.nodeIds[0],
+          structuralPath,
+          undefined,
+          undefined,
+        );
+
+        return {
+          navigated: true,
+          method: "nodeId" as const,
+          message: resolved.nodeId
+            ? `Selected finding ${finding.id} on ${unit} for node ${resolved.nodeId}.`
+            : `Selected finding ${finding.id} on ${unit}.`,
+        };
+      }
+
+      const body = context.document.body;
+      /*
+       * The finding's offsets are reviewed-view offsets: detection reads the
+       * accept-all text (`getReviewedText("Current")`), which omits text a tracked
+       * revision marked for deletion. `Range.set` counts the raw view, which keeps
+       * it, so a tracked deletion before the finding shifts the raw position by
+       * its length — setting the reviewed offset directly highlighted the wrong
+       * span, off by exactly that much (ADR-0144). The finding's own text is
+       * relocated into the raw view exactly as the apply path relocates a change.
+       */
+      const views = await readBodyTextViews(context);
+
+      if (end > views.fullText.length || end < start) {
         return {
           navigated: false,
           method: "unsupported" as const,
@@ -64,7 +123,32 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
           message: "This Word host cannot narrow a body range to character offsets.",
         };
       }
-      range.set({ start, end });
+
+      const expected = views.fullText.slice(start, end);
+      const located =
+        expected.length === 0 ? start : nearestOccurrence(views.rawText, expected, start);
+      const targetStart = located === -1 ? start : located;
+      const targetEnd = located === -1 ? end : located + expected.length;
+
+      /*
+       * Temporary diagnostic (remove after host verification): the reviewed
+       * offsets the finding carries, against where its text actually sits in the
+       * raw view `Range.set` counts.
+       */
+      console.warn(
+        "navigate highlight diagnostic " +
+          JSON.stringify({
+            findingId: finding.id,
+            reviewedOffsets: { start, end },
+            expected,
+            located,
+            rawLength: views.rawText.length,
+            reviewedLength: views.fullText.length,
+            reviewedView: views.reviewed,
+          }),
+      );
+
+      range.set({ start: targetStart, end: targetEnd });
       if (typeof range.select !== "function") {
         return {
           navigated: false,
@@ -79,15 +163,14 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
       }
       await context.sync();
 
-      const structuralPath = unit === "paragraph" ? `body/paragraph/${start}` : undefined;
-      const resolved = resolveSourceRange(finding.nodeIds[0], structuralPath, start, end);
+      const resolved = resolveSourceRange(finding.nodeIds[0], undefined, targetStart, targetEnd);
 
       return {
         navigated: true,
         method: "offsets" as const,
         message: resolved.nodeId
-          ? `Selected finding ${finding.id} at characters ${start}–${end} for node ${resolved.nodeId}.`
-          : `Selected finding ${finding.id} at characters ${start}–${end}.`,
+          ? `Selected finding ${finding.id} at characters ${targetStart}–${targetEnd} for node ${resolved.nodeId}.`
+          : `Selected finding ${finding.id} at characters ${targetStart}–${targetEnd}.`,
       };
     });
 
@@ -100,5 +183,58 @@ export async function navigateToFinding(options: NavigateOptions): Promise<Navig
       method: "unsupported",
       message: `Finding ${finding.id} could not be selected: ${message}`,
     };
+  }
+}
+
+/**
+ * Resolve a structural finding to the whole range of the element it names.
+ *
+ * `finding.target` is authoritative when present — a table, header, footer, or
+ * section finding carries one. A paragraph, section, or table finding that
+ * predates `target` is still resolvable, because for those units `range.start`
+ * *is* the element index and `unit` says which collection to read it from.
+ *
+ * Returns null when the host does not expose the collection, the index is out of
+ * range, or the element cannot produce a Range — so navigation degrades to a
+ * stated refusal rather than a wrong highlight.
+ */
+function resolveStructuralRange(context: Office.Context, finding: Finding): Office.Range | null {
+  const { unit, start } = finding.range;
+  const target = finding.target;
+  const body = context.document.body;
+  const sectionAt = (index: number): Office.Section | undefined =>
+    context.document.sections?.items[index];
+
+  switch (unit) {
+    case "paragraph": {
+      const index = target?.kind === "paragraph" ? target.index : start;
+      const paragraph = body.paragraphs?.items[index];
+      return paragraph?.getRange ? paragraph.getRange("Whole") : null;
+    }
+    case "table": {
+      const index = target?.kind === "table" ? target.index : start;
+      const table = body.tables?.items[index];
+      return table?.getRange ? table.getRange("Whole") : null;
+    }
+    case "section": {
+      const index = target?.kind === "section" ? target.index : start;
+      const section = sectionAt(index);
+      return section ? section.body.getRange("Whole") : null;
+    }
+    case "header":
+    case "footer": {
+      let sectionIndex = start;
+      if (target !== undefined && (target.kind === "header" || target.kind === "footer")) {
+        sectionIndex = target.sectionIndex;
+      }
+      const section = sectionAt(sectionIndex);
+      if (section === undefined) return null;
+      // The slot type (Primary/FirstPage/EvenPages) is not carried on the finding;
+      // the primary slot is the one a header/footer finding is about in practice.
+      const slot = unit === "header" ? section.getHeader("Primary") : section.getFooter("Primary");
+      return slot.getRange("Whole");
+    }
+    default:
+      return null;
   }
 }

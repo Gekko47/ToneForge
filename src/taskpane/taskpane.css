@@ -91,10 +91,11 @@ body {
 .tf-governance-reformat {
   display: grid;
   gap: 12px;
-  border: 1px solid var(--tf-border);
-  border-radius: 8px;
-  padding: 12px;
-  background: var(--tf-surface-subtle);
+  /* No border, no background: the section sits on the pane's own surface. A
+     bordered card on a gray pane read as a second pane stacked on the first;
+     a borderless section with a divider between subsections reads as the top of
+     the same surface. */
+  padding: 0;
 }
 
 .tf-governance-reformat section {
@@ -107,11 +108,13 @@ body {
 }
 
 .tf-finding-card {
-  border: 1px solid var(--tf-border);
-  border-radius: 6px;
+  /* No border, no background: a finding sits on the pane's own surface. A white
+     card with a gray border on a gray pane read as a second pane stacked on the
+     first; a borderless block of text with spacing reads as the top of the same
+     surface. The selected state below keeps the one edge that matters — the
+     accent bar — so a selection is still visible without a box. */
   padding: 12px;
   margin-bottom: 8px;
-  background: var(--tf-surface);
 }
 
 /* The toolbar's selected position has to be visible somewhere. `aria-current`
@@ -121,31 +124,9 @@ body {
   box-shadow: inset 3px 0 0 var(--tf-accent);
 }
 
-/* An occurrence group (spec §13, §15). Indented from its siblings rather than boxed,
-   so a group reads as a set of the findings around it instead of a separate thing.
-   The 12px is the same as the card's own padding, which is what makes a group's
-   occurrences line up under the header that names them. */
-.tf-finding-group {
-  margin-bottom: 8px;
-  padding-left: 12px;
-  border-left: 2px solid var(--tf-border);
-}
-
-.tf-finding-group-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-/* The header's own controls read as a row, not as the space-between pair the
-   per-card action row uses — there is nothing to push apart here. */
-.tf-finding-group .tf-finding-actions {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  margin-bottom: 6px;
-}
+/* The occurrence group rules are removed. Groups are now flat type rows
+   (`.tf-finding-type-row`) that open a one-finding overlay, so there is no
+   indented group frame and no per-group action row. */
 
 .tf-finding-card-header,
 .tf-finding-actions {
@@ -319,7 +300,10 @@ body {
 }
 
 .tf-finding-actions {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: flex-start;
+  gap: 8px;
   margin-top: 8px;
 }
 
@@ -336,6 +320,226 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+/*
+ * The one surface rule for every section on the pane.
+ *
+ * Ten components used to each define the same `styles.root` — border, radius,
+ * tinted fill, overflow hidden — and hand it to DisclosurePanel. On the review
+ * page those stacked (Findings, Coverage, ApplyResult, Ignored) and nested
+ * (Findings box → group border-left → finding card), producing the "boxes within
+ * boxes" look. Two earlier fixes removed single instances of the same symptom
+ * (AppShell, CoverageBanner), which is why it kept coming back.
+ *
+ * This rule is the anti-regression convention: a section is a block of content
+ * on the pane's own surface, separated by whitespace and an optional top
+ * divider. No border, no fill, no radius. A new section uses this and the box
+ * cannot be reintroduced without a deliberate edit here.
+ */
+.tf-section {
+  margin-top: 12px;
+}
+
+.tf-section:first-child {
+  margin-top: 0;
+}
+
+.tf-section-divider {
+  border-top: 1px solid var(--tf-border);
+  padding-top: 12px;
+}
+
+/*
+ * The findings type list — flat rows, all at one visible level.
+ *
+ * Each row is a button (not a collapsible heading): pressing it opens the
+ * one-finding overlay for that type. There is no disclosure per group and no
+ * nesting, so every type sits at the same level and the list reads as "what
+ * kinds of problems are here" — the same shape as Word's Editor proofing pane.
+ */
+.tf-finding-type-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tf-finding-type-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--tf-border);
+  border-radius: 6px;
+  background: var(--tf-surface);
+  color: var(--tf-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.tf-finding-type-row:hover {
+  border-color: var(--tf-accent);
+  background: var(--tf-surface-subtle);
+}
+
+.tf-finding-type-row:focus-visible {
+  outline: 2px solid var(--tf-accent);
+  outline-offset: 2px;
+}
+
+.tf-finding-type-row-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: var(--tf-space-2);
+  width: 24px;
+  height: 24px;
+  color: var(--tf-muted);
+}
+
+/*
+ * The row's two lines: the rule's name as the heading, and the parent domain
+ * as a smaller, non-bold subtext beneath it.
+ *
+ * The heading is what the group *is*; the subtext is which part of the profile
+ * it belongs to. The subtext is deliberately quieter — smaller, muted, normal
+ * weight — so the eye takes the rule first and the domain second.
+ */
+.tf-finding-type-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+
+.tf-finding-type-row-label {
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.tf-finding-type-row-parent {
+  color: var(--tf-muted);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.tf-finding-type-row-count {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 12px;
+  background: var(--tf-surface-subtle);
+  color: var(--tf-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/*
+ * The one-finding overlay.
+ *
+ * A Fluent Drawer with type="overlay" renders as a panel on top of the pane.
+ * The header is sticky and opaque so the finding beneath scrolls under it.
+ */
+.tf-finding-overlay {
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+}
+
+.tf-finding-overlay-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--tf-surface);
+  border-bottom: 1px solid var(--tf-border);
+}
+
+.tf-finding-overlay-header-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+/*
+ * The count and the arrows are one unit on the right of the title.
+ *
+ * The count sits above the arrows, and the pair is stuck to the title's right
+ * edge. They answer the same question — where am I in this group — so they read
+ * as one thing rather than two.
+ */
+.tf-finding-overlay-header-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.tf-finding-overlay-header-count {
+  color: var(--tf-muted);
+  font-size: 0.8rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.tf-finding-overlay-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tf-finding-overlay-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.tf-finding-overlay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--tf-border);
+  background: var(--tf-surface);
+}
+
+/*
+ * The apply result, shown in the overlay beside the action that produced it.
+ *
+ * Accept is pressed in the overlay, so its outcome belongs there. It used to
+ * render on the findings list behind the overlay, where the user pressing Apply
+ * could not see it. Both the success line and a refusal read here, so a refused
+ * apply explains itself rather than looking like a button that did nothing.
+ */
+.tf-finding-overlay-note {
+  order: -1;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--tf-muted);
+  background: var(--tf-overlay-note-bg, var(--tf-surface));
+  border: 1px solid var(--tf-border);
+  border-radius: 6px;
 }
 
 /*
@@ -372,6 +576,16 @@ textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--tf-accent);
   outline-offset: 2px;
+}
+
+/*
+ * The pane's own <main> is focusable (it is the pane's keyboard surface), so the
+ * rule above draws a 2px outline around the entire pane — a border at the very
+ * edge of the bleed. That outline is the pane's frame, not a control's focus
+ * indicator, so it is removed here. Every real control keeps its own outline.
+ */
+.tf-app-main:focus-visible {
+  outline: none;
 }
 
 /*
@@ -800,12 +1014,18 @@ h4 {
      pane header off the border, and 40px is the height of the nav trigger
      column beside it, so the bar never grows past its own content. */
   min-height: 40px;
-  border-bottom: 1px solid var(--tf-border);
-  padding: 6px 0;
-  /* The shell's PageContainer owns the gutter now, so the header no longer
-     cancels a card's padding with a negative margin. */
-  margin: 0 0 16px;
+  /* The bar is opaque so scrolled content does not bleed through it. It is
+     still a divider, not a box: its only edge is the line beneath it. */
   background: var(--tf-surface);
+  border-bottom: 1px solid var(--tf-border);
+  /* The bar is full-bleed: the shell no longer insets it, so the bar carries
+     its own 16px horizontal padding, which aligns the title and trigger with
+     the content inside a full-bleed card below. */
+  padding: 6px 16px;
+  /* No bottom margin. The shell's vertical rhythm (its flex gap) spaces the bar
+     from the first content element; the bar's own 16px bottom margin stacked on
+     top of that gap was 32px of dead space. */
+  margin: 0;
 }
 
 .tf-nav-overlay {

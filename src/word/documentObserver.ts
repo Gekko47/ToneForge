@@ -1,6 +1,6 @@
 /**
  * Document observer v1 — watches for Word document changes and runs
- * incremental deterministic rule checks on dirty nodes only.
+ * a full deterministic rule check on the whole document.
  *
  * Boundary rule: word/ may import from shared/office, core/domain,
  * shared/utils, rules, formatting, and analysis. Never imports ai or ui.
@@ -23,22 +23,9 @@ import type {
 import { type StyleProfile } from "../core/domain/StyleProfile";
 import { type Finding } from "../core/domain/Finding";
 import type { ReviewSessionIdentity } from "../core/domain/ReviewSession";
-import type { WordParagraphChange } from "./wordParagraphEvents";
 
 export type DocumentScanPhase =
   "notStarted" | "scanning" | "fresh" | "clean" | "stale" | "incomplete" | "failed";
-
-/**
- * The subset of nodes a scan will examine, or null for the whole document.
- *
- * Held as module state rather than threaded through the debounce so a burst of
- * events collapses into one scope. Events *accumulate* rather than replace:
- * two paragraphs edited inside one debounce window both need examining, and
- * keeping only the second would silently skip the first.
- */
-interface ScanScope {
-  nodeIds: Set<string>;
-}
 
 export interface DocumentObserverStatus {
   phase: DocumentScanPhase;
@@ -118,8 +105,8 @@ interface ObserverState {
   error: string | null;
   hostUnavailable: boolean;
   debouncedScan: (() => void) | null;
-  /** Nodes the next scan will examine, or null for the whole document. */
-  scope: ScanScope | null;
+  /** The registered selection handler, kept so it can be removed by reference. */
+  eventHandler: (() => void) | null;
 }
 
 /**
@@ -152,7 +139,7 @@ const DEFAULT_DEBOUNCE_MS = 1200;
 export function createDocumentObserver(options: DocumentObserverOptions): {
   startObserver: () => void;
   stopObserver: () => void;
-  onDocumentChanged: (change?: WordParagraphChange) => void;
+  onDocumentChanged: (immediate?: boolean) => void;
 } {
   const { debounceMs = DEFAULT_DEBOUNCE_MS, onStatus, profile } = options;
   const capabilities = options.capabilities ?? {
@@ -177,28 +164,6 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     hostName: "unknown" as const,
     hostVersion: null,
   };
-  /**
-   * Decide whether a host event is precise enough to narrow the scan.
-   *
-   * Four cases force a full rescan, and each is a case where narrowing would
-   * produce a confidently wrong report:
-   *
-   * - `requiresFullRescan` — the host dropped or mangled some ids, so the set is
-   *   known to be incomplete.
-   * - a deletion — a removed paragraph shifts every index and range after it, and
-   *   the event names what went, not what moved.
-   * - a remote edit — a collaborator's change may have touched anything.
-   * - no ids at all — an event that names nothing names nothing.
-   */
-  function narrowTo(change: WordParagraphChange | undefined): ScanScope | null {
-    if (change === undefined) return null;
-    if (change.requiresFullRescan) return null;
-    if (change.kind === "deleted") return null;
-    if (change.source !== "local") return null;
-    if (change.uniqueLocalIds.length === 0) return null;
-    return { nodeIds: new Set(change.uniqueLocalIds) };
-  }
-
   const state: ObserverState = {
     running: false,
     documentVersion: "",
@@ -220,7 +185,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     reviewSessionIdentity: null,
     error: null,
     debouncedScan: null,
-    scope: null,
+    eventHandler: null,
   };
 
   const debouncedScan = debounce(() => {
@@ -263,52 +228,23 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       });
       if (isObsolete()) return;
 
-      // A narrowed scan reports only what it re-derived. Nothing is carried over
-      // from the previous run: growing one paragraph shifts every character
-      // offset after it, so a retained finding in an untouched paragraph can
-      // point at the wrong sentence while looking entirely normal.
-      const scope = state.scope;
-      state.scope = null;
-      const inScope = (nodeId: string): boolean => scope === null || scope.nodeIds.has(nodeId);
-      const examinedNodes =
-        scope === null ? full.nodes : full.nodes.filter((node) => inScope(node.nodeId));
-      // An event naming ids the host no longer has names nothing we can read;
-      // treating that as a narrowing would silently examine less than asked.
-      const narrowed =
-        scope !== null && examinedNodes.length > 0 && examinedNodes.length < full.nodes.length;
-      const examinedNodeIds = (narrowed ? examinedNodes : full.nodes).map((node) => node.nodeId);
-      const context = narrowed ? { ...full, nodes: examinedNodes } : full;
-      /*
-       * One sentence about the shortfall, shared by both reports.
-       *
-       * The deterministic report and the shared coverage report are two
-       * projections of the same run, so they must not state the shortfall in
-       * two slightly different words — that is how a banner and a verdict end
-       * up describing the same narrow scan as different amounts of work.
-       */
-      const incrementalReason = narrowed
-        ? `Word reported ${examinedNodeIds.length} changed paragraph(s); ` +
-          `this run examined ${examinedNodeIds.length} of ${full.nodes.length} acquired nodes. ` +
-          "Findings for the rest are not shown until a full scan."
-        : undefined;
-      const report = await runDeterministicReview({
-        context,
-        ...(narrowed ? { examinedNodeIds, incremental: true } : {}),
-        ...(incrementalReason === undefined ? {} : { incrementalReason }),
-      });
+      const report = await runDeterministicReview({ context: full });
       if (isObsolete()) return;
 
+      /*
+       * The scan has now read the document, so its content hash is the version
+       * the pane keys its preview on. Without this, `documentVersion` stayed the
+       * constant set when the scan was scheduled, `decidePreview` saw the same
+       * hash on every scan, and the plan was built once and never rebuilt until
+       * a manual Re-scan cleared the recorded hash — which is why the pane only
+       * updated on manual scans and add-in loads.
+       */
+      state.documentVersion = report.documentIdentity.contentHash;
+
       const coverage = buildCoverage({
-        nodes: context.nodes,
-        text: context.text,
-        acquisition: context.acquisition,
-        ...(narrowed
-          ? {
-              examinedNodeIds,
-              incremental: true,
-              ...(incrementalReason === undefined ? {} : { incrementalReason }),
-            }
-          : {}),
+        nodes: full.nodes,
+        text: full.text,
+        acquisition: full.acquisition,
       });
       state.findings = report.findings;
       /*
@@ -330,12 +266,12 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
         structuralHash: report.documentIdentity.structuralHash,
         profileId: report.profileId,
         profileRevision: report.profileRevision,
-        governancePolicyRevision: context.policy.version,
+        governancePolicyRevision: full.policy.version,
         coverageFingerprint: report.coverage.coverageFingerprint,
       };
       state.lastScan = new Date().toISOString();
       state.lastAcceptedRunId = runId;
-      state.dirtyCount = examinedNodeIds.length;
+      state.dirtyCount = full.nodes.length;
       state.stale = false;
       // A successful scan clears an earlier host outage: the two are not
       // concurrent, and leaving the outage set would keep reporting a host that
@@ -423,8 +359,15 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
    * refresh did not happen, or the last one failed. That is set where it is
    * earned, in the failure path, and nowhere else.
    */
-  function scheduleScan(): void {
+  function scheduleScan(immediate = false): void {
     if (!state.running) return;
+    /*
+     * An immediate scan is for a programmatic write, which fires no selection
+     * event, so the debounce that coalesces keystrokes only delays the refreshed
+     * findings the user is waiting on. It never overlaps a read already running
+     * or pending — those coalesce through the debounce as usual.
+     */
+    const runNow = immediate && !state.scanInFlight && !state.scanScheduled;
     if (state.scanInFlight && state.replacementPending) {
       debouncedScan();
       return;
@@ -434,10 +377,20 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
       debouncedScan();
       return;
     }
-    const next = createRunId(state.documentVersion || "pending");
+    /*
+     * Only a completed scan may set the version (in `performScan`). Scheduling a
+     * scan must not overwrite it with a placeholder, or `decidePreview` would
+     * see a hash that no longer describes the document it is holding a plan for.
+     */
+    const next = createRunId(state.documentVersion);
     state.runId = next.runId;
-    state.documentVersion = next.documentVersion;
     state.scanScheduled = true;
+    if (runNow) {
+      performScan().catch((err: unknown) => {
+        logger.warn("Document observer scan failed", describeError(err));
+      });
+      return;
+    }
     debouncedScan();
   }
 
@@ -445,7 +398,9 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
   function startObserver(): void {
     state.running = true;
     state.stale = false;
+    state.eventHandler = null;
     scheduleScan();
+    subscribeToDocumentChanges();
     logger.info("Document observer started");
   }
 
@@ -455,6 +410,7 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
     state.scanInFlight = false;
     state.scanScheduled = false;
     state.replacementPending = false;
+    unsubscribeFromDocumentChanges();
     if (state.debouncedScan) {
       state.debouncedScan = debounce(() => {}, debounceMs);
     }
@@ -462,26 +418,87 @@ export function createDocumentObserver(options: DocumentObserverOptions): {
   }
 
   /**
-   * Called when the document changes.
+   * Subscribe to the Office document-selection event.
    *
-   * A host event narrows the next scan when it is precise enough to trust; see
-   * `narrowTo`. Scopes accumulate across a debounce burst rather than replacing
-   * one another: two paragraphs edited inside one window both need examining,
-   * and keeping only the most recent would silently skip the first.
+   * Word has no document-level content-change event, but `documentSelectionChanged`
+   * fires on every keystroke and caret movement. The observer debounces these events,
+   * so typing produces one scan when the user stops rather than one per character.
    *
-   * A full rescan clears any pending narrow scope, so an imprecise event can
-   * never be narrowed by a precise one that arrived earlier in the same burst.
+   * A host without the event degrades to manual scans only — the Re-scan button
+   * and the initial scan still work.
    */
-  function onDocumentChanged(change?: WordParagraphChange): void {
-    const narrowed = narrowTo(change);
-    if (narrowed === null) {
-      state.scope = null;
-    } else if (state.scope !== null) {
-      state.scope = { nodeIds: new Set([...state.scope.nodeIds, ...narrowed.nodeIds]) };
-    } else {
-      state.scope = narrowed;
+  function subscribeToDocumentChanges(): void {
+    /*
+     * `Office.context.document.addHandlerAsync` — on the Document object, not on
+     * `Office.context` — and it returns `void`: it is callback-style, not a
+     * promise. Registering on `Office.context` always read as absent, so this
+     * never subscribed; calling `.then` on the real return value crashed the pane.
+     */
+    const office = (globalThis as { Office?: { context?: Office.Context } }).Office;
+    const hostDocument = office?.context?.document ?? null;
+    if (hostDocument === null || typeof hostDocument.addHandlerAsync !== "function") {
+      logger.info("This host exposes no document-selection event; auto-scan is manual only");
+      return;
     }
-    scheduleScan();
+    const handler = (): void => {
+      scheduleScan();
+    };
+    state.eventHandler = handler;
+    try {
+      hostDocument.addHandlerAsync("documentSelectionChanged", handler);
+      /*
+       * Temporary diagnostic (remove after host verification): confirms in the
+       * console that the selection event actually subscribed, since a silent
+       * failure here is exactly what left auto-scan dead.
+       */
+      console.warn("document selection subscription registered (auto-scan live)");
+    } catch (error: unknown) {
+      state.eventHandler = null;
+      console.warn(
+        "document selection subscription REFUSED " +
+          JSON.stringify({ message: error instanceof Error ? error.message : String(error) }),
+      );
+      logger.warn("Word refused the document-selection subscription", {
+        verificationResult: "refused",
+        refusalCategory: "selection_event_refused",
+      });
+    }
+  }
+
+  /** Remove the document-selection event handler, if one was registered. */
+  function unsubscribeFromDocumentChanges(): void {
+    const handler = state.eventHandler;
+    state.eventHandler = null;
+    if (handler === null) return;
+    const office = (globalThis as { Office?: { context?: Office.Context } }).Office;
+    const hostDocument = office?.context?.document ?? null;
+    if (hostDocument === null || typeof hostDocument.removeHandlerAsync !== "function") {
+      return;
+    }
+    try {
+      /*
+       * Removed by handler reference: the Document event API has no message id to
+       * remove by, and passing one would remove nothing.
+       */
+      hostDocument.removeHandlerAsync("documentSelectionChanged", { handler });
+    } catch {
+      logger.warn("Word refused to remove the document-selection subscription", {
+        verificationResult: "refused",
+        refusalCategory: "selection_event_unsubscribe_failed",
+      });
+    }
+  }
+
+  /**
+   * Ask the observer for a scan.
+   *
+   * `immediate` skips the typing debounce for a programmatic write that fires no
+   * selection event — an applied change — so the refreshed findings arrive as
+   * soon as the write lands. The default keeps the debounce, so the selection
+   * handler and the narrow-scope follow-up still coalesce.
+   */
+  function onDocumentChanged(immediate = false): void {
+    scheduleScan(immediate);
   }
 
   return { startObserver, stopObserver, onDocumentChanged };

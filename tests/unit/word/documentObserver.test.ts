@@ -34,7 +34,19 @@ function makeProfileWithEmDash() {
 }
 
 function mockOffice() {
+  const addHandlerAsync = vi.fn((_eventType: string, _callback: () => void) =>
+    Promise.resolve({ value: { id: "handler-1" } }),
+  );
+  const removeHandlerAsync = vi.fn((_eventType: string, _options?: { id?: string }) =>
+    Promise.resolve(),
+  );
   (globalThis as { Office?: unknown }).Office = {
+    context: {
+      document: {
+        addHandlerAsync,
+        removeHandlerAsync,
+      },
+    },
     run: <T>(func: (context: unknown) => Promise<T>) =>
       func({
         document: {
@@ -86,6 +98,7 @@ function mockOffice() {
     BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
     InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
   };
+  return { addHandlerAsync, removeHandlerAsync };
 }
 
 describe("documentObserver", () => {
@@ -261,5 +274,206 @@ describe("documentObserver", () => {
     });
 
     expect(() => observer.startObserver()).not.toThrow();
+  });
+
+  it("subscribes to documentSelectionChanged when started", async () => {
+    const { addHandlerAsync } = mockOffice();
+    const onStatus = vi.fn();
+    const observer = createDocumentObserver({ onStatus, profile: makeProfile() });
+
+    observer.startObserver();
+    await vi.waitFor(() => {
+      expect(addHandlerAsync).toHaveBeenCalledWith(
+        "documentSelectionChanged",
+        expect.any(Function),
+      );
+    });
+  });
+
+  it("unsubscribes from documentSelectionChanged when stopped", async () => {
+    const { addHandlerAsync, removeHandlerAsync } = mockOffice();
+    const onStatus = vi.fn();
+    const observer = createDocumentObserver({ onStatus, profile: makeProfile() });
+
+    observer.startObserver();
+    await vi.waitFor(() => {
+      expect(addHandlerAsync).toHaveBeenCalled();
+    });
+
+    observer.stopObserver();
+    await vi.waitFor(() => {
+      expect(removeHandlerAsync).toHaveBeenCalledWith("documentSelectionChanged", {
+        handler: expect.any(Function),
+      });
+    });
+  });
+
+  it("triggers a scan when the document selection changes", async () => {
+    let selectionCallback: (() => void) | undefined;
+    const addHandlerAsync = vi.fn((_eventType: string, callback: () => void) => {
+      selectionCallback = callback;
+      return Promise.resolve({ value: { id: "handler-1" } });
+    });
+    const removeHandlerAsync = vi.fn(() => Promise.resolve());
+    (globalThis as { Office?: unknown }).Office = {
+      context: { document: { addHandlerAsync, removeHandlerAsync } },
+      run: <T>(func: (context: unknown) => Promise<T>) =>
+        func({
+          document: {
+            body: {
+              text: "hello world",
+              load: vi.fn(),
+              paragraphs: { load: vi.fn(), items: [] },
+              getRange: vi.fn(() => ({
+                text: "",
+                insertText: vi.fn(),
+                insertBreak: vi.fn(),
+                insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+                paragraphs: { load: vi.fn(), items: [] },
+                font: { name: "", size: 0, color: "", load: vi.fn() },
+                load: vi.fn(),
+              })),
+            },
+            selection: {
+              text: "",
+              insertText: vi.fn(),
+              insertBreak: vi.fn(),
+              insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+              paragraphs: { load: vi.fn(), items: [] },
+              font: { name: "", size: 0, color: "", load: vi.fn() },
+              load: vi.fn(),
+            },
+            getSelection: vi.fn(() => ({
+              text: "",
+              insertText: vi.fn(),
+              insertBreak: vi.fn(),
+              insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+              paragraphs: { load: vi.fn(), items: [] },
+              font: { name: "", size: 0, color: "", load: vi.fn() },
+              load: vi.fn(),
+            })),
+            styles: { name: "", load: vi.fn(), items: [] },
+          },
+          host: { name: "Word", version: "16.0" },
+          sync: vi.fn(),
+        }),
+      roamingSettings: {
+        get: vi.fn(),
+        set: vi.fn(),
+        saveAsync: vi.fn((cb?: (result: unknown) => void) => {
+          if (cb) cb(undefined);
+        }),
+      },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
+    };
+
+    const onStatus = vi.fn();
+    const observer = createDocumentObserver({
+      debounceMs: 50,
+      onStatus,
+      profile: makeProfile(),
+    });
+
+    observer.startObserver();
+    await vi.waitFor(() => {
+      expect(addHandlerAsync).toHaveBeenCalled();
+    });
+    // Wait for the initial scan to complete
+    await vi.runAllTimersAsync();
+    onStatus.mockClear();
+
+    // Simulate a document change event
+    selectionCallback?.();
+    await vi.runAllTimersAsync();
+
+    expect(onStatus).toHaveBeenCalled();
+  });
+
+  it("keys its document version on the document content, so a changed document re-previews", async () => {
+    /*
+     * `decidePreview` rebuilds the plan only when the scan's version differs
+     * from the last one it previewed. When the version was the constant
+     * "pending" it never differed, so the plan was built once and never again
+     * until a manual Re-scan — which is why the pane only updated on manual
+     * scans and add-in loads.
+     */
+    let bodyText = "hello -- world";
+    const addHandlerAsync = vi.fn(() => Promise.resolve({ value: { id: "handler-1" } }));
+    (globalThis as { Office?: unknown }).Office = {
+      context: {
+        document: {
+          addHandlerAsync,
+          removeHandlerAsync: vi.fn(() => Promise.resolve()),
+        },
+      },
+      run: <T>(func: (context: unknown) => Promise<T>) =>
+        func({
+          document: {
+            body: {
+              get text() {
+                return bodyText;
+              },
+              load: vi.fn(),
+              paragraphs: { load: vi.fn(), items: [] },
+              getRange: vi.fn(() => ({
+                text: "",
+                insertText: vi.fn(),
+                insertBreak: vi.fn(),
+                insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+                paragraphs: { load: vi.fn(), items: [] },
+                font: { name: "", size: 0, color: "", load: vi.fn() },
+                load: vi.fn(),
+              })),
+            },
+            selection: {
+              text: "",
+              insertText: vi.fn(),
+              insertBreak: vi.fn(),
+              insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+              paragraphs: { load: vi.fn(), items: [] },
+              font: { name: "", size: 0, color: "", load: vi.fn() },
+              load: vi.fn(),
+            },
+            getSelection: vi.fn(() => ({
+              text: "",
+              insertText: vi.fn(),
+              insertBreak: vi.fn(),
+              insertParagraph: vi.fn(() => ({ format: {}, load: vi.fn() })),
+              paragraphs: { load: vi.fn(), items: [] },
+              font: { name: "", size: 0, color: "", load: vi.fn() },
+              load: vi.fn(),
+            })),
+            styles: { name: "", load: vi.fn(), items: [] },
+          },
+          host: { name: "Word", version: "16.0" },
+          sync: vi.fn(),
+        }),
+      roamingSettings: {
+        get: vi.fn(),
+        set: vi.fn(),
+        saveAsync: vi.fn((cb?: (result: unknown) => void) => cb?.(undefined)),
+      },
+      InsertBreakBehavior: { Paragraph: 0, LineBreak: 1, PageBreak: 2 },
+      BreakType: { NextParagraph: 0, LineBreak: 1, PageBreak: 2 },
+      InsertLocation: { Before: 0, After: 1, Start: 2, End: 3 },
+    };
+
+    const onStatus = vi.fn();
+    const observer = createDocumentObserver({ debounceMs: 20, onStatus, profile: makeProfile() });
+    observer.startObserver();
+    await vi.runAllTimersAsync();
+
+    const first = onStatus.mock.calls.at(-1)?.[0];
+    expect(first.documentVersion).not.toBe("");
+    expect(first.documentVersion).not.toBe("pending");
+
+    bodyText = "hello -- world, and a new sentence";
+    observer.onDocumentChanged();
+    await vi.runAllTimersAsync();
+
+    const second = onStatus.mock.calls.at(-1)?.[0];
+    expect(second.documentVersion).not.toBe(first.documentVersion);
   });
 });
