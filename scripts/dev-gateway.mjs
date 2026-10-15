@@ -221,14 +221,24 @@ export function createDevGatewayBroker({
     // The task pane runs in an iframe with a different origin, so the browser
     // requires CORS headers for the request to succeed.
     const requestOrigin = req.headers.origin;
-    if (requestOrigin && isLoopbackHostname(new URL(requestOrigin).hostname)) {
-      res.setHeader("Access-Control-Allow-Origin", requestOrigin);
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-ToneForge-Session-Nonce",
-      );
-      res.setHeader("Access-Control-Allow-Credentials", "true");
+    if (requestOrigin) {
+      // Guard against a malformed Origin header throwing outside the route
+      // try block. A missing or unparseable origin gets no CORS headers.
+      let originHost = "";
+      try {
+        originHost = new URL(requestOrigin).hostname;
+      } catch {
+        originHost = "";
+      }
+      if (isLoopbackHostname(originHost)) {
+        res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        res.setHeader(
+          "Access-Control-Allow-Headers",
+          "Content-Type, Authorization, X-ToneForge-Session-Nonce",
+        );
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+      }
     }
     if (req.method === "OPTIONS") {
       res.statusCode = 204;

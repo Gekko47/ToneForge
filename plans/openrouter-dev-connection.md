@@ -2,15 +2,15 @@
 
 ## Problem
 
-The dev gateway ([`dev-gateway.mjs`](scripts/dev-gateway.mjs)) is fully wired into the webpack dev server and handles all OpenRouter routes. However, the browser doesn't know where to find the gateway because `LLM_BROKER_URL` is not included in the `publicDevEnv` object that gets compiled into the browser bundle via webpack's `DefinePlugin`.
+The dev gateway ([`dev-gateway.mjs`](../scripts/dev-gateway.mjs)) is fully wired into the webpack dev server and handles all OpenRouter routes. However, the browser doesn't know where to find the gateway because `LLM_BROKER_URL` is not included in the `publicDevEnv` object that gets compiled into the browser bundle via webpack's `DefinePlugin`.
 
 ## Root Cause
 
-In [`webpack.dev.js:52-62`](webpack.dev.js:52), the `publicDevEnv` object lists every environment variable the browser bundle can access. `LLM_BROKER_URL` is missing from this list, so `env.LLM_BROKER_URL` is always `undefined` in the browser, and [`SettingsDashboard.tsx:34`](src/taskpane/components/SettingsDashboard.tsx:34) gets an empty string for `gatewayOrigin`.
+In [`webpack.dev.js:52-62`](../webpack.dev.js:52), the `publicDevEnv` object lists every environment variable the browser bundle can access. `LLM_BROKER_URL` is missing from this list, so `env.LLM_BROKER_URL` is always `undefined` in the browser, and [`SettingsDashboard.tsx:34`](../src/taskpane/components/SettingsDashboard.tsx:34) gets an empty string for `gatewayOrigin`.
 
 ## Fix
 
-**One-line addition** to [`webpack.dev.js`](webpack.dev.js:52) — add `LLM_BROKER_URL` to `publicDevEnv`:
+**One-line addition** to [`webpack.dev.js`](../webpack.dev.js:52) — add `LLM_BROKER_URL` to `publicDevEnv`:
 
 ```js
 const publicDevEnv = {
@@ -31,8 +31,8 @@ const publicDevEnv = {
 
 The value is the gateway's own path prefix, not a bare `"/"`. The client appends
 `/v1/connections/...`, producing `https://localhost:3000/__toneforge/gateway/v1/...`,
-which matches the middleware mounted at [`webpack.dev.js:140`](webpack.dev.js:140)
-(`GATEWAY_PATH_PREFIX` in [`dev-gateway.mjs:32`](scripts/dev-gateway.mjs:32)).
+which matches the middleware mounted at [`webpack.dev.js:140`](../webpack.dev.js:140)
+(`GATEWAY_PATH_PREFIX` in [`dev-gateway.mjs:32`](../scripts/dev-gateway.mjs:32)).
 
 A bare `"/"` also "works" as a same-origin path, but it produces
 `/v1/connections/...` with no prefix, which the middleware does not match — the
@@ -40,10 +40,10 @@ request falls through to static serving and 404s. The prefix is required.
 
 ## Why This Works
 
-1. [`env.ts:43`](src/core/config/env.ts:43) already accepts `LLM_BROKER_URL` in its Zod schema
-2. [`gatewayClient.ts:128`](src/ai/gateway/gatewayClient.ts:128) already validates it — a same-origin path (`/`) is accepted
-3. [`SettingsDashboard.tsx:34`](src/taskpane/components/SettingsDashboard.tsx:34) already reads `env.LLM_BROKER_URL` and passes it to `OpenRouterConnectionSettings`
-4. [`OpenRouterConnectionSettings.tsx:84`](src/taskpane/components/OpenRouterConnectionSettings.tsx:84) already creates a gateway client with that origin
+1. [`env.ts:43`](../src/core/config/env.ts:43) already accepts `LLM_BROKER_URL` in its Zod schema
+2. [`gatewayClient.ts:128`](../src/ai/gateway/gatewayClient.ts:128) already validates it — a same-origin path (`/`) is accepted
+3. [`SettingsDashboard.tsx:34`](../src/taskpane/components/SettingsDashboard.tsx:34) already reads `env.LLM_BROKER_URL` and passes it to `OpenRouterConnectionSettings`
+4. [`OpenRouterConnectionSettings.tsx:84`](../src/taskpane/components/OpenRouterConnectionSettings.tsx:84) already creates a gateway client with that origin
 5. The dev gateway middleware is already mounted on the dev server
 
 ## Connection Steps (After Fix)
@@ -93,12 +93,12 @@ middleware and was served as a static 404.
 
 ### Other fixes in this change
 
-- [`gatewayClient.ts`](src/ai/gateway/gatewayClient.ts) — `normalizeGatewayOrigin`
+- [`gatewayClient.ts`](../src/ai/gateway/gatewayClient.ts) — `normalizeGatewayOrigin`
   preserves a same-origin path instead of stripping its trailing slash; URL
   construction avoids a double slash; `fetch` is bound to `globalThis` to avoid
   "Illegal invocation"; network errors include the URL and underlying message.
-- [`gatewayAdapter.ts`](src/ai/providers/gatewayAdapter.ts) — same `fetch` binding.
-- [`dev-gateway.mjs`](scripts/dev-gateway.mjs) — CORS headers and a loopback
+- [`gatewayAdapter.ts`](../src/ai/providers/gatewayAdapter.ts) — same `fetch` binding.
+- [`dev-gateway.mjs`](../scripts/dev-gateway.mjs) — CORS headers and a loopback
   origin bypass so Word desktop's cross-origin iframe can reach the gateway.
   The bypass requires **both** the `Host` and `Origin` to be loopback.
 
@@ -112,27 +112,27 @@ showed "Connected".
 
 **Root cause.** Two surfaces read connection state through two different paths:
 
-- The role cards read [`buildRoleConnectionViews`](src/taskpane/settings/llmDashboardModel.ts:33),
+- The role cards read [`buildRoleConnectionViews`](../src/taskpane/settings/llmDashboardModel.ts:33),
   which resolves the binding's `connectionId` against `providerConnections` and
   checks `status === "connected"`. Correct.
-- The setup checklist read [`setupStatusFromState`](src/taskpane/setupStatus.ts:83),
+- The setup checklist read [`setupStatusFromState`](../src/taskpane/setupStatus.ts:83),
   which called `isRemoteProviderConfigured(state.settings, ...)`. That resolves
   through `connectionFromSettings`, which returns `undefined` whenever
   `settings.llmProvider === "mock"`.
 
-The dashboard's connect path ([`SettingsDashboard.handleConnect`](src/taskpane/components/SettingsDashboard.tsx:121))
+The dashboard's connect path ([`SettingsDashboard.handleConnect`](../src/taskpane/components/SettingsDashboard.tsx:121))
 writes a role binding and a `providerConnections` entry and **never touches
 `settings.llmProvider`**, so that legacy field stays `"mock"` forever. Every
 surface fed by the setup checklist therefore contradicted the role cards.
 
-**Fix.** [`setupStatusFromState`](src/taskpane/setupStatus.ts:83) now calls
-[`isGeneralRoleConfigured`](src/taskpane/settings/providerComposition.ts:354),
+**Fix.** [`setupStatusFromState`](../src/taskpane/setupStatus.ts:83) now calls
+[`isGeneralRoleConfigured`](../src/taskpane/settings/providerComposition.ts:354),
 which is role-aware when a general binding exists and falls back to the legacy
 field only when none does — so a pre-v15 store keeps working. Pinned by four
-tests in [`setupStatus.test.ts`](tests/unit/taskpane/setupStatus.test.ts:62).
+tests in [`setupStatus.test.ts`](../tests/unit/taskpane/setupStatus.test.ts:62).
 
 **Known dev-only gap.** The dev gateway holds connections in an in-memory `Map`
-([`dev-gateway.mjs:124`](scripts/dev-gateway.mjs:124)), so a dev-server restart
+([`dev-gateway.mjs:124`](../scripts/dev-gateway.mjs:124)), so a dev-server restart
 clears it while the persisted `ProviderConnection` survives in roaming settings.
 After a restart the dashboard shows "Connected" (the persisted record says
 `status: "connected"`) but every request 404s. The 404 now surfaces as

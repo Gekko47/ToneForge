@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Combobox, Field, Input, MessageBar, Option } from "@fluentui/react-components";
 import { createProviderGatewayClient, GatewayError, SessionTokenStore } from "../../ai/gateway";
-import { isCatalogForConnection, resolveCatalogStatus } from "../../ai/gateway/modelCatalog";
+import { resolveCatalogStatus } from "../../ai/gateway/modelCatalog";
 import { env } from "../../core/config/env";
 import type { ModelCatalog, ProviderConnection, ProviderId } from "../../core/domain/index";
 import { logger } from "../../shared/utils/logger";
@@ -13,6 +13,8 @@ export interface ModelPickerProps {
   onChange: (modelId: string) => void;
   /** The connection to fetch the model catalog for. */
   connection: ProviderConnection | undefined;
+  /** The gateway origin to use for model fetching. */
+  gatewayOrigin: string;
 }
 
 /**
@@ -55,6 +57,7 @@ export default function ModelPicker({
   value,
   onChange,
   connection,
+  gatewayOrigin,
 }: ModelPickerProps): React.ReactNode {
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -66,18 +69,27 @@ export default function ModelPicker({
   // The gateway client and its session token are created here and discarded on
   // unmount so they cannot outlive the pane.
   const session = useRef<{ client: ReturnType<typeof createProviderGatewayClient> } | null>(null);
+  // The connection id of the most recent catalog request. A response whose id
+  // no longer matches was superseded by a newer connection and is discarded.
+  const catalogConnectionId = useRef<string | undefined>(undefined);
+  // The latest connection, read inside `refresh` so that callback can stay
+  // referentially stable: a parent that rebuilds the connection object on every
+  // render must not retrigger the fetch effect.
+  const connectionRef = useRef(connection);
+  connectionRef.current = connection;
+  const connectionId = connection?.connectionId;
 
   const client = useCallback((): ReturnType<typeof createProviderGatewayClient> => {
     if (session.current === null) {
       session.current = {
         client: createProviderGatewayClient({
-          origin: env.LLM_BROKER_URL ?? "",
+          origin: gatewayOrigin || env.LLM_BROKER_URL || "",
           tokenStore: new SessionTokenStore(),
         }),
       };
     }
     return session.current.client;
-  }, []);
+  }, [gatewayOrigin]);
 
   useEffect(
     () => () => {
@@ -87,34 +99,50 @@ export default function ModelPicker({
   );
 
   const refresh = useCallback(async (): Promise<void> => {
-    if (connection === undefined) return;
+    const active = connectionRef.current;
+    if (active === undefined) return;
+    // Claim the request before awaiting, so a response that lands after the
+    // connection changed can be recognised as stale and dropped.
+    const requestConnectionId = active.connectionId;
+    catalogConnectionId.current = requestConnectionId;
+    // Clear the catalog when starting a fetch for a new connection, so a stale
+    // list from the previous connection is never shown while loading.
+    setCatalog(null);
     setLoading(true);
     setFailed(false);
     setUnknownConnection(false);
     try {
-      const fetched = await client().fetchModelCatalog(connection);
-      // A catalog belonging to another connection is discarded: offering models
-      // this credential cannot serve would be worse than offering none.
-      const usable = isCatalogForConnection(fetched, connection);
-      setCatalog(usable ? fetched : null);
-      setFailed(!usable);
+      const fetched = await client().fetchModelCatalog(active);
+      // Discard the response if the active connection has changed since this
+      // request started — offering models from another connection would be
+      // worse than offering none.
+      if (catalogConnectionId.current !== requestConnectionId) {
+        return;
+      }
+      setCatalog(fetched);
+      setFailed(false);
     } catch (error: unknown) {
-      logger.warn("Model catalog could not be loaded", {
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
-      setCatalog(null);
-      setFailed(true);
-      setUnknownConnection(error instanceof GatewayError && error.kind === "unknownConnection");
+      // Only update error state if this is still the active connection.
+      if (catalogConnectionId.current === requestConnectionId) {
+        logger.warn("Model catalog could not be loaded", {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        setCatalog(null);
+        setFailed(true);
+        setUnknownConnection(error instanceof GatewayError && error.kind === "unknownConnection");
+      }
     } finally {
-      setLoading(false);
+      if (catalogConnectionId.current === requestConnectionId) {
+        setLoading(false);
+      }
     }
-  }, [client, connection]);
+  }, [client]);
 
-  // Refetch whenever the provider or its connection changes. A list belonging to
-  // the previous credential must never be shown against the new one.
+  // Refetch whenever the connection changes. A list belonging to the previous
+  // credential must never be shown against the new one.
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, connectionId]);
 
   const status = resolveCatalogStatus({
     loading,

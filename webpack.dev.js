@@ -106,9 +106,7 @@ const dev = {
       rewrites: [
         {
           from: /^\/__toneforge\/.*$/,
-          to: function () {
-            return false;
-          },
+          to: (parsedUrl) => parsedUrl.path,
         },
       ],
     },

@@ -238,6 +238,7 @@ export default function OpenRouterConnectionSettings({
             value={selectedModel}
             onChange={onSelectModel}
             connection={connection}
+            gatewayOrigin={gatewayOrigin}
           />
         ) : null}
       </Card>

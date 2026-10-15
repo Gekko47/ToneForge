@@ -69,6 +69,7 @@ export function RoleConnectionCard({
             value={binding?.selectedModel ?? ""}
             onChange={onModelChange}
             connection={connection}
+            gatewayOrigin={gatewayOrigin}
           />
           <Button onClick={onDisconnect}>Disconnect</Button>
         </>

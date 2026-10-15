@@ -296,7 +296,7 @@ export interface HttpGatewayOptions {
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 2;
 
-function classifyStatus(status: number, statusText: string): GatewayError {
+function classifyStatus(status: number, statusText: string, connectionId?: string): GatewayError {
   if (status === 401) {
     return new GatewayError("Gateway rejected the session", "unauthorized", false, status);
   }
@@ -310,12 +310,20 @@ function classifyStatus(status: number, statusText: string): GatewayError {
     // retry, so it is classified apart from a generic unexpected response:
     // every connection-scoped route reports it, and the UI must be able to say
     // "reconnect" rather than "try again".
-    return new GatewayError(
-      "Gateway does not know this connection",
-      "unknownConnection",
-      false,
-      status,
-    );
+    //
+    // Only connection-scoped requests (those carrying an existing connection
+    // reference) classify a 404 as `unknownConnection`. Connection-creation
+    // routes (POST /v1/connections/api-key, POST /v1/connections/authorize)
+    // have no connection to be "unknown" — a 404 there is an unexpected
+    // response from the gateway itself.
+    if (connectionId !== undefined) {
+      return new GatewayError(
+        "Gateway does not know this connection",
+        "unknownConnection",
+        false,
+        status,
+      );
+    }
   }
   if (status === 429) {
     return new GatewayError("Gateway rate limit reached", "rateLimited", true, status);
@@ -560,6 +568,7 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
           payload,
           signal,
           token,
+          connectionId,
         ),
       retryOptions,
     );
@@ -571,6 +580,7 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
     payload: unknown,
     signal: AbortSignal | undefined,
     token: string | undefined,
+    connectionId?: string,
   ): Promise<unknown> {
     logger.warn("Gateway request", { method, url });
     let abortedByCaller = false;
@@ -609,7 +619,7 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
       const res = await this.fetchImpl(url, init);
 
       if (!res.ok) {
-        throw classifyStatus(res.status, res.statusText);
+        throw classifyStatus(res.status, res.statusText, connectionId);
       }
       if (res.status === 204) return {};
       return (await res.json()) as unknown;

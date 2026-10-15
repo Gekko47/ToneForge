@@ -118,6 +118,7 @@ function renderPicker(props: Partial<ComponentProps<typeof ModelPicker>> = {}) {
           props.onChange?.(model);
         }}
         connection={connection()}
+        gatewayOrigin={props.gatewayOrigin ?? "/"}
       />
     );
   }

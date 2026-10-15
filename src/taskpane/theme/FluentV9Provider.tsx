@@ -58,7 +58,7 @@ const useStyles = makeStyles({
  */
 const disableResizeRepositioning: React.ComponentProps<
   typeof PositioningConfigurationProvider
->["value"] = ({ options }) => ({ ...options, disableUpdateOnResize: true });
+>["value"] = ({ options }) => ({ ...options });
 
 export interface FluentV9ProviderProps {
   children: React.ReactNode;
