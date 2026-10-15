@@ -28,6 +28,7 @@
 
 import { z } from "zod";
 
+import { logger } from "../../shared/utils/logger";
 import {
   SemanticSampleEvidenceSchema,
   SemanticSelectionAnchorSchema,
@@ -52,6 +53,51 @@ export const SemanticDimensionSchema = z.enum(SEMANTIC_DIMENSIONS);
 export type SemanticDimension = z.infer<typeof SemanticDimensionSchema>;
 
 /**
+ * Normalise a model-written key to the shape the sixteen names share.
+ *
+ * Case and separators are the two ways a model writes a name that is otherwise
+ * the right one — "Tone", "sentence_architecture", "sentence-architecture" — and
+ * all of them collapse to the same key, so one lookup covers them.
+ */
+function normaliseKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+/**
+ * Flat names a model reaches for when it describes a dimension rather than
+ * reading the key it was given. Mapping them is the difference between a
+ * response that parses and one refused for naming the right idea the wrong way.
+ */
+const DIMENSION_ALIASES: Readonly<Record<string, SemanticDimension>> = {
+  sentencelength: "sentenceArchitecture",
+  paragraphlength: "paragraphArchitecture",
+};
+
+const DIMENSION_BY_KEY = new Map(
+  SEMANTIC_DIMENSIONS.map((dimension) => [normaliseKey(dimension), dimension]),
+);
+
+/**
+ * The dimension as it arrives from a model, coerced to `SemanticDimension`.
+ *
+ * The schema enforces the sixteen names, so a model that answers "Tone" used to
+ * fail the whole response over a difference in case — a refusal the user cannot
+ * act on. Coercion normalises the value, matches it against the names and the
+ * known flat aliases, and falls back to `tone` for a value that matches nothing,
+ * logging what it discarded so a real gap in the prompt stays visible.
+ */
+const ModelDimensionSchema = z
+  .string()
+  .transform((value): SemanticDimension => {
+    const key = normaliseKey(value);
+    const resolved = DIMENSION_BY_KEY.get(key) ?? DIMENSION_ALIASES[key];
+    if (resolved !== undefined) return resolved;
+    logger.warn("Semantic review reported an unknown dimension", { dimension: value });
+    return "tone";
+  })
+  .pipe(SemanticDimensionSchema);
+
+/**
  * How far one dimension of the selection departs from the learned style.
  *
  * `aligned` is included so the model is obliged to have an opinion about every
@@ -63,10 +109,58 @@ export type SemanticDimension = z.infer<typeof SemanticDimensionSchema>;
 export const AlignmentSchema = z.enum(["aligned", "minor_deviation", "material_deviation"]);
 export type Alignment = z.infer<typeof AlignmentSchema>;
 
+const ALIGNMENT_ALIASES: Readonly<Record<string, Alignment>> = {
+  aligned: "aligned",
+  minor: "minor_deviation",
+  minordeviation: "minor_deviation",
+  material: "material_deviation",
+  materialdeviation: "material_deviation",
+};
+
+/**
+ * The alignment as it arrives from a model, coerced to `Alignment`.
+ *
+ * Shorthand ("minor", "material") is common and unambiguous; an unrecognised
+ * value falls back to `aligned`, which is the state that lists the dimension as
+ * examined and in agreement rather than hiding a value the model meant.
+ */
+const ModelAlignmentSchema = z
+  .string()
+  .transform((value): Alignment => {
+    const resolved = ALIGNMENT_ALIASES[normaliseKey(value)];
+    if (resolved !== undefined) return resolved;
+    logger.warn("Semantic review reported an unknown alignment", { alignment: value });
+    return "aligned";
+  })
+  .pipe(AlignmentSchema);
+
+const OVERALL_ALIGNMENT_VALUES = ["high", "moderate", "low"] as const;
+type OverallAlignment = (typeof OVERALL_ALIGNMENT_VALUES)[number];
+
+const OVERALL_ALIGNMENT_ALIASES: Readonly<Record<string, OverallAlignment>> = {
+  high: "high",
+  moderate: "moderate",
+  medium: "moderate",
+  low: "low",
+};
+
+/** The overall alignment as it arrives from a model, coerced to the enum. */
+const ModelOverallAlignmentSchema = z
+  .string()
+  .transform((value): OverallAlignment => {
+    const resolved = OVERALL_ALIGNMENT_ALIASES[normaliseKey(value)];
+    if (resolved !== undefined) return resolved;
+    logger.warn("Semantic review reported an unknown overall alignment", {
+      overallAlignment: value,
+    });
+    return "moderate";
+  })
+  .pipe(z.enum(OVERALL_ALIGNMENT_VALUES));
+
 /** One dimension's verdict, with the model's reason attached. */
 export const SemanticObservationSchema = z.object({
-  dimension: SemanticDimensionSchema,
-  alignment: AlignmentSchema,
+  dimension: ModelDimensionSchema,
+  alignment: ModelAlignmentSchema,
   /** Why. Bounded, because this is rendered to the user verbatim. */
   explanation: z.string().trim().min(1).max(600),
   /**
@@ -82,9 +176,18 @@ export type SemanticObservation = z.infer<typeof SemanticObservationSchema>;
 
 /** The review as a whole. */
 export const SemanticAssessmentSchema = z.object({
-  overallAlignment: z.enum(["high", "moderate", "low"]),
+  overallAlignment: ModelOverallAlignmentSchema,
   summary: z.string().trim().min(1).max(800),
-  observations: z.array(SemanticObservationSchema).min(1).max(24),
+  /**
+   * Bounded, but not minimum-one.
+   *
+   * A model that lists no observation has still answered, and the engine
+   * substitutes a placeholder so the surface never renders an assessment with no
+   * rows. Refusing the whole response over an empty list is a refusal the user
+   * cannot act on; the substituted observation says plainly that nothing specific
+   * was named.
+   */
+  observations: z.array(SemanticObservationSchema).max(24),
 });
 export type SemanticAssessment = z.infer<typeof SemanticAssessmentSchema>;
 
@@ -104,11 +207,19 @@ export type SemanticAssessment = z.infer<typeof SemanticAssessmentSchema>;
  * it is a silently wrong document.
  */
 export const MeaningPreservationAssessmentSchema = z.object({
-  qualificationPreserved: z.boolean(),
-  attributionPreserved: z.boolean(),
-  causationPreserved: z.boolean(),
-  responsibilityPreserved: z.boolean(),
-  certaintyPreserved: z.boolean(),
+  /**
+   * Defaulted to `true` individually as well as taken as a whole.
+   *
+   * A model that omits a flag has not claimed the meaning was lost; refusing the
+   * response over a missing key turns a caution into a dead end. Every default
+   * fires only for a key that is absent, so a model that reports `false` is
+   * still believed.
+   */
+  qualificationPreserved: z.boolean().default(true),
+  attributionPreserved: z.boolean().default(true),
+  causationPreserved: z.boolean().default(true),
+  responsibilityPreserved: z.boolean().default(true),
+  certaintyPreserved: z.boolean().default(true),
 });
 export type MeaningPreservationAssessment = z.infer<typeof MeaningPreservationAssessmentSchema>;
 

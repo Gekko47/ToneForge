@@ -187,6 +187,106 @@ describe("reviewSemanticSelection", () => {
     expect(result.rationale).toBe("Reorders the clauses so the record precedes the conclusion.");
   });
 
+  it("accepts a dimension the model wrote in the wrong case", async () => {
+    // "Tone" fails the enum outright, and a whole response refused over a capital
+    // letter is a refusal the user cannot act on.
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry: registryReturning(
+        reviewBody({
+          assessment: {
+            overallAlignment: "moderate",
+            summary: "Reads close to the profile.",
+            observations: [
+              { dimension: "Tone", alignment: "aligned", explanation: "Reads as neutral." },
+            ],
+          },
+        }),
+      ),
+    });
+    expect(result.assessment.observations[0]?.dimension).toBe("tone");
+  });
+
+  it("coerces shorthand alignment to the value the schema enforces", async () => {
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry: registryReturning(
+        reviewBody({
+          assessment: {
+            overallAlignment: "moderate",
+            summary: "More categorical than the profile.",
+            observations: [
+              { dimension: "tone", alignment: "minor", explanation: "Nearly aligned." },
+            ],
+          },
+        }),
+      ),
+    });
+    expect(result.assessment.observations[0]?.alignment).toBe("minor_deviation");
+  });
+
+  it("reads a medium overall alignment as moderate", async () => {
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry: registryReturning(
+        reviewBody({
+          assessment: {
+            overallAlignment: "medium",
+            summary: "Partly aligned.",
+            observations: [{ dimension: "tone", alignment: "aligned", explanation: "Aligned." }],
+          },
+        }),
+      ),
+    });
+    expect(result.assessment.overallAlignment).toBe("moderate");
+  });
+
+  it("assumes the meaning flags are preserved when the model states none", async () => {
+    // An omitted flag is not a claim that the meaning was lost, and refusing the
+    // review over the absence is a dead end rather than a caution.
+    const body = reviewBody();
+    delete body.meaningPreservation;
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry: registryReturning(body),
+    });
+    expect(result.meaningPreservation).toEqual({
+      qualificationPreserved: true,
+      attributionPreserved: true,
+      causationPreserved: true,
+      responsibilityPreserved: true,
+      certaintyPreserved: true,
+    });
+    expect(result.actionable).toBe(true);
+  });
+
+  it("substitutes one observation when the model names none", async () => {
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry: registryReturning(
+        reviewBody({
+          assessment: {
+            overallAlignment: "high",
+            summary: "Close to the profile.",
+            observations: [],
+          },
+        }),
+      ),
+    });
+    expect(result.assessment.observations).toHaveLength(1);
+    expect(result.assessment.observations[0]?.dimension).toBe("tone");
+  });
+
+  it("falls back to the summary when the model states no rationale", async () => {
+    const body = reviewBody();
+    delete body.rationale;
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry: registryReturning(body),
+    });
+    expect(result.rationale).toBe("The paragraph is more categorical than the profile.");
+  });
+
   it("marks a faithful restyle actionable", async () => {
     const result = await reviewSemanticSelection(request(), {
       includeRawText: true,

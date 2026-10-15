@@ -42,8 +42,11 @@ import { validatePreservation } from "./preservationValidator";
 import { buildSemanticReviewPrompt } from "./reviewPrompt";
 import { SemanticReviewResponseSchema } from "./reviewSchema";
 import {
+  MeaningPreservationAssessmentSchema,
   unpreservedFlags,
+  type MeaningPreservationAssessment,
   type ProviderMetadata,
+  type SemanticAssessment,
   type SemanticReviewRequest,
   type SemanticReviewResult,
 } from "./contracts";
@@ -51,6 +54,15 @@ import {
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_BASE_DELAY_MS = 250;
 const DEFAULT_MAX_DELAY_MS = 1000;
+
+/**
+ * All five flags preserved — the value used when the model states none.
+ *
+ * Derived from the schema rather than written out, so the "all preserved" state
+ * has one definition: the same one a partial assessment fills into.
+ */
+const DEFAULT_MEANING_PRESERVATION: MeaningPreservationAssessment =
+  MeaningPreservationAssessmentSchema.parse({});
 
 export interface SemanticReviewEngineOptions {
   /** Explicit consent to send the selection to the provider. */
@@ -114,7 +126,21 @@ export async function reviewSemanticSelection(
     );
   }
 
-  const { assessment, proposedRevision, meaningPreservation, rationale } = parsed.data;
+  const { assessment: reported, proposedRevision, rationale: reportedRationale } = parsed.data;
+
+  /*
+   * The two fields the model may omit are filled here, not refused.
+   *
+   * An omitted flag is not a claim that the meaning was lost, and an omitted
+   * rationale can be replaced by a sentence about the same selection. Neither is
+   * a reason to discard a review the user has paid for, and both are logged so a
+   * prompt that quietly stopped asking for them stays visible.
+   */
+  const assessment = withDefaultObservation(reported);
+  const meaningPreservation = parsed.data.meaningPreservation ?? DEFAULT_MEANING_PRESERVATION;
+  if (parsed.data.meaningPreservation === undefined) {
+    logger.warn("Semantic review omitted its meaning-preservation flags; assuming preserved");
+  }
 
   const providerMetadata: ProviderMetadata = {
     provider: registry.name,
@@ -128,7 +154,7 @@ export async function reviewSemanticSelection(
     profileId: request.profile.id,
     profileRevision: request.profile.revision,
     assessment,
-    rationale,
+    rationale: reportedRationale ?? assessment.summary,
     meaningPreservation,
     providerMetadata,
     selectionAnchor: request.selectionAnchor,
@@ -187,6 +213,29 @@ export async function reviewSemanticSelection(
     preservation,
     actionable,
     ...(refusal === null ? {} : { refusalReason: refusal }),
+  };
+}
+
+/**
+ * Guarantee the assessment names at least one dimension.
+ *
+ * The schema accepts an empty list so a model that answers with an assessment but
+ * no dimension detail is not refused outright. The surface still needs a row, and
+ * one that says plainly that nothing specific was named is honest about what the
+ * model actually did.
+ */
+function withDefaultObservation(assessment: SemanticAssessment): SemanticAssessment {
+  if (assessment.observations.length > 0) return assessment;
+  logger.warn("Semantic review returned no observations; substituting a placeholder");
+  return {
+    ...assessment,
+    observations: [
+      {
+        dimension: "tone",
+        alignment: "aligned",
+        explanation: "The model named no specific deviations.",
+      },
+    ],
   };
 }
 

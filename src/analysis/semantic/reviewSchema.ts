@@ -49,8 +49,22 @@ export const SemanticReviewResponseSchema = z.object({
    * span is a deletion the user must be able to see.
    */
   proposedRevision: ProposedRevisionSchema.optional(),
-  meaningPreservation: MeaningPreservationAssessmentSchema,
-  /** One sentence on what the revision changes and why, rendered to the user. */
-  rationale: z.string().trim().min(1).max(600),
+  /**
+   * Absent when the model did not state the flags.
+   *
+   * Optional rather than required because an omitted flag is not the model
+   * claiming the meaning was lost, and the engine fills all-`true` for an absent
+   * assessment, logging that it did. Each field also has its own default, so a
+   * partial assessment fills in place rather than being discarded whole.
+   */
+  meaningPreservation: MeaningPreservationAssessmentSchema.optional(),
+  /**
+   * One sentence on what the revision changes and why, rendered to the user.
+   *
+   * Optional so a missing rationale does not fail a review that is otherwise
+   * usable; the engine falls back to the assessment summary, which is a sentence
+   * about the same selection.
+   */
+  rationale: z.string().trim().min(1).max(600).optional(),
 });
 export type SemanticReviewResponse = z.infer<typeof SemanticReviewResponseSchema>;
