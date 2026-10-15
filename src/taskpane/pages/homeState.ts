@@ -150,7 +150,7 @@ function semanticCard(
       statusText: "Not checked",
       profileLabel,
       metadata: "Select text in Word to review its semantic style.",
-      primaryAction: { label: "Review selection", disabled: true },
+      primaryAction: { label: "Review selection", disabled: false, destination: "semantic-review" },
     };
   }
   if (semantic.preservationRefused) {

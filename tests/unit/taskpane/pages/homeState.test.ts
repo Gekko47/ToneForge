@@ -174,7 +174,11 @@ describe("computeHomeCards — semantic (spec §11.2)", () => {
       }),
     );
     expect(cards.semantic.statusText).toBe("Not checked");
-    expect(cards.semantic.primaryAction.disabled).toBe(true);
+    // The button is enabled: a profile exists, so navigating to Semantic Review
+    // lets the user select text there. The gate on selection lives on the page,
+    // not here.
+    expect(cards.semantic.primaryAction.disabled).toBe(false);
+    expect(cards.semantic.primaryAction.destination).toBe("semantic-review");
   });
 
   it("reports Needs review when text is selected", () => {
