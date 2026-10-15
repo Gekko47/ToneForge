@@ -89,7 +89,7 @@
                   ]
                 },
                 {
-                  "id": "ToneForgeAIReview",
+                  "id": "ToneForgeAIReviewGroup",
                   "label": "Semantic Review",
                   "controls": [
                     {
