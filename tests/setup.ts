@@ -3,12 +3,15 @@ import { configure } from "@testing-library/dom";
 import { createOfficeLoad } from "./fixtures/officeLoad";
 import "@testing-library/jest-dom/vitest";
 
-// Raise the async-query timeout from the 1000ms default to 10s. Under parallel
-// load (238 test files), a findByRole call can take >1s to resolve when the
-// event loop is saturated — the default timeout is too tight and causes
-// intermittent "Unable to find" failures that pass in isolation. This is the
-// single global fix; per-test timeouts are unnecessary.
-configure({ asyncUtilTimeout: 10_000 });
+// Raise the async-query timeout from the 1000ms default to 20s. Under parallel
+// load (238 test files), a findByRole call can take seconds to resolve when the
+// event loop is saturated — the default timeout is far too tight and causes
+// intermittent "Unable to find" failures that pass in isolation. Raised from 10s
+// to 20s after a Fluent dialog's action button, which mounts in a portal after
+// its opening animation, was not found within 10s during a coverage run and was
+// found in under a second on its own. This is the single global fix; per-test
+// timeouts are unnecessary.
+configure({ asyncUtilTimeout: 20_000 });
 
 // Register Fluent UI icons (ChevronDown, etc.) before any component renders.
 // Fluent v9 icons self-register via @fluentui/react-icons; no initializeIcons needed.
