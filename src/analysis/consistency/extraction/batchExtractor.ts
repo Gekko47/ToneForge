@@ -21,6 +21,7 @@ import { hashText } from "../../../shared/utils/text";
 import { LlmError, type LlmProvider, type LlmRequest } from "../../../ai/providers/LlmProvider";
 import { parseModelJson } from "../../../ai/providers/modelJson";
 import { withRetry } from "../../../ai/providers/retry";
+import { consistencyDebugLog } from "../debugLog";
 import {
   ExpertReportClaimSchema,
   type EvidenceAnchor,
@@ -193,6 +194,13 @@ export async function extractClaims(
       temperature: 0,
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     };
+    consistencyDebugLog("extraction-request", {
+      batchId: batch.batchId,
+      provider: provider.name,
+      promptChars: prompt.length,
+      timeoutMs,
+      signalAborted: Boolean(opts.signal?.aborted),
+    });
     // Race the provider call against a timeout: a hung provider must not
     // block the run indefinitely. The timeout is non-retryable — retrying a
     // call that timed out would double the wait.
@@ -220,6 +228,14 @@ export async function extractClaims(
       },
     );
 
+    consistencyDebugLog("extraction-response", {
+      batchId: batch.batchId,
+      provider: provider.name,
+      responseChars: response.text.length,
+      model: response.model,
+      usage: response.usage,
+      retryCount: opts.maxRetries ?? DEFAULT_MAX_RETRIES,
+    });
     const parsed = parseExtractionResponse(response.text);
     if (!parsed.ok) {
       quarantined.push({

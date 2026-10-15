@@ -59,6 +59,7 @@ const publicDevEnv = {
   OPENAI_MAX_RETRIES: process.env.OPENAI_MAX_RETRIES ?? "2",
   TELEMETRY_DISABLED: process.env.TELEMETRY_DISABLED ?? "1",
   ANALYTICS_ENDPOINT: process.env.ANALYTICS_ENDPOINT ?? "",
+  DEBUG_CONSISTENCY: process.env.DEBUG_CONSISTENCY ?? "0",
   // Same-origin path to the dev gateway middleware mounted on the webpack dev
   // server. The gateway client appends /v1/connections/... to this origin.
   LLM_BROKER_URL: "/__toneforge/gateway",
@@ -70,6 +71,22 @@ const dev = {
   devServer: {
     static: {
       directory: path.resolve(__dirname, "dist"),
+    },
+    client: {
+      overlay: {
+        runtimeErrors: (error) => {
+          const message = error?.message ?? "";
+          if (
+            message.includes("ResizeObserver loop completed with undelivered notifications") ||
+            message.includes("ResizeObserver loop limit exceeded") ||
+            message.includes("unload") ||
+            message.includes("beforeunload")
+          ) {
+            return false;
+          }
+          return true;
+        },
+      },
     },
     // Word desktop hosts the taskpane in a cross-origin iframe and injects
     // Office.js from the host frame. Express defaults to

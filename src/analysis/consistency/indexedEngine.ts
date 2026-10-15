@@ -59,6 +59,7 @@ import {
 import { buildIssue } from "./issues";
 import { compileDecisionPlanWithCandidates } from "./decision/DecisionPlanCompiler";
 import { SystemOneDecisionProvider } from "./decision/systemOne/SystemOneDecisionProvider";
+import { consistencyDebugLog } from "./debugLog";
 import { unansweredQuestions } from "./decision/systemOne/SystemOneContextPolicy";
 import { expandContext, resolveContextParameters } from "./decision/contextExpansion";
 import type { DecisionPlan } from "./contracts/plan";
@@ -345,6 +346,14 @@ export async function runConsistencyReview(
       message: "Extracting claims…",
     });
     await assertCurrent(options, request.document.revision);
+    consistencyDebugLog("run-start", {
+      provider: options.provider?.name ?? "none",
+      decisionProvider: decisionProvider?.name ?? "none",
+      statementCount: statements.length,
+      batchCount: buildExtractionBatches(request.document).length,
+      allowUnredacted: request.allowUnredacted,
+      signalAborted: options.signal?.aborted === true,
+    });
     const batches = buildExtractionBatches(request.document);
     let extraction: ExtractionResult;
     try {
@@ -518,6 +527,10 @@ export async function runConsistencyReview(
       });
       await assertCurrent(options, request.document.revision);
 
+      consistencyDebugLog("decision-start", {
+        decisionProvider: decisionProvider.name,
+        pendingModelCount: pendingModel.length,
+      });
       const systemOne = new SystemOneDecisionProvider(decisionProvider);
       const plan = compileDecisionPlanWithCandidates(
         resolutions,
@@ -538,6 +551,10 @@ export async function runConsistencyReview(
         try {
           evaluation = await systemOne.evaluate(plan, options.signal);
         } catch {
+          consistencyDebugLog("decision-error", {
+            decisionProvider: decisionProvider.name,
+            signalAborted: options.signal?.aborted === true,
+          });
           if (options.signal?.aborted === true) {
             throw new ConsistencyRunCancelled("cancelled");
           }

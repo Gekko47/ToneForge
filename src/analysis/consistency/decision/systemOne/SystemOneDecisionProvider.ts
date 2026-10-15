@@ -12,6 +12,7 @@ import {
   type LlmRequest,
   type LlmResponse,
 } from "@/ai/providers/LlmProvider";
+import { consistencyDebugLog } from "../../debugLog";
 import type {
   ConsistencyDecisionProvider,
   ConsistencyDecisionEvaluation,
@@ -51,6 +52,12 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
     if (signal !== undefined) {
       llmRequest.signal = signal;
     }
+    consistencyDebugLog("decision-request", {
+      provider: this.provider.name,
+      questionCount: plan.questions.length,
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+      signalAborted: signal?.aborted === true,
+    });
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(
@@ -77,6 +84,14 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
 
     // Map the response back to typed answers. The mapper records whether the
     // output was unreadable, which is a different failure from a partial answer.
+    consistencyDebugLog("decision-response", {
+      provider: this.provider.name,
+      responseChars: response.text.length,
+      model: response.model,
+      usage: response.usage,
+      parseFailed: this.mapper.parseFailed,
+      latencyMs: Date.now() - startTime,
+    });
     const answers = this.mapper.map(response, plan);
 
     const latencyMs = Date.now() - startTime;

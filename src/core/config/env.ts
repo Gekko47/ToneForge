@@ -55,6 +55,14 @@ const EnvSchema = z.object({
    * (ADR-0060).
    */
   ANTHROPIC_OAUTH_ENABLED: z.coerce.boolean().default(false),
+  /**
+   * Enables debug logging for the consistency review flow.
+   *
+   * Off by default. When set to "1" or "true", the extraction and decision
+   * providers log what was sent and received at each call site, so a timeout
+   * can be diagnosed as a wiring problem or a genuinely slow provider.
+   */
+  DEBUG_CONSISTENCY: z.coerce.boolean().default(false),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -72,6 +80,7 @@ function loadEnv(): Env {
     TELEMETRY_DISABLED: process.env.TELEMETRY_DISABLED,
     ANALYTICS_ENDPOINT: process.env.ANALYTICS_ENDPOINT,
     ANTHROPIC_OAUTH_ENABLED: process.env.ANTHROPIC_OAUTH_ENABLED,
+    DEBUG_CONSISTENCY: process.env.DEBUG_CONSISTENCY,
   });
   if (!parsed.success) {
     // Surface a single, actionable error instead of a wall of Zod noise.

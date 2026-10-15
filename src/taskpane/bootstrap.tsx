@@ -26,12 +26,28 @@ import type { DashboardInitialPage } from "./pages/Dashboard";
  * filter only that specific signal here. Any other error event is left
  * alone.
  */
+/*
+ * Suppress two benign dev-overlay noise sources, both originating outside
+ * ToneForge code:
+ *
+ * 1. **ResizeObserver loop** — Fluent v9 components observe their own reflow.
+ * 2. **Office.js unload deprecation** — `word-win32-16.01.js:25` uses the
+ *    deprecated `unload` event listener internally. This is Microsoft's own
+ *    code loaded from the CDN; we cannot patch it. Our cleanup already uses
+ *    the supported `removeHandlerAsync` Word API (documentObserver.ts), so
+ *    this warning is informational only and would otherwise surface as an
+ *    uncaught runtime error in the dev overlay.
+ *
+ * Any other error event is left alone.
+ */
 window.addEventListener(
   "error",
   (event) => {
     if (
       event.message.includes("ResizeObserver loop completed with undelivered notifications") ||
-      event.message.includes("ResizeObserver loop limit exceeded")
+      event.message.includes("ResizeObserver loop limit exceeded") ||
+      event.message.includes("unload") ||
+      event.message.includes("beforeunload")
     ) {
       event.stopImmediatePropagation();
     }

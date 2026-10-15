@@ -210,3 +210,4 @@ export {
   type EncryptedPayload,
   type ProvenanceInput,
 } from "./persistence";
+export { consistencyDebugLog } from "./debugLog";
