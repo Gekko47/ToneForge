@@ -146,15 +146,15 @@ export default function LearnSemanticStyle({
   return (
     <section aria-labelledby="learn-style-heading">
       <Card className="tf-section" appearance="subtle">
-        <h2 id="learn-style-heading">Learn a style</h2>
+        <h2 id="learn-style-heading">Identify style</h2>
 
         {/*
         The disclosure, before the controls. What leaves the machine is the sample
         and nothing else: the profile, the settings and the document never go.
       */}
         <p className="tf-sub">
-          Learning sends <strong>your sample text</strong> — and nothing else — to the provider you
-          have configured. The profile it produces, its history and your document stay on this
+          Identifying sends <strong>your sample text</strong> — and nothing else — to the provider
+          you have configured. The profile it produces, its history and your document stay on this
           machine. The sample itself is never stored: the profile records where it came from, how
           many words it held, and a hash that lets two samples be compared without keeping either.
         </p>
@@ -219,7 +219,7 @@ export default function LearnSemanticStyle({
             ))}
             {!quality.eligible && (
               <p className="tf-debug-warning">
-                This sample cannot be learned from yet. {quality.reasons.join(" ")}
+                This sample cannot be identified from yet. {quality.reasons.join(" ")}
               </p>
             )}
             {needsAcknowledgement && (
@@ -227,7 +227,7 @@ export default function LearnSemanticStyle({
                 id="tf-learn-acknowledge"
                 checked={acknowledged}
                 onChange={(_event, data) => setAcknowledged(data.checked === true)}
-                label="Learn from this sample anyway."
+                label="Identify from this sample anyway."
               />
             )}
           </div>
@@ -238,7 +238,7 @@ export default function LearnSemanticStyle({
           onClick={submit}
           disabled={!gate.allowed || sample === null || needsAcknowledgement || busy}
         >
-          {busy ? "Learning…" : "Learn style"}
+          {busy ? "Identifying…" : "Identify style"}
         </Button>
 
         {!gate.allowed && gate.blocker !== null && (

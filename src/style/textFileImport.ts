@@ -101,7 +101,7 @@ export function validateImportedText(text: string): TextFileValidation {
       ok: false,
       rejection: {
         reason: "empty",
-        sentence: "That file is empty, so there is no writing to learn from.",
+        sentence: "That file is empty, so there is no writing to identify from.",
       },
     };
   }

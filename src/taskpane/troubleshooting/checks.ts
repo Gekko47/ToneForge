@@ -280,7 +280,7 @@ const CHECKS: readonly TroubleshootingCheck[] = [
     cause:
       "A semantic profile says how the writing should sound, so with none active there is nothing to measure, nothing to edit, and no voice for a review to match.",
     remedy:
-      "Create one on Semantic Style. Learn style needs a sample of a few paragraphs; Create empty profile gives you a blank one to fill in by hand, with no sample and no provider involved.",
+      "Create one on Semantic Style. Identify style needs a sample of a few paragraphs; Create empty profile gives you a blank one to fill in by hand, with no sample and no provider involved.",
     remedyTarget: {
       label: "Semantic Style → Semantic profiles → Create empty profile",
     },

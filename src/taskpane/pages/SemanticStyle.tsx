@@ -7,6 +7,7 @@ import { parentRoute } from "../routes";
 import SemanticProfilePicker from "../components/SemanticProfilePicker";
 import ProfileRecordSection from "../components/ProfileRecordSection";
 import LearnSemanticStyle from "../components/semantic/LearnSemanticStyle";
+import SelectedTextStyle from "../components/semantic/SelectedTextStyle";
 import {
   createSemanticProfileRecord,
   loadSemanticProfileRecord,
@@ -20,9 +21,10 @@ import {
 import { selectKindRecordList } from "../../core/state/profileSelectors";
 import { generalRegistryFromState, isGeneralRoleConfigured } from "../settings/providerComposition";
 import type { CapturedSample } from "../../style/sampleCapture";
-import { learnStyleDraft } from "../../style/learnStyle";
+import { learnStyleDraft, type LearnStyleEvidence } from "../../style/learnStyle";
 import { updateDraft, effectiveProfile, type ProfileRecord } from "../../core/domain/ProfileRecord";
 import { createEmptyProfile, type StyleProfile } from "../../core/domain/StyleProfile";
+import type { SemanticStyleProfile } from "../../core/domain/SemanticStyleProfile";
 import type { SemanticGateInput } from "../semantic/gates";
 import { deriveSemanticAnnouncement } from "../state/semanticAnnouncement";
 import { syncSemanticRibbon } from "../../commands/ribbonState";
@@ -84,6 +86,30 @@ export default function SemanticStyle({
    * ADR-0062's rule is one per pane.
    */
   const [recordAnnouncement, setRecordAnnouncement] = React.useState<string | null>(null);
+  /**
+   * The publish control, so "Use as preferred style" can move the user to it.
+   *
+   * A ref rather than a scroll-into-view on a queried element: the section is
+   * rendered conditionally, and a query would have to re-run on every render to
+   * stay honest about which one is mounted.
+   */
+  const publishRef = React.useRef<HTMLDivElement>(null);
+  /*
+   * The identified style, held apart from every profile.
+   *
+   * Identification is its own stage: it reads a sample and produces a voice, and
+   * it stops there. Writing the result straight into a record made the two stages
+   * one, so a user who identified a style they did not want had already created a
+   * profile to hold it — and the only way back was to delete the profile.
+   *
+   * Holding it here is also what makes the next step possible: the identifier is
+   * going to find more than one voice in the same body of text, and a list of
+   * candidates cannot be expressed as "whichever record is selected".
+   */
+  const [identified, setIdentified] = React.useState<{
+    semantic: SemanticStyleProfile;
+    evidence: LearnStyleEvidence;
+  } | null>(null);
 
   const state = initial.state;
   const settings = state.settings;
@@ -145,19 +171,30 @@ export default function SemanticStyle({
     refreshRecords();
   }
 
-  function persistSemantic(semantic: StyleProfile["semantic"]): void {
-    if (record === null) return;
+  /**
+   * Write the semantic half of a record, through the record's own audit trail.
+   *
+   * `target` defaults to the selected record and exists for the one caller that
+   * has just created one: `setRecord` is asynchronous, so a write issued in the
+   * same tick would otherwise read the previous `record` — null, on the first
+   * import — and silently drop the edit.
+   */
+  function persistSemantic(
+    semantic: StyleProfile["semantic"],
+    target: ProfileRecord | null = record,
+  ): void {
+    if (target === null) return;
     /*
      * The published version is a valid base. A record whose draft has been
      * published and discarded has no draft, and returning here dropped every edit
      * made to it — the editor showed a profile that could not be saved.
      */
-    const base = record.draft ?? effectiveProfile(record);
+    const base = target.draft ?? effectiveProfile(target);
     if (base === null) return;
     // Through `updateDraft`, not around it: the record is the audit trail, and it
     // assigns the revision number and the timestamp that make the edit attributable.
     const { record: updated } = updateDraft(
-      record,
+      target,
       { ...base, semantic },
       new Date().toISOString(),
     );
@@ -168,12 +205,18 @@ export default function SemanticStyle({
   }
 
   /**
-   * Learn from a sample the user chose, and stop short of activating it.
+   * Identify the style of a sample the user chose, and stop there.
    *
-   * `activate: false` is the whole of §11: the draft is created, the evidence is
-   * recorded, and the profile becomes the one reviews use only when the user says
-   * so. Activating here would switch the review pipeline to a voice nobody has
-   * read yet.
+   * This is the first of two stages. It reads the sample and produces a voice,
+   * and it writes nothing: no record, no evidence, no active profile. The old
+   * path created a record here, which made identification and profile creation
+   * one step — so a user who identified a style they did not want had already
+   * made a profile to hold it, and the only way back was to delete it.
+   *
+   * The evidence is carried in state alongside the voice rather than persisted,
+   * because it describes a sample that has not been committed to anything yet.
+   * It is written when the user imports the voice, under the id of the record
+   * that now holds it.
    */
   async function learn(sample: CapturedSample): Promise<void> {
     setLearning(true);
@@ -183,39 +226,13 @@ export default function SemanticStyle({
     try {
       const includeSemantic = settings.semanticOptIn && isGeneralRoleConfigured(state);
       const result = await learnStyleDraft(sample, {
-        name: "Learned semantic style",
+        name: "Identified semantic style",
         includeSemantic,
         ...(includeSemantic ? { registry: generalRegistryFromState(state) } : {}),
       });
-      const created = createSemanticProfileRecord(
-        result.draft.name,
-        new Date().toISOString(),
-        result.draft,
-        { activate: false },
-      );
-      /*
-       * The evidence is recorded as the sample is learned, not when the profile
-       * is activated — the sample is what the evidence describes, and a user who
-       * learns, reviews and then discards has still learned from something.
-       * Metadata only: no text, by construction of the schema.
-       */
-      saveSemanticSampleEvidence({
-        id: created.id,
-        source: result.evidence.source,
-        ...(result.evidence.filename === undefined ? {} : { filename: result.evidence.filename }),
-        ...(result.evidence.documentId === undefined
-          ? {}
-          : { documentId: result.evidence.documentId }),
-        wordCount: result.evidence.wordCount,
-        sentenceCount: result.evidence.sentenceCount,
-        paragraphCount: result.evidence.paragraphCount,
-        capturedAt: result.evidence.capturedAt,
-        sampleHash: result.evidence.sampleHash,
-      });
-      setRecord(created);
-      refreshRecords();
+      setIdentified({ semantic: result.draft.semantic, evidence: result.evidence });
       setLearnStatus(
-        `Learned a draft from ${result.evidence.wordCount} words of ${result.evidence.source}. Edit it below, then make it active when you are ready.`,
+        `Identified a style from ${result.evidence.wordCount} words of ${result.evidence.source}. Review it below, then import it into a profile to edit it.`,
       );
     } catch (error: unknown) {
       setLearnError(error instanceof Error ? error.message : String(error));
@@ -231,6 +248,96 @@ export default function SemanticStyle({
     setActiveId(record.id);
     refreshRecords();
     setLearnStatus("This style is now active for Semantic Review.");
+  }
+
+  /**
+   * Discard the identified style, and nothing else.
+   *
+   * Nothing is written, because nothing was: identification holds its result in
+   * component state, so a mis-identified sample costs one press and leaves no
+   * record behind to clean up. The old path emptied the semantic half of a
+   * record here, which meant a user who identified a style they did not want had
+   * to have created a profile first.
+   */
+  function clearIdentified(): void {
+    setIdentified(null);
+    setLearnStatus("Discarded the identified style. Nothing was saved.");
+  }
+
+  /**
+   * Import the identified style into a profile, for editing.
+   *
+   * The second of the two stages. The identified voice is carried into the
+   * record the user is already working in — or into a new one when there is no
+   * record yet — through `persistSemantic`, the same write path the editor uses,
+   * so the import is auditable like any other edit and lands in the revision
+   * trail rather than beside it.
+   *
+   * The evidence is written here rather than at identification, because it
+   * describes a sample that has now been committed to a profile. It is keyed by
+   * the record that holds it, and it is metadata only: no text, by construction
+   * of the schema.
+   *
+   * The scroll is guarded on the method existing, not on the ref.
+   * `scrollIntoView` is a real DOM API that jsdom does not implement and that a
+   * host WebView may lack, and an unguarded call would take down the page on a
+   * host that has it missing. Losing the scroll degrades the convenience; the
+   * status sentence below still says where to go.
+   */
+  function useIdentified(): void {
+    if (identified === null) return;
+
+    const target = record === null ? createImportedRecord() : record;
+    persistSemantic(identified.semantic, target);
+    saveSemanticSampleEvidence({
+      id: target.id,
+      source: identified.evidence.source,
+      ...(identified.evidence.filename === undefined
+        ? {}
+        : { filename: identified.evidence.filename }),
+      ...(identified.evidence.documentId === undefined
+        ? {}
+        : { documentId: identified.evidence.documentId }),
+      wordCount: identified.evidence.wordCount,
+      sentenceCount: identified.evidence.sentenceCount,
+      paragraphCount: identified.evidence.paragraphCount,
+      capturedAt: identified.evidence.capturedAt,
+      sampleHash: identified.evidence.sampleHash,
+    });
+
+    const publish = publishRef.current;
+    if (typeof publish?.scrollIntoView === "function") {
+      publish.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setLearnStatus(
+      "Imported the identified style into the profile. Edit it below, then publish it when you are ready.",
+    );
+  }
+
+  /**
+   * A record to hold an imported style, when the user has none yet.
+   *
+   * Created inactive, for the same reason learning never activated: a profile
+   * that starts steering every review is a decision the user makes on purpose,
+   * and importing a voice is not that decision.
+   */
+  function createImportedRecord(): ProfileRecord {
+    const created = createSemanticProfileRecord(
+      "Identified semantic style",
+      new Date().toISOString(),
+      createEmptyProfile("Identified semantic style", 1, "semantic"),
+      { activate: false },
+    );
+    /*
+     * `activeId` is deliberately left alone. It tracks the profile reviews
+     * actually use, and setting it here would make a record the user has not
+     * approved read as active — which is the one thing this page exists to
+     * prevent. `isActive` compares it against the selected record, so leaving it
+     * is what keeps "Make this active" available after an import.
+     */
+    setRecord(created);
+    refreshRecords();
+    return created;
   }
 
   const gateInput: SemanticGateInput = {
@@ -271,6 +378,23 @@ export default function SemanticStyle({
         onLearn={(sample) => void learn(sample)}
         busy={learning}
       />
+
+      {/*
+        The identified style, shown as read-only text boxes before the user
+        decides what to do with it.
+
+        Rendered from the identification stage's own state rather than from a
+        profile, because that is the whole point of the split: what the model
+        found is not yet part of any profile, and the two buttons below are the
+        choice of whether it becomes one.
+      */}
+      {identified !== null && (
+        <SelectedTextStyle
+          semantic={identified.semantic}
+          onClear={clearIdentified}
+          onUse={useIdentified}
+        />
+      )}
 
       {/*
         This page's one live region, for the learning outcomes. The review page has
@@ -412,14 +536,22 @@ export default function SemanticStyle({
             page, so a learned profile had publish, activate and recall controls
             the user could not reach (spec §31).
           */}
-          <ProfileRecordSection
-            record={record}
-            onChange={setRecord}
-            onAnnounce={(message) => {
-              setLearnStatus(null);
-              setRecordAnnouncement(message);
-            }}
-          />
+          {/*
+            The scroll target for "Use as preferred style". A plain wrapper
+            rather than a prop on the section, because the section is shared with
+            the deterministic Profile page and has no reason to know about a
+            button on this one.
+          */}
+          <div ref={publishRef}>
+            <ProfileRecordSection
+              record={record}
+              onChange={setRecord}
+              onAnnounce={(message) => {
+                setLearnStatus(null);
+                setRecordAnnouncement(message);
+              }}
+            />
+          </div>
         </>
       )}
     </div>

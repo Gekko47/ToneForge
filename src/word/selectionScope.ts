@@ -537,10 +537,10 @@ export function anchorMatches(anchor: SemanticSelectionAnchor, currentText: stri
 }
 
 const NO_RUNTIME_REASON =
-  "Word is not reachable from the add-in, so the selection cannot be read. Reopen the task pane from the ribbon, or copy the text into Semantic Style and learn from it there.";
+  "Word is not reachable from the add-in, so the selection cannot be read. Reopen the task pane from the ribbon, or copy the text into Semantic Style and identify from it there.";
 const NO_OFFSETS_REASON =
-  "This Word build did not report the selection's character offsets, so the selection cannot be reviewed safely. Update Word, or copy the text into Semantic Style and learn from it there.";
+  "This Word build did not report the selection's character offsets, so the selection cannot be reviewed safely. Update Word, or copy the text into Semantic Style and identify from it there.";
 const NO_RANGE_REASON =
-  "This Word build does not expose a document selection, so a selection cannot be reviewed. Update Word, or copy the text into Semantic Style and learn from it there.";
+  "This Word build does not expose a document selection, so a selection cannot be reviewed. Update Word, or copy the text into Semantic Style and identify from it there.";
 const INVALID_ANCHOR_REASON =
-  "The captured selection did not match the selection anchor contract, so nothing was sent and nothing will be written. Update Word, or copy the text into Semantic Style and learn from it there.";
+  "The captured selection did not match the selection anchor contract, so nothing was sent and nothing will be written. Update Word, or copy the text into Semantic Style and identify from it there.";

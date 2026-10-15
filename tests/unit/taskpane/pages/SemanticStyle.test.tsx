@@ -94,6 +94,18 @@ function renderPage() {
 }
 
 /**
+ * The same state, but with no profile at all.
+ *
+ * Importing has two branches — carry the identified voice into the record the
+ * user is already working in, or mint one when there is none — and the second is
+ * the only one that produces a new id. A test that asserts on that id, or on the
+ * "Make this active" press that follows it, has to start from nothing.
+ */
+function noProfileState(): Record<string, unknown> {
+  return { ...semanticState(), activeSemanticProfileId: null, semanticProfileRecords: {} };
+}
+
+/**
  * A sample of `count` words in two sentences.
  *
  * The eligibility gate is 40 words and 2 sentences; the quality bands start at
@@ -109,10 +121,20 @@ function sampleOf(count: number): string {
   return `${first}. ${second}.`;
 }
 
-/** What the page does with a passed sample, minus the real profiler's work. */
+/**
+ * What the page does with a passed sample, minus the real profiler's work.
+ *
+ * The draft carries an identified voice rather than an empty one, because the
+ * identified-style actions are gated on `isDefaultSemanticStyle` — a test that
+ * presses one has to start from something the model actually produced.
+ */
 function stubLearnedSample(source = "pasted_text" as const): void {
+  const base = createEmptyProfile("Learned semantic style", 1, "semantic");
   mocks.learnStyleDraft.mockResolvedValue({
-    draft: createEmptyProfile("Learned semantic style", 1, "semantic"),
+    draft: {
+      ...base,
+      semantic: { ...base.semantic, tone: { ...base.semantic.tone, primary: "forensic" } },
+    },
     evidence: {
       sampleId: PROFILE_ID,
       source,
@@ -124,13 +146,12 @@ function stubLearnedSample(source = "pasted_text" as const): void {
       paragraphCount: 1,
       capturedAt: "2026-10-01T09:00:00.000Z",
       sampleHash: "abc",
-      measured: createEmptyProfile("Learned semantic style", 1, "semantic").measured,
+      measured: base.measured,
       semanticIncluded: false,
     },
   });
-  // Seeded, because a record with no draft has no effective profile and the
-  // page would then render its "no profile" branch instead of the draft it has
-  // just learned.
+  // Seeded, because importing an identified style with no record yet creates
+  // one, and the page needs a real record back to render the editor.
   mocks.createSemanticProfileRecord.mockReturnValue(
     createRecord(
       LEARNED_ID,
@@ -219,7 +240,7 @@ describe("the Semantic Style page", () => {
       expect(screen.getByText(/needs its own consent in LLM Settings/i)).toBeInTheDocument();
       // ADR-0069: a disabled control with no visible reason is indistinguishable
       // from a broken one.
-      expect(screen.getByRole("button", { name: /learn style/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /identify style/i })).toBeDisabled();
       expect(screen.getByRole("button", { name: /open llm settings/i })).toBeInTheDocument();
     });
   });
@@ -232,7 +253,7 @@ describe("the Semantic Style page", () => {
       await userEvent.click(screen.getByLabelText(/paste a sample of your writing/i));
       await userEvent.paste(sampleOf(320));
       await userEvent.click(screen.getByRole("button", { name: /use this text/i }));
-      await userEvent.click(await screen.findByRole("button", { name: /learn style/i }));
+      await userEvent.click(await screen.findByRole("button", { name: /identify style/i }));
 
       await waitFor(() => expect(mocks.learnStyleDraft).toHaveBeenCalledTimes(1));
       expect(mocks.getDocumentSnapshot).not.toHaveBeenCalled();
@@ -244,7 +265,7 @@ describe("the Semantic Style page", () => {
       renderPage();
 
       expect(screen.getByRole("button", { name: /use this text/i })).toBeDisabled();
-      expect(screen.getByRole("button", { name: /learn style/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /identify style/i })).toBeDisabled();
       expect(mocks.learnStyleDraft).not.toHaveBeenCalled();
     });
 
@@ -255,8 +276,11 @@ describe("the Semantic Style page", () => {
       await userEvent.click(screen.getByLabelText(/paste a sample of your writing/i));
       await userEvent.paste(sampleOf(320));
       await userEvent.click(screen.getByRole("button", { name: /use this text/i }));
-      await userEvent.click(await screen.findByRole("button", { name: /learn style/i }));
+      await userEvent.click(await screen.findByRole("button", { name: /identify style/i }));
+      await userEvent.click(await screen.findByRole("button", { name: /use as preferred style/i }));
 
+      // Written at import, not at identification: the evidence describes a
+      // sample that has now been committed to a profile.
       await waitFor(() => expect(mocks.saveSemanticSampleEvidence).toHaveBeenCalledTimes(1));
       const evidence = mocks.saveSemanticSampleEvidence.mock.calls[0]![0] as Record<
         string,
@@ -306,7 +330,7 @@ describe("the Semantic Style page", () => {
       expect(badge).toHaveTextContent("good");
       // The only sentence that says "cannot be learned" is for an ineligible
       // sample. A level of confidence must never read as a refusal.
-      expect(screen.queryByText(/cannot be learned from yet/i)).toBeNull();
+      expect(screen.queryByText(/cannot be identified from yet/i)).toBeNull();
     });
 
     it("asks for an explicit acknowledgement on a thin but eligible sample", async () => {
@@ -317,41 +341,108 @@ describe("the Semantic Style page", () => {
       await userEvent.paste(sampleOf(60));
       await userEvent.click(screen.getByRole("button", { name: /use this text/i }));
 
-      const learn = await screen.findByRole("button", { name: /learn style/i });
-      expect(learn).toBeDisabled();
-      await userEvent.click(screen.getByLabelText(/learn from this sample anyway/i));
-      expect(screen.getByRole("button", { name: /learn style/i })).toBeEnabled();
+      const identify = await screen.findByRole("button", { name: /identify style/i });
+      expect(identify).toBeDisabled();
+      await userEvent.click(screen.getByLabelText(/identify from this sample anyway/i));
+      expect(screen.getByRole("button", { name: /identify style/i })).toBeEnabled();
+    });
+  });
+
+  describe("the identification stage", () => {
+    /** Identify a style, and stop. */
+    async function identify(): Promise<void> {
+      await userEvent.click(screen.getByLabelText(/paste a sample of your writing/i));
+      await userEvent.paste(sampleOf(320));
+      await userEvent.click(screen.getByRole("button", { name: /use this text/i }));
+      await userEvent.click(await screen.findByRole("button", { name: /identify style/i }));
+      await waitFor(() => expect(mocks.learnStyleDraft).toHaveBeenCalled());
+    }
+
+    it("writes nothing: no record, no evidence, no active profile", async () => {
+      stubLearnedSample();
+      renderPage();
+
+      await identify();
+
+      // The whole point of the split. The old path created a record here, so a
+      // user who identified a style they did not want had already made a
+      // profile to hold it, and the only way back was to delete it.
+      expect(mocks.createSemanticProfileRecord).not.toHaveBeenCalled();
+      expect(mocks.saveSemanticProfileRecord).not.toHaveBeenCalled();
+      expect(mocks.saveSemanticSampleEvidence).not.toHaveBeenCalled();
+      expect(mocks.setActiveSemanticProfile).not.toHaveBeenCalled();
+    });
+
+    it("shows what it identified, without a profile existing", async () => {
+      stubLearnedSample();
+      mocks.state = noProfileState();
+      renderPage();
+
+      await identify();
+
+      // The section reads the identification stage's own state, so it appears
+      // even though no profile was created — and the page still says there is
+      // nothing to review against, because identification is not a profile.
+      expect(
+        await screen.findByRole("heading", { name: /selected text style/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: /no semantic profile is active/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("does not put the identified voice into the editor", async () => {
+      stubLearnedSample();
+      renderPage();
+
+      await identify();
+
+      // Identification and editing are two stages. The identified voice is not
+      // in the profile editor until the user imports it, so a user who changes
+      // their mind has nothing to undo.
+      expect(screen.queryByDisplayValue("Forensic")).toBeNull();
     });
   });
 
   describe("the draft/active split", () => {
-    it("does not activate what it just learned", async () => {
-      stubLearnedSample();
-      renderPage();
-
+    /**
+     * Identify a style and import it, from a page with no profile yet.
+     *
+     * The no-profile state is what makes the import mint a record, which is the
+     * branch these three tests are about: a page that already has a profile
+     * carries the voice into it instead, and nothing new appears.
+     */
+    async function identifyAndImport(): Promise<void> {
       await userEvent.click(screen.getByLabelText(/paste a sample of your writing/i));
       await userEvent.paste(sampleOf(320));
       await userEvent.click(screen.getByRole("button", { name: /use this text/i }));
-      await userEvent.click(await screen.findByRole("button", { name: /learn style/i }));
+      await userEvent.click(await screen.findByRole("button", { name: /identify style/i }));
+      await userEvent.click(await screen.findByRole("button", { name: /use as preferred style/i }));
+    }
 
-      await waitFor(() => expect(mocks.createSemanticProfileRecord).toHaveBeenCalledTimes(1));
+    it("does not activate what it just imported", async () => {
+      stubLearnedSample();
+      mocks.state = noProfileState();
+      renderPage();
+
+      await identifyAndImport();
+
       // Spec §11: the old path activated whatever it learned, so the review
       // pipeline switched to a voice the user had not looked at yet.
+      await waitFor(() => expect(mocks.createSemanticProfileRecord).toHaveBeenCalledTimes(1));
       expect(mocks.createSemanticProfileRecord.mock.calls[0]![3]).toEqual({ activate: false });
       expect(mocks.setActiveSemanticProfile).not.toHaveBeenCalled();
     });
 
     it("activates only on the second, explicit press", async () => {
       stubLearnedSample();
+      mocks.state = noProfileState();
       renderPage();
 
-      await userEvent.click(screen.getByLabelText(/paste a sample of your writing/i));
-      await userEvent.paste(sampleOf(320));
-      await userEvent.click(screen.getByRole("button", { name: /use this text/i }));
-      await userEvent.click(await screen.findByRole("button", { name: /learn style/i }));
+      await identifyAndImport();
 
-      // The learned record has a different id from the active one, so this
-      // button is the evidence that learning did not activate anything.
+      // The imported record has a different id from the active one, so this
+      // button is the evidence that importing did not activate anything.
       const activate = await screen.findByRole("button", { name: /make this active/i });
       expect(mocks.setActiveSemanticProfile).not.toHaveBeenCalled();
       await userEvent.click(activate);
@@ -360,16 +451,114 @@ describe("the Semantic Style page", () => {
 
     it("says a draft that is not active is not steering the reviews", async () => {
       stubLearnedSample();
+      mocks.state = noProfileState();
       renderPage();
 
-      await userEvent.click(screen.getByLabelText(/paste a sample of your writing/i));
-      await userEvent.paste(sampleOf(320));
-      await userEvent.click(screen.getByRole("button", { name: /use this text/i }));
-      await userEvent.click(await screen.findByRole("button", { name: /learn style/i }));
+      await identifyAndImport();
 
       expect(
         await screen.findByText(/still uses the profile you chose before/i),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("the identified-style actions", () => {
+    /** Identify a style, so the two actions have something to act on. */
+    async function identify(): Promise<void> {
+      await userEvent.click(screen.getByLabelText(/paste a sample of your writing/i));
+      await userEvent.paste(sampleOf(320));
+      await userEvent.click(screen.getByRole("button", { name: /use this text/i }));
+      await userEvent.click(await screen.findByRole("button", { name: /identify style/i }));
+      await waitFor(() => expect(mocks.learnStyleDraft).toHaveBeenCalled());
+    }
+
+    it("discards the identified style without writing anything", async () => {
+      stubLearnedSample();
+      renderPage();
+
+      await identify();
+      await userEvent.click(screen.getByRole("button", { name: /clear identified style/i }));
+
+      // Nothing was written at identification, so there is nothing to unwind.
+      // The old path emptied the semantic half of a record here, which meant a
+      // user who identified a style they did not want had to have created a
+      // profile first.
+      expect(mocks.saveSemanticProfileRecord).not.toHaveBeenCalled();
+      expect(screen.getByText(/discarded the identified style/i)).toBeInTheDocument();
+      // The section goes with it, because there is nothing left to show.
+      expect(screen.queryByRole("heading", { name: /selected text style/i })).toBeNull();
+    });
+
+    it("disables both actions once there is nothing identified", () => {
+      renderPage();
+
+      // Nothing has been identified, so both buttons act on nothing.
+      expect(screen.queryByRole("button", { name: /clear identified style/i })).toBeNull();
+      expect(screen.queryByRole("button", { name: /use as preferred style/i })).toBeNull();
+    });
+
+    it("imports the identified voice into the profile, for editing", async () => {
+      stubLearnedSample();
+      renderPage();
+
+      await identify();
+      await userEvent.click(screen.getByRole("button", { name: /use as preferred style/i }));
+
+      // The second stage. The identified voice is carried into a record through
+      // the same write path the editor uses, so the import is auditable like any
+      // other edit rather than landing beside the revision trail.
+      await waitFor(() => expect(mocks.saveSemanticProfileRecord).toHaveBeenCalledTimes(1));
+      const saved = mocks.saveSemanticProfileRecord.mock.calls[0]![0] as {
+        draft: { semantic: { tone: { primary: string } } } | null;
+      };
+      expect(saved.draft?.semantic.tone.primary).toBe("forensic");
+      expect(screen.getByText(/imported the identified style/i)).toBeInTheDocument();
+    });
+
+    it("records the sample's evidence against the record that now holds it", async () => {
+      stubLearnedSample();
+      mocks.state = noProfileState();
+      renderPage();
+
+      await identify();
+      await userEvent.click(screen.getByRole("button", { name: /use as preferred style/i }));
+
+      // Written at import rather than at identification, because it describes a
+      // sample that has now been committed to a profile. Keyed by the record the
+      // import minted, not by the sample — the sample has no record yet at
+      // identification. Metadata only: no text, by construction of the schema.
+      await waitFor(() => expect(mocks.saveSemanticSampleEvidence).toHaveBeenCalledTimes(1));
+      const evidence = mocks.saveSemanticSampleEvidence.mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      expect(evidence).toMatchObject({ id: LEARNED_ID, source: "pasted_text", wordCount: 60 });
+      expect(evidence["text"]).toBeUndefined();
+    });
+
+    it("imports into the record the user is already working in", async () => {
+      stubLearnedSample();
+      renderPage();
+
+      await identify();
+      await userEvent.click(screen.getByRole("button", { name: /use as preferred style/i }));
+
+      // A record already exists, so importing must not create a second one.
+      await waitFor(() => expect(mocks.saveSemanticProfileRecord).toHaveBeenCalledTimes(1));
+      expect(mocks.createSemanticProfileRecord).not.toHaveBeenCalled();
+    });
+
+    it("does not activate anything on import", async () => {
+      stubLearnedSample();
+      renderPage();
+
+      await identify();
+      await userEvent.click(screen.getByRole("button", { name: /use as preferred style/i }));
+
+      // Activation stays the explicit press in "Use this style", and this is the
+      // test that would notice if importing quietly became it.
+      await waitFor(() => expect(mocks.saveSemanticProfileRecord).toHaveBeenCalledTimes(1));
+      expect(mocks.setActiveSemanticProfile).not.toHaveBeenCalled();
     });
   });
 
