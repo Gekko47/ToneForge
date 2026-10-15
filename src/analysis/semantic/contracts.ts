@@ -146,6 +146,19 @@ export const SemanticReviewRequestSchema = z.object({
 });
 export type SemanticReviewRequest = z.infer<typeof SemanticReviewRequestSchema>;
 
+/**
+ * Which corpus framing the review should use, derived from the profile itself.
+ *
+ * The profile does not store the corpus it was learned from, so the register is
+ * the signal: an `expert` register is the expert construction and engineering
+ * reporting the framing describes. Every other register is reviewed as general
+ * business writing, because a framing built for a corpus the profile was not
+ * learned from changes what the model treats as the substance of a paragraph.
+ */
+export function reviewDomainFor(semantic: SemanticStyleProfile): SemanticReviewRequest["domain"] {
+  return semantic.register.primary === "expert" ? "constructionExpert" : "general";
+}
+
 /** Which provider answered, and at what cost. */
 export const ProviderMetadataSchema = z.object({
   provider: z.string().trim().min(1),
@@ -170,6 +183,14 @@ export interface SemanticReviewResult {
   profileId: string;
   profileRevision: number;
   assessment: SemanticAssessment;
+  /**
+   * One sentence from the model on what it changed and why, shown to the user.
+   *
+   * The model's own account, carried here rather than dropped, so the Change the
+   * apply path builds cites what the model said it did — not the assessment
+   * summary, which describes the reading rather than the edit.
+   */
+  rationale: string;
   /** The proposed revision. Absent only when the model proposed nothing. */
   proposedRevision?: string;
   /**

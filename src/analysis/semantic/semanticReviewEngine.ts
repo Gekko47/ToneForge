@@ -114,7 +114,7 @@ export async function reviewSemanticSelection(
     );
   }
 
-  const { assessment, proposedRevision, meaningPreservation } = parsed.data;
+  const { assessment, proposedRevision, meaningPreservation, rationale } = parsed.data;
 
   const providerMetadata: ProviderMetadata = {
     provider: registry.name,
@@ -128,6 +128,7 @@ export async function reviewSemanticSelection(
     profileId: request.profile.id,
     profileRevision: request.profile.revision,
     assessment,
+    rationale,
     meaningPreservation,
     providerMetadata,
     selectionAnchor: request.selectionAnchor,

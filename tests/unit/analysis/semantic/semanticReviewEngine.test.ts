@@ -10,7 +10,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { reviewSemanticSelection } from "../../../../src/analysis/semantic/semanticReviewEngine";
-import { buildSemanticReviewPrompt } from "../../../../src/analysis/semantic/reviewPrompt";
+import {
+  PROMPT_VERSION,
+  buildSemanticReviewPrompt,
+} from "../../../../src/analysis/semantic/reviewPrompt";
 import {
   advanceSession,
   checkSessionFreshness,
@@ -18,8 +21,14 @@ import {
   currentSession,
   isApplicable,
 } from "../../../../src/analysis/semantic/session";
-import type { SemanticReviewRequest } from "../../../../src/analysis/semantic/contracts";
-import { createEmptySemanticStyleProfile } from "../../../../src/core/domain/SemanticStyleProfile";
+import {
+  reviewDomainFor,
+  type SemanticReviewRequest,
+} from "../../../../src/analysis/semantic/contracts";
+import {
+  SEMANTIC_DIMENSIONS,
+  createEmptySemanticStyleProfile,
+} from "../../../../src/core/domain/SemanticStyleProfile";
 import { LlmError, type LlmSemanticProvider } from "../../../../src/ai/providers/LlmProvider";
 import { PRESERVATION_BASE_PARAGRAPH } from "../../../fixtures/expertProse";
 
@@ -121,6 +130,39 @@ describe("buildSemanticReviewPrompt", () => {
     expect(expert).not.toBe(general);
     expect(general).toMatch(/general business writing/);
   });
+
+  it("names every dimension, so the model picks one rather than inventing one", () => {
+    // The schema rejects an unknown dimension outright, so a prompt that names
+    // only the keys produces a refusal instead of a review.
+    const prompt = buildSemanticReviewPrompt(request(), { includeRawText: true });
+    SEMANTIC_DIMENSIONS.forEach((dimension) => {
+      expect(prompt).toContain(dimension);
+    });
+  });
+
+  it("states the enum values the schema enforces, not just the key names", () => {
+    const prompt = buildSemanticReviewPrompt(request(), { includeRawText: true });
+    expect(prompt).toContain("minor_deviation");
+    expect(prompt).toContain("material_deviation");
+    expect(prompt).toContain("moderate");
+  });
+
+  it("stamps the prompt version, so a stale review can be detected", () => {
+    const prompt = buildSemanticReviewPrompt(request(), { includeRawText: true });
+    expect(prompt).toContain(`prompt-version: ${PROMPT_VERSION}`);
+  });
+});
+
+describe("reviewDomainFor", () => {
+  it("frames an expert-register profile as expert reporting", () => {
+    const semantic = createEmptySemanticStyleProfile();
+    semantic.register.primary = "expert";
+    expect(reviewDomainFor(semantic)).toBe("constructionExpert");
+  });
+
+  it("frames every other register as general business writing", () => {
+    expect(reviewDomainFor(createEmptySemanticStyleProfile())).toBe("general");
+  });
 });
 
 describe("reviewSemanticSelection", () => {
@@ -135,6 +177,14 @@ describe("reviewSemanticSelection", () => {
     expect(result.proposedRevision).toBe(CLEAN_REVISION);
     expect(result.reviewSessionId).toBe(SESSION_ID);
     expect(result.providerMetadata).toMatchObject({ provider: "test", model: "test", attempt: 1 });
+  });
+
+  it("carries the model's own rationale, so the change cites what it said it did", async () => {
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry: registryReturning(reviewBody()),
+    });
+    expect(result.rationale).toBe("Reorders the clauses so the record precedes the conclusion.");
   });
 
   it("marks a faithful restyle actionable", async () => {

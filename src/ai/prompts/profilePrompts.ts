@@ -66,6 +66,61 @@ export function buildProfilePrompt(
 }
 
 /**
+ * The allowed values for every enum field in the V2 extraction schema.
+ *
+ * The model needs to know the options to choose from — without them it will
+ * invent values that fail schema validation, producing a refusal rather than
+ * a profile. This is the complete list from `SemanticStyleProfile.ts`.
+ */
+const ENUM_OPTIONS = [
+  "Allowed values for each field — choose exactly one unless noted:",
+  "",
+  'tone.primary: "restrained" | "neutral" | "assertive" | "cautious" | "analytical" | "forensic" | "explanatory" | "persuasive"',
+  "tone.secondary: array of at most 2 from the same list",
+  'voice.person: "first" | "third" | "mixed" | "impersonal"',
+  'voice.construction: "active" | "passive" | "balanced"',
+  'voice.authorialPresence: "absent" | "restrained" | "explicit"',
+  "formality.score: integer 0-100",
+  'register.primary: "plain" | "professional" | "technical" | "expert" | "academic" | "legal-technical"',
+  'assertionStyle.strength: "categorical" | "qualified" | "conditional" | "provisional"',
+  'assertionStyle.ordering: "evidence-first" | "conclusion-first" | "interleaved"',
+  'assertionStyle.directness: "direct" | "measured" | "indirect"',
+  'qualificationStyle.frequency: "rare" | "occasional" | "frequent"',
+  'qualificationStyle.strength: "light" | "moderate" | "heavy"',
+  'qualificationStyle.exceptions: "none" | "inline" | "dedicated"',
+  'evidenceFraming.attribution: "none" | "occasional" | "systematic"',
+  'evidenceFraming.quotation: "rare" | "selective" | "frequent"',
+  'evidenceFraming.progression: "source-analysis-conclusion" | "claim-evidence" | "narrative"',
+  'uncertaintyStyle.incompleteEvidence: "stated" | "implied" | "suppressed"',
+  'uncertaintyStyle.confidenceLanguage: "explicit" | "implicit" | "absent"',
+  'uncertaintyStyle.modality: "frequent" | "occasional" | "rare"',
+  'sentenceArchitecture.complexity: "simple" | "moderate" | "complex"',
+  'sentenceArchitecture.clauseDensity: "low" | "medium" | "high"',
+  "sentenceArchitecture.targetWords: integer 5-60",
+  'sentenceArchitecture.coordination: "coordination" | "subordination" | "mixed"',
+  'paragraphArchitecture.function: "topic" | "evidence" | "analysis" | "conclusion" | "mixed"',
+  'paragraphArchitecture.ordering: "topic-evidence-conclusion" | "conclusion-evidence" | "chronological" | "comparative"',
+  "paragraphArchitecture.targetWords: integer 20-400",
+  'paragraphArchitecture.propositions: "single" | "multiple"',
+  'transitions: "restrained" | "explicit" | "rhetorical"',
+  'agency.actorNaming: "named" | "role" | "impersonal" | "mixed"',
+  'agency.passiveTendency: "low" | "medium" | "high"',
+  'agency.attributionPrecision: "exact" | "general" | "unspecified"',
+  'technicality.density: "low" | "medium" | "high"',
+  'technicality.abbreviationTendency: "none" | "first-use" | "permissive"',
+  'rhetoricalStyle: "direct-analytical" | "narrative" | "forensic" | "comparative" | "argumentative" | "explanatory"',
+  'conclusionStyle.form: "concise" | "qualified" | "recap" | "opinion" | "none"',
+  'lexicalPreferences.evaluativeLanguage: "none" | "restrained" | "explicit"',
+  "",
+  "Boolean fields (true or false): evidenceFraming.recordFirst, evidenceFraming.explicitReferences,",
+  "uncertaintyStyle.avoidsUnsupportedCertainty, sentenceArchitecture.shortClosingSentence,",
+  "technicality.explainsTerms, conclusionStyle.avoidsRepetition, qualificationStyle.conditionals,",
+  "lexicalPreferences.prefersNeutralVerbs.",
+  "String array fields: tone.secondary, lexicalPreferences.toneAvoid.",
+  "Free-text fields: tone.description, voice.description, register.description, formality.label.",
+].join("\n");
+
+/**
  * The V2 learning prompt.
  *
  * Same raw-text gate as every other builder — the check is the first statement
@@ -108,6 +163,8 @@ export function buildProfilePromptV2(
     "technicality (density, explainsTerms, abbreviationTendency), rhetoricalStyle,",
     "conclusionStyle (form, avoidsRepetition),",
     "lexicalPreferences (toneAvoid, prefersNeutralVerbs, evaluativeLanguage).",
+    "",
+    ENUM_OPTIONS,
     "",
     "Describe the writing, not its subject. A description must not name a project, a",
     "company, a person, a date, an amount, or any other fact from the sample — a style",

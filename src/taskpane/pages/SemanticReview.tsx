@@ -19,7 +19,7 @@ import {
   isApplicable,
   type SessionContext,
 } from "../../analysis/semantic/session";
-import type { SemanticReviewResult } from "../../analysis/semantic/contracts";
+import { reviewDomainFor, type SemanticReviewResult } from "../../analysis/semantic/contracts";
 import type { SemanticReviewSession } from "../../core/domain/SemanticReviewSession";
 import { applyApprovedSemanticRevision } from "../../reformat/semanticApply";
 import {
@@ -345,7 +345,7 @@ export default function SemanticReview({
           profile: { id: profile.id, revision: profile.revision },
           semantic: profile.semantic,
           includeRawText: true,
-          domain: "constructionExpert",
+          domain: reviewDomainFor(profile.semantic),
         },
         {
           includeRawText: true,
@@ -403,7 +403,7 @@ export default function SemanticReview({
           revised: result.proposedRevision,
           anchor: scope.anchor,
           coversWholeParagraph: scope.coversWholeParagraph,
-          rationale: result.assessment.summary,
+          rationale: result.rationale,
           // The engine's refusal and the session's applicability are both required,
           // so the revision that reaches the adapter carries the same answer the
           // Apply button was gated on.
