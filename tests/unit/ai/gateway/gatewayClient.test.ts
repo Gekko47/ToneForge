@@ -3,6 +3,7 @@ import {
   GatewayError,
   HttpProviderGatewayClient,
   SessionTokenStore,
+  describeGatewayError,
   isValidGatewayOrigin,
   normalizeGatewayOrigin,
   createProviderGatewayClient,
@@ -294,6 +295,32 @@ describe("HttpProviderGatewayClient", () => {
       .catch((err: unknown) => err)) as GatewayError;
     expect(error.kind).toBe("forbidden");
     expect(error.retryable).toBe(false);
+  });
+
+  it("classifies 404 as a connection the gateway no longer knows", async () => {
+    // The gateway holds its connections for the life of its process. A dev-server
+    // restart clears them while the persisted connection reference survives, so
+    // every connection-scoped route reports 404. Retrying cannot help, and the
+    // UI must be able to say "reconnect" rather than "try again".
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ error: "Unknown connection" }, 404, "Not Found"),
+    ) as unknown as typeof fetch;
+    const error = (await client(fetchImpl)
+      .fetchModelCatalog(connection())
+      .catch((err: unknown) => err)) as GatewayError;
+    expect(error.kind).toBe("unknownConnection");
+    expect(error.retryable).toBe(false);
+    expect(describeGatewayError(error.kind)).toMatch(/reconnect/i);
+  });
+
+  it("does not retry a 404, because a reconnect is the only fix", async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      return jsonResponse({ error: "Unknown connection" }, 404, "Not Found");
+    }) as unknown as typeof fetch;
+    await expect(client(fetchImpl).fetchModelCatalog(connection())).rejects.toThrow(GatewayError);
+    expect(calls).toBe(1);
   });
 
   it("classifies 429 as retryable", async () => {

@@ -58,6 +58,7 @@ export type GatewayErrorKind =
   | "notConfigured"
   | "unauthorized"
   | "forbidden"
+  | "unknownConnection"
   | "rateLimited"
   | "serverError"
   | "network"
@@ -93,6 +94,8 @@ export function describeGatewayError(kind: GatewayErrorKind): string {
       return "The gateway rejected the session. Reconnect to refresh it.";
     case "forbidden":
       return "The gateway refused the request. The connection may have been revoked.";
+    case "unknownConnection":
+      return "The gateway no longer knows this connection. Reconnect to establish it again.";
     case "rateLimited":
       return "The gateway rate limit was reached. Wait a moment and try again.";
     case "serverError":
@@ -148,9 +151,10 @@ export function isValidGatewayOrigin(value: string): boolean {
  */
 export function normalizeGatewayOrigin(value: string | undefined): string | null {
   if (value === undefined) return null;
-  const trimmed = value.trim().replace(/\/$/, "");
+  const trimmed = value.trim();
   if (!isValidGatewayOrigin(trimmed)) return null;
-  return trimmed;
+  // A bare "/" is a valid same-origin path; don't strip its trailing slash.
+  return trimmed === "/" ? "/" : trimmed.replace(/\/$/, "");
 }
 
 /**
@@ -299,6 +303,20 @@ function classifyStatus(status: number, statusText: string): GatewayError {
   if (status === 403) {
     return new GatewayError("Gateway refused the request", "forbidden", false, status);
   }
+  if (status === 404) {
+    // The gateway holds its connections for the life of its process. A
+    // dev-server restart — or any deployment that recycled — leaves a persisted
+    // connection reference it can no longer resolve. That is a reconnect, not a
+    // retry, so it is classified apart from a generic unexpected response:
+    // every connection-scoped route reports it, and the UI must be able to say
+    // "reconnect" rather than "try again".
+    return new GatewayError(
+      "Gateway does not know this connection",
+      "unknownConnection",
+      false,
+      status,
+    );
+  }
   if (status === 429) {
     return new GatewayError("Gateway rate limit reached", "rateLimited", true, status);
   }
@@ -330,14 +348,17 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
   constructor(opts: HttpGatewayOptions) {
     this.origin = normalizeGatewayOrigin(opts.origin);
     this.tokenStore = opts.tokenStore;
-    this.fetchImpl = opts.fetchImpl ?? fetch;
+    // Bind `fetch` to the global object: storing the unbound function and
+    // calling it as `this.fetchImpl(...)` makes `this` the class instance,
+    // which throws "Illegal invocation" in the browser.
+    this.fetchImpl = opts.fetchImpl ?? fetch.bind(globalThis);
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
   }
 
   /** True when a usable deployment origin is configured. */
   get configured(): boolean {
-    return this.origin !== null;
+    return this.origin !== null && this.origin.length > 0;
   }
 
   async startAuthorization(provider: ProviderId, signal?: AbortSignal): Promise<string> {
@@ -510,7 +531,7 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
     connectionId?: string,
     maxRetriesOverride?: number,
   ): Promise<unknown> {
-    if (!this.origin) {
+    if (this.origin === null || this.origin.length === 0) {
       throw new GatewayError(
         "No provider gateway is configured for this deployment",
         "notConfigured",
@@ -532,7 +553,14 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
     };
 
     return withRetry(
-      () => this.performRequest(method, `${this.origin}${path}`, payload, signal, token),
+      () =>
+        this.performRequest(
+          method,
+          this.origin === "/" ? path : `${this.origin}${path}`,
+          payload,
+          signal,
+          token,
+        ),
       retryOptions,
     );
   }
@@ -544,6 +572,7 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
     signal: AbortSignal | undefined,
     token: string | undefined,
   ): Promise<unknown> {
+    logger.warn("Gateway request", { method, url });
     let abortedByCaller = false;
     const onAbort = (): void => {
       abortedByCaller = true;
@@ -593,7 +622,19 @@ export class HttpProviderGatewayClient implements ProviderGatewayClient {
         throw new GatewayError("Gateway request timed out", "timeout", true);
       }
       if (err instanceof TypeError) {
-        throw new GatewayError("Gateway network error", "network", true);
+        // A TypeError from fetch() usually means a network-level failure:
+        // CORS, DNS, connection refused, or an invalid URL. Include the URL
+        // and the underlying error message so the user can diagnose it.
+        const detail = err instanceof Error ? err.message : String(err);
+        logger.error("Gateway network error", {
+          url,
+          detail: redactSensitiveText(detail),
+        });
+        throw new GatewayError(
+          `Gateway network error: ${detail}. Check that the dev server is running and the gateway URL is correct.`,
+          "network",
+          true,
+        );
       }
       // Log the error type only. Untrusted error text may embed a response body
       // that contained a key, so it is redacted before it could be recorded.

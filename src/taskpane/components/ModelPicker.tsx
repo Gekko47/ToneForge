@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Combobox, Field, Input, MessageBar, Option } from "@fluentui/react-components";
-import { createProviderGatewayClient, SessionTokenStore } from "../../ai/gateway";
+import { createProviderGatewayClient, GatewayError, SessionTokenStore } from "../../ai/gateway";
 import { isCatalogForConnection, resolveCatalogStatus } from "../../ai/gateway/modelCatalog";
 import { env } from "../../core/config/env";
 import type { ModelCatalog, ProviderConnection, ProviderId } from "../../core/domain/index";
-import { loadState } from "../../core/state/index";
 import { logger } from "../../shared/utils/logger";
 import { buildModelOptions } from "../settings/settingsModel";
 
@@ -12,9 +11,8 @@ export interface ModelPickerProps {
   provider: ProviderId;
   value: string;
   onChange: (modelId: string) => void;
-  /** Catalog already fetched by the connect flow, when one has. */
-  catalog: ModelCatalog | null;
-  onCatalogChange: (catalog: ModelCatalog | null) => void;
+  /** The connection to fetch the model catalog for. */
+  connection: ProviderConnection | undefined;
 }
 
 /**
@@ -26,26 +24,48 @@ export interface ModelPickerProps {
  * provider it brokers, so the list is fetched from the same source that will
  * serve the request and offered as a searchable combo box.
  *
- * The catalog is a convenience, not a gate. An unreachable provider, an expired
- * list, or a deployment-managed credential with no browsable catalog all fall
- * back to manual entry rather than blocking configuration entirely.
+ * The Fluent v9 Combobox does not filter its own options — it shows every
+ * child `Option` regardless of input. We filter `options` by the current
+ * `value` (a case-insensitive substring match against the option text *and*
+ * the model id) before passing them as children, so typing `haiku` narrows the
+ * list to `claude-3-haiku-20240307`. Matching the id as well as the display
+ * name matters because selecting an option sets `value` to the model id, not
+ * the display name: without it, a selected model would filter itself out and
+ * the list would read "0 model(s) available". The Combobox is `freeform`, so a
+ * non-matching typed value is still accepted and persisted.
+ *
+ * `autoComplete="off"` is deliberate: it disables the browser's native
+ * autofill dropdown, which would otherwise stack a second suggestion list on
+ * top of our filtered one.
+ *
+ * The ResizeObserver feedback loop that used to fire while filtering is fixed
+ * once for the whole pane by `PositioningConfigurationProvider` in
+ * `FluentV9Provider.tsx`, not per component here — every Fluent popup in the
+ * pane (this Combobox and the six Dropdowns) shares the same positioning
+ * configuration.
+ *
+ * The catalog is a convenience, not a gate. When it is unavailable — an
+ * unreachable provider, an expired list, a deployment-managed credential with
+ * no browsable catalog, or a connection the gateway no longer knows — the
+ * component falls back to a plain manual input rather than blocking
+ * configuration entirely.
  */
 export default function ModelPicker({
   provider,
   value,
   onChange,
-  catalog,
-  onCatalogChange,
+  connection,
 }: ModelPickerProps): React.ReactNode {
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [manual, setManual] = useState(false);
+  // A connection the gateway no longer knows is a different failure from a
+  // transient one: no amount of retrying will produce a list, so the picker
+  // says "reconnect" instead of offering a retry that cannot succeed.
+  const [unknownConnection, setUnknownConnection] = useState(false);
+  const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
   // The gateway client and its session token are created here and discarded on
   // unmount so they cannot outlive the pane.
   const session = useRef<{ client: ReturnType<typeof createProviderGatewayClient> } | null>(null);
-
-  const connection: ProviderConnection | undefined =
-    provider === "mock" ? undefined : loadState().providerConnections?.[provider];
 
   const client = useCallback((): ReturnType<typeof createProviderGatewayClient> => {
     if (session.current === null) {
@@ -70,23 +90,25 @@ export default function ModelPicker({
     if (connection === undefined) return;
     setLoading(true);
     setFailed(false);
+    setUnknownConnection(false);
     try {
       const fetched = await client().fetchModelCatalog(connection);
       // A catalog belonging to another connection is discarded: offering models
       // this credential cannot serve would be worse than offering none.
       const usable = isCatalogForConnection(fetched, connection);
-      onCatalogChange(usable ? fetched : null);
+      setCatalog(usable ? fetched : null);
       setFailed(!usable);
     } catch (error: unknown) {
       logger.warn("Model catalog could not be loaded", {
         errorMessage: error instanceof Error ? error.message : String(error),
       });
-      onCatalogChange(null);
+      setCatalog(null);
       setFailed(true);
+      setUnknownConnection(error instanceof GatewayError && error.kind === "unknownConnection");
     } finally {
       setLoading(false);
     }
-  }, [client, connection, onCatalogChange]);
+  }, [client, connection]);
 
   // Refetch whenever the provider or its connection changes. A list belonging to
   // the previous credential must never be shown against the new one.
@@ -130,6 +152,12 @@ export default function ModelPicker({
   if (!showList) {
     return (
       <div data-testid="model-picker-manual">
+        {unknownConnection ? (
+          <MessageBar intent="warning">
+            The gateway no longer knows this connection, so it cannot list the models it can use.
+            Disconnect and connect again to re-establish it.
+          </MessageBar>
+        ) : null}
         <Field
           label="Model"
           hint={
@@ -153,6 +181,14 @@ export default function ModelPicker({
     );
   }
 
+  const query = value.trim().toLowerCase();
+  const filtered = query
+    ? options.filter(
+        (option) =>
+          option.text.toLowerCase().includes(query) || option.key.toLowerCase().includes(query),
+      )
+    : options;
+
   return (
     <div data-testid="model-picker-list">
       <Field label="Model">
@@ -170,13 +206,14 @@ export default function ModelPicker({
             if (data.optionValue) onChange(data.optionValue);
           }}
         >
-          {options.map((option) => (
+          {filtered.map((option) => (
             <Option key={option.key} value={option.key} title={option.detail}>
               {option.text}
             </Option>
           ))}
         </Combobox>
       </Field>
+      {filtered.length === 0 ? <p className="tf-sub">No models match your search.</p> : null}
       <p className="tf-settings-note">
         {options.length} model(s) available on this connection. Leave blank to use the provider's
         own default.
@@ -185,15 +222,7 @@ export default function ModelPicker({
         <Button onClick={() => void refresh()} disabled={loading}>
           Refresh model list
         </Button>
-        <Button onClick={() => setManual(true)} aria-expanded={manual}>
-          Enter a model id manually
-        </Button>
       </div>
-      {manual ? (
-        <Field label="Model id" hint="Use this only if the list is missing the model you need.">
-          <Input value={value} onChange={(_event, data) => onChange(data.value)} />
-        </Field>
-      ) : null}
       {status === "stale" ? (
         <MessageBar intent="warning" role="status">
           The model list is out of date. Refresh it before choosing.

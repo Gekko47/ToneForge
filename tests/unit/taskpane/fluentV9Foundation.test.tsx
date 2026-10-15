@@ -1,6 +1,6 @@
 import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { Button } from "@fluentui/react-components";
+import { Button, Dropdown, Option } from "@fluentui/react-components";
 import {
   toneForgeBrandRamp,
   toneForgeDarkTheme,
@@ -49,6 +49,25 @@ describe("Fluent v9 foundation", () => {
   it("renders a v9 component under the provider", () => {
     renderWithFluent(<Button>Review</Button>);
     expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
+    resetGriffelStyles();
+  });
+
+  it("still opens a dropdown popup under the global positioning configuration", async () => {
+    // The provider disables resize-driven repositioning for every Fluent popup
+    // to break the ResizeObserver loop. That must not stop a popup from opening
+    // and rendering its options.
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    renderWithFluent(
+      <Dropdown placeholder="Pick one">
+        <Option value="a">Alpha</Option>
+        <Option value="b">Beta</Option>
+      </Dropdown>,
+    );
+
+    await user.click(screen.getByRole("combobox"));
+    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+    expect(screen.getByText("Beta")).toBeInTheDocument();
     resetGriffelStyles();
   });
 });

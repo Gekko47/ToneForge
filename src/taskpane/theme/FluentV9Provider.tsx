@@ -1,5 +1,9 @@
 import React, { createContext, useContext } from "react";
-import { FluentProvider, makeStyles } from "@fluentui/react-components";
+import {
+  FluentProvider,
+  makeStyles,
+  PositioningConfigurationProvider,
+} from "@fluentui/react-components";
 import { toneForgeDarkTheme, toneForgeLightTheme } from "./toneForgeTheme";
 import { toneForgeTokens } from "./tokens";
 
@@ -35,6 +39,27 @@ const useStyles = makeStyles({
   },
 });
 
+/**
+ * Disable resize-driven repositioning for every Fluent popup in the pane.
+ *
+ * Fluent positions a Dropdown/Combobox listbox with a `ResizeObserver` on the
+ * popup container. When the popup's own content changes size — a listbox
+ * growing to fit, options being filtered — the observer fires, the reposition
+ * triggers another layout pass, and the browser reports
+ * `ResizeObserver loop completed with undelivered notifications`. Setting this
+ * once here covers every positioned component in the pane (the six Dropdowns
+ * and the ModelPicker Combobox) instead of repeating the prop at each call
+ * site. The popup still positions correctly on open; it simply does not
+ * reposition while its content resizes.
+ *
+ * The type is derived from the re-exported provider rather than imported from
+ * `@fluentui/react-positioning`, which is a transitive dependency and not ours
+ * to import directly.
+ */
+const disableResizeRepositioning: React.ComponentProps<
+  typeof PositioningConfigurationProvider
+>["value"] = ({ options }) => ({ ...options, disableUpdateOnResize: true });
+
 export interface FluentV9ProviderProps {
   children: React.ReactNode;
 }
@@ -63,6 +88,16 @@ export interface FluentV9ProviderProps {
  * task pane every time a dropdown opened. With it off, portals keep only the
  * theme-variable class, and the canvas background and height live on the plain
  * wrapper below instead.
+ *
+ * Note: the `ResizeObserver loop completed with undelivered notifications`
+ * warning that used to appear when opening a dropdown or combobox was not
+ * caused by this provider or by the portal mechanism. It came from Fluent's
+ * popup positioning (a `ResizeObserver` on the popup container that repositions
+ * on every resize, creating a feedback loop when the popup's content changes
+ * size). It is fixed at the source by the `PositioningConfigurationProvider`
+ * below, which disables resize-driven repositioning for every positioned
+ * component in the pane. The filter in `bootstrap.tsx` remains as a safety net
+ * for other Fluent components that observe their own reflow.
  */
 export function FluentV9Provider({ children }: FluentV9ProviderProps): React.ReactNode {
   const [reducedMotion, setReducedMotion] = React.useState(false);
@@ -120,7 +155,9 @@ export function FluentV9Provider({ children }: FluentV9ProviderProps): React.Rea
           theme={isDark ? toneForgeDarkTheme : toneForgeLightTheme}
           applyStylesToPortals={false}
         >
-          {children}
+          <PositioningConfigurationProvider value={disableResizeRepositioning}>
+            {children}
+          </PositioningConfigurationProvider>
         </FluentProvider>
       </div>
     </ThemeContext.Provider>

@@ -217,16 +217,56 @@ export function createDevGatewayBroker({
       return;
     }
 
+    // CORS headers for the cross-origin iframe scenario (Word desktop).
+    // The task pane runs in an iframe with a different origin, so the browser
+    // requires CORS headers for the request to succeed.
+    const requestOrigin = req.headers.origin;
+    if (requestOrigin && isLoopbackHostname(new URL(requestOrigin).hostname)) {
+      res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-ToneForge-Session-Nonce",
+      );
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+    if (req.method === "OPTIONS") {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
     // Every gateway route is behind the same loopback/origin or nonce guard as
     // the existing LLM broker. A route that forgot this check would be a
     // credential-forwarding hole.
     const origin = validateBrokerOrigin(req.headers ?? {});
     if (!origin.allowed && !validateSessionNonce(req.headers ?? {}, expectedNonce)) {
-      res.statusCode = 403;
-      res.setHeader("Content-Type", "application/json");
-      // The guard's reason is fixed text; request headers are never echoed.
-      res.end(JSON.stringify({ error: origin.reason }));
-      return;
+      // Development-only relaxation, and only for a loopback Host.
+      //
+      // A same-origin GET with no custom headers is a CORS "simple request", so
+      // the browser omits the Origin header entirely — the model-catalog fetch
+      // arrives with no Origin and would otherwise be refused. Word desktop also
+      // hosts the task pane in a cross-origin iframe, so a present Origin can
+      // differ from the Host even though both are local.
+      //
+      // A non-loopback Host is always refused, and a present non-loopback Origin
+      // is always refused, so a remote page cannot reach the gateway.
+      const host = String(req.headers.host ?? "").split(":")[0];
+      const requestOrigin = String(req.headers.origin ?? "");
+      let originHost = "";
+      try {
+        originHost = new URL(requestOrigin).hostname;
+      } catch {
+        originHost = "";
+      }
+      const originIsLoopbackOrAbsent = requestOrigin === "" || isLoopbackHostname(originHost);
+      const allowed = isLoopbackHostname(host) && originIsLoopbackOrAbsent;
+      if (!allowed) {
+        res.statusCode = 403;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: origin.reason }));
+        return;
+      }
     }
 
     const route = pathname.slice(GATEWAY_PATH_PREFIX.length) || "/";

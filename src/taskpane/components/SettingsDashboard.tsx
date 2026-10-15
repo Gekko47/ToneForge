@@ -2,7 +2,7 @@ import React from "react";
 import { MessageBar } from "@fluentui/react-components";
 import { env } from "../../core/config/env";
 import type { PersistedState } from "../../core/state/persistence";
-import type { LlmRole } from "../../core/domain/LlmRole";
+import type { LlmRole, LlmRoleBinding } from "../../core/domain/LlmRole";
 import type { ProviderConnection } from "../../core/domain/ProviderConnection";
 import { logger } from "../../shared/utils/logger";
 import { removeRoleBinding, setReuseGeneral, setRoleBinding } from "../settings/llmRoles";
@@ -11,7 +11,6 @@ import { connectionForRole } from "../settings/providerComposition";
 import { createProviderGatewayClient, SessionTokenStore } from "../../ai/gateway";
 import { RoleConnectionCard } from "./RoleConnectionCard";
 import { RedactionSettingsSection } from "./RedactionSettingsSection";
-import OpenRouterConnectionSettings from "./OpenRouterConnectionSettings";
 
 export interface SettingsDashboardProps {
   state: PersistedState;
@@ -55,8 +54,23 @@ export function SettingsDashboard({
   function handleModelChange(role: LlmRole, model: string): void {
     const binding = state.llmRoleBindings?.[role];
     if (!binding) return;
+    // An empty field means "use the provider's default model", which the schema
+    // models as an absent `selectedModel`. Persisting `""` would fail `.min(1)`
+    // and silently drop the user's choice, so the property is omitted instead.
+    // A controlled freeform combobox also emits `""` when its selection is
+    // cleared, so this path is reached without the user typing anything.
+    //
+    // The previous value is destructured out rather than overwritten: spreading
+    // `...binding` first would leave the old model in place when the field is
+    // cleared, and `exactOptionalPropertyTypes` forbids assigning `undefined`.
+    const { selectedModel: _previous, ...rest } = binding;
+    const trimmed = model.trim();
+    const next: LlmRoleBinding = {
+      ...rest,
+      ...(trimmed.length > 0 ? { selectedModel: trimmed } : {}),
+    };
     try {
-      updateBindings((bindings) => setRoleBinding(bindings, { ...binding, selectedModel: model }));
+      updateBindings((bindings) => setRoleBinding(bindings, next));
     } catch (caught: unknown) {
       logger.warn("Could not set role model", {
         reason: caught instanceof Error ? caught.message : "unknown",
@@ -142,6 +156,7 @@ export function SettingsDashboard({
           generalBindingExists={generalBindingExists}
           gatewayOrigin={gatewayOrigin}
           onModelChange={(model) => handleModelChange(view.role, model)}
+          onConnect={(connection) => handleConnect(view.role, connection)}
           onReuseGeneralChange={(reuse) => handleReuseGeneralChange(view.role, reuse)}
           onDisconnect={() => handleDisconnect(view.role)}
         />
@@ -152,29 +167,6 @@ export function SettingsDashboard({
           No general LLM binding is configured yet. Connect a provider to enable semantic review and
           consistency extraction.
         </MessageBar>
-      ) : null}
-      {views.some((view) => !view.configured) ? (
-        <section className="tf-connect-section" aria-label="Connect a provider">
-          <h3 className="tf-role-title">Connect a provider</h3>
-          <p className="tf-sub">
-            Connect an OpenRouter account to enable the unconfigured roles above. The connection is
-            bound to the first unconfigured role.
-          </p>
-          <OpenRouterConnectionSettings
-            gatewayOrigin={gatewayOrigin}
-            connection={undefined}
-            catalog={null}
-            models={[]}
-            onCatalogChange={() => {}}
-            selectedModel=""
-            onSelectModel={() => {}}
-            onConnectionChange={(conn) => {
-              if (!conn) return;
-              const unconfigured = views.find((view) => !view.configured);
-              if (unconfigured) handleConnect(unconfigured.role, conn);
-            }}
-          />
-        </section>
       ) : null}
     </div>
   );

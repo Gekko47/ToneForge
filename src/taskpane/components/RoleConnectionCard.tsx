@@ -4,6 +4,7 @@ import type { LlmRole, LlmRoleBinding } from "../../core/domain/LlmRole";
 import type { ProviderConnection } from "../../core/domain/ProviderConnection";
 import { ConnectionTestButton } from "./ConnectionTestButton";
 import ModelPicker from "./ModelPicker";
+import OpenRouterConnectionSettings from "./OpenRouterConnectionSettings";
 import { ROLE_LABELS } from "../settings/llmDashboardModel";
 
 export interface RoleConnectionCardProps {
@@ -13,6 +14,7 @@ export interface RoleConnectionCardProps {
   generalBindingExists: boolean;
   gatewayOrigin: string;
   onModelChange: (model: string) => void;
+  onConnect: (connection: ProviderConnection) => void;
   onReuseGeneralChange: (reuse: boolean) => void;
   onDisconnect: () => void;
 }
@@ -31,6 +33,7 @@ export function RoleConnectionCard({
   generalBindingExists,
   gatewayOrigin,
   onModelChange,
+  onConnect,
   onReuseGeneralChange,
   onDisconnect,
 }: RoleConnectionCardProps): React.ReactNode {
@@ -65,8 +68,7 @@ export function RoleConnectionCard({
             provider={connection.provider}
             value={binding?.selectedModel ?? ""}
             onChange={onModelChange}
-            catalog={null}
-            onCatalogChange={() => {}}
+            connection={connection}
           />
           <Button onClick={onDisconnect}>Disconnect</Button>
         </>
@@ -82,6 +84,23 @@ export function RoleConnectionCard({
               onChange={(_event, data) => onReuseGeneralChange(data.checked)}
             />
           ) : null}
+          {/*
+            ponytail: seam for a future provider dropdown. This is the single
+            point where a provider selector with preset URLs and config flows
+            will be inserted — the card renders the connection settings for the
+            chosen provider here, so a `provider` prop can later select between
+            OpenRouter / OpenAI / Anthropic connection wizards without touching
+            the rest of the card.
+          */}
+          <OpenRouterConnectionSettings
+            gatewayOrigin={gatewayOrigin}
+            connection={undefined}
+            onConnectionChange={(conn) => {
+              if (conn) onConnect(conn);
+            }}
+            onSelectModel={onModelChange}
+            selectedModel=""
+          />
         </>
       )}
     </section>

@@ -18,7 +18,16 @@ vi.mock("../../../../src/core/config/env", () => ({
 }));
 
 vi.mock("../../../../src/taskpane/components/ModelPicker", () => ({
-  default: () => <div data-testid="model-picker" />,
+  default: (props: { onChange: (model: string) => void }) => (
+    <div data-testid="model-picker">
+      <button type="button" onClick={() => props.onChange("gpt-4o")}>
+        Pick gpt-4o
+      </button>
+      <button type="button" onClick={() => props.onChange("")}>
+        Clear model
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("../../../../src/taskpane/components/ConnectionTestButton", () => ({
@@ -196,7 +205,9 @@ describe("SettingsDashboard", () => {
     const state = makeState();
     render(<SettingsDashboard state={state} onStateChange={onStateChange} />);
 
-    await userEvent.click(screen.getByText("Connect OpenRouter"));
+    // The connect box now lives inside each role card, so scope to the general card.
+    const generalCard = screen.getByLabelText("General LLM");
+    await userEvent.click(within(generalCard).getByText("Connect OpenRouter"));
 
     const nextState = firstStateChangeArg(onStateChange);
     expect(nextState.llmRoleBindings?.general).toBeDefined();
@@ -285,5 +296,47 @@ describe("SettingsDashboard", () => {
     render(<SettingsDashboard state={state} onStateChange={vi.fn()} />);
 
     expect(screen.getByTestId("model-picker")).toBeInTheDocument();
+  });
+
+  it("persists the model chosen in the picker", async () => {
+    const onStateChange = vi.fn();
+    const bindings = LlmRoleBindingsSchema.parse({
+      general: { role: "general", provider: "openai", connectionId: "c1" },
+    });
+    const conns = { c1: makeConnection("c1", "openai") };
+    const state = makeState({ llmRoleBindings: bindings, providerConnections: conns });
+    render(<SettingsDashboard state={state} onStateChange={onStateChange} />);
+
+    await userEvent.click(screen.getByText("Pick gpt-4o"));
+
+    const nextState = firstStateChangeArg(onStateChange);
+    expect(nextState.llmRoleBindings?.general?.selectedModel).toBe("gpt-4o");
+  });
+
+  it("clears the model when the picker is emptied, instead of dropping the change", async () => {
+    // The picker's own copy invites the user to leave the field blank to use the
+    // provider's default model. Persisting that blank as `selectedModel: ""`
+    // fails the schema's `.min(1)`, so the change was silently discarded and the
+    // user's selection never took effect.
+    const onStateChange = vi.fn();
+    const bindings = LlmRoleBindingsSchema.parse({
+      general: {
+        role: "general",
+        provider: "openai",
+        connectionId: "c1",
+        selectedModel: "gpt-4",
+      },
+    });
+    const conns = { c1: makeConnection("c1", "openai") };
+    const state = makeState({ llmRoleBindings: bindings, providerConnections: conns });
+    render(<SettingsDashboard state={state} onStateChange={onStateChange} />);
+
+    await userEvent.click(screen.getByText("Clear model"));
+
+    const nextState = firstStateChangeArg(onStateChange);
+    // "No model" is an absent property, not an empty string.
+    expect(nextState.llmRoleBindings?.general?.selectedModel).toBeUndefined();
+    // The binding itself survives, so the role stays configured.
+    expect(nextState.llmRoleBindings?.general?.connectionId).toBe("c1");
   });
 });

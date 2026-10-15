@@ -1,24 +1,16 @@
 import React from "react";
-import {
-  Button,
-  Card,
-  Dropdown,
-  Field,
-  Input,
-  MessageBar,
-  Option,
-} from "@fluentui/react-components";
+import { Button, Card, Field, Input, MessageBar } from "@fluentui/react-components";
 import { createProviderGatewayClient, GatewayError, SessionTokenStore } from "../../ai/gateway";
-import { isCatalogForConnection, resolveCatalogStatus } from "../../ai/gateway/modelCatalog";
-import type { ModelCatalog, ProviderConnection } from "../../core/domain/index";
+import { isCatalogForConnection } from "../../ai/gateway/modelCatalog";
+import type { ProviderConnection } from "../../core/domain/index";
 import { loadState, saveState, type PersistedState } from "../../core/state/index";
 import { logger } from "../../shared/utils/logger";
 import {
   OPENROUTER_DEFAULT_BASE_URL,
   validateApiKeyInput,
   validateOpenRouterBaseUrl,
-  type ModelDropdownOption,
 } from "../settings/settingsModel";
+import ModelPicker from "./ModelPicker";
 
 /**
  * OpenRouter connection controls.
@@ -49,10 +41,6 @@ export interface OpenRouterConnectionSettingsProps {
    * `PersistedState` does not re-render anything on its own.
    */
   onConnectionChange?: (connection: ProviderConnection | undefined) => void;
-  /** Models the provider offered, once a catalog has been fetched. */
-  models: ModelDropdownOption[];
-  catalog: ModelCatalog | null;
-  onCatalogChange: (catalog: ModelCatalog | null) => void;
   onSelectModel: (modelId: string) => void;
   selectedModel: string;
 }
@@ -63,9 +51,6 @@ export default function OpenRouterConnectionSettings({
   gatewayOrigin,
   connection,
   onConnectionChange,
-  models,
-  catalog,
-  onCatalogChange,
   onSelectModel,
   selectedModel,
 }: OpenRouterConnectionSettingsProps): React.ReactNode {
@@ -98,13 +83,6 @@ export default function OpenRouterConnectionSettings({
   );
 
   const connected = connection !== undefined;
-  const catalogStatus = resolveCatalogStatus({
-    loading: phase === "loadingModels",
-    offline: false,
-    failed: phase === "error",
-    catalog,
-    now: new Date(),
-  });
 
   function persistConnection(next: ProviderConnection | undefined): void {
     const current = loadState();
@@ -151,12 +129,10 @@ export default function OpenRouterConnectionSettings({
       // rather than shown: the dropdown would then offer models the current
       // credential cannot use.
       if (!isCatalogForConnection(fetched, issued)) {
-        onCatalogChange(null);
         setError("The model list did not match the new connection. Reconnect to try again.");
         setPhase("error");
         return;
       }
-      onCatalogChange(fetched);
       // The connection id is a credential-adjacent reference, so the log records
       // only that a connection exists and how many models it offers.
       logger.info("OpenRouter connection established", {
@@ -186,7 +162,6 @@ export default function OpenRouterConnectionSettings({
       });
     }
     persistConnection(undefined);
-    onCatalogChange(null);
     setPhase("idle");
   }
 
@@ -258,73 +233,14 @@ export default function OpenRouterConnectionSettings({
         )}
         {error ? <MessageBar intent="error">{error}</MessageBar> : null}
         {connected ? (
-          <MessageBar intent="info">{describeCatalog(catalogStatus, models.length)}</MessageBar>
-        ) : null}
-        {connected ? (
-          <ModelPicker models={models} selectedModel={selectedModel} onSelect={onSelectModel} />
+          <ModelPicker
+            provider={connection.provider}
+            value={selectedModel}
+            onChange={onSelectModel}
+            connection={connection}
+          />
         ) : null}
       </Card>
     </section>
-  );
-}
-
-function describeCatalog(status: ReturnType<typeof resolveCatalogStatus>, count: number): string {
-  switch (status) {
-    case "loading":
-      return "Loading the model list…";
-    case "failed":
-      return "The model list could not be loaded. Reconnect to retry.";
-    case "stale":
-      return "The model list is out of date. Reconnect to refresh it.";
-    case "empty":
-      return "This account has no models available on OpenRouter.";
-    case "idle":
-      return "Choose a model, or leave the deployment default in place.";
-    default:
-      return `${count} model${count === 1 ? "" : "s"} available.`;
-  }
-}
-
-/**
- * The model list, offered only once a connection can actually serve it.
- *
- * A typed model name stays the fallback everywhere else: forcing a user onto a
- * fetched list would make a working configuration depend on a catalog request
- * succeeding at the moment they open Settings.
- */
-function ModelPicker({
-  models,
-  selectedModel,
-  onSelect,
-}: {
-  models: ModelDropdownOption[];
-  selectedModel: string;
-  onSelect: (modelId: string) => void;
-}): React.ReactNode {
-  if (models.length === 0) {
-    return null;
-  }
-  const selected = models.find((model) => model.key === selectedModel);
-  return (
-    <>
-      <Field label="Model">
-        <Dropdown
-          value={selected?.text ?? ""}
-          selectedOptions={selectedModel ? [selectedModel] : []}
-          onOptionSelect={(_event, data) => {
-            if (data.optionValue) onSelect(data.optionValue);
-          }}
-        >
-          {models.map((model) => (
-            <Option key={model.key} value={model.key} title={model.detail}>
-              {model.text}
-            </Option>
-          ))}
-        </Dropdown>
-      </Field>
-      <p className="tf-settings-note">
-        {selected?.detail ?? "Choose a model. Leaving this unset uses the provider's default."}
-      </p>
-    </>
   );
 }

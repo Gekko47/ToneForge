@@ -99,9 +99,6 @@ function renderSection(props: Partial<ComponentProps<typeof OpenRouterConnection
     <OpenRouterConnectionSettings
       gatewayOrigin={GATEWAY_ORIGIN}
       connection={undefined}
-      catalog={null}
-      models={[]}
-      onCatalogChange={vi.fn()}
       selectedModel=""
       onSelectModel={vi.fn()}
       {...props}
@@ -253,25 +250,11 @@ describe("OpenRouterConnectionSettings", () => {
 
   it("fetches the model list right after the connection is issued", async () => {
     const user = userEvent.setup();
-    const onCatalogChange = vi.fn();
-    renderSection({ onCatalogChange });
+    renderSection();
     await user.type(screen.getByLabelText(/OpenRouter API key/i), API_KEY);
     await user.click(screen.getByRole("button", { name: /Connect OpenRouter/i }));
 
-    await waitFor(() => expect(onCatalogChange).toHaveBeenCalledWith(catalog()));
-  });
-
-  it("discards a catalog that belongs to a different connection", async () => {
-    // A model list fetched for another credential would offer models this
-    // connection cannot use, so it is refused rather than displayed.
-    const user = userEvent.setup();
-    const onCatalogChange = vi.fn();
-    mocks.fetchModelCatalog.mockResolvedValue(catalog({ connectionId: "or_someone_else" }));
-    renderSection({ onCatalogChange });
-    await user.type(screen.getByLabelText(/OpenRouter API key/i), API_KEY);
-    await user.click(screen.getByRole("button", { name: /Connect OpenRouter/i }));
-
-    await waitFor(() => expect(onCatalogChange).toHaveBeenCalledWith(null));
+    await waitFor(() => expect(mocks.fetchModelCatalog).toHaveBeenCalled());
   });
 
   it("offers Disconnect and a key field only when disconnected", async () => {
@@ -285,9 +268,6 @@ describe("OpenRouterConnectionSettings", () => {
       <OpenRouterConnectionSettings
         gatewayOrigin={GATEWAY_ORIGIN}
         connection={connection()}
-        catalog={catalog()}
-        models={[]}
-        onCatalogChange={vi.fn()}
         selectedModel=""
         onSelectModel={vi.fn()}
       />,
@@ -317,13 +297,11 @@ describe("OpenRouterConnectionSettings", () => {
     // Leaving a `connected` record after the user pressed Disconnect would leave
     // the pane claiming a working credential the gateway has already dropped.
     const user = userEvent.setup();
-    const onCatalogChange = vi.fn();
     mocks.disconnect.mockRejectedValue(new Error("network down"));
-    renderSection({ connection: connection(), onCatalogChange });
+    renderSection({ connection: connection() });
     await user.click(screen.getByRole("button", { name: /Disconnect OpenRouter/i }));
 
     await waitFor(() => expect(mocks.saveState).toHaveBeenCalled());
-    expect(onCatalogChange).toHaveBeenCalledWith(null);
     expect(mocks.loggerWarn).toHaveBeenCalled();
   });
 

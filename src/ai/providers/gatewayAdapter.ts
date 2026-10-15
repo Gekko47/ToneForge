@@ -95,7 +95,10 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
     // deployment rule approved.
     this.gatewayBaseUrl = normalizeGatewayOrigin(opts.gatewayBaseUrl) ?? "";
     this.connection = opts.connection;
-    this.fetchImpl = opts.fetchImpl ?? fetch;
+    // Bind `fetch` to the global object: storing the unbound function and
+    // calling it as `this.fetchImpl(...)` makes `this` the class instance,
+    // which throws "Illegal invocation" in the browser.
+    this.fetchImpl = opts.fetchImpl ?? fetch.bind(globalThis);
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
   }

@@ -59,6 +59,9 @@ const publicDevEnv = {
   OPENAI_MAX_RETRIES: process.env.OPENAI_MAX_RETRIES ?? "2",
   TELEMETRY_DISABLED: process.env.TELEMETRY_DISABLED ?? "1",
   ANALYTICS_ENDPOINT: process.env.ANALYTICS_ENDPOINT ?? "",
+  // Same-origin path to the dev gateway middleware mounted on the webpack dev
+  // server. The gateway client appends /v1/connections/... to this origin.
+  LLM_BROKER_URL: "/__toneforge/gateway",
 };
 
 const dev = {
@@ -95,7 +98,20 @@ const dev = {
       : {}),
     hot: true,
     open: false,
-    historyApiFallback: true,
+    // The gateway and broker paths must not be rewritten to index.html by
+    // historyApiFallback, or the middleware never sees the request.
+    historyApiFallback: {
+      index: "/taskpane.html",
+      disableDotRule: true,
+      rewrites: [
+        {
+          from: /^\/__toneforge\/.*$/,
+          to: function () {
+            return false;
+          },
+        },
+      ],
+    },
     // Log every HTTP request so we can see what Word's WebView2 actually
     // requests when it loads the taskpane. The Origin and User-Agent headers
     // are the key signals: a browser tab will show a different UA than

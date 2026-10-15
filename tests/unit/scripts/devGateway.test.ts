@@ -158,6 +158,48 @@ describe("createDevGatewayBroker", () => {
     expect(res.body()).not.toContain("sk-or-test");
   });
 
+  it("allows a loopback request with no Origin header (a CORS simple GET)", async () => {
+    // A same-origin GET with no custom headers is a CORS "simple request", so
+    // the browser omits Origin entirely. The model-catalog fetch arrives this
+    // way and must not be refused.
+    const mockFetchImpl = vi.fn(async () => okJson({ data: [{ id: "vendor/model" }] }));
+    const connections = new Map([
+      ["or_1", { apiKey: "sk-or-secret", baseUrl: OPENROUTER_DEFAULT_BASE_URL }],
+    ]);
+    const res = response();
+    await createDevGatewayBroker({
+      expectedNonce: NONCE,
+      fetchImpl: asFetch(mockFetchImpl),
+      connections,
+    })(
+      request({
+        method: "GET",
+        url: `${GATEWAY_PATH_PREFIX}/connections/or_1/models`,
+        origin: "",
+        nonce: null,
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("refuses a non-loopback Host even with no Origin header", async () => {
+    const res = response();
+    await createDevGatewayBroker({ expectedNonce: NONCE })(
+      request({
+        method: "GET",
+        url: `${GATEWAY_PATH_PREFIX}/connections/or_1/models`,
+        origin: "",
+        host: "gateway.example.com",
+        nonce: null,
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
   it("returns only non-secret metadata for a new API-key connection", async () => {
     const res = response();
     const connections = new Map();

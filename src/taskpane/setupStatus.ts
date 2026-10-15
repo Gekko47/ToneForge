@@ -25,7 +25,7 @@
  */
 
 import type { PersistedState } from "../core/state/persistence";
-import { isRemoteProviderConfigured } from "./settings/providerComposition";
+import { isGeneralRoleConfigured } from "./settings/providerComposition";
 
 /** One thing the user can set up, and what its absence costs. */
 export interface SetupItem {
@@ -126,9 +126,20 @@ export function setupStatus(state: PersistedState, providerUsable: boolean): Set
   };
 }
 
-/** Convenience wrapper that reads provider availability the same way Settings does. */
+/**
+ * Convenience wrapper that reads provider availability the same way the
+ * capability gates do.
+ *
+ * `isGeneralRoleConfigured`, not `isRemoteProviderConfigured`: the dashboard's
+ * connect path writes a role binding and a connection and never touches the
+ * legacy `settings.llmProvider`, which stays `"mock"`. Reading only that field
+ * reported a working connection as missing, so Home and the LLM-settings header
+ * contradicted the role cards and the review gates that had already opened. The
+ * role-aware check falls back to the legacy field only when no general binding
+ * exists, so a pre-v15 store keeps working.
+ */
 export function setupStatusFromState(state: PersistedState): SetupStatus {
-  return setupStatus(state, isRemoteProviderConfigured(state.settings, state.providerConnections));
+  return setupStatus(state, isGeneralRoleConfigured(state));
 }
 
 /**
