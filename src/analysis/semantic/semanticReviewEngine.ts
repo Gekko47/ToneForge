@@ -35,8 +35,7 @@
 import { v4 as uuidv4 } from "uuid";
 
 import { createLlmRegistry } from "../../ai/providers/registry";
-import { LlmError, type LlmSemanticProvider } from "../../ai/providers/LlmProvider";
-import { withRetry } from "../../ai/providers/retry";
+import { type LlmResponse, type LlmSemanticProvider } from "../../ai/providers/LlmProvider";
 import { logger } from "../../shared/utils/logger";
 import { validatePreservation } from "./preservationValidator";
 import { buildSemanticReviewPrompt } from "./reviewPrompt";
@@ -51,9 +50,15 @@ import {
   type SemanticReviewResult,
 } from "./contracts";
 
-const DEFAULT_MAX_RETRIES = 2;
-const DEFAULT_BASE_DELAY_MS = 250;
-const DEFAULT_MAX_DELAY_MS = 1000;
+/**
+ * The whole provider stage's budget, retries included.
+ *
+ * The adapter's own deadline bounds a single call; this bounds the stage around
+ * it, so a provider that answers slowly three times over cannot hold the review
+ * open indefinitely. It is deliberately longer than the adapter's largest
+ * per-request timeout, so it fires only when the stage as a whole is stuck.
+ */
+const PROVIDER_STAGE_TIMEOUT_MS = 90_000;
 
 /**
  * All five flags preserved — the value used when the model states none.
@@ -94,27 +99,22 @@ export async function reviewSemanticSelection(
   const clock = opts.now ?? (() => Date.now());
   const started = clock();
 
-  let attempt = 0;
-  const response = await withRetry(
-    async () => {
-      attempt += 1;
-      return registry.review({ prompt, ...(opts.signal ? { signal: opts.signal } : {}) });
-    },
-    {
-      maxRetries: DEFAULT_MAX_RETRIES,
-      baseDelayMs: DEFAULT_BASE_DELAY_MS,
-      maxDelayMs: DEFAULT_MAX_DELAY_MS,
-      isRetryable: (err: unknown) => {
-        // A caller-driven abort is not a failure to retry: retrying it would keep
-        // a request alive the user just cancelled. Checked before the error's own
-        // verdict, because an abort surfaces as an ordinary retryable `LlmError`
-        // on some providers.
-        if (opts.signal?.aborted === true) return false;
-        if (err instanceof LlmError) return err.retryable;
-        return true;
-      },
-    },
-  );
+  /*
+   * One call, and no retry here.
+   *
+   * The adapter retries a transient failure, with backoff and jitter, and it is
+   * the only layer that does. Three engine attempts across three adapter attempts
+   * is nine requests for one user action, and the outer layer only delayed the
+   * failure the user was already waiting for. The stage budget still bounds the
+   * whole thing, so a provider that hangs cannot keep the review open forever.
+   */
+  const stage = stageBudget(opts.signal, PROVIDER_STAGE_TIMEOUT_MS);
+  let response: LlmResponse;
+  try {
+    response = await registry.review({ prompt, signal: stage.signal });
+  } finally {
+    stage.cancel();
+  }
 
   const parsed = SemanticReviewResponseSchema.safeParse(parseJson(response.text));
   if (!parsed.success) {
@@ -146,7 +146,9 @@ export async function reviewSemanticSelection(
     provider: registry.name,
     model: response.model,
     latencyMs: Math.max(0, clock() - started),
-    attempt,
+    // The adapter reports the calls it actually made; a provider that reports
+    // nothing made one.
+    attempt: response.attempt ?? 1,
   };
 
   const base = {
@@ -240,20 +242,93 @@ function withDefaultObservation(assessment: SemanticAssessment): SemanticAssessm
 }
 
 /**
- * Parse model output, tolerating a fenced code block.
+ * Parse model output, tolerating a fence or surrounding prose.
  *
  * Models routinely wrap JSON in ```json fences despite being told not to, and
- * discarding an otherwise valid review over formatting is a refusal the user
- * cannot act on. Unparseable output is "not a review", not a crash: returning a
- * sentinel lets the schema produce one clear message rather than surfacing a
- * SyntaxError with a character offset in it.
+ * sometimes prefix it with a sentence or trail one after it. Discarding an
+ * otherwise valid review over either is a refusal the user cannot act on.
+ * Unparseable output is "not a review", not a crash: returning a sentinel lets
+ * the schema produce one clear message rather than surfacing a SyntaxError with a
+ * character offset in it.
  */
 function parseJson(text: string): unknown {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
   const body = fenced?.[1] ?? text;
-  try {
-    return JSON.parse(body);
-  } catch {
-    return null;
+  const braced = outermostObject(body);
+  const candidates = braced === null || braced === body ? [body] : [body, braced];
+  const parsed = candidates
+    .map((candidate) => {
+      try {
+        return { ok: true as const, value: JSON.parse(candidate) as unknown };
+      } catch {
+        // The next candidate is tried; a parse failure here is not fatal yet.
+        return { ok: false as const, value: null };
+      }
+    })
+    .find((attempt) => attempt.ok);
+  return parsed?.ok === true ? parsed.value : null;
+}
+
+/**
+ * The outermost `{ ... }` in the text, or null when there is none.
+ *
+ * Scans to the matching brace rather than taking the last `}`: a response with an
+ * object followed by prose has both an opening and a closing brace, and a nested
+ * object closes more than once. String contents are skipped so a brace inside a
+ * quoted value is not counted.
+ */
+function outermostObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  const chars = Array.from(text.slice(start));
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let end = -1;
+  chars.some((char, offset) => {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      return false;
+    }
+    if (char === '"') inString = true;
+    else if (char === "{") depth += 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = start + offset;
+        return true;
+      }
+    }
+    return false;
+  });
+  return end === -1 ? null : text.slice(start, end + 1);
+}
+
+/**
+ * A deadline for one stage, combined with the caller's abort.
+ *
+ * The adapter bounds a single provider call; this bounds the stage that contains
+ * the call and any retries inside it. `cancel` clears the timer and the forwarding
+ * listener, so a finished stage leaves nothing behind to fire later.
+ */
+function stageBudget(
+  parent: AbortSignal | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal; cancel: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const forward = (): void => controller.abort();
+  if (parent !== undefined) {
+    if (parent.aborted) controller.abort();
+    else parent.addEventListener("abort", forward, { once: true });
   }
+  return {
+    signal: controller.signal,
+    cancel: () => {
+      clearTimeout(timer);
+      parent?.removeEventListener("abort", forward);
+    },
+  };
 }

@@ -290,7 +290,7 @@ Define a `SemanticReviewTelemetryEvent` type with these events:
 
 ## 5. Prioritized phased plan
 
-### Phase 0 — Prompt quality (highest impact, lowest risk)
+### Phase 0 — Prompt quality (highest impact, lowest risk) _(LANDED 2026-10-15)_
 
 **Scope:** `reviewPrompt.ts` only.
 
@@ -313,7 +313,7 @@ Define a `SemanticReviewTelemetryEvent` type with these events:
 
 **Test strategy:** Add tests to `semanticReviewEngine.test.ts` asserting `prompt.toContain("tone")`, `prompt.toContain("minor_deviation")`, etc. Add a test that a profile with `domain: "general"` produces a prompt containing "general business writing."
 
-### Phase 1 — Schema resilience (reduce parse failures)
+### Phase 1 — Schema resilience (reduce parse failures) _(LANDED 2026-10-15)_
 
 **Scope:** `reviewSchema.ts`, `contracts.ts`.
 

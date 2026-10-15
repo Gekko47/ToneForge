@@ -19,6 +19,15 @@ export interface LlmResponse {
     inputTokens?: number;
     outputTokens?: number;
   };
+  /**
+   * How many provider calls this response cost, when the adapter retried.
+   *
+   * Reported by the adapter because it is the layer that retries — an engine on
+   * top of it cannot see the calls it did not make. Optional, and absent from a
+   * provider that reports nothing, so the engine reads it as "one unless told
+   * otherwise" rather than inventing a number.
+   */
+  attempt?: number;
 }
 
 export interface LlmProvider {

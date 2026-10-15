@@ -130,7 +130,18 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
       maxDelayMs: 8000,
       isRetryable: (err: unknown) => err instanceof LlmError && err.retryable,
     };
-    return withRetry(() => this.doComplete(request), retryOptions);
+    /*
+     * The adapter owns retrying, and it is the only layer that does. `attempt`
+     * reports how many provider calls the request cost, because this is the only
+     * place that knows — an engine that retried on top of this turned a transient
+     * failure into a burst and could not report the calls it never saw.
+     */
+    let attempt = 0;
+    const response = await withRetry(() => {
+      attempt += 1;
+      return this.doComplete(request);
+    }, retryOptions);
+    return { ...response, attempt };
   }
 
   redact(text: string): string {
@@ -146,12 +157,29 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
     external?.addEventListener("abort", onAbort, { once: true });
 
     const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), this.timeoutMs);
+    const timer = setTimeout(() => timeoutController.abort(), this.timeoutFor(request));
 
     let signal: AbortSignal;
+    let detachForward: (() => void) | undefined;
     if (typeof AbortSignal.any === "function") {
       signal = AbortSignal.any([timeoutController.signal, external ?? timeoutController.signal]);
     } else {
+      /*
+       * Older hosts have no `AbortSignal.any`. Falling back to the timeout signal
+       * alone silently dropped the caller's abort, so a reviewer who cancelled
+       * kept waiting on a request they had already given up on. Forward the
+       * caller's signal into the timeout controller by hand instead — the same
+       * thing `any` does, using only what those hosts do support.
+       */
+      if (external !== undefined) {
+        const forward = (): void => timeoutController.abort();
+        if (external.aborted) {
+          timeoutController.abort();
+        } else {
+          external.addEventListener("abort", forward, { once: true });
+          detachForward = () => external.removeEventListener("abort", forward);
+        }
+      }
       signal = timeoutController.signal;
     }
 
@@ -192,8 +220,31 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
       throw new LlmError(`${this.name} request failed`, this.name, false);
     } finally {
       clearTimeout(timer);
+      detachForward?.();
       external?.removeEventListener("abort", onAbort);
     }
+  }
+
+  /**
+   * The deadline for this request, raised for a larger prompt.
+   *
+   * A prompt carrying a style profile and a long selection legitimately takes
+   * longer than a two-line one, and a flat deadline refused the larger requests
+   * a review actually sends. This only ever raises the configured timeout, which
+   * stays the floor, so a deployment that lowered it keeps its own value for
+   * ordinary prompts.
+   */
+  private timeoutFor(request: LlmRequest): number {
+    const promptChars = request.prompt.length;
+    const floor = promptChars > 16_000 ? 60_000 : promptChars > 8_000 ? 45_000 : this.timeoutMs;
+    const timeoutMs = Math.max(this.timeoutMs, floor);
+    if (timeoutMs !== this.timeoutMs) {
+      logger.info(`${this.name} raised its request timeout for a large prompt`, {
+        promptChars,
+        timeoutMs,
+      });
+    }
+    return timeoutMs;
   }
 
   private fromStatus(status: number, statusText: string): LlmError {

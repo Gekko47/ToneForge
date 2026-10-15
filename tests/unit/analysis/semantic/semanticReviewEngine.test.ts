@@ -388,11 +388,11 @@ describe("reviewSemanticSelection", () => {
     expect(result.actionable).toBe(true);
   });
 
-  it("retries a retryable provider failure and records the attempt count", async () => {
-    const review = vi
-      .fn()
-      .mockRejectedValueOnce(new LlmError("temporary", "test", true))
-      .mockResolvedValue({ text: JSON.stringify(reviewBody()), model: "test" });
+  it("makes one provider call, because the adapter owns retrying", async () => {
+    // Two retry layers multiplied: three engine attempts across three adapter
+    // attempts is nine requests for one user action, and the outer layer only
+    // delayed the failure the user was already waiting for.
+    const review = vi.fn().mockRejectedValue(new LlmError("rate limited", "test", true));
     const registry = {
       name: "test",
       complete: review,
@@ -402,13 +402,49 @@ describe("reviewSemanticSelection", () => {
       review,
     } as LlmSemanticProvider;
 
+    await expect(
+      reviewSemanticSelection(request(), { includeRawText: true, registry }),
+    ).rejects.toThrow(/rate limited/);
+    expect(review).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports the attempt count the adapter made", async () => {
+    const respond = async () => ({ text: JSON.stringify(reviewBody()), model: "test", attempt: 3 });
+    const registry = {
+      name: "test",
+      complete: respond,
+      profile: respond,
+      deviations: respond,
+      rewrite: respond,
+      review: respond,
+    } as LlmSemanticProvider;
+
     const result = await reviewSemanticSelection(request(), {
       includeRawText: true,
       registry,
     });
+    expect(result.providerMetadata.attempt).toBe(3);
+  });
 
-    expect(review).toHaveBeenCalledTimes(2);
-    expect(result.providerMetadata.attempt).toBe(2);
+  it("reads a JSON object the model wrapped in prose", async () => {
+    const respond = async () => ({
+      text: `Here is the review:\n${JSON.stringify(reviewBody())}\nI hope that helps.`,
+      model: "test",
+    });
+    const registry = {
+      name: "test",
+      complete: respond,
+      profile: respond,
+      deviations: respond,
+      rewrite: respond,
+      review: respond,
+    } as LlmSemanticProvider;
+
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry,
+    });
+    expect(result.actionable).toBe(true);
   });
 
   it("treats a caller abort as non-retryable", async () => {

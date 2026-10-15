@@ -5980,3 +5980,59 @@ uses (ADR-0031), applied to the theme layer itself.
   [`tests/unit/changes/revisionOverlap.test.ts`](../tests/unit/changes/revisionOverlap.test.ts);
   Microsoft Learn `Word.Paragraph.getRange`, `Word.Range.set`, `Word.Body.getTrackedChanges`,
   `Word.Range.insertOoxml`; ADR-0051, ADR-0094, ADR-0139, ADR-0144.
+
+## ADR-0146 — The adapter owns retrying, and every wait is jittered
+
+- **Status**: Accepted (2026-10-15)
+- **Context**: Two retry layers wrapped the same provider call. `GatewayRoutedAdapter.complete`
+  retried through `withRetry` (max 2, 1s base, 8s cap), and `reviewSemanticSelection` wrapped the
+  adapter in a second `withRetry` (max 2, 250ms base, 1s cap, no jitter). One user action could
+  therefore cost nine provider requests, and the outer layer only delayed the failure the user
+  was already waiting for. The outer layer also decided retryability from a caller signal the
+  adapter could not see, so the two disagreed about what an abort meant.
+
+  Neither layer jittered: `Math.min(baseMs * 2 ** attempt, maxDelayMs)` is the same interval for
+  every instance, which is the synchronised burst that backoff exists to prevent when several
+  add-in instances retry a rate limit at once.
+
+- **Decision**:
+  1. **One retry layer.** The adapter retries; the engine does not. The engine makes a single
+     call and lets the adapter's verdict stand.
+  2. **Jitter is mandatory.** `withRetry` draws each wait as a random fraction of the exponential
+     ceiling (`random() * min(baseMs * 2 ** attempt, maxDelayMs)`), with the random source
+     injectable so a test can assert the ceiling deterministically.
+  3. **The count is reported, not guessed.** `LlmResponse.attempt` carries the provider calls the
+     adapter actually made, and the engine reads it as `attempt ?? 1` rather than counting calls
+     it did not make.
+  4. **A stage budget bounds the whole thing.** The engine wraps the call in a 90s stage deadline
+     combined with the caller's signal, so a provider that answers slowly every time cannot hold
+     the review open indefinitely even though no single call exceeded its own deadline.
+  5. **A larger prompt gets a longer deadline.** The adapter raises its per-request timeout above
+     the configured floor for prompts over 8,000 and 16,000 characters, because a prompt carrying
+     a profile and a long selection legitimately takes longer. The configured timeout stays the
+     floor.
+  6. **`AbortSignal.any` has a working fallback.** Where the host lacks it, the caller's signal is
+     forwarded into the timeout controller by hand rather than dropped, so a cancelled review
+     stops waiting on older hosts too.
+
+- **Consequences**:
+  - Positive: the worst case for one user action is `maxRetries + 1` requests, not the product of
+    two budgets.
+  - Positive: a rate-limited provider is retried at spread-out times rather than at a moment every
+    instance shares.
+  - Positive: a caller abort means the same thing at both boundaries, because the adapter now
+    receives the caller's signal directly.
+  - Cost: `providerMetadata.attempt` no longer counts engine attempts, because the engine makes
+    exactly one. It reports the adapter's count, which is the number that was always meant.
+  - Cost: a jittered delay is non-deterministic, so the retry tests inject the random source.
+  - Cost: the engine cannot re-ask the provider inside the same stage without spending the stage
+    budget, so the retry-with-repair-prompt step is **not** implemented. It stays open work in
+    [`plans/semantic-review-hardening-plan.md`](../plans/semantic-review-hardening-plan.md).
+  - **Not claimed**: that any of this was exercised against a real provider. It is unit-verified
+    against provider doubles and remains a human step (ADR-0051).
+- **Evidence**: [`src/ai/providers/retry.ts`](../src/ai/providers/retry.ts);
+  [`src/ai/providers/gatewayAdapter.ts`](../src/ai/providers/gatewayAdapter.ts);
+  [`src/ai/providers/LlmProvider.ts`](../src/ai/providers/LlmProvider.ts);
+  [`src/analysis/semantic/semanticReviewEngine.ts`](../src/analysis/semantic/semanticReviewEngine.ts);
+  [`tests/unit/ai/providers/retry.test.ts`](../tests/unit/ai/providers/retry.test.ts);
+  [`tests/unit/analysis/semantic/semanticReviewEngine.test.ts`](../tests/unit/analysis/semantic/semanticReviewEngine.test.ts).
