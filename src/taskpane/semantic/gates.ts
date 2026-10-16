@@ -94,8 +94,14 @@ const SELECTION_BLOCKER = "Select the paragraph or text you want ToneForge to re
 const SELECTION_CAP_BLOCKER =
   "The selection is longer than ToneForge will send in one review. Select less text, or split the review into two.";
 const NO_PROPOSAL_BLOCKER = "Review the selection first.";
+/*
+ * Only a *hard* preservation failure reaches this. A model's meaning flag and the
+ * validator's soft warnings are the acknowledgement path, not this one — the old
+ * sentence blamed "the local check" for a model's self-report and named no way
+ * forward, which is the dead end a user could not get out of.
+ */
 const PRESERVATION_BLOCKER =
-  "This revision changes something the local check protects, so it cannot be applied.";
+  "This revision cannot be applied. It changes something the checks guard, or it was written for a different selection — regenerate the review to get one you can apply.";
 const ACKNOWLEDGEMENT_BLOCKER = "Confirm the warnings above before applying this revision.";
 const BUSY_BLOCKER = "Wait for the current request to finish.";
 

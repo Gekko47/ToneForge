@@ -49,6 +49,16 @@ let documentText = ORIGINAL;
 let appliedRange: { start: number; end: number } | null = null;
 /** Whether the paragraph the snapshot reports is protected. */
 let paragraphProtected = false;
+/**
+ * The trailing paragraph mark the host appends to `Paragraph.text`.
+ *
+ * Word's paragraph text ends in `\r` (or `\u0007` in a table cell) while a
+ * selection's text normally does not, so the default host shape carries one.
+ * The tests that do not care leave it empty; the one that pins the whole-
+ * paragraph precondition sets it, because a mock that omits the mark is exactly
+ * why the suite stayed green while a real Word refused every apply.
+ */
+let paragraphMark = "";
 
 vi.mock("../../src/word/capabilityProbe", async (importOriginal) => {
   // Only the probe is replaced; `setStage01Passed` still has to be the real one,
@@ -151,7 +161,7 @@ function installOffice(): void {
   const paragraphRange = makeRange(true);
   const paragraph = {
     get text() {
-      return documentText;
+      return `${documentText}${paragraphMark}`;
     },
     uniqueLocalId: "p-1",
     style: "Normal",
@@ -221,6 +231,7 @@ describe("applying an approved semantic revision", () => {
     documentText = ORIGINAL;
     appliedRange = null;
     paragraphProtected = false;
+    paragraphMark = "";
     window.localStorage.setItem("ToneForge.TrackedEditingEnabled", "true");
     installOffice();
     const { setStage01Passed } = await import("../../src/word/revisionAdapter");
@@ -245,6 +256,22 @@ describe("applying an approved semantic revision", () => {
     // The document now holds the revision, and nothing else moved.
     expect(documentText).toBe(REVISED);
     expect(result.outcome.verifiedCount).toBe(1);
+  });
+
+  it("writes a whole-paragraph revision when the host's paragraph text carries the mark", async () => {
+    /*
+     * The live failure, reproduced: a selection omits the paragraph mark, and the
+     * paragraph reports it. The precondition must read the two as the same
+     * paragraph, or an untouched document refuses with "target node text changed".
+     */
+    paragraphMark = "\r";
+    const { applyApprovedSemanticRevision } = await import("../../src/reformat/semanticApply");
+
+    const result = await applyApprovedSemanticRevision({ revision: revision() });
+
+    expect(result.refusal).toBeNull();
+    expect(result.applied).toBe(true);
+    expect(documentText).toBe(REVISED);
   });
 
   it("refuses when the paragraph is protected, with no Finding in the plan", async () => {

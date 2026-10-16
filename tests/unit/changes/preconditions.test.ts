@@ -103,4 +103,41 @@ describe("matchesChangePrecondition, for a paragraph-unit write", () => {
       matchesChangePrecondition(paragraph, { nodeId: "word-paragraph-p1", text: "goodbye" }),
     ).toMatchObject({ matches: false, reason: "target node text changed" });
   });
+
+  /*
+   * The regression this file could not see.
+   *
+   * A node precondition's `expectedText` is the *selection* (which normally omits
+   * the paragraph mark); the live value is `Paragraph.text` (which carries it).
+   * The two describe the same paragraph, so the mark must not read as a change —
+   * the failure that refused every whole-paragraph write on an untouched
+   * document, because `word/selectionScope` strips the mark for its own decision
+   * but the raw comparison here did not.
+   */
+  it("matches when the live paragraph text carries the trailing paragraph mark", () => {
+    expect(
+      matchesChangePrecondition(paragraph, { nodeId: "word-paragraph-p1", text: "hello\r" })
+        .matches,
+    ).toBe(true);
+  });
+
+  it("matches a table-cell paragraph, whose mark is U+0007", () => {
+    expect(
+      matchesChangePrecondition(paragraph, { nodeId: "word-paragraph-p1", text: "hello\u0007" })
+        .matches,
+    ).toBe(true);
+  });
+
+  it("still refuses a genuine change when the mark is also present", () => {
+    expect(
+      matchesChangePrecondition(paragraph, { nodeId: "word-paragraph-p1", text: "goodbye\r" }),
+    ).toMatchObject({ matches: false, reason: "target node text changed" });
+  });
+
+  it("refuses when the host served no live paragraph text", () => {
+    expect(matchesChangePrecondition(paragraph, { nodeId: "word-paragraph-p1" })).toMatchObject({
+      matches: false,
+      reason: "target node text changed",
+    });
+  });
 });

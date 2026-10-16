@@ -1,6 +1,7 @@
 /** Pure validation and live-state matching for change-level preconditions. */
 
 import type { Change, FormattingStateSchema } from "../core/domain/Change";
+import { stripParagraphMark } from "../shared/utils/text";
 import type { z } from "zod";
 
 type ExpectedFormatting = z.infer<typeof FormattingStateSchema>;
@@ -76,8 +77,30 @@ export function matchesChangePrecondition(
         reason: `expected node ${precondition.nodeId}, found ${state.nodeId ?? "unresolved"}`,
       };
     }
-    if (precondition.expectedText !== undefined && state.text !== precondition.expectedText) {
-      return { matches: false, reason: "target node text changed" };
+    if (precondition.expectedText !== undefined) {
+      /*
+       * Compared with the trailing paragraph mark stripped, because the two sides
+       * are read from different host APIs and describe the same paragraph.
+       *
+       * A `node` precondition states the text the paragraph is expected to hold.
+       * For the semantic apply path that text is the *selection* (which normally
+       * omits the paragraph mark), while the live value is `Paragraph.text` (which
+       * carries it). `word/selectionScope` already strips the mark to decide a
+       * selection is a whole paragraph; comparing the raw strings here re-read
+       * that same mark as a change and refused every whole-paragraph write on an
+       * untouched document. Stripping only the trailing mark keeps the guard: a
+       * genuine edit changes the text in a way no mark removal can hide.
+       *
+       * Unread live text is still a mismatch, so a host that served no `text`
+       * fails closed rather than matching by omission.
+       */
+      const liveText = state.text;
+      if (
+        liveText === undefined ||
+        stripParagraphMark(liveText) !== stripParagraphMark(precondition.expectedText)
+      ) {
+        return { matches: false, reason: "target node text changed" };
+      }
     }
     if (
       precondition.expectedStyleName !== undefined &&

@@ -74,7 +74,14 @@ export default function PreservationSummary({
         </p>
       )}
 
-      {hard.length === 0 && soft.length > 0 && (
+      {/*
+        One acknowledgement, for both soft signals.
+        The validator's own soft warnings and the model's "may not have preserved"
+        flags require the same single acknowledgement — the model's flags are
+        shown beside the comparison rather than treated as a verdict — so the
+        control appears whenever either is present and no hard failure stands.
+      */}
+      {hard.length === 0 && (soft.length > 0 || unpreserved.length > 0) && (
         <div>
           <Checkbox
             id="tf-semantic-acknowledge"

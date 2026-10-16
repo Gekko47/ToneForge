@@ -37,7 +37,7 @@
  */
 
 import { runInWord } from "../shared/office/officeHelpers";
-import { countWords, hashText } from "../shared/utils/text";
+import { countWords, hashText, stripParagraphMark } from "../shared/utils/text";
 import { describeError, logger } from "../shared/utils/logger";
 import {
   SemanticSelectionAnchorSchema,
@@ -517,10 +517,6 @@ export function coversWholeParagraph(
 ): boolean {
   if (paragraphTexts.length !== 1) return false;
   return stripParagraphMark(selectedText) === stripParagraphMark(paragraphTexts[0] as string);
-}
-
-function stripParagraphMark(text: string): string {
-  return text.replace(/[\r\n\u0007]+$/, "");
 }
 
 /**

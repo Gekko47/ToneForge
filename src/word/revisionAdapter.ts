@@ -17,7 +17,7 @@ import { readTrackedRevisions } from "./revisionInspection";
 import { buildTrackedRevisionOoxml } from "./revisionOoxml";
 import { TONE_FORGE_REVISION_AUTHOR, type TrackedRevision } from "../core/domain/TrackedRevision";
 import { describeError, logger } from "../shared/utils/logger";
-import { locateInRawView } from "../shared/utils/text";
+import { locateInRawView, stripParagraphMark } from "../shared/utils/text";
 import { type WordCapabilities } from "./capabilityProbe";
 import { isProtectedNode } from "../rules/protection";
 import type { DocumentNode } from "../core/domain/DocumentSnapshot";
@@ -1096,6 +1096,35 @@ async function verifyLivePrecondition(
       },
     };
     const result = matchesChangePrecondition(change, liveState);
+    /*
+     * Privacy-safe validation of a whole-paragraph mismatch.
+     *
+     * A paragraph-unit write prefers `Paragraph.getRange("Whole")`, and its node
+     * precondition carries the *selection* text as `expectedText`. Word's
+     * `Paragraph.text` includes a trailing paragraph mark that a selection
+     * normally omits — the exact difference `word/selectionScope`'s
+     * `coversWholeParagraph` already strips before it decides the two are the same
+     * paragraph. This records lengths and structure, never the text, so a live
+     * "target node text changed" refusal can be attributed rather than guessed.
+     */
+    if (
+      !result.matches &&
+      precondition.kind === "node" &&
+      precondition.expectedText !== undefined
+    ) {
+      const expected = precondition.expectedText;
+      const liveText = typeof paragraph.text === "string" ? paragraph.text : "";
+      logger.warn("Node text precondition did not match the live paragraph", {
+        refusalCategory: "local_precondition_failed",
+        verificationResult: "refused",
+        nodeId: precondition.nodeId,
+        expectedLength: expected.length,
+        liveLength: liveText.length,
+        liveEndsWithParagraphMark: /[\r\n\u0007]$/.test(liveText),
+        matchesIgnoringTrailingMark: stripParagraphMark(expected) === stripParagraphMark(liveText),
+        matchesAfterTrim: expected.trim() === liveText.trim(),
+      });
+    }
     return result;
   });
 }

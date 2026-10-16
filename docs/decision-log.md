@@ -6278,3 +6278,87 @@ already run were discarded on the way out.
   [`src/analysis/semantic/semanticReviewEngine.ts`](../src/analysis/semantic/semanticReviewEngine.ts);
   [`src/taskpane/pages/SemanticReview.tsx`](../src/taskpane/pages/SemanticReview.tsx);
   [`tests/unit/analysis/semantic/semanticReviewEngine.test.ts`](../tests/unit/analysis/semantic/semanticReviewEngine.test.ts).
+
+## ADR-0151 — A paragraph mark is a representation, not a change
+
+- **Status**: Accepted (2026-10-16)
+- **Context**: A live whole-paragraph apply was refused with "Atomic precondition preflight
+  failed: target node text changed" on a document nobody had edited. A `node` precondition
+  carries the _selection_ text as `expectedText`
+  ([`src/reformat/semanticApply.ts`](../src/reformat/semanticApply.ts)), while the live value
+  is `Paragraph.text` ([`src/word/revisionAdapter.ts`](../src/word/revisionAdapter.ts)).
+  Word's `Paragraph.text` ends in a paragraph mark — `\r` for a body paragraph, `\u0007` in a
+  table cell — that a selection normally omits, and the two were compared with `!==`.
+  `word/selectionScope` already strips the mark to decide a selection is a whole paragraph, so
+  the whole-paragraph path was entered exactly when the two differed by the mark, and then
+  refused on that same mark. The automated suite stayed green because the integration mock
+  returns paragraph text without the mark
+  ([`tests/integration/semanticReviewApply.test.ts`](../tests/integration/semanticReviewApply.test.ts));
+  a mock that omits the host's shape is not evidence about the host.
+
+- **Decision**: strip the trailing paragraph mark from **both** sides before a `node`
+  precondition's text comparison, through one shared helper
+  ([`src/shared/utils/text.ts`](../src/shared/utils/text.ts)) used by both
+  `word/selectionScope` and `changes/preconditions`. Only the trailing mark is removed, and
+  unread live text is still a mismatch, so the guard keeps its weight: a real edit — a merged
+  or split paragraph, or any character change — still differs.
+
+- **Consequences**:
+  - Positive: an untouched document is recognised as untouched, which is the whole point of
+    an atomic precondition; the deterministic path, whose node preconditions carry the same
+    text, is fixed by the same change.
+  - Positive: one definition of "the same paragraph text", so selection capture and
+    precondition matching cannot drift.
+  - Cost: a change that only adds or removes the trailing paragraph mark is no longer
+    reported as a text change. That is paragraph structure rather than content, and the
+    write is tracked either way.
+- **Evidence**: [`src/changes/preconditions.ts`](../src/changes/preconditions.ts);
+  [`src/shared/utils/text.ts`](../src/shared/utils/text.ts);
+  [`src/word/selectionScope.ts`](../src/word/selectionScope.ts);
+  [`src/word/revisionAdapter.ts`](../src/word/revisionAdapter.ts);
+  [`tests/unit/changes/preconditions.test.ts`](../tests/unit/changes/preconditions.test.ts);
+  [`tests/integration/semanticReviewApply.test.ts`](../tests/integration/semanticReviewApply.test.ts).
+
+## ADR-0152 — A model's meaning flag is soft, and the acknowledgement path is real
+
+- **Status**: Accepted (2026-10-16)
+- **Context**: After a successful review, Apply was disabled with "This revision changes
+  something the local check protects, so it cannot be applied" — but the local check had
+  passed. The block was the model's own `meaningPreservation` report: a `false` flag set the
+  engine's `actionable` to false ([`src/analysis/semantic/semanticReviewEngine.ts`](../src/analysis/semantic/semanticReviewEngine.ts)),
+  and the pane folded `actionable` into the _hard_ preservation gate
+  (`preservationPassed = preservation.pass && actionable`). The result was a dead end: the
+  validator's soft warnings rendered an acknowledgement checkbox, but ticking it could not
+  re-enable Apply, the sentence named the wrong check and no remedy (ADR-0069), and a _clean_
+  proposal — no checkbox at all — was blocked by the same acknowledgement requirement. D6
+  (`tests/fixtures/expertProse.ts`; `tests/unit/taskpane/semantic/gates.test.ts`) says `soft`
+  requires an acknowledgement, and the pane's own note said a model flag "adds a soft warning
+  rather than disabling anything" — neither was true.
+
+- **Decision**: compute D6's two tiers from the engine's result in one pure module
+  ([`src/taskpane/semantic/applyConcern.ts`](../src/taskpane/semantic/applyConcern.ts)).
+  `hard` is a factual difference (`preservation.pass === false`) or a revision written for a
+  different span — no override; soft is the validator's unclassified changes or a
+  model-reported meaning flag — one acknowledgement, then the write proceeds. The gate input
+  is derived from those fields, acknowledgement is required only when there is something to
+  acknowledge, and the acknowledgement control renders for either soft signal. Classification
+  reads fields, never `refusalReason`'s prose.
+
+- **Consequences**:
+  - Positive: the acknowledgement path is a real path; a proposal the model flags is writable
+    once the user has accepted the risk, which is what D6 decided.
+  - Positive: the preservation blocker sentence is reached only by a genuine hard failure, and
+    now names the remedy; a clean proposal is no longer blocked.
+  - Cost: the engine's `actionable` is no longer the final verdict for the Apply button — the
+    pane's gate owns that decision — so `applyApprovedSemanticRevision` is handed the gate's
+    hard verdict rather than `result.actionable`. Two places now speak about applyability, and
+    the classifier is the one that reconciles them.
+  - **Not claimed**: that a model's self-report is reliable, or that a two-tier split removes
+    the reader's job. It is treated as evidence the user may accept, precisely because a model
+    asked whether its own output is safe will say yes.
+- **Evidence**: [`src/taskpane/semantic/applyConcern.ts`](../src/taskpane/semantic/applyConcern.ts);
+  [`src/taskpane/pages/SemanticReview.tsx`](../src/taskpane/pages/SemanticReview.tsx);
+  [`src/taskpane/components/semantic/PreservationSummary.tsx`](../src/taskpane/components/semantic/PreservationSummary.tsx);
+  [`src/taskpane/semantic/gates.ts`](../src/taskpane/semantic/gates.ts);
+  [`tests/unit/taskpane/semantic/applyConcern.test.ts`](../tests/unit/taskpane/semantic/applyConcern.test.ts);
+  [`tests/unit/taskpane/semantic/gates.test.ts`](../tests/unit/taskpane/semantic/gates.test.ts).

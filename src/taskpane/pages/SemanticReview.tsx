@@ -32,6 +32,7 @@ import {
   type SemanticStage,
 } from "../../analysis/semantic/failures";
 import { failureCopyFor, stageLabel, type SemanticRecovery } from "../semantic/failureCopy";
+import { applyConcernFor } from "../semantic/applyConcern";
 import { buildDiagnosticReport } from "../semantic/diagnosticReport";
 import { emitTelemetry } from "../../analysis/semantic/telemetry";
 import type { SemanticReviewSession } from "../../core/domain/SemanticReviewSession";
@@ -406,6 +407,13 @@ export default function SemanticReview({
       : localSession;
 
   const providerConfigured = isGeneralRoleConfigured(state);
+  /*
+   * What stops the proposal on screen from being applied, split into D6's two
+   * tiers. `hard` disables Apply with no override; a soft concern needs one
+   * acknowledgement. Computed once here, so the button and the sentence beside it
+   * read the same answer.
+   */
+  const applyConcern = result === null ? null : applyConcernFor(result);
   const gateInput: SemanticGateInput = {
     consent: settings.semanticOptIn === true,
     providerConfigured,
@@ -415,15 +423,22 @@ export default function SemanticReview({
     applying,
     hasProposal: result !== null,
     /*
-     * Both signals, not one.
+     * `hard` only.
      *
-     * `preservation.pass` is the local protected-fact check; `actionable` is the
-     * engine's own verdict, which also accounts for meaning preservation and the
-     * anchor. A proposal the engine refused is not applyable however clean the
-     * local check was, and gating on the local check alone offered Apply for it.
+     * Keying this on the engine's `actionable` conflated three different
+     * refusals — a factual change, a revision written for a different span, and a
+     * meaning flag the model reported false — and disabled Apply for all of them
+     * with no override. The last is a soft concern the user may accept, so it must
+     * not reach this flag; `applyConcernFor` is where the three are told apart.
      */
-    preservationPassed: result?.preservation.pass === true && result.actionable,
-    warningsAcknowledged: acknowledged,
+    preservationPassed: applyConcern === null || !applyConcern.hard,
+    /*
+     * Required only when there is something to acknowledge. Passing the raw
+     * checkbox state meant a clean proposal — with no checkbox to tick — was
+     * blocked with a sentence about warnings that did not exist.
+     */
+    warningsAcknowledged:
+      applyConcern === null || !applyConcern.acknowledgementRequired || acknowledged,
     selectionChars: scope?.anchor.selectedText.length ?? 0,
   };
 
@@ -555,10 +570,11 @@ export default function SemanticReview({
           anchor: scope.anchor,
           coversWholeParagraph: scope.coversWholeParagraph,
           rationale: result.rationale,
-          // The engine's refusal and the session's applicability are both required,
-          // so the revision that reaches the adapter carries the same answer the
-          // Apply button was gated on.
-          actionable: result.actionable && isApplicable(liveSession),
+          // The gate's hard verdict and the session's applicability are both
+          // required, so the revision that reaches the adapter carries the same
+          // answer the Apply button was gated on. A soft concern the user has
+          // acknowledged is not carried: it was never a reason to refuse the write.
+          actionable: applyConcern !== null && !applyConcern.hard && isApplicable(liveSession),
           ...(result.refusalReason === undefined ? {} : { refusalReason: result.refusalReason }),
         },
       });

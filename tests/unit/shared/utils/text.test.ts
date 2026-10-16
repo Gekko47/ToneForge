@@ -7,6 +7,7 @@ import {
   mean,
   stdDev,
   normalizeLineEndings,
+  stripParagraphMark,
 } from "../../../../src/shared/utils/index";
 
 describe("splitSentences", () => {
@@ -75,5 +76,22 @@ describe("normalizeLineEndings", () => {
 
   it("converts lone CR to LF", () => {
     expect(normalizeLineEndings("a\rb")).toBe("a\nb");
+  });
+});
+
+describe("stripParagraphMark", () => {
+  it("removes a trailing paragraph mark, in either host form", () => {
+    expect(stripParagraphMark("hello\r")).toBe("hello");
+    expect(stripParagraphMark("hello\u0007")).toBe("hello");
+    expect(stripParagraphMark("hello\r\n")).toBe("hello");
+  });
+
+  it("leaves text with no trailing mark untouched", () => {
+    expect(stripParagraphMark("hello")).toBe("hello");
+  });
+
+  it("does not touch a mark that is not trailing", () => {
+    // Only a paragraph's own boundary is representational; an internal break is content.
+    expect(stripParagraphMark("a\rb")).toBe("a\rb");
   });
 });
