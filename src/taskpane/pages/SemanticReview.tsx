@@ -43,6 +43,7 @@ import {
 } from "../../core/state/persistence";
 import { effectiveProfile } from "../../core/domain/ProfileRecord";
 import { generalRegistryFromState, isGeneralRoleConfigured } from "../settings/providerComposition";
+import { env } from "../../core/config/env";
 import type { TaskpaneNavigation } from "../../shared/office/taskpaneNavigation";
 import type { LlmAttemptTiming } from "../../ai/providers/LlmProvider";
 
@@ -480,6 +481,11 @@ export default function SemanticReview({
           signal: controller.signal,
           onStage: setStage,
           runId: attemptId,
+          // Both budgets come from deployment configuration, because the right
+          // value depends on the model: a free preview model can take ninety
+          // seconds to write a review a larger one finishes in five.
+          stageTimeoutMs: env.SEMANTIC_STAGE_TIMEOUT_MS,
+          maxTokens: env.SEMANTIC_REVIEW_MAX_TOKENS,
         },
       );
       setResult(reviewed);

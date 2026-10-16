@@ -533,6 +533,29 @@ describe("reviewSemanticSelection", () => {
     expect(result.providerMetadata.attempt).toBe(3);
   });
 
+  it("passes a token ceiling to the provider, and invents none when unset", async () => {
+    // A live run wrote about 9.5k tokens for an 882-character selection and took
+    // 83-96 seconds to do it. The ceiling is forwarded rather than applied in the
+    // adapter, because only the caller knows how much a review actually needs.
+    const review = vi.fn().mockResolvedValue({ text: JSON.stringify(reviewBody()), model: "test" });
+    const registry = {
+      name: "test",
+      complete: review,
+      profile: review,
+      deviations: review,
+      rewrite: review,
+      review,
+    } as LlmSemanticProvider;
+
+    await reviewSemanticSelection(request(), { includeRawText: true, registry, maxTokens: 1234 });
+    expect(review).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 1234 }));
+
+    review.mockClear();
+    await reviewSemanticSelection(request(), { includeRawText: true, registry });
+    // Omitted, not defaulted here: a provider with no such limit keeps its behaviour.
+    expect(review.mock.calls[0]?.[0]).not.toHaveProperty("maxTokens");
+  });
+
   it("reads a JSON object the model wrapped in prose", async () => {
     const respond = async () => ({
       text: `Here is the review:\n${JSON.stringify(reviewBody())}\nI hope that helps.`,

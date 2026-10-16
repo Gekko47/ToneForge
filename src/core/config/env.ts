@@ -43,6 +43,25 @@ const EnvSchema = z.object({
   LLM_BROKER_URL: brokerUrl,
   OPENAI_TIMEOUT_MS: z.coerce.number().default(30000),
   OPENAI_MAX_RETRIES: z.coerce.number().int().default(2),
+  /**
+   * The whole provider stage's budget for one semantic review, retries included.
+   *
+   * Separate from `OPENAI_TIMEOUT_MS`, which bounds a single request. This bounds
+   * the stage around one or more requests, so it must stay above the per-request
+   * deadline — a value below it would cut off an attempt that was still allowed to
+   * run. A slow model needs both raised together, this one first.
+   */
+  SEMANTIC_STAGE_TIMEOUT_MS: z.coerce.number().int().positive().default(90000),
+  /**
+   * The most tokens one semantic review may generate.
+   *
+   * A review is a bounded object — an assessment, at most one revision of the
+   * selection, and five flags — so an unbounded completion buys nothing but time. A
+   * live run produced about 38 KB (roughly 9.5k tokens) for an 882-character
+   * selection, and took 83-96 seconds to do it. Raise this if a long selection is
+   * truncated, which appears as an unreadable response.
+   */
+  SEMANTIC_REVIEW_MAX_TOKENS: z.coerce.number().int().positive().default(3000),
   TELEMETRY_DISABLED: z.coerce.boolean().default(true),
   ANALYTICS_ENDPOINT: optionalUrl,
   /**
@@ -77,6 +96,8 @@ function loadEnv(): Env {
     LLM_BROKER_URL: process.env.LLM_BROKER_URL,
     OPENAI_TIMEOUT_MS: process.env.OPENAI_TIMEOUT_MS,
     OPENAI_MAX_RETRIES: process.env.OPENAI_MAX_RETRIES,
+    SEMANTIC_STAGE_TIMEOUT_MS: process.env.SEMANTIC_STAGE_TIMEOUT_MS,
+    SEMANTIC_REVIEW_MAX_TOKENS: process.env.SEMANTIC_REVIEW_MAX_TOKENS,
     TELEMETRY_DISABLED: process.env.TELEMETRY_DISABLED,
     ANALYTICS_ENDPOINT: process.env.ANALYTICS_ENDPOINT,
     ANTHROPIC_OAUTH_ENABLED: process.env.ANTHROPIC_OAUTH_ENABLED,

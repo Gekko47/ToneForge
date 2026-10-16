@@ -122,6 +122,14 @@ export interface SemanticReviewEngineOptions {
    * failure mode worth asserting, and waiting the real ninety seconds for it is not.
    */
   stageTimeoutMs?: number;
+  /**
+   * The most tokens one review may generate, passed to the provider.
+   *
+   * A review is a bounded object, so an unbounded completion buys nothing but time.
+   * A live run wrote about 9.5k tokens for a review of an 882-character selection and
+   * took 83-96 seconds doing it. Absent means the provider's own default.
+   */
+  maxTokens?: number;
 }
 
 /**
@@ -279,13 +287,18 @@ export async function reviewSemanticSelection(
       );
       try {
         begin("provider_call");
-        const first = await callProvider(registry, prompt, stage.signal);
+        const first = await callProvider(registry, prompt, stage.signal, opts.maxTokens);
         if (first.parsed.success || stage.remainingMs() < REPAIR_SUB_BUDGET_MS) return first;
 
         logger.warn("Semantic review response could not be read; asking the model to repair it", {
           issues: first.parsed.error.issues.length,
         });
-        const repaired = await callProvider(registry, prompt + REPAIR_INSTRUCTION, stage.signal);
+        const repaired = await callProvider(
+          registry,
+          prompt + REPAIR_INSTRUCTION,
+          stage.signal,
+          opts.maxTokens,
+        );
         return {
           // Every call this request cost, so the count stays a measurement.
           response: {
@@ -600,8 +613,15 @@ async function callProvider(
   registry: LlmSemanticProvider,
   prompt: string,
   signal: AbortSignal,
+  maxTokens: number | undefined,
 ): Promise<{ response: LlmResponse; parsed: ParsedResponse }> {
-  const response = await registry.review({ prompt, signal });
+  const response = await registry.review({
+    prompt,
+    signal,
+    // Omitted rather than defaulted here, so a provider that has no such limit
+    // keeps its own behaviour instead of being told a number we invented.
+    ...(maxTokens === undefined ? {} : { maxTokens }),
+  });
   return { response, parsed: SemanticReviewResponseSchema.safeParse(parseJson(response.text)) };
 }
 

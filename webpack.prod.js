@@ -33,6 +33,8 @@ const prod = {
         LLM_BROKER_URL: "",
         OPENAI_TIMEOUT_MS: "30000",
         OPENAI_MAX_RETRIES: "2",
+        SEMANTIC_STAGE_TIMEOUT_MS: "90000",
+        SEMANTIC_REVIEW_MAX_TOKENS: "3000",
         TELEMETRY_DISABLED: "1",
         ANALYTICS_ENDPOINT: "",
       }),

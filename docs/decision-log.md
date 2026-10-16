@@ -6232,3 +6232,49 @@ already run were discarded on the way out.
   [`src/taskpane/semantic/diagnosticReport.ts`](../src/taskpane/semantic/diagnosticReport.ts);
   [`tests/unit/ai/providers/retry.test.ts`](../tests/unit/ai/providers/retry.test.ts);
   [`tests/unit/ai/providers/providerAdapters.test.ts`](../tests/unit/ai/providers/providerAdapters.test.ts).
+
+## ADR-0150 — The semantic budgets are deployment configuration, and a review is bounded
+
+- **Status**: Accepted (2026-10-16)
+- **Context**: A live run showed the provider answering response headers in 220-613 ms
+  and taking 83-96 seconds to send the ~38 KB body, while the add-in stopped at 45 s.
+  Two ceilings were responsible and neither was reachable from configuration: the
+  engine's provider-stage budget was a constant `90_000`, and the request set no
+  `max_tokens`, so a model wrote roughly 9.5k tokens for an 882-character selection. The
+  per-request deadline already scales with prompt size ([`timeoutFor`](../src/ai/providers/gatewayAdapter.ts),
+  45 s above 8,000 characters), so raising the `.env` timeout alone could not help — the
+  stage budget would still fire first.
+
+- **Decision**:
+  1. `SEMANTIC_STAGE_TIMEOUT_MS` (default `90000`) is deployment configuration, passed by
+     the page to the engine's existing `stageTimeoutMs`. It must stay **above** the
+     per-request deadline; a lower value cuts off an attempt that was still allowed to
+     run, so the comment and `.env.example` say so.
+  2. `SEMANTIC_REVIEW_MAX_TOKENS` (default `3000`) is deployment configuration, forwarded
+     to the provider as `maxTokens` and **omitted when unset** rather than defaulted in the
+     adapter, so a provider with no such limit keeps its own behaviour.
+  3. Both are added to the webpack allowlist — `publicDevEnv` in development and the
+     literal in the production config — because every compiled-in value is explicitly
+     allowlisted and non-secret (ADR-0049).
+  4. A review is a bounded object: an assessment, at most one revision of the selection,
+     and five flags. An unbounded completion buys nothing but time.
+
+- **Consequences**:
+  - Positive: a slow model can be given room, and a fast one is not made to wait, without a
+    code change.
+  - Positive: output tokens are bounded, which bounds generation time, cost, and the size
+    of the diagnostic artifacts.
+  - Cost: two more compiled-in values, so `.env.example`, both webpack configs and `env.ts`
+    must be kept in step. A value set in only one place silently does nothing.
+  - Cost: truncation from too low a ceiling surfaces as an unreadable response
+    (`E_RESPONSE_SCHEMA_INVALID`), not as an obviously truncated one. The `.env.example`
+    note says so.
+  - **Not claimed**: that 3000 tokens suits every selection. It is a ceiling a long
+    selection can exceed; the selection-length cap is the other half of that bound and is
+    unchanged.
+- **Evidence**: [`src/core/config/env.ts`](../src/core/config/env.ts);
+  [`webpack.dev.js`](../webpack.dev.js); [`webpack.prod.js`](../webpack.prod.js);
+  [`.env.example`](../.env.example);
+  [`src/analysis/semantic/semanticReviewEngine.ts`](../src/analysis/semantic/semanticReviewEngine.ts);
+  [`src/taskpane/pages/SemanticReview.tsx`](../src/taskpane/pages/SemanticReview.tsx);
+  [`tests/unit/analysis/semantic/semanticReviewEngine.test.ts`](../tests/unit/analysis/semantic/semanticReviewEngine.test.ts).
