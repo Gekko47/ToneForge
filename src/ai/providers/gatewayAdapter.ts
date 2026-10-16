@@ -251,6 +251,13 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
     // 401/403 mean the gateway rejected this connection. Retrying cannot help
     // and would hide the real reason from the user, so they are not retryable.
     const retryable = status === 429 || status >= 500;
-    return new LlmError(`${this.name} gateway HTTP ${status}: ${statusText}`, this.name, retryable);
+    return new LlmError(
+      `${this.name} gateway HTTP ${status}: ${statusText}`,
+      this.name,
+      retryable,
+      // Carried on the error so a caller classifies the failure from the status
+      // rather than from this message, which is redacted before it is logged.
+      status,
+    );
   }
 }

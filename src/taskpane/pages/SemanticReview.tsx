@@ -1,4 +1,5 @@
 import React from "react";
+import { v4 as uuidv4 } from "uuid";
 import { Button } from "@fluentui/react-components";
 import SemanticReviewScope from "../components/semantic/SemanticReviewScope";
 import { Breadcrumb } from "../shell";
@@ -20,6 +21,9 @@ import {
   type SessionContext,
 } from "../../analysis/semantic/session";
 import { reviewDomainFor, type SemanticReviewResult } from "../../analysis/semantic/contracts";
+import type { SemanticFailureCode, SemanticStage } from "../../analysis/semantic/failures";
+import { failureCopyFor, stageLabel, type SemanticRecovery } from "../semantic/failureCopy";
+import { buildDiagnosticReport } from "../semantic/diagnosticReport";
 import type { SemanticReviewSession } from "../../core/domain/SemanticReviewSession";
 import { applyApprovedSemanticRevision } from "../../reformat/semanticApply";
 import {
@@ -89,7 +93,12 @@ export interface SemanticReviewProps {
    * `heldChars: null` is "nothing read", which the registry keeps distinct from
    * "the page was never opened" — that distinction is the whole of one check.
    */
-  onReviewStatus?: (status: { heldChars: number | null; preservationRefused: boolean }) => void;
+  onReviewStatus?: (status: {
+    heldChars: number | null;
+    preservationRefused: boolean;
+    /** The failure code the run ended on, for the troubleshooting registry. */
+    failureCode: SemanticFailureCode | null;
+  }) => void;
 }
 
 export default function SemanticReview({
@@ -109,6 +118,20 @@ export default function SemanticReview({
   const [result, setResult] = React.useState<SemanticReviewResult | null>(null);
   const [status, setStatus] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  /**
+   * The stage currently running, reported by the engine.
+   *
+   * The engine is the only thing that knows which stage it is in, so the pane asks
+   * rather than guesses — a progress line that showed one sentence for the whole
+   * run would claim to know something it does not.
+   */
+  const [stage, setStage] = React.useState<SemanticStage | "idle" | "done" | "failed">("idle");
+  /** The failure and the control that resolves it. */
+  const [failure, setFailure] = React.useState<ReturnType<typeof failureCopyFor> | null>(null);
+  /** Identifies this attempt, so a diagnostic report can be joined to a log line. */
+  const [runId, setRunId] = React.useState<string | null>(null);
+  /** Cancels an in-flight review when the user asks, or replaces it on a retry. */
+  const reviewController = React.useRef<AbortController | null>(null);
   const [reviewing, setReviewing] = React.useState(false);
   const [applying, setApplying] = React.useState(false);
   const [acknowledged, setAcknowledged] = React.useState(false);
@@ -137,9 +160,10 @@ export default function SemanticReview({
    */
   const heldChars = scope?.anchor.selectedText.length ?? null;
   const preservationRefused = result !== null && !result.preservation.pass;
+  const failureCode = failure?.code ?? null;
   React.useEffect(() => {
-    onReviewStatus?.({ heldChars, preservationRefused });
-  }, [onReviewStatus, heldChars, preservationRefused]);
+    onReviewStatus?.({ heldChars, preservationRefused, failureCode });
+  }, [onReviewStatus, heldChars, preservationRefused, failureCode]);
   const commitSession = (next: SemanticReviewSession | null): void => {
     setLocalSession(next);
     onSession(next);
@@ -333,10 +357,18 @@ export default function SemanticReview({
 
   async function runReview(): Promise<void> {
     if (scope === null || profile === null || sessionContext === null) return;
+    // Abort a run already in flight before starting another, so two reviews cannot
+    // race to set the same result.
+    reviewController.current?.abort();
+    const controller = new AbortController();
+    reviewController.current = controller;
     setReviewing(true);
     setError(null);
     setStatus(null);
+    setFailure(null);
     setAcknowledged(false);
+    setStage("input_validation");
+    setRunId(uuidv4());
     try {
       const reviewed = await reviewSemanticSelection(
         {
@@ -350,6 +382,8 @@ export default function SemanticReview({
         {
           includeRawText: true,
           registry: generalRegistryFromState(state),
+          signal: controller.signal,
+          onStage: setStage,
         },
       );
       setResult(reviewed);
@@ -377,16 +411,23 @@ export default function SemanticReview({
           now,
         ),
       );
+      setStage("done");
       setStatus(
         reviewed.proposedRevision === undefined
           ? "The model found nothing to change in this selection."
           : "Review ready. Compare the two columns and decide.",
       );
-    } catch (failure: unknown) {
+    } catch (error: unknown) {
+      // The sentence comes from the taxonomy, keyed on the code the engine threw,
+      // so the pane cannot invent a second account of a failure it did not classify.
+      const view = failureCopyFor(error);
       setResult(null);
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setFailure(view);
+      setError(view.message);
+      setStage("failed");
       commitSession(null);
     } finally {
+      reviewController.current = null;
       setReviewing(false);
     }
   }
@@ -396,6 +437,8 @@ export default function SemanticReview({
     setApplying(true);
     setError(null);
     setStatus(null);
+    setFailure(null);
+    setStage("apply");
     try {
       const outcome = await applyApprovedSemanticRevision({
         revision: {
@@ -433,14 +476,14 @@ export default function SemanticReview({
       setScope(null);
       commitSession(advanceSession(liveSession, "applied", new Date().toISOString()));
       setStatus("The revision was written as a tracked change. Reject it in Word to undo it.");
-    } catch (failure: unknown) {
+    } catch (error: unknown) {
       // A throw is a fault, not a refusal, and says so. Collapsing the two is what
-      // left the old flow with a button that failed silently.
-      setError(
-        `The revision could not be written: ${
-          failure instanceof Error ? failure.message : String(failure)
-        }. Nothing has been changed.`,
-      );
+      // left the old flow with a button that failed silently. The sentence still
+      // comes from the taxonomy, and still says nothing was written.
+      const view = failureCopyFor(error);
+      setFailure(view);
+      setError(view.message);
+      setStage("failed");
     } finally {
       setApplying(false);
     }
@@ -476,6 +519,64 @@ export default function SemanticReview({
     void runReview();
   }
 
+  /**
+   * Cancel: stop waiting on a provider the user has given up on.
+   *
+   * Only the review is cancellable. A write is not, because stopping one midway is
+   * the one outcome worse than waiting — the adapter verifies before it writes, and
+   * an abort after that point would leave a partial change with no report.
+   */
+  function cancelReview(): void {
+    reviewController.current?.abort();
+    setStatus("Cancelling the review. Nothing has been changed in the document.");
+  }
+
+  /** Do what a failure's recovery button says. */
+  function runRecovery(recovery: SemanticRecovery): void {
+    switch (recovery.kind) {
+      case "open-settings":
+        onOpenSettings();
+        return;
+      case "open-semantic-style":
+        onOpenSemanticStyle();
+        return;
+      case "read-selection":
+      case "change-selection":
+        void readSelection();
+        return;
+      case "retry":
+      case "regenerate":
+        void runReview();
+        return;
+    }
+  }
+
+  /**
+   * Copy the redacted diagnostic report.
+   *
+   * The report is built from the taxonomy's code and the metadata that already
+   * exists — never from the failure's message, which is a log line — so what lands
+   * on the clipboard is a set of identifiers and counts rather than document text.
+   */
+  async function copyDiagnosticReport(): Promise<void> {
+    if (failure === null) return;
+    const report = buildDiagnosticReport({
+      runId: runId ?? "unknown",
+      failure: { code: failure.code, stage: failure.stage },
+      providerMetadata: result?.providerMetadata ?? null,
+      selectionChars: scope?.anchor.selectedText.length ?? null,
+      at: new Date().toISOString(),
+    });
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+      setStatus("Diagnostic report copied. It contains no document text.");
+    } catch {
+      setStatus("The diagnostic report could not be copied to the clipboard.");
+    }
+  }
+
+  const progress = reviewing ? stageLabel(stage) : null;
+
   const announcement = deriveSemanticAnnouncement({
     status,
     error,
@@ -497,6 +598,44 @@ export default function SemanticReview({
       >
         {announcement?.text ?? ""}
       </p>
+
+      {/*
+        Progress is visible text, not a second live region.
+
+        ADR-0062 allows one live region per pane, and this page's is the paragraph
+        above. A stage sentence that announced itself on every step would talk over
+        the outcome the user is waiting to hear.
+      */}
+      {progress !== null && (
+        <p className="tf-sub" data-stage={stage}>
+          {progress}
+        </p>
+      )}
+
+      {reviewing && (
+        <div className="tf-actions">
+          <Button onClick={cancelReview}>Cancel</Button>
+        </div>
+      )}
+
+      {failure !== null && (
+        <section aria-labelledby="tf-semantic-failure" className="tf-error">
+          <h2 id="tf-semantic-failure">Review failed</h2>
+          <p>{failure.message}</p>
+          <div className="tf-actions">
+            <Button appearance="primary" onClick={() => runRecovery(failure.recovery)}>
+              {failure.recovery.label}
+            </Button>
+            {/*
+              Diagnostic only, and labelled as such: it is not a fix and it is not
+              the first thing the user should reach for. Offered after a failure,
+              never during one, because a report of a run still in flight is a
+              report of nothing.
+            */}
+            <Button onClick={() => void copyDiagnosticReport()}>Copy diagnostic report</Button>
+          </div>
+        </section>
+      )}
 
       {liveSession?.state === "stale" && result !== null && (
         <p className="tf-debug-warning">

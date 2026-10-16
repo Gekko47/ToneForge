@@ -18,6 +18,7 @@ import {
   subscribeToTaskpaneTarget,
   type TaskpaneNavigation,
 } from "../../shared/office/taskpaneNavigation";
+import type { SemanticFailureCode } from "../../analysis/semantic/failures";
 import DebuggingPanel from "../components/DebuggingPanel";
 import TaskPaneHeader, { type TaskPaneDestination } from "../components/TaskPaneHeader";
 import {
@@ -929,6 +930,14 @@ function DashboardWithProfile({
   const [semanticReviewStatus, setSemanticReviewStatus] = useState<{
     heldChars: number | null;
     preservationRefused: boolean;
+    /**
+     * The code the run ended on, when it failed.
+     *
+     * Carried here for the same reason the refusal is: the troubleshooting panel
+     * is reached after the page has been navigated away from, which is exactly
+     * when a failure needs explaining and the page that knows is gone.
+     */
+    failureCode: SemanticFailureCode | null;
   } | null>(null);
   /*
    * The semantic review session, held above the page.
@@ -1804,6 +1813,7 @@ function DashboardWithProfile({
               }
               semanticSelectionChars={semanticReviewStatus?.heldChars ?? null}
               semanticPreservationRefused={semanticReviewStatus?.preservationRefused ?? false}
+              semanticFailureCode={semanticReviewStatus?.failureCode ?? null}
             />
           )}
         </Suspense>

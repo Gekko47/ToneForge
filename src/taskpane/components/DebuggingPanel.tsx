@@ -17,6 +17,7 @@ import { isTrackedEditingEnabled, prepareReformatHost } from "../../reformat";
 import { formatDiagnostics, probeOfficeRuntime } from "../../shared/office/diagnostics";
 import { loadState } from "../../core/state/persistence";
 import { isDecisionRoleConfigured, isGeneralRoleConfigured } from "../settings/providerComposition";
+import type { SemanticFailureCode } from "../../analysis/semantic/failures";
 import { diagnoseSituation, type TroubleshootingInput } from "../troubleshooting/checks";
 
 /**
@@ -105,6 +106,12 @@ interface DebuggingPanelProps {
    * away from the page that said why.
    */
   semanticPreservationRefused?: boolean;
+  /**
+   * The failure code the last semantic review ended on, so the panel can explain
+   * a review that failed after the user has navigated away from the page that
+   * said why. `undefined` means the page has not reported one.
+   */
+  semanticFailureCode?: SemanticFailureCode | null;
 }
 
 /**
@@ -130,6 +137,7 @@ function currentInput(input: {
   semanticSelectionCaptured: boolean | null;
   semanticSelectionChars: number | null;
   semanticPreservationRefused: boolean;
+  semanticFailureCode: SemanticFailureCode | null;
   contextMenuApi: boolean | null;
   rangedReplacementSupported: boolean | null;
 }): TroubleshootingInput {
@@ -149,6 +157,7 @@ function currentInput(input: {
     semanticSelectionCaptured: input.semanticSelectionCaptured,
     semanticSelectionChars: input.semanticSelectionChars,
     semanticPreservationRefused: input.semanticPreservationRefused,
+    semanticFailureCode: input.semanticFailureCode,
     contextMenuApi: input.contextMenuApi,
     rangedReplacementSupported: input.rangedReplacementSupported,
   };
@@ -178,6 +187,7 @@ export default function DebuggingPanel({
   semanticSelectionCaptured = null,
   semanticSelectionChars = null,
   semanticPreservationRefused = false,
+  semanticFailureCode = null,
 }: DebuggingPanelProps): React.ReactNode {
   const styles = useStyles();
   const [capabilities, setCapabilities] = useState<Awaited<
@@ -266,6 +276,7 @@ export default function DebuggingPanel({
       semanticSelectionCaptured,
       semanticSelectionChars,
       semanticPreservationRefused,
+      semanticFailureCode,
       contextMenuApi,
       rangedReplacementSupported,
     }),

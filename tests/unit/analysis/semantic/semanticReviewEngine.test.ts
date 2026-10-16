@@ -447,6 +447,45 @@ describe("reviewSemanticSelection", () => {
     expect(result.actionable).toBe(true);
   });
 
+  it("asks once more when the answer cannot be read, and uses the repair", async () => {
+    const review = vi
+      .fn()
+      .mockResolvedValueOnce({ text: "I am unable to comply.", model: "test" })
+      .mockResolvedValue({ text: JSON.stringify(reviewBody()), model: "test" });
+    const registry = {
+      name: "test",
+      complete: review,
+      profile: review,
+      deviations: review,
+      rewrite: review,
+      review,
+    } as LlmSemanticProvider;
+
+    const result = await reviewSemanticSelection(request(), { includeRawText: true, registry });
+
+    expect(result.actionable).toBe(true);
+    expect(review).toHaveBeenCalledTimes(2);
+    // Both calls this request cost, so the count stays a measurement.
+    expect(result.providerMetadata.attempt).toBe(2);
+  });
+
+  it("gives up after one repair rather than asking again and again", async () => {
+    const review = vi.fn().mockResolvedValue({ text: "still not JSON", model: "test" });
+    const registry = {
+      name: "test",
+      complete: review,
+      profile: review,
+      deviations: review,
+      rewrite: review,
+      review,
+    } as LlmSemanticProvider;
+
+    await expect(
+      reviewSemanticSelection(request(), { includeRawText: true, registry }),
+    ).rejects.toThrow(/did not return a usable semantic review/i);
+    expect(review).toHaveBeenCalledTimes(2);
+  });
+
   it("treats a caller abort as non-retryable", async () => {
     const controller = new AbortController();
     controller.abort();

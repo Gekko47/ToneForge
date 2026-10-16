@@ -28,6 +28,19 @@ import type { SemanticReviewRequest } from "./contracts";
 /** Prompt version. Bump whenever the output contract changes. */
 export const PROMPT_VERSION = 1;
 
+/**
+ * Appended to the prompt for one repair attempt after an unreadable answer.
+ *
+ * A second call rather than a re-ask of the same one, because a provider here
+ * holds no memory of the first response and an instruction that assumed one
+ * would be addressed to nobody. It restates the expectation without restating
+ * the schema, which the original prompt above it still carries.
+ */
+export const REPAIR_INSTRUCTION =
+  "\n\nYour previous answer to this request could not be read. Respond with ONLY a single" +
+  " valid JSON object matching the schema above, with no markdown, no code fences and no" +
+  " other text.";
+
 export interface SemanticReviewPromptOptions {
   /** Explicit consent to send the selection to the provider. */
   includeRawText: boolean;

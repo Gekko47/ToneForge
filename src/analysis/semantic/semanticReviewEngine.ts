@@ -38,7 +38,13 @@ import { createLlmRegistry } from "../../ai/providers/registry";
 import { type LlmResponse, type LlmSemanticProvider } from "../../ai/providers/LlmProvider";
 import { logger } from "../../shared/utils/logger";
 import { validatePreservation } from "./preservationValidator";
-import { buildSemanticReviewPrompt } from "./reviewPrompt";
+import {
+  SemanticReviewError,
+  classifyProviderFailure,
+  stageForCode,
+  type SemanticStage,
+} from "./failures";
+import { REPAIR_INSTRUCTION, buildSemanticReviewPrompt } from "./reviewPrompt";
 import { SemanticReviewResponseSchema } from "./reviewSchema";
 import {
   MeaningPreservationAssessmentSchema,
@@ -61,6 +67,15 @@ import {
 const PROVIDER_STAGE_TIMEOUT_MS = 90_000;
 
 /**
+ * The least time a repair attempt is worth starting in.
+ *
+ * The repair is a second provider call inside the same stage, so one that cannot
+ * finish before the stage deadline would turn a refusal the user can act on into
+ * a timeout they cannot. Below this, the first failure is reported as it stands.
+ */
+const REPAIR_SUB_BUDGET_MS = 5_000;
+
+/**
  * All five flags preserved — the value used when the model states none.
  *
  * Derived from the schema rather than written out, so the "all preserved" state
@@ -78,6 +93,14 @@ export interface SemanticReviewEngineOptions {
   newSessionId?: () => string;
   /** Injected so latency is a measurement rather than a test artefact. */
   now?: () => number;
+  /**
+   * Reported as the engine moves between stages.
+   *
+   * The engine knows which stage it is in and the surface does not, so without
+   * this a progress indicator can only show one sentence for the whole run —
+   * which is worse than none, because it claims to know something it does not.
+   */
+  onStage?: (stage: SemanticStage) => void;
 }
 
 /**
@@ -92,37 +115,110 @@ export async function reviewSemanticSelection(
   request: SemanticReviewRequest,
   opts: SemanticReviewEngineOptions,
 ): Promise<SemanticReviewResult> {
-  const prompt = buildSemanticReviewPrompt(request, {
-    includeRawText: opts.includeRawText,
-  });
+  const report = (stage: SemanticStage): void => opts.onStage?.(stage);
+
+  let prompt: string;
+  try {
+    report("prompt_build");
+    prompt = buildSemanticReviewPrompt(request, { includeRawText: opts.includeRawText });
+  } catch (error: unknown) {
+    /*
+     * The builder refuses before a prompt string exists when consent is absent, so
+     * this is reachable only if a caller bypassed the literal `true`. The code says
+     * which gate was hit, because "nothing was sent" is the fact the user needs and
+     * the builder's own sentence is written for a developer.
+     */
+    logger.warn("Semantic review refused to build a prompt", {
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+    throw new SemanticReviewError(
+      "The review could not be prepared, so nothing was sent.",
+      "E_PROMPT_CONSENT_GATE",
+    );
+  }
   const registry = opts.registry ?? createLlmRegistry();
   const clock = opts.now ?? (() => Date.now());
   const started = clock();
 
   /*
-   * One call, and no retry here.
+   * One call, and at most one repair.
    *
-   * The adapter retries a transient failure, with backoff and jitter, and it is
-   * the only layer that does. Three engine attempts across three adapter attempts
-   * is nine requests for one user action, and the outer layer only delayed the
-   * failure the user was already waiting for. The stage budget still bounds the
-   * whole thing, so a provider that hangs cannot keep the review open forever.
+   * The adapter retries a transient *transport* failure, with backoff and jitter,
+   * and it is the only layer that does — three engine attempts across three
+   * adapter attempts is nine requests for one user action. An unreadable answer is
+   * a different failure: the transport succeeded and the content did not, so
+   * retrying it unchanged would only produce the same answer again. The repair
+   * re-asks once with the instruction that was missing, and only when it can
+   * finish inside the stage, because starting one that cannot would turn a
+   * refusal the user can act on into a timeout they cannot.
    */
-  const stage = stageBudget(opts.signal, PROVIDER_STAGE_TIMEOUT_MS);
-  let response: LlmResponse;
+  let reviewed: { response: LlmResponse; parsed: ParsedResponse };
   try {
-    response = await registry.review({ prompt, signal: stage.signal });
-  } finally {
-    stage.cancel();
+    reviewed = await (async (): Promise<{
+      response: LlmResponse;
+      parsed: ParsedResponse;
+    }> => {
+      const stage = stageBudget(opts.signal, PROVIDER_STAGE_TIMEOUT_MS, clock);
+      try {
+        report("provider_call");
+        const first = await callProvider(registry, prompt, stage.signal);
+        if (first.parsed.success || stage.remainingMs() < REPAIR_SUB_BUDGET_MS) return first;
+
+        logger.warn("Semantic review response could not be read; asking the model to repair it", {
+          issues: first.parsed.error.issues.length,
+        });
+        const repaired = await callProvider(registry, prompt + REPAIR_INSTRUCTION, stage.signal);
+        return {
+          // Every call this request cost, so the count stays a measurement.
+          response: {
+            ...repaired.response,
+            attempt: (first.response.attempt ?? 1) + (repaired.response.attempt ?? 1),
+          },
+          parsed: repaired.parsed,
+        };
+      } finally {
+        stage.cancel();
+      }
+    })();
+  } catch (error: unknown) {
+    /*
+     * A transport failure is given a code here, from the status the adapter
+     * recorded and whether the caller aborted — never from the message, which is
+     * redacted and written for a log. The message is kept for that log.
+     */
+    const abortedByCaller = opts.signal?.aborted === true;
+    const code = classifyProviderFailure(error, abortedByCaller);
+    logger.warn("Semantic review provider call failed", {
+      provider: registry.name,
+      code,
+      abortedByCaller,
+    });
+    throw new SemanticReviewError(error instanceof Error ? error.message : String(error), code, {
+      provider: registry.name,
+      stage: stageForCode(code),
+      abortedByCaller,
+    });
   }
 
-  const parsed = SemanticReviewResponseSchema.safeParse(parseJson(response.text));
+  const { response, parsed } = reviewed;
+  report("response_parse");
+
+  if (response.text.trim().length === 0) {
+    throw new SemanticReviewError(
+      "The model returned an empty answer. Nothing has been changed in the document.",
+      "E_RESPONSE_EMPTY",
+      { responseLength: 0 },
+    );
+  }
+
   if (!parsed.success) {
     logger.warn("Semantic review response failed validation", {
       issues: parsed.error.issues.length,
     });
-    throw new Error(
+    throw new SemanticReviewError(
       "The model did not return a usable semantic review. Nothing has been changed in the document.",
+      "E_RESPONSE_SCHEMA_INVALID",
+      { issues: parsed.error.issues.length },
     );
   }
 
@@ -136,6 +232,7 @@ export async function reviewSemanticSelection(
    * a reason to discard a review the user has paid for, and both are logged so a
    * prompt that quietly stopped asking for them stays visible.
    */
+  report("preservation_check");
   const assessment = withDefaultObservation(reported);
   const meaningPreservation = parsed.data.meaningPreservation ?? DEFAULT_MEANING_PRESERVATION;
   if (parsed.data.meaningPreservation === undefined) {
@@ -306,18 +403,39 @@ function outermostObject(text: string): string | null {
   return end === -1 ? null : text.slice(start, end + 1);
 }
 
+/** What one provider call produced, parsed. */
+type ParsedResponse = ReturnType<typeof SemanticReviewResponseSchema.safeParse>;
+
+/**
+ * Ask the provider once, and parse what it answered.
+ *
+ * The repair path calls this twice, so the call and its parse are one unit: two
+ * call sites parsing differently would be two implementations of one contract.
+ */
+async function callProvider(
+  registry: LlmSemanticProvider,
+  prompt: string,
+  signal: AbortSignal,
+): Promise<{ response: LlmResponse; parsed: ParsedResponse }> {
+  const response = await registry.review({ prompt, signal });
+  return { response, parsed: SemanticReviewResponseSchema.safeParse(parseJson(response.text)) };
+}
+
 /**
  * A deadline for one stage, combined with the caller's abort.
  *
  * The adapter bounds a single provider call; this bounds the stage that contains
- * the call and any retries inside it. `cancel` clears the timer and the forwarding
- * listener, so a finished stage leaves nothing behind to fire later.
+ * the call, the repair, and any retries inside them. `remainingMs` is what lets a
+ * caller decide whether another call still fits, and `cancel` clears the timer and
+ * the forwarding listener so a finished stage leaves nothing behind to fire later.
  */
 function stageBudget(
   parent: AbortSignal | undefined,
   timeoutMs: number,
-): { signal: AbortSignal; cancel: () => void } {
+  now: () => number,
+): { signal: AbortSignal; remainingMs: () => number; cancel: () => void } {
   const controller = new AbortController();
+  const deadline = now() + timeoutMs;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const forward = (): void => controller.abort();
   if (parent !== undefined) {
@@ -326,6 +444,7 @@ function stageBudget(
   }
   return {
     signal: controller.signal,
+    remainingMs: () => Math.max(0, deadline - now()),
     cancel: () => {
       clearTimeout(timer);
       parent?.removeEventListener("abort", forward);

@@ -23,6 +23,7 @@
  */
 import type { CoverageReport } from "../../core/domain/DocumentSnapshot";
 import type { DecisionFallbackPolicy } from "../../core/domain/LlmRole";
+import type { SemanticFailureCode } from "../../analysis/semantic/failures";
 import { MAX_REVIEW_SELECTION_CHARS } from "../semantic/gates";
 
 /**
@@ -102,6 +103,15 @@ export interface TroubleshootingInput {
    * explanation lives on a page they have already left.
    */
   semanticPreservationRefused: boolean;
+  /**
+   * The failure code the Semantic Review page last reported, if any.
+   *
+   * Optional rather than `| null` so a caller that has never observed a failure
+   * does not have to say so. Absence means "nothing to report", which is the same
+   * distinction `semanticSelectionCaptured` draws — a check that fired on absence
+   * would report a fault the pane never established.
+   */
+  semanticFailureCode?: SemanticFailureCode | null;
   /**
    * The last Consistency Review's own account of how much of the document it
    * compared, or `null` when no report has been produced.
@@ -308,6 +318,49 @@ const CHECKS: readonly TroubleshootingCheck[] = [
       "Turn it on. Nothing is sent anywhere until you do, and you can withdraw it again in Settings at any time.",
     remedyTarget: {
       label: "LLM Settings → Redaction and consent → Allow semantic analysis",
+    },
+  },
+  {
+    id: "semantic-provider-unreachable",
+    appliesTo: (input) =>
+      input.semanticFailureCode === "E_PROVIDER_UNREACHABLE" ||
+      input.semanticFailureCode === "E_PROVIDER_RATE_LIMIT" ||
+      input.semanticFailureCode === "E_PROVIDER_SERVER",
+    situation: "The last semantic review could not get an answer from the provider",
+    cause: (input) =>
+      input.semanticFailureCode === "E_PROVIDER_RATE_LIMIT"
+        ? "The provider answered that it is busy. The request was retried with a spread-out wait and was still refused, so the limit is on the account rather than on this one request."
+        : "The provider was not reachable, or answered with an error, for every attempt this review made. Nothing was written to the document.",
+    remedy:
+      "Review the selection again in a moment. If it keeps failing, check the connection's endpoint and key in LLM Settings.",
+    remedyTarget: {
+      label: "LLM Settings → LLM connections → the connection Semantic Review uses",
+    },
+  },
+  {
+    id: "semantic-response-unreadable",
+    appliesTo: (input) =>
+      input.semanticFailureCode === "E_RESPONSE_SCHEMA_INVALID" ||
+      input.semanticFailureCode === "E_RESPONSE_EMPTY",
+    situation: "The model's answer could not be read as a review",
+    cause:
+      "The provider answered, and the answer was not in the shape a review has to take. ToneForge asked once more with the format restated, and that answer could not be read either. Nothing was written to the document.",
+    remedy:
+      "Review the selection again — a different answer is often readable. A shorter selection gives the model less to reproduce, which is where this usually comes from.",
+    remedyTarget: {
+      label: "Semantic Review → Use current selection → Review selection",
+    },
+  },
+  {
+    id: "semantic-apply-failed",
+    appliesTo: (input) => input.semanticFailureCode === "E_APPLY_FAILED",
+    situation: "An approved revision could not be written to the document",
+    cause:
+      "The write threw before it reported completion. The apply path writes one tracked change at a time and reports the outcome per change, so a throw means the change was not recorded. It is a fault rather than a refusal, and it is reported as one.",
+    remedy:
+      "Check the document for a partial tracked change, then review the selection again. The revision is re-checked against the selection at write time, so a selection that has moved is refused rather than applied in the wrong place.",
+    remedyTarget: {
+      label: "Semantic Review → Review selection",
     },
   },
   {

@@ -337,7 +337,7 @@ Define a `SemanticReviewTelemetryEvent` type with these events:
 
 **Test strategy:** Add tests to `semanticReviewEngine.test.ts` for each coercion case. Use `registryReturning` with modified payloads.
 
-### Phase 2 — Repair ladder and retry consolidation
+### Phase 2 — Repair ladder and retry consolidation _(LANDED 2026-10-15; retry-with-repair-prompt landed 2026-10-16)_
 
 **Scope:** `semanticReviewEngine.ts`, `retry.ts`.
 
@@ -361,7 +361,7 @@ Define a `SemanticReviewTelemetryEvent` type with these events:
 
 **Test strategy:** Add tests for each repair step. Mock a provider that returns malformed JSON on the first call and valid JSON on the second. Verify attempt count.
 
-### Phase 3 — Staged progress and failure taxonomy in the UI
+### Phase 3 — Staged progress and failure taxonomy in the UI _(LANDED 2026-10-16)_
 
 **Scope:** `SemanticReview.tsx`, `gates.ts`, `checks.ts`, `semanticAnnouncement.ts`.
 

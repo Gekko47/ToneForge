@@ -536,6 +536,9 @@ describe("the troubleshooting registry", () => {
       "no-semantic-profile",
       "no-provider",
       "no-raw-text-consent",
+      "semantic-provider-unreachable",
+      "semantic-response-unreadable",
+      "semantic-apply-failed",
       "coverage-incomplete",
       "semantic-review-has-no-selection",
       "semantic-selection-too-long",
@@ -629,6 +632,20 @@ describe("the troubleshooting registry", () => {
         },
       }),
     );
+    /*
+     * One input per semantic failure code, for the same reason the decision checks
+     * get one each: the three failure checks are keyed on a code, so a single input
+     * can only ever reach one of them. The codes chosen are the ones each check
+     * claims — a rate limit for the provider check, an unreadable shape for the
+     * response check, and a write fault for the apply check.
+     */
+    const providerFailed = diagnoseSituation(
+      healthy({ semanticFailureCode: "E_PROVIDER_RATE_LIMIT" }),
+    );
+    const responseUnreadable = diagnoseSituation(
+      healthy({ semanticFailureCode: "E_RESPONSE_SCHEMA_INVALID" }),
+    );
+    const applyFailed = diagnoseSituation(healthy({ semanticFailureCode: "E_APPLY_FAILED" }));
     const reached = new Set(
       [
         ...all,
@@ -637,6 +654,9 @@ describe("the troubleshooting registry", () => {
         ...decisionUnbound,
         ...decisionFallback,
         ...decisionParseFailed,
+        ...providerFailed,
+        ...responseUnreadable,
+        ...applyFailed,
       ].map((note) => note.id),
     );
 

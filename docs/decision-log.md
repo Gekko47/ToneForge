@@ -6036,3 +6036,50 @@ uses (ADR-0031), applied to the theme layer itself.
   [`src/analysis/semantic/semanticReviewEngine.ts`](../src/analysis/semantic/semanticReviewEngine.ts);
   [`tests/unit/ai/providers/retry.test.ts`](../tests/unit/ai/providers/retry.test.ts);
   [`tests/unit/analysis/semantic/semanticReviewEngine.test.ts`](../tests/unit/analysis/semantic/semanticReviewEngine.test.ts).
+
+## ADR-0147 — A failure carries a code, and the surface owns the words
+
+- **Status**: Accepted (2026-10-16)
+- **Context**: A semantic review can fail for two dozen distinct reasons, and the pane
+  decided which sentence to show by re-reading the failure's own message. That message is
+  redacted and written for a log, so the user-facing sentence _was_ a log line — and the
+  troubleshooting registry held a third account of the same event. The three provider
+  failures a user most needs told apart — credentials refused, provider busy, provider
+  unreachable — were one indistinguishable string to the pane.
+
+- **Decision**:
+  1. The [engine](../src/analysis/semantic/semanticReviewEngine.ts) throws
+     `SemanticReviewError` carrying a `SemanticFailureCode` from a closed set, and derives
+     the stage from the code rather than stating it twice.
+  2. Classification reads **fields, never message text**. `LlmError` now carries the HTTP
+     `status` beside `retryable`, and `classifyProviderFailure` decides from those plus
+     whether the caller aborted — because a message is redacted before it is read.
+  3. The sentences live in one table,
+     [`taskpane/semantic/failureCopy.ts`](../src/taskpane/semantic/failureCopy.ts), keyed by
+     code and **exhaustive by type**: a code added without copy does not compile. The pane,
+     the live region and the troubleshooting registry all read the one table.
+  4. The engine reports each stage through `onStage`, so the progress line states what is
+     happening now rather than one sentence for the whole run.
+  5. The [diagnostic report](../src/taskpane/semantic/diagnosticReport.ts) is built from
+     codes, counts and identifiers only — never from a failure's message, which is exactly
+     the field a developer would otherwise reach for.
+
+- **Consequences**:
+  - Positive: one account of a failure, and it cannot name internals.
+  - Positive: an auth refusal, a rate limit and an unreachable provider are three
+    sentences with three different recoveries.
+  - Positive: adding a failure forces its copy to be written, and forces the
+    troubleshooting registry's guard tests to be updated.
+  - Cost: the engine's thrown message is no longer the user-facing text, so the two can
+    diverge. The divergence is deliberate and in that direction only.
+  - Cost: `LlmError` gained a parameter, so every construction site may now pass a status.
+    It is explicitly `number | undefined` rather than optional, so "there was no status"
+    is a stated fact rather than an omission.
+  - **Not claimed**: that the copy is right for every provider. It is verified against the
+    taxonomy and the adapter's own statuses, not against a live provider (ADR-0051).
+- **Evidence**: [`src/analysis/semantic/failures.ts`](../src/analysis/semantic/failures.ts);
+  [`src/taskpane/semantic/failureCopy.ts`](../src/taskpane/semantic/failureCopy.ts);
+  [`src/taskpane/semantic/diagnosticReport.ts`](../src/taskpane/semantic/diagnosticReport.ts);
+  [`src/ai/providers/LlmProvider.ts`](../src/ai/providers/LlmProvider.ts);
+  [`tests/unit/analysis/semantic/failures.test.ts`](../tests/unit/analysis/semantic/failures.test.ts);
+  [`tests/unit/taskpane/semantic/failureCopy.test.ts`](../tests/unit/taskpane/semantic/failureCopy.test.ts).

@@ -65,6 +65,16 @@ export class LlmError extends Error {
     message: string,
     public readonly provider: string,
     public readonly retryable: boolean,
+    /**
+     * The HTTP status the gateway answered with, when the failure was one.
+     *
+     * Carried so a caller can tell "your credentials were refused" from "the
+     * provider is busy" without reading the message — which is redacted, and
+     * worded for a log rather than for a decision. Explicitly `| undefined`
+     * rather than optional, so a transport failure can state that there was no
+     * status at all.
+     */
+    public readonly status: number | undefined = undefined,
   ) {
     super(message);
     this.name = "LlmError";

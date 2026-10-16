@@ -1,0 +1,113 @@
+/**
+ * The failure copy table and the diagnostic report.
+ *
+ * Two properties matter here and neither is about wording for its own sake: every
+ * code must have a sentence and a control (a code without copy reaches the user as
+ * nothing at all), and the report must not be able to carry document text — which
+ * is only true if it is built from fields, so that is what the test asserts.
+ */
+
+import { describe, expect, it } from "vitest";
+
+import {
+  SEMANTIC_FAILURE_CODES,
+  SemanticReviewError,
+} from "../../../../src/analysis/semantic/failures";
+import {
+  STAGE_LABEL,
+  failureCopy,
+  failureCopyFor,
+  stageLabel,
+} from "../../../../src/taskpane/semantic/failureCopy";
+import { buildDiagnosticReport } from "../../../../src/taskpane/semantic/diagnosticReport";
+
+describe("the failure copy table", () => {
+  it("gives every code a sentence and a control", () => {
+    SEMANTIC_FAILURE_CODES.forEach((code) => {
+      const copy = failureCopy(code);
+      expect(copy.message.length).toBeGreaterThan(0);
+      expect(copy.recovery.label.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("names the next action rather than the internals", () => {
+    SEMANTIC_FAILURE_CODES.forEach((code) => {
+      const { message } = failureCopy(code);
+      // No status codes, no stack words, no snake_case identifiers leaking through.
+      expect(message).not.toMatch(/\b\d{3}\b/);
+      expect(message).not.toMatch(/undefined|null|Error:/);
+    });
+  });
+
+  it("labels every stage with a sentence a person would say", () => {
+    Object.values(STAGE_LABEL).forEach((label) => {
+      expect(label.length).toBeGreaterThan(0);
+      expect(label).not.toMatch(/_/);
+    });
+  });
+});
+
+describe("failureCopyFor", () => {
+  it("reads the code and stage from a typed failure", () => {
+    const view = failureCopyFor(new SemanticReviewError("internal detail", "E_PROVIDER_AUTH"));
+    expect(view.code).toBe("E_PROVIDER_AUTH");
+    expect(view.stage).toBe("provider_call");
+    expect(view.message).toMatch(/credentials/i);
+  });
+
+  it("does not put an unknown error's own message in front of the user", () => {
+    const leaked = "gateway HTTP 500: at Object.<anonymous> sk-secret-value";
+    const view = failureCopyFor(new Error(leaked));
+    expect(view.message).not.toContain("sk-secret-value");
+    expect(view.message).not.toContain("Object.<anonymous>");
+    expect(view.code).toBe("E_PROVIDER_TRANSIENT");
+  });
+});
+
+describe("stageLabel", () => {
+  it("has no sentence for a state that is not a stage", () => {
+    expect(stageLabel("idle")).toBeNull();
+    expect(stageLabel("done")).toBeNull();
+    expect(stageLabel("failed")).toBeNull();
+  });
+
+  it("names what is happening for a stage that is running", () => {
+    expect(stageLabel("provider_call")).toMatch(/provider/i);
+  });
+});
+
+describe("buildDiagnosticReport", () => {
+  it("carries identifiers, codes and counts and no text", () => {
+    const report = buildDiagnosticReport({
+      runId: "run-1",
+      failure: { code: "E_RESPONSE_SCHEMA_INVALID", stage: "response_parse" },
+      providerMetadata: { provider: "openai", model: "gpt-4o-mini", latencyMs: 1200, attempt: 2 },
+      selectionChars: 480,
+      at: "2026-10-15T00:00:00.000Z",
+    });
+
+    expect(report).toEqual({
+      schema: "toneforge.semantic-review-diagnostic/v1",
+      runId: "run-1",
+      failureCode: "E_RESPONSE_SCHEMA_INVALID",
+      stage: "response_parse",
+      provider: { provider: "openai", model: "gpt-4o-mini", attempt: 2, latencyMs: 1200 },
+      selectionChars: 480,
+      timestamp: "2026-10-15T00:00:00.000Z",
+    });
+  });
+
+  it("states that there was no provider rather than inventing one", () => {
+    const report = buildDiagnosticReport({
+      runId: "run-2",
+      failure: { code: "E_PROMPT_CONSENT_GATE", stage: "prompt_build" },
+      providerMetadata: null,
+      selectionChars: null,
+      at: "2026-10-15T00:00:00.000Z",
+    });
+    expect(report.provider).toBeNull();
+    // Serialised, the report is the same set of keys every time — which is what
+    // makes it safe to paste somewhere a support reader can see.
+    expect(Object.keys(report)).not.toContain("text");
+  });
+});
