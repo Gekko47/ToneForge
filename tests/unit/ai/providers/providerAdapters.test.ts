@@ -8,6 +8,7 @@ import {
   createOpenRouterConnection,
 } from "../../../../src/ai/providers/openRouterAdapter";
 import { LlmError } from "../../../../src/ai/providers/LlmProvider";
+import { describeShape } from "../../../../src/ai/providers/gatewayAdapter";
 import { ProviderConnectionSchema } from "../../../../src/core/domain/ProviderConnection";
 
 const GATEWAY = "https://localhost:3000";
@@ -278,5 +279,23 @@ describe("createOpenRouterConnection", () => {
     expect(
       Object.keys(createOpenRouterConnection("conn_1")).filter((k) => forbidden.test(k)),
     ).toEqual([]);
+  });
+});
+
+describe("describeShape", () => {
+  it("reports key names and string lengths, and never a value", () => {
+    // The one thing that must not happen: a shape carrying document-derived text
+    // into a log line. Key names and lengths are the entire point of it.
+    const shape = describeShape({
+      id: "gen-secret-value",
+      choices: [{ message: { role: "assistant", content: "", reasoning: "a private sentence" } }],
+    });
+
+    const serialised = JSON.stringify(shape);
+    expect(serialised).not.toContain("gen-secret-value");
+    expect(serialised).not.toContain("private");
+    expect(serialised).toContain('"id":"string(16)"');
+    expect(serialised).toContain('"content":"string(0)"');
+    expect(serialised).toMatch(/"reasoning":"string\(\d+\)"/);
   });
 });

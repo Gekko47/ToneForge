@@ -247,8 +247,21 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
         throw this.fromStatus(res.status, res.statusText, res.headers);
       }
       const bodyStartedAt = Date.now();
-      const parsed = this.parseResponse((await res.json()) as unknown);
+      const payload = (await res.json()) as unknown;
+      const parsed = this.parseResponse(payload);
       record.bodyMs = Date.now() - bodyStartedAt;
+      if (parsed.text.trim().length === 0) {
+        /*
+         * A 200 with no text is the one failure a byte count cannot explain: the
+         * provider answered, the body arrived in full, and the field read for the
+         * answer was empty. The *shape* says whether the text is in a different
+         * field — which a length alone cannot — and a shape carries no value, so
+         * nothing derived from the document is recorded.
+         */
+        logger.warn(`${this.name} returned no text; response shape follows`, {
+          shape: describeShape(payload),
+        });
+      }
       return parsed;
     } catch (err) {
       if (err instanceof LlmError) throw err;
@@ -311,6 +324,35 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
       retryAfterMs(headers),
     );
   }
+}
+
+/**
+ * The shape of a provider payload: key names, and the length of every string.
+ *
+ * **Never a value.** A payload is derived from the document, so the only safe thing
+ * to record is where the fields are and how large they are — which is exactly what
+ * is needed to find the field a response was written into. Depth and breadth are
+ * bounded, because a shape is a diagnostic and not a copy of the answer.
+ *
+ * Exported for the test that asserts a value never appears.
+ */
+export function describeShape(value: unknown, depth = 0): unknown {
+  // Deep enough to reach `choices[0].message.content`, which is level four, and no
+  // deeper; breadth is capped below, so the whole thing stays bounded.
+  if (depth > 6) return "…";
+  if (typeof value === "string") return `string(${value.length})`;
+  if (value === null) return "null";
+  if (typeof value === "number" || typeof value === "boolean") return typeof value;
+  if (Array.isArray(value)) {
+    return value.slice(0, 3).map((item) => describeShape(item, depth + 1));
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).slice(0, 25);
+    return Object.fromEntries(
+      entries.map(([key, child]) => [key, describeShape(child, depth + 1)]),
+    );
+  }
+  return typeof value;
 }
 
 /**
