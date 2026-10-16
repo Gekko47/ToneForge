@@ -2,6 +2,18 @@
  * Retry helper for provider calls. Kept separate so engines can compose it.
  */
 
+/** One attempt's timing, reported to `onAttempt`. */
+export interface RetryAttempt {
+  /** Zero-based position of this attempt in the sequence. */
+  index: number;
+  /** Milliseconds the attempt itself took. */
+  durationMs: number;
+  /** Milliseconds waited before this attempt; zero for the first. */
+  waitMs: number;
+  /** Whether the attempt resolved or threw. */
+  outcome: "ok" | "error";
+}
+
 export interface RetryOptions {
   maxRetries: number;
   baseDelayMs: number;
@@ -20,18 +32,38 @@ export interface RetryOptions {
    * `maxDelayMs`, because a provider asking for an hour must not hold the add-in.
    */
   retryAfterMs?: (err: unknown) => number | undefined;
+  /**
+   * Reported once per attempt, after it settles.
+   *
+   * The retry policy is otherwise invisible: a caller sees one call and one total,
+   * so "the provider is slow" and "we retried three times, each hanging until the
+   * timeout" look identical. This is how each attempt's own duration and the
+   * backoff before it reach the caller that wants to attribute the wait.
+   */
+  onAttempt?: (attempt: RetryAttempt) => void;
+  /** Injected so a test can drive the measured durations. Defaults to `Date.now`. */
+  now?: () => number;
 }
 
 export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Promise<T> {
   const random = opts.random ?? Math.random;
+  const now = opts.now ?? (() => Date.now());
   let lastError: unknown;
+  // The wait before the *next* attempt, so an attempt reports the backoff that
+  // preceded it rather than the one that follows it.
+  let waitMs = 0;
   const attempts = Array.from({ length: opts.maxRetries + 1 }, (_, i) => i);
   for (const attempt of attempts) {
+    const startedAt = now();
     try {
-      return await fn();
+      const value = await fn();
+      opts.onAttempt?.({ index: attempt, durationMs: now() - startedAt, waitMs, outcome: "ok" });
+      return value;
     } catch (err) {
+      const durationMs = now() - startedAt;
       lastError = err;
       if (!opts.isRetryable(err) || attempt === opts.maxRetries) {
+        opts.onAttempt?.({ index: attempt, durationMs, waitMs, outcome: "error" });
         throw err;
       }
       /*
@@ -49,6 +81,8 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Pr
         requested === undefined
           ? Math.round(random() * ceiling)
           : Math.min(Math.max(0, requested), opts.maxDelayMs);
+      opts.onAttempt?.({ index: attempt, durationMs, waitMs, outcome: "error" });
+      waitMs = delay;
       await new Promise((r) => setTimeout(r, delay));
     }
   }

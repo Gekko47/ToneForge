@@ -38,7 +38,11 @@ import { PROMPT_VERSION } from "./reviewPrompt";
 import { emitTelemetry } from "./telemetry";
 
 import { createLlmRegistry } from "../../ai/providers/registry";
-import { type LlmResponse, type LlmSemanticProvider } from "../../ai/providers/LlmProvider";
+import {
+  LlmError,
+  type LlmSemanticProvider,
+  type LlmResponse,
+} from "../../ai/providers/LlmProvider";
 import { logger } from "../../shared/utils/logger";
 import { validatePreservation } from "./preservationValidator";
 import {
@@ -318,11 +322,17 @@ export async function reviewSemanticSelection(
     // — because that name is the one clue that turns an unclassified failure into a
     // known one on the next report.
     const errorName = error instanceof Error ? error.name : typeof error;
+    // The per-attempt timing the adapter recorded, when the failure came from one.
+    // A request that hung until each of its own deadlines has a shape — several
+    // equal, long attempts — and this is the only place that shape survives the
+    // throw, so it is what the diagnostic report is built from.
+    const providerAttempts = error instanceof LlmError ? error.attemptTimings : undefined;
     logger.warn("Semantic review provider call failed", {
       provider: registry.name,
       code,
       abortedByCaller,
       errorName,
+      ...(providerAttempts === undefined ? {} : { providerAttempts }),
     });
     // The stage that was running is reported as failed rather than completed, so a
     // failed run appears once in the telemetry with the stage it died in.
@@ -336,10 +346,21 @@ export async function reviewSemanticSelection(
     fail(error instanceof Error ? error.message : String(error), code, {
       abortedByCaller,
       errorName,
+      ...(providerAttempts === undefined ? {} : { providerAttempts }),
     });
   }
 
   const { response, parsed } = reviewed;
+  // The send/receive split per attempt, so a slow review that *succeeded* can be
+  // attributed to the provider answering or to the body being read, without a
+  // debugger. Logged rather than returned: it is a measurement, not a result.
+  if (response.attemptTimings !== undefined) {
+    logger.info("Semantic review provider timing", {
+      provider: registry.name,
+      attempts: response.attemptTimings.length,
+      attemptTimings: response.attemptTimings,
+    });
+  }
   begin("response_parse");
 
   if (response.text.trim().length === 0) {

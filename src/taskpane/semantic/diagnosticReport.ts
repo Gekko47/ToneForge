@@ -13,7 +13,27 @@
  */
 
 import type { StageTimings } from "../../analysis/semantic/contracts";
+import type { LlmAttemptTiming } from "../../ai/providers/LlmProvider";
 import type { SemanticFailureCode, SemanticStage } from "../../analysis/semantic/failures";
+
+/**
+ * One provider attempt's timing, in the report's own words.
+ *
+ * `headersMs` and `bodyMs` are `null` rather than absent when they are unknown, so
+ * the same keys appear every time and a missing value cannot be mistaken for a zero
+ * — the same discipline the rest of the report follows.
+ */
+export interface DiagnosticProviderAttempt {
+  durationMs: number;
+  waitMs: number;
+  outcome: "ok" | "error";
+  /** Milliseconds until the response headers arrived, or null if none did. */
+  headersMs: number | null;
+  /** Milliseconds to read and parse the body, or null if none arrived. */
+  bodyMs: number | null;
+  /** The HTTP status a response carried, or null when no response arrived. */
+  status: number | null;
+}
 
 /**
  * What a report may say about the provider.
@@ -40,6 +60,14 @@ export interface DiagnosticReportInput {
    * never answered raises.
    */
   provider: DiagnosticProviderOffer | null;
+  /**
+   * The provider's own attempts, when the failure came from one.
+   *
+   * A request that hangs until each of its own deadlines shows as several equal,
+   * long attempts with no `bodyMs`. That shape is the diagnosis, and a single
+   * summary duration cannot express it.
+   */
+  providerAttempts: readonly LlmAttemptTiming[] | null;
   /** How much was under review, which is a size and not the text. */
   selectionChars: number | null;
   /** Per-stage durations, so a slow run is attributed to a stage. */
@@ -62,6 +90,8 @@ export interface DiagnosticReport {
   } | null;
   /** Only the stages that ran, so an absent stage stays distinguishable from a fast one. */
   stageTimingsMs: Record<string, number>;
+  /** One entry per provider attempt, when the run made any; null when it made none. */
+  providerAttempts: readonly DiagnosticProviderAttempt[] | null;
   selectionChars: number | null;
   timestamp: string;
 }
@@ -82,6 +112,17 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): DiagnosticR
             latencyMs: input.provider.latencyMs ?? null,
           },
     stageTimingsMs: { ...(input.stageTimings ?? {}) },
+    providerAttempts:
+      input.providerAttempts === null
+        ? null
+        : input.providerAttempts.map((attempt) => ({
+            durationMs: attempt.durationMs,
+            waitMs: attempt.waitMs,
+            outcome: attempt.outcome,
+            headersMs: attempt.headersMs ?? null,
+            bodyMs: attempt.bodyMs ?? null,
+            status: attempt.status ?? null,
+          })),
     selectionChars: input.selectionChars,
     timestamp: input.at,
   };

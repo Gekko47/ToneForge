@@ -148,4 +148,46 @@ describe("withRetry", () => {
 
     await expect(done).resolves.toBeInstanceOf(Error);
   });
+
+  it("reports each attempt's duration and the wait before it", async () => {
+    vi.useFakeTimers();
+    // A clock the test drives, so the durations measure the sequence rather than
+    // wall time. Each call advances it by a provider timeout before failing, which
+    // is the shape of a request that hangs until it is killed.
+    let clock = 0;
+    const fn = vi.fn(async () => {
+      clock += 30_000;
+      throw new Error("timed out");
+    });
+    const attempts: {
+      index: number;
+      durationMs: number;
+      waitMs: number;
+      outcome: string;
+    }[] = [];
+    const done = settled(
+      withRetry(fn, {
+        maxRetries: 2,
+        baseDelayMs: 100,
+        maxDelayMs: 1000,
+        isRetryable: () => true,
+        // A full draw makes the wait the ceiling itself: 100, then 200.
+        random: () => 1,
+        now: () => clock,
+        onAttempt: (attempt) => attempts.push(attempt),
+      }),
+    );
+
+    await vi.runAllTimersAsync();
+    await expect(done).resolves.toBeInstanceOf(Error);
+
+    // Three attempts, each hanging for the same 30s, with the backoff recorded
+    // before the second and third. "Slow" and "hanging until killed" are only
+    // distinguishable because this is reported per attempt.
+    expect(attempts).toEqual([
+      { index: 0, durationMs: 30_000, waitMs: 0, outcome: "error" },
+      { index: 1, durationMs: 30_000, waitMs: 100, outcome: "error" },
+      { index: 2, durationMs: 30_000, waitMs: 200, outcome: "error" },
+    ]);
+  });
 });

@@ -44,6 +44,7 @@ import {
 import { effectiveProfile } from "../../core/domain/ProfileRecord";
 import { generalRegistryFromState, isGeneralRoleConfigured } from "../settings/providerComposition";
 import type { TaskpaneNavigation } from "../../shared/office/taskpaneNavigation";
+import type { LlmAttemptTiming } from "../../ai/providers/LlmProvider";
 
 /**
  * Semantic Review: the selection, the assessment, the comparison, the decision.
@@ -141,6 +142,12 @@ function stageTimingsFromDetail(detail: Record<string, unknown> | null): StageTi
   // The engine writes a `StageTimings` object here; the guard is against a detail
   // that predates the field, and the cast is the price of a loose detail record.
   return typeof value === "object" && value !== null ? (value as StageTimings) : null;
+}
+
+/** The provider attempts a failed run carried on its error, if it carried any. */
+function attemptsFromDetail(detail: Record<string, unknown> | null): LlmAttemptTiming[] | null {
+  const value = detail?.providerAttempts;
+  return Array.isArray(value) ? (value as LlmAttemptTiming[]) : null;
 }
 
 export default function SemanticReview({
@@ -663,6 +670,7 @@ export default function SemanticReview({
       failure: { code: failure.code, stage: failure.stage },
       provider: providerOfferFor(result, failureDetail),
       stageTimings: result?.stageTimings ?? stageTimingsFromDetail(failureDetail),
+      providerAttempts: attemptsFromDetail(failureDetail),
       selectionChars: scope?.anchor.selectedText.length ?? null,
       at: new Date().toISOString(),
     });

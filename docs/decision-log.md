@@ -6184,3 +6184,51 @@ already run were discarded on the way out.
   [`src/taskpane/pages/SemanticReview.tsx`](../src/taskpane/pages/SemanticReview.tsx);
   [`tests/unit/taskpane/semantic/failureCopy.test.ts`](../tests/unit/taskpane/semantic/failureCopy.test.ts);
   [`tests/unit/ai/providers/registry.test.ts`](../tests/unit/ai/providers/registry.test.ts).
+
+## ADR-0149 — The provider call is timed where it happens, and reported per attempt
+
+- **Status**: Accepted (2026-10-16)
+- **Context**: A review that took ninety seconds reported one number —
+  `provider_call: 90011` — and nothing about where the time went. The adapter retries
+  internally (ADR-0146), so the engine sees a single call and a single total, and three
+  very different situations are indistinguishable in the report: the provider is slow,
+  the request never answered at all and was retried three times, or the gateway answered
+  with an error. The default thirty-second per-request deadline against two retries makes
+  the worst case ninety seconds, so the total cannot even say whether the provider ever
+  answered.
+
+- **Decision**:
+  1. The retry layer reports each attempt through `onAttempt` — its index, its own
+     duration, the backoff before it and whether it settled ([`RetryAttempt`](../src/ai/providers/retry.ts)),
+     with `now` injected so the durations are a measurement rather than wall time in a test.
+  2. The adapter owns the send/receive split ([`LlmAttemptTiming`](../src/ai/providers/LlmProvider.ts)):
+     `headersMs` is time to first byte, `bodyMs` is reading and parsing, and `status` is
+     the HTTP status a response carried. A request that never answers leaves all three
+     unset, with the whole wait in `durationMs`.
+  3. The timings ride on the `LlmResponse` on success and on the `LlmError` on failure,
+     because a failure is where they matter most and the throw is the only thing a caller
+     receives.
+  4. The [diagnostic report](../src/taskpane/semantic/diagnosticReport.ts) carries them as
+     `providerAttempts`, with unknown phases stated as `null` so the keys stay stable.
+  5. On success the engine logs the timings at info level. They are a measurement, not a
+     result, so they are not added to `ProviderMetadata` or the session.
+
+- **Consequences**:
+  - Positive: a slow or failing review is attributable — provider answering, body being
+    read, or retry backoff — in one artifact.
+  - Positive: "no answer" and "an error answer" are distinguishable: the former has no
+    `headersMs`, the latter carries a `status`.
+  - Cost: `LlmResponse`, `LlmError` and `RetryOptions` gained fields, and `LlmError`'s
+    constructor gained a sixth positional parameter.
+  - Cost: the adapter rethrows a re-constructed `LlmError` carrying the timings, so the
+    thrown instance is not the one `doComplete` created. The classified fields
+    (`status`, `retryable`, `retryAfterMs`) are copied unchanged, which is all
+    `classifyProviderFailure` reads.
+  - **Not claimed**: that `bodyMs` measures a streamed body. It measures `res.json()`,
+    which is the whole body at once; a streaming provider would need its own measurement.
+- **Evidence**: [`src/ai/providers/retry.ts`](../src/ai/providers/retry.ts);
+  [`src/ai/providers/gatewayAdapter.ts`](../src/ai/providers/gatewayAdapter.ts);
+  [`src/ai/providers/LlmProvider.ts`](../src/ai/providers/LlmProvider.ts);
+  [`src/taskpane/semantic/diagnosticReport.ts`](../src/taskpane/semantic/diagnosticReport.ts);
+  [`tests/unit/ai/providers/retry.test.ts`](../tests/unit/ai/providers/retry.test.ts);
+  [`tests/unit/ai/providers/providerAdapters.test.ts`](../tests/unit/ai/providers/providerAdapters.test.ts).

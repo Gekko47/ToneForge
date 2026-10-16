@@ -18,7 +18,13 @@
  * override `buildRequestBody` and `parseResponse` and nothing else.
  */
 
-import { LlmError, type LlmProvider, type LlmRequest, type LlmResponse } from "./LlmProvider";
+import {
+  LlmError,
+  type LlmAttemptTiming,
+  type LlmProvider,
+  type LlmRequest,
+  type LlmResponse,
+} from "./LlmProvider";
 import { normalizeGatewayOrigin } from "../gateway/gatewayClient";
 import { withRetry, type RetryOptions } from "./retry";
 import { logger } from "../../shared/utils/logger";
@@ -124,12 +130,26 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
       throw new LlmError(`${this.name} request aborted by caller`, this.name, false);
     }
 
+    /*
+     * One record per attempt, so a request that costs several calls reports that
+     * cost rather than hiding it behind a single total. `onAttempt` fills each
+     * record's duration and the backoff before it; `doComplete` fills the
+     * send/receive split, which only it can see.
+     */
+    const attemptTimings: LlmAttemptTiming[] = [];
     const retryOptions: RetryOptions = {
       maxRetries: this.maxRetries,
       baseDelayMs: 1000,
       maxDelayMs: 8000,
       isRetryable: (err: unknown) => err instanceof LlmError && err.retryable,
       retryAfterMs: (err: unknown) => (err instanceof LlmError ? err.retryAfterMs : undefined),
+      onAttempt: ({ index, durationMs, waitMs, outcome }) => {
+        const record = attemptTimings[index];
+        if (record === undefined) return;
+        record.durationMs = durationMs;
+        record.waitMs = waitMs;
+        record.outcome = outcome;
+      },
     };
     /*
      * The adapter owns retrying, and it is the only layer that does. `attempt`
@@ -137,19 +157,38 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
      * place that knows — an engine that retried on top of this turned a transient
      * failure into a burst and could not report the calls it never saw.
      */
-    let attempt = 0;
-    const response = await withRetry(() => {
-      attempt += 1;
-      return this.doComplete(request);
-    }, retryOptions);
-    return { ...response, attempt };
+    try {
+      const response = await withRetry(() => {
+        const record: LlmAttemptTiming = { durationMs: 0, waitMs: 0, outcome: "error" };
+        attemptTimings.push(record);
+        return this.doComplete(request, record);
+      }, retryOptions);
+      return { ...response, attempt: attemptTimings.length, attemptTimings };
+    } catch (error: unknown) {
+      /*
+       * Carry the attempts on the failure too. The throw is the only thing a caller
+       * receives, and the *shape* of the attempts is what explains a request that
+       * hung until each of its own deadlines — which no single total can show.
+       */
+      if (error instanceof LlmError) {
+        throw new LlmError(
+          error.message,
+          error.provider,
+          error.retryable,
+          error.status,
+          error.retryAfterMs,
+          attemptTimings,
+        );
+      }
+      throw error;
+    }
   }
 
   redact(text: string): string {
     return redactSensitiveText(text);
   }
 
-  private async doComplete(request: LlmRequest): Promise<LlmResponse> {
+  private async doComplete(request: LlmRequest, record: LlmAttemptTiming): Promise<LlmResponse> {
     const external = request.signal;
     let abortedByCaller = false;
     const onAbort = (): void => {
@@ -185,6 +224,7 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
     }
 
     try {
+      const sentAt = Date.now();
       const res = await this.fetchImpl(
         `${this.gatewayBaseUrl}/v1/connections/${encodeURIComponent(
           this.connection.connectionId,
@@ -196,11 +236,20 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
           signal,
         },
       );
+      // Time to first byte: how long the gateway/provider took to answer at all. A
+      // request that never answers leaves this (and `bodyMs`) unset, with the whole
+      // wait in the attempt's `durationMs` — which is how "no answer" is told apart
+      // from "answered slowly".
+      record.headersMs = Date.now() - sentAt;
+      record.status = res.status;
 
       if (!res.ok) {
         throw this.fromStatus(res.status, res.statusText, res.headers);
       }
-      return this.parseResponse((await res.json()) as unknown);
+      const bodyStartedAt = Date.now();
+      const parsed = this.parseResponse((await res.json()) as unknown);
+      record.bodyMs = Date.now() - bodyStartedAt;
+      return parsed;
     } catch (err) {
       if (err instanceof LlmError) throw err;
       if (err instanceof DOMException && err.name === "AbortError") {

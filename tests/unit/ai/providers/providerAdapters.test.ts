@@ -205,6 +205,50 @@ describe("OpenRouterAdapter", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("reports each attempt's timing on a failed request", async () => {
+    // A request that never answers: the fetch rejects every time, so each attempt's
+    // whole wait is in `durationMs` with no headers and no body. This is the shape
+    // that explains a review which is slow because it never got a reply.
+    const fetchImpl = mockFetch(() => Promise.reject(new TypeError("network")));
+    const error = (await new OpenRouterAdapter({
+      gatewayBaseUrl: GATEWAY,
+      connection: connection("openrouter"),
+      fetchImpl,
+      maxRetries: 1,
+    })
+      .complete({ prompt: "hi" })
+      .catch((err: unknown) => err)) as LlmError;
+
+    expect(error).toBeInstanceOf(LlmError);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(error.attemptTimings).toHaveLength(2);
+    const first = error.attemptTimings?.[0];
+    expect(first?.outcome).toBe("error");
+    expect(typeof first?.durationMs).toBe("number");
+    // No answer arrived, so neither phase was reached and no status was recorded —
+    // the signature of a request that hung until it was killed.
+    expect(first?.headersMs).toBeUndefined();
+    expect(first?.bodyMs).toBeUndefined();
+    expect(first?.status).toBeUndefined();
+  });
+
+  it("reports a successful attempt's send and receive split", async () => {
+    const fetchImpl = mockFetch(() => jsonResponse({ choices: [{ message: { content: "ok" } }] }));
+    const response = await new OpenRouterAdapter({
+      gatewayBaseUrl: GATEWAY,
+      connection: connection("openrouter"),
+      fetchImpl,
+    }).complete({ prompt: "hi" });
+
+    expect(response.attemptTimings).toHaveLength(1);
+    expect(response.attemptTimings?.[0]?.outcome).toBe("ok");
+    // An answered request records both halves and the status, so a slow one can be
+    // attributed — and an error response is not mistaken for no response.
+    expect(typeof response.attemptTimings?.[0]?.headersMs).toBe("number");
+    expect(typeof response.attemptTimings?.[0]?.bodyMs).toBe("number");
+    expect(response.attemptTimings?.[0]?.status).toBe(200);
+  });
+
   it("allows a user-approved self-hosted base URL", async () => {
     const fetchImpl = mockFetch(() => jsonResponse({ choices: [{ message: { content: "ok" } }] }));
     const instance = new OpenRouterAdapter({

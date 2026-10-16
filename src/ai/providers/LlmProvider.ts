@@ -12,6 +12,35 @@ export interface LlmRequest {
   signal?: AbortSignal;
 }
 
+/**
+ * One provider call's timing, so a slow or hanging review can be attributed.
+ *
+ * `headersMs` is the wait for the provider to answer at all; `bodyMs` is the time
+ * to read and parse what it sent. A request that never answers leaves both unset,
+ * with the whole attempt in `durationMs` — a different fault from a provider that
+ * answers and then streams slowly, where the time sits in `bodyMs`.
+ */
+export interface LlmAttemptTiming {
+  /** Milliseconds the attempt itself took, from send to parsed response. */
+  durationMs: number;
+  /** Milliseconds waited before this attempt; zero for the first. */
+  waitMs: number;
+  /** Whether the attempt resolved or threw. */
+  outcome: "ok" | "error";
+  /** Milliseconds until the response headers arrived, when a request was sent. */
+  headersMs?: number;
+  /** Milliseconds to read and parse the body, when one arrived. */
+  bodyMs?: number;
+  /**
+   * The HTTP status a response carried, when one arrived.
+   *
+   * Present even on a failure status, and absent when no response did — which is how
+   * a report tells "the provider answered with an error" apart from "the provider
+   * never answered at all".
+   */
+  status?: number;
+}
+
 export interface LlmResponse {
   text: string;
   model: string;
@@ -19,6 +48,13 @@ export interface LlmResponse {
     inputTokens?: number;
     outputTokens?: number;
   };
+  /**
+   * Per-attempt timings, when the adapter retried.
+   *
+   * Reported here rather than inferred by the caller, because the adapter is the
+   * only layer that knows how many calls one request cost and how long each waited.
+   */
+  attemptTimings?: LlmAttemptTiming[];
   /**
    * How many provider calls this response cost, when the adapter retried.
    *
@@ -83,6 +119,14 @@ export class LlmError extends Error {
      * a wait that is long enough.
      */
     public readonly retryAfterMs: number | undefined = undefined,
+    /**
+     * Per-attempt timings, when the failure happened after one or more attempts.
+     *
+     * A failure is where this matters most: a request that hangs until its own
+     * timeout and is retried has a shape — several equal, long attempts — that the
+     * caller cannot otherwise see, because it only receives the final throw.
+     */
+    public readonly attemptTimings: readonly LlmAttemptTiming[] | undefined = undefined,
   ) {
     super(message);
     this.name = "LlmError";

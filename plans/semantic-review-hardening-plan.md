@@ -413,6 +413,10 @@ Define a `SemanticReviewTelemetryEvent` type with these events:
   (`stageTimingsMs`).
 - Prompt/response digests computed as **length and identity**, not SHA-256 — a browser has
   no synchronous digest and an async one would delay the review (ADR-0148, with upgrade path).
+- Added later (ADR-0149): the provider call is timed **per attempt** — index, duration,
+  backoff wait, time to headers, time to body, and HTTP status — carried on the response and
+  the error, and reported as `providerAttempts`, so one `provider_call` total stops hiding
+  whether the provider answered, hung, or errored.
 - "Copy diagnostic report" produces redacted JSON with no document text.
 
 **Deferred (deliberately not built):** the Settings diagnostic-capture toggle (item 5). It
