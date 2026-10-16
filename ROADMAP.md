@@ -378,7 +378,7 @@ remains an explicit release gate.
 | Artifact budgets    | PASS       | `npm run build:check` enforces 600 KiB JavaScript/initial-page budgets                                                                                                             |
 | Manifest validation | PASS       | `npm run validate`                                                                                                                                                                 |
 | Stage verification  | PASS       | `npm run stage:verify` runs the ordered chain and release staging                                                                                                                  |
-| Manual host matrix  | INCOMPLETE | Desktop evidence only; web Chrome, web Edge, and Mac open                                                                                                                          |
+| Manual host matrix  | INCOMPLETE | Desktop evidence only — Stage 01 probe, tracked text smoke, and one semantic revision apply (2026-10-16); web Chrome, web Edge, and Mac open                                       |
 | Release check       | BLOCKED    | Hard human Word-host evidence gate is open                                                                                                                                         |
 
 ## Prioritized implementation plan

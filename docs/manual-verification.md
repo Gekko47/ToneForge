@@ -5,8 +5,9 @@ The canonical release status and open gate list are in
 hosts; it is not a replacement plan.
 
 **Current evidence status: PARTIAL.** Desktop Word has recorded the Stage 01
-probe and Stage 18 text-mutation smoke. Web Chrome, web Edge, Mac, and the
-newer Phase C/E host paths remain open.
+probe, the Stage 18 text-mutation smoke, and one end-to-end semantic revision
+apply (2026-10-16). Web Chrome, web Edge, Mac, and the newer Phase C/E host paths
+remain open.
 
 ## Evidence rules
 
@@ -114,12 +115,12 @@ after a control is pressed.
 
 ## Host matrix
 
-| Host                     | Version | Browser/engine    | Sideload | Task pane | Probe   | Current evidence                                                                                                                                               |
-| ------------------------ | ------- | ----------------- | -------- | --------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Word on Windows          | unknown | Edge WebView2 153 | PASS     | PASS      | PARTIAL | Desktop text insert/replace and tracking smoke recorded below. Breaks/styles remain false; Phase C/E and accessibility matrix remain open.                     |
-| Word on the web (Chrome) | —       | Chrome            | PENDING  | PENDING   | PENDING | Not recorded. A debug path now exists via **Word on the Web (Chrome)** in [`.vscode/launch.json`](../.vscode/launch.json); no evidence has been collected yet. |
-| Word on the web (Edge)   | —       | Edge              | PENDING  | PENDING   | PENDING | Not recorded. A debug path now exists via **Word on the Web (Edge)** in [`.vscode/launch.json`](../.vscode/launch.json); no evidence has been collected yet.   |
-| Word on Mac              | —       | Safari/WebKit     | PENDING  | PENDING   | PENDING | Not recorded. Out of scope: Mac is not a release commitment and no Mac hardware is available, so no Safari/WebKit debug configuration is provided.             |
+| Host                     | Version | Browser/engine    | Sideload | Task pane | Probe   | Current evidence                                                                                                                                                                          |
+| ------------------------ | ------- | ----------------- | -------- | --------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Word on Windows          | unknown | Edge WebView2 153 | PASS     | PASS      | PARTIAL | Desktop text insert/replace and tracking smoke, and one semantic revision apply (2026-10-16), recorded below. Breaks/styles remain false; Phase C/E and accessibility matrix remain open. |
+| Word on the web (Chrome) | —       | Chrome            | PENDING  | PENDING   | PENDING | Not recorded. A debug path now exists via **Word on the Web (Chrome)** in [`.vscode/launch.json`](../.vscode/launch.json); no evidence has been collected yet.                            |
+| Word on the web (Edge)   | —       | Edge              | PENDING  | PENDING   | PENDING | Not recorded. A debug path now exists via **Word on the Web (Edge)** in [`.vscode/launch.json`](../.vscode/launch.json); no evidence has been collected yet.                              |
+| Word on Mac              | —       | Safari/WebKit     | PENDING  | PENDING   | PENDING | Not recorded. Out of scope: Mac is not a release commitment and no Mac hardware is available, so no Safari/WebKit debug configuration is provided.                                        |
 
 ## Desktop evidence — 2026-09-22
 
@@ -192,6 +193,36 @@ This closes the tooling question only: both the `office-addin-debugging@5.1.6`
 chain and the VS Code F5 path reach Word Desktop. It does **not** close the
 wider host matrix, which still needs break, style, list, tracking, ribbon,
 accessibility, provider, and performance evidence, plus the web and Mac hosts.
+
+## Desktop evidence — 2026-10-16
+
+Reported by the maintainer on Windows 11 with Word Desktop (Edge WebView2),
+sideloaded with the documented workflow. The Word version and build were not
+recorded.
+
+### Semantic revision apply
+
+A whole-paragraph Semantic Review revision was approved and applied, and Word
+wrote it to the document **as a tracked change**. This is the first recorded
+end-to-end apply of the semantic path in a real host, and it is the host evidence
+for the two defects ADR-0151 and ADR-0152 describe:
+
+- The atomic precondition no longer refuses an untouched document. Before
+  ADR-0151 the same action failed with `Atomic precondition preflight failed:
+target node text changed`, because `Paragraph.text` differed from the selection
+  only by the trailing paragraph mark — a difference the mocks did not reproduce.
+- Apply was reachable and, once pressed, wrote. Before ADR-0152 a proposal the
+  model flagged (`meaningPreservation` false) disabled the button with no
+  acknowledgement path, so the revision could not be applied at all.
+
+What this does **not** record, and must not be read into it:
+
+- The exact Word version/build, or the browser engine beyond Edge WebView2.
+- Whether the applied revision carried soft warnings, and therefore whether the
+  acknowledgement control was exercised; only the write itself was observed.
+- Any mutation path other than a whole-paragraph text replacement. Break, style,
+  list, protection, navigation, ribbon, context-menu, observer, provider, and
+  performance gates remain open, as do the web and Mac hosts.
 
 ## Required remaining procedure
 
