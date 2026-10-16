@@ -85,6 +85,7 @@ describe("buildDiagnosticReport", () => {
       providerAttempts: [
         { durationMs: 1180, waitMs: 0, outcome: "ok", headersMs: 1100, bodyMs: 80, status: 200 },
       ],
+      responseIssues: [{ path: "proposedRevision.original", code: "invalid_type" }],
       stageTimings: { provider_call: 1180, response_parse: 2 },
       selectionChars: 480,
       at: "2026-10-15T00:00:00.000Z",
@@ -100,6 +101,7 @@ describe("buildDiagnosticReport", () => {
       providerAttempts: [
         { durationMs: 1180, waitMs: 0, outcome: "ok", headersMs: 1100, bodyMs: 80, status: 200 },
       ],
+      responseIssues: [{ path: "proposedRevision.original", code: "invalid_type" }],
       selectionChars: 480,
       timestamp: "2026-10-15T00:00:00.000Z",
     });
@@ -111,6 +113,7 @@ describe("buildDiagnosticReport", () => {
       failure: { code: "E_PROMPT_CONSENT_GATE", stage: "prompt_build" },
       provider: null,
       providerAttempts: null,
+      responseIssues: null,
       stageTimings: null,
       selectionChars: null,
       at: "2026-10-15T00:00:00.000Z",
@@ -118,6 +121,7 @@ describe("buildDiagnosticReport", () => {
     expect(report.provider).toBeNull();
     expect(report.stageTimingsMs).toEqual({});
     expect(report.providerAttempts).toBeNull();
+    expect(report.responseIssues).toBeNull();
     // Serialised, the report is the same set of keys every time — which is what
     // makes it safe to paste somewhere a support reader can see.
     expect(Object.keys(report)).not.toContain("text");
@@ -133,6 +137,7 @@ describe("buildDiagnosticReport", () => {
       failure: { code: "E_PROVIDER_TRANSIENT", stage: "provider_call" },
       provider: { provider: "openrouter" },
       providerAttempts: [{ durationMs: 30000, waitMs: 0, outcome: "error", headersMs: 30000 }],
+      responseIssues: null,
       stageTimings: { prompt_build: 12, provider_call: 340 },
       selectionChars: 3707,
       at: "2026-10-16T00:00:00.000Z",

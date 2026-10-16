@@ -361,24 +361,46 @@ export async function reviewSemanticSelection(
       attemptTimings: response.attemptTimings,
     });
   }
+  /*
+   * What the provider call cost, for a failure that happens *after* it succeeded.
+   *
+   * A response that cannot be read is exactly the case where "which model, how many
+   * calls and how long" matters, and all three are known here — so they ride on the
+   * failure rather than being discarded with the call that worked.
+   */
+  const providerContext = {
+    model: response.model,
+    attempts: response.attempt ?? 1,
+    ...(response.attemptTimings === undefined ? {} : { providerAttempts: response.attemptTimings }),
+  };
   begin("response_parse");
 
   if (response.text.trim().length === 0) {
     fail(
       "The model returned an empty answer. Nothing has been changed in the document.",
       "E_RESPONSE_EMPTY",
-      { responseLength: 0 },
+      { responseLength: 0, ...providerContext },
     );
   }
 
   if (!parsed.success) {
-    logger.warn("Semantic review response failed validation", {
-      issues: parsed.error.issues.length,
-    });
+    /*
+     * The path and code of each issue — never Zod's message.
+     *
+     * A message can quote the value the model produced, and that value is derived
+     * from the document. The path and the code say which field was wrong and how,
+     * which is what a fix needs, and echo none of the text. Without this a schema
+     * failure reports only a count, which cannot be diagnosed.
+     */
+    const responseIssues = parsed.error.issues.map((issue) => ({
+      path: issue.path.join(".") || "(root)",
+      code: issue.code,
+    }));
+    logger.warn("Semantic review response failed validation", { issues: responseIssues });
     fail(
       "The model did not return a usable semantic review. Nothing has been changed in the document.",
       "E_RESPONSE_SCHEMA_INVALID",
-      { issues: parsed.error.issues.length },
+      { issues: responseIssues.length, issueSummary: responseIssues, ...providerContext },
     );
   }
 

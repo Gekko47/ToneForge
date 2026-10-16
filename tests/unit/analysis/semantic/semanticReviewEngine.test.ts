@@ -451,6 +451,24 @@ describe("reviewSemanticSelection", () => {
     });
   });
 
+  it("names the field a response failed on, so a schema fault is not just a count", async () => {
+    // A schema failure used to report only how many issues there were, which cannot
+    // be diagnosed. The path and the code say which field and how, and echo none of
+    // the text the model produced.
+    await expect(
+      reviewSemanticSelection(request(), {
+        includeRawText: true,
+        registry: registryReturning({ proposedRevision: "not an object" }),
+      }),
+    ).rejects.toMatchObject({
+      detail: {
+        issueSummary: expect.arrayContaining([
+          expect.objectContaining({ path: "proposedRevision", code: "invalid_type" }),
+        ]),
+      },
+    });
+  });
+
   it("reports a provider stage that ran out of time as unreachable, not unconfigured", async () => {
     // The stage aborts its own signal at its deadline. The adapter reads that abort
     // as a caller cancellation — non-retryable, with no status — which the classifier

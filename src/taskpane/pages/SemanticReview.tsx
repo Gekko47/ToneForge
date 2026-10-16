@@ -133,7 +133,16 @@ function providerOfferFor(
     };
   }
   const provider = detail?.provider;
-  return typeof provider === "string" ? { provider } : null;
+  if (typeof provider !== "string") return null;
+  // A failure *after* the provider answered knows the model and the attempt count,
+  // so the report states them instead of leaving the provider half-described.
+  const model = detail?.model;
+  const attempts = detail?.attempts;
+  return {
+    provider,
+    ...(typeof model === "string" ? { model } : {}),
+    ...(typeof attempts === "number" ? { attempt: attempts } : {}),
+  };
 }
 
 /** The per-stage timings a failed run carried on its error, if it carried any. */
@@ -148,6 +157,14 @@ function stageTimingsFromDetail(detail: Record<string, unknown> | null): StageTi
 function attemptsFromDetail(detail: Record<string, unknown> | null): LlmAttemptTiming[] | null {
   const value = detail?.providerAttempts;
   return Array.isArray(value) ? (value as LlmAttemptTiming[]) : null;
+}
+
+/** The field paths a response failed validation on, if that is what failed. */
+function responseIssuesFromDetail(
+  detail: Record<string, unknown> | null,
+): { path: string; code: string }[] | null {
+  const value = detail?.issueSummary;
+  return Array.isArray(value) ? (value as { path: string; code: string }[]) : null;
 }
 
 export default function SemanticReview({
@@ -671,6 +688,7 @@ export default function SemanticReview({
       provider: providerOfferFor(result, failureDetail),
       stageTimings: result?.stageTimings ?? stageTimingsFromDetail(failureDetail),
       providerAttempts: attemptsFromDetail(failureDetail),
+      responseIssues: responseIssuesFromDetail(failureDetail),
       selectionChars: scope?.anchor.selectedText.length ?? null,
       at: new Date().toISOString(),
     });

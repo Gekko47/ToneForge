@@ -50,6 +50,18 @@ export interface DiagnosticProviderOffer {
   latencyMs?: number;
 }
 
+/**
+ * One reason a model response did not match the schema.
+ *
+ * The field path and the Zod code — never the message, which can quote the value
+ * the model produced, and that value is derived from the document. This is enough
+ * to fix a schema or a prompt, and carries none of the text.
+ */
+export interface DiagnosticResponseIssue {
+  path: string;
+  code: string;
+}
+
 export interface DiagnosticReportInput {
   /** Identifies the attempt, so a report and a log line can be joined. */
   runId: string;
@@ -68,6 +80,8 @@ export interface DiagnosticReportInput {
    * summary duration cannot express it.
    */
   providerAttempts: readonly LlmAttemptTiming[] | null;
+  /** Why a response failed validation, when that is what failed. */
+  responseIssues: readonly DiagnosticResponseIssue[] | null;
   /** How much was under review, which is a size and not the text. */
   selectionChars: number | null;
   /** Per-stage durations, so a slow run is attributed to a stage. */
@@ -92,6 +106,8 @@ export interface DiagnosticReport {
   stageTimingsMs: Record<string, number>;
   /** One entry per provider attempt, when the run made any; null when it made none. */
   providerAttempts: readonly DiagnosticProviderAttempt[] | null;
+  /** The fields a response failed on, when validation is what failed. */
+  responseIssues: readonly DiagnosticResponseIssue[] | null;
   selectionChars: number | null;
   timestamp: string;
 }
@@ -123,6 +139,10 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): DiagnosticR
             bodyMs: attempt.bodyMs ?? null,
             status: attempt.status ?? null,
           })),
+    responseIssues:
+      input.responseIssues === null
+        ? null
+        : input.responseIssues.map((issue) => ({ path: issue.path, code: issue.code })),
     selectionChars: input.selectionChars,
     timestamp: input.at,
   };
