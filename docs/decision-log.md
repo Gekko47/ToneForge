@@ -6144,3 +6144,43 @@ uses (ADR-0031), applied to the theme layer itself.
   [`src/taskpane/pages/SemanticReview.tsx`](../src/taskpane/pages/SemanticReview.tsx);
   [`tests/unit/analysis/semantic/telemetry.test.ts`](../tests/unit/analysis/semantic/telemetry.test.ts);
   [`tests/unit/ai/providers/retry.test.ts`](../tests/unit/ai/providers/retry.test.ts).
+
+### Amendment (2026-10-16) — a failed run's report carries what the engine knew
+
+The first diagnostic report from a live run arrived as
+`{ "failureCode": "E_PROVIDER_TRANSIENT", "stage": "provider_call", "provider": null,
+"stageTimingsMs": {} }` — the two fields a support reader needs, and the two the report
+exists to carry, both empty. The page builds the report from `result`, and a failure never
+sets `result`: the engine threw, so the provider name it held and the stages that had
+already run were discarded on the way out.
+
+- The engine's coded failures now throw through one `fail()` helper that times the stage in
+  progress and attaches `provider` and `stageTimings` to the error's detail, so a failure
+  that reaches the pane still names the provider and how far the run got before it died.
+- The diagnostic report accepts a provider that is **a name with no model, latency or
+  attempt** — the unknowns stated as `null` rather than as zeros that read like measurements
+  — which is what a run that never answered actually produced.
+- The provider-call failure is logged with the error's **type** (`errorName`), never its
+  message. `E_PROVIDER_TRANSIENT` is the classifier's catch-all, so a failure that lands on
+  it is one the classifier could not name; the type is the one clue that turns such a report
+  into a diagnosis.
+- A second live report showed `provider: null` even with the timings populated, which named a
+  further defect: the registry is handed to the engine as an `LlmProvider`, which requires
+  `name`, but supplied that property through the cast rather than on the object — so
+  `registry.name` was `undefined` at runtime and no run recorded a provider at all, on the
+  success path too. [`LlmRegistry`](../src/ai/providers/registry.ts) now has a `name` getter
+  returning the active provider's name (ADR-0100's rule: a declaration widened to accommodate
+  a call is the same lie as a property that does not exist).
+- That report also showed `provider_call: 90003` beside `E_PROVIDER_UNCONFIGURED`: the
+  ninety-second stage deadline aborts the stage signal, the adapter reads any external abort
+  as "aborted by caller" (non-retryable, no status), and the classifier called that a
+  configuration fault. A deadline the stage set for itself is not a cancellation — the engine
+  now tells the two apart and reports the timeout as `E_PROVIDER_UNREACHABLE`, the code whose
+  own definition is "a timeout or a network fault". A caller abort still wins.
+
+- **Evidence**: [`src/analysis/semantic/semanticReviewEngine.ts`](../src/analysis/semantic/semanticReviewEngine.ts);
+  [`src/ai/providers/registry.ts`](../src/ai/providers/registry.ts);
+  [`src/taskpane/semantic/diagnosticReport.ts`](../src/taskpane/semantic/diagnosticReport.ts);
+  [`src/taskpane/pages/SemanticReview.tsx`](../src/taskpane/pages/SemanticReview.tsx);
+  [`tests/unit/taskpane/semantic/failureCopy.test.ts`](../tests/unit/taskpane/semantic/failureCopy.test.ts);
+  [`tests/unit/ai/providers/registry.test.ts`](../tests/unit/ai/providers/registry.test.ts).

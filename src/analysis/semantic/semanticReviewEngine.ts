@@ -45,6 +45,7 @@ import {
   SemanticReviewError,
   classifyProviderFailure,
   stageForCode,
+  type SemanticFailureCode,
   type SemanticStage,
 } from "./failures";
 import { REPAIR_INSTRUCTION, buildSemanticReviewPrompt } from "./reviewPrompt";
@@ -110,6 +111,13 @@ export interface SemanticReviewEngineOptions {
    * key. Minted here when the caller does not supply one.
    */
   runId?: string;
+  /**
+   * The provider stage's own deadline.
+   *
+   * Overridable so a test can drive the boundary — a deadline that fires is a
+   * failure mode worth asserting, and waiting the real ninety seconds for it is not.
+   */
+  stageTimeoutMs?: number;
 }
 
 /**
@@ -195,6 +203,33 @@ export async function reviewSemanticSelection(
   const clock = opts.now ?? (() => Date.now());
   const started = clock();
 
+  /**
+   * Throw a coded failure, carrying what the engine already knows.
+   *
+   * The stage in progress is timed before the throw, and the timings collected so
+   * far ride on the error. Without this, a diagnostic report built from a rejected
+   * call arrives with an empty `stageTimingsMs` and no provider name — the two
+   * fields a slow or mis-routed failure turns on — because everything downstream
+   * sees only that the call failed, not the attempt the engine threw away. `detail`
+   * is redacted context, never document text.
+   */
+  const fail: (
+    message: string,
+    code: SemanticFailureCode,
+    detail?: Record<string, unknown>,
+  ) => never = (message, code, detail = {}) => {
+    if (openStage !== null) {
+      stageTimings[openStage] = Math.max(0, clock() - openStageAt);
+      openStage = null;
+    }
+    throw new SemanticReviewError(message, code, {
+      ...detail,
+      provider: registry.name,
+      stage: stageForCode(code),
+      stageTimings,
+    });
+  };
+
   let prompt: string;
   try {
     begin("prompt_build");
@@ -209,10 +244,7 @@ export async function reviewSemanticSelection(
     logger.warn("Semantic review refused to build a prompt", {
       reason: error instanceof Error ? error.message : "unknown",
     });
-    throw new SemanticReviewError(
-      "The review could not be prepared, so nothing was sent.",
-      "E_PROMPT_CONSENT_GATE",
-    );
+    fail("The review could not be prepared, so nothing was sent.", "E_PROMPT_CONSENT_GATE");
   }
 
   /*
@@ -227,13 +259,20 @@ export async function reviewSemanticSelection(
    * finish inside the stage, because starting one that cannot would turn a
    * refusal the user can act on into a timeout they cannot.
    */
+  // Whether the provider stage ran out of its own deadline, so the abort it caused
+  // is not later mistaken for a caller cancellation.
+  let stageBudgetExpired = false;
   let reviewed: { response: LlmResponse; parsed: ParsedResponse };
   try {
     reviewed = await (async (): Promise<{
       response: LlmResponse;
       parsed: ParsedResponse;
     }> => {
-      const stage = stageBudget(opts.signal, PROVIDER_STAGE_TIMEOUT_MS, clock);
+      const stage = stageBudget(
+        opts.signal,
+        opts.stageTimeoutMs ?? PROVIDER_STAGE_TIMEOUT_MS,
+        clock,
+      );
       try {
         begin("provider_call");
         const first = await callProvider(registry, prompt, stage.signal);
@@ -252,6 +291,7 @@ export async function reviewSemanticSelection(
           parsed: repaired.parsed,
         };
       } finally {
+        stageBudgetExpired = stage.timedOut();
         stage.cancel();
       }
     })();
@@ -262,15 +302,30 @@ export async function reviewSemanticSelection(
      * redacted and written for a log. The message is kept for that log.
      */
     const abortedByCaller = opts.signal?.aborted === true;
-    const code = classifyProviderFailure(error, abortedByCaller);
+    /*
+     * A deadline the stage set for itself is not a cancellation. The adapter sees the
+     * stage signal abort and reports it as "aborted by caller" — non-retryable, with
+     * no status — which the classifier would read as a configuration fault. A
+     * provider that did not answer in time is a timeout, so it is reported as
+     * unreachable instead. A caller abort still wins, because that one is the user's.
+     */
+    const code =
+      stageBudgetExpired && !abortedByCaller
+        ? "E_PROVIDER_UNREACHABLE"
+        : classifyProviderFailure(error, abortedByCaller);
+    // The classifier's catch-all (`E_PROVIDER_TRANSIENT`) means it could not name
+    // the failure. Record the error's *type* — never its message, which is redacted
+    // — because that name is the one clue that turns an unclassified failure into a
+    // known one on the next report.
+    const errorName = error instanceof Error ? error.name : typeof error;
     logger.warn("Semantic review provider call failed", {
       provider: registry.name,
       code,
       abortedByCaller,
+      errorName,
     });
     // The stage that was running is reported as failed rather than completed, so a
     // failed run appears once in the telemetry with the stage it died in.
-    openStage = null;
     emitTelemetry({
       event: "review.failed",
       runId,
@@ -278,10 +333,9 @@ export async function reviewSemanticSelection(
       failureCode: code,
       totalDurationMs: Math.max(0, clock() - started),
     });
-    throw new SemanticReviewError(error instanceof Error ? error.message : String(error), code, {
-      provider: registry.name,
-      stage: stageForCode(code),
+    fail(error instanceof Error ? error.message : String(error), code, {
       abortedByCaller,
+      errorName,
     });
   }
 
@@ -289,7 +343,7 @@ export async function reviewSemanticSelection(
   begin("response_parse");
 
   if (response.text.trim().length === 0) {
-    throw new SemanticReviewError(
+    fail(
       "The model returned an empty answer. Nothing has been changed in the document.",
       "E_RESPONSE_EMPTY",
       { responseLength: 0 },
@@ -300,7 +354,7 @@ export async function reviewSemanticSelection(
     logger.warn("Semantic review response failed validation", {
       issues: parsed.error.issues.length,
     });
-    throw new SemanticReviewError(
+    fail(
       "The model did not return a usable semantic review. Nothing has been changed in the document.",
       "E_RESPONSE_SCHEMA_INVALID",
       { issues: parsed.error.issues.length },
@@ -520,10 +574,16 @@ function stageBudget(
   parent: AbortSignal | undefined,
   timeoutMs: number,
   now: () => number,
-): { signal: AbortSignal; remainingMs: () => number; cancel: () => void } {
+): { signal: AbortSignal; remainingMs: () => number; timedOut: () => boolean; cancel: () => void } {
   const controller = new AbortController();
   const deadline = now() + timeoutMs;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // Whether *this* budget's timer fired, as opposed to the caller aborting: the
+  // engine needs the difference to classify a timeout apart from a cancellation.
+  let timerFired = false;
+  const timer = setTimeout(() => {
+    timerFired = true;
+    controller.abort();
+  }, timeoutMs);
   const forward = (): void => controller.abort();
   if (parent !== undefined) {
     if (parent.aborted) controller.abort();
@@ -532,6 +592,7 @@ function stageBudget(
   return {
     signal: controller.signal,
     remainingMs: () => Math.max(0, deadline - now()),
+    timedOut: () => timerFired,
     cancel: () => {
       clearTimeout(timer);
       parent?.removeEventListener("abort", forward);

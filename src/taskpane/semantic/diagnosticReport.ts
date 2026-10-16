@@ -12,14 +12,34 @@
  * read by someone who did not write it.
  */
 
-import type { ProviderMetadata, StageTimings } from "../../analysis/semantic/contracts";
+import type { StageTimings } from "../../analysis/semantic/contracts";
 import type { SemanticFailureCode, SemanticStage } from "../../analysis/semantic/failures";
+
+/**
+ * What a report may say about the provider.
+ *
+ * A completed run knows every field. A failed one knows only the name: the request
+ * never produced a model, a latency or an attempt count, and writing zeros there
+ * would read as measurements. The unknowns are stated as null so "not known" stays
+ * distinguishable from "was zero".
+ */
+export interface DiagnosticProviderOffer {
+  provider: string;
+  model?: string;
+  attempt?: number;
+  latencyMs?: number;
+}
 
 export interface DiagnosticReportInput {
   /** Identifies the attempt, so a report and a log line can be joined. */
   runId: string;
   failure: { code: SemanticFailureCode; stage: SemanticStage };
-  providerMetadata: ProviderMetadata | null;
+  /**
+   * The provider, when the run knew it. A failure names the provider even though
+   * the rest is unknown, because "which provider" is the first question a run that
+   * never answered raises.
+   */
+  provider: DiagnosticProviderOffer | null;
   /** How much was under review, which is a size and not the text. */
   selectionChars: number | null;
   /** Per-stage durations, so a slow run is attributed to a stage. */
@@ -33,11 +53,12 @@ export interface DiagnosticReport {
   runId: string;
   failureCode: SemanticFailureCode;
   stage: SemanticStage;
+  /** Null only when no provider was ever resolved; otherwise the name at least. */
   provider: {
     provider: string;
-    model: string;
-    attempt: number;
-    latencyMs: number;
+    model: string | null;
+    attempt: number | null;
+    latencyMs: number | null;
   } | null;
   /** Only the stages that ran, so an absent stage stays distinguishable from a fast one. */
   stageTimingsMs: Record<string, number>;
@@ -52,13 +73,13 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): DiagnosticR
     failureCode: input.failure.code,
     stage: input.failure.stage,
     provider:
-      input.providerMetadata === null
+      input.provider === null
         ? null
         : {
-            provider: input.providerMetadata.provider,
-            model: input.providerMetadata.model,
-            attempt: input.providerMetadata.attempt,
-            latencyMs: input.providerMetadata.latencyMs,
+            provider: input.provider.provider,
+            model: input.provider.model ?? null,
+            attempt: input.provider.attempt ?? null,
+            latencyMs: input.provider.latencyMs ?? null,
           },
     stageTimingsMs: { ...(input.stageTimings ?? {}) },
     selectionChars: input.selectionChars,

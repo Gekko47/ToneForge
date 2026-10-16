@@ -99,6 +99,19 @@ export class LlmRegistry {
     }
   }
 
+  /**
+   * The active provider's name.
+   *
+   * The registry is handed to the engines as an `LlmProvider`, which requires `name`,
+   * and the engines report the provider from it. That property used to be supplied by
+   * the cast alone rather than by this object, so `registry.name` was `undefined` at
+   * runtime — a real run recorded no provider at all, and a diagnostic report named
+   * none. This getter is what makes the declaration true.
+   */
+  get name(): string {
+    return this.active.name;
+  }
+
   get activeProvider(): LlmProvider {
     return this.active;
   }

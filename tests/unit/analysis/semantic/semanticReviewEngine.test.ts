@@ -426,6 +426,57 @@ describe("reviewSemanticSelection", () => {
     expect(review).toHaveBeenCalledTimes(1);
   });
 
+  it("carries the provider and the stages that ran on a failed call", async () => {
+    // A diagnostic report is built from this detail, and the two fields a support
+    // reader needs — which provider, and how far the run got before it died — are
+    // exactly the ones a failure would otherwise discard.
+    const review = vi.fn().mockRejectedValue(new LlmError("provider exploded", "test", true));
+    const registry = {
+      name: "test",
+      complete: review,
+      profile: review,
+      deviations: review,
+      rewrite: review,
+      review,
+    } as LlmSemanticProvider;
+
+    await expect(
+      reviewSemanticSelection(request(), { includeRawText: true, registry }),
+    ).rejects.toMatchObject({
+      detail: {
+        provider: "test",
+        stage: "provider_call",
+        stageTimings: expect.objectContaining({ provider_call: expect.any(Number) }),
+      },
+    });
+  });
+
+  it("reports a provider stage that ran out of time as unreachable, not unconfigured", async () => {
+    // The stage aborts its own signal at its deadline. The adapter reads that abort
+    // as a caller cancellation — non-retryable, with no status — which the classifier
+    // would otherwise call a configuration fault. It is a timeout, and says so.
+    const review = vi.fn().mockImplementation(
+      (req: { signal?: AbortSignal }) =>
+        new Promise<never>((_resolve, reject) => {
+          req.signal?.addEventListener("abort", () =>
+            reject(new DOMException("stage deadline", "AbortError")),
+          );
+        }),
+    );
+    const registry = {
+      name: "test",
+      complete: review,
+      profile: review,
+      deviations: review,
+      rewrite: review,
+      review,
+    } as LlmSemanticProvider;
+
+    await expect(
+      reviewSemanticSelection(request(), { includeRawText: true, registry, stageTimeoutMs: 20 }),
+    ).rejects.toMatchObject({ code: "E_PROVIDER_UNREACHABLE" });
+  });
+
   it("reports the attempt count the adapter made", async () => {
     const respond = async () => ({ text: JSON.stringify(reviewBody()), model: "test", attempt: 3 });
     const registry = {

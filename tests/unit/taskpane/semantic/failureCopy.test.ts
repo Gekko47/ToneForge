@@ -81,7 +81,7 @@ describe("buildDiagnosticReport", () => {
     const report = buildDiagnosticReport({
       runId: "run-1",
       failure: { code: "E_RESPONSE_SCHEMA_INVALID", stage: "response_parse" },
-      providerMetadata: { provider: "openai", model: "gpt-4o-mini", latencyMs: 1200, attempt: 2 },
+      provider: { provider: "openai", model: "gpt-4o-mini", latencyMs: 1200, attempt: 2 },
       stageTimings: { provider_call: 1180, response_parse: 2 },
       selectionChars: 480,
       at: "2026-10-15T00:00:00.000Z",
@@ -103,7 +103,7 @@ describe("buildDiagnosticReport", () => {
     const report = buildDiagnosticReport({
       runId: "run-2",
       failure: { code: "E_PROMPT_CONSENT_GATE", stage: "prompt_build" },
-      providerMetadata: null,
+      provider: null,
       stageTimings: null,
       selectionChars: null,
       at: "2026-10-15T00:00:00.000Z",
@@ -113,5 +113,27 @@ describe("buildDiagnosticReport", () => {
     // Serialised, the report is the same set of keys every time — which is what
     // makes it safe to paste somewhere a support reader can see.
     expect(Object.keys(report)).not.toContain("text");
+  });
+
+  it("names the provider of a failed run, and states the rest as unknown", () => {
+    // A failed run never produced a model, a latency or an attempt count. Writing
+    // zeros there would read as measurements, so the report states them as null —
+    // while still naming the provider, which is the first question a run that never
+    // answered raises.
+    const report = buildDiagnosticReport({
+      runId: "run-3",
+      failure: { code: "E_PROVIDER_TRANSIENT", stage: "provider_call" },
+      provider: { provider: "openrouter" },
+      stageTimings: { prompt_build: 12, provider_call: 340 },
+      selectionChars: 3707,
+      at: "2026-10-16T00:00:00.000Z",
+    });
+    expect(report.provider).toEqual({
+      provider: "openrouter",
+      model: null,
+      attempt: null,
+      latencyMs: null,
+    });
+    expect(report.stageTimingsMs).toEqual({ prompt_build: 12, provider_call: 340 });
   });
 });

@@ -20,9 +20,14 @@ import {
   isApplicable,
   type SessionContext,
 } from "../../analysis/semantic/session";
-import { reviewDomainFor, type SemanticReviewResult } from "../../analysis/semantic/contracts";
+import {
+  reviewDomainFor,
+  type SemanticReviewResult,
+  type StageTimings,
+} from "../../analysis/semantic/contracts";
 import {
   SemanticReviewError,
+  isSemanticReviewError,
   type SemanticFailureCode,
   type SemanticStage,
 } from "../../analysis/semantic/failures";
@@ -106,6 +111,38 @@ export interface SemanticReviewProps {
   }) => void;
 }
 
+/**
+ * The provider line of a diagnostic report.
+ *
+ * A completed run names the provider and the model that answered. A failed one
+ * names only the provider: the engine puts its name on the error, and nothing else
+ * about it exists to report. The unknowns are left off, so the report states them
+ * as null rather than as a zero that reads like a measurement.
+ */
+function providerOfferFor(
+  result: SemanticReviewResult | null,
+  detail: Record<string, unknown> | null,
+): { provider: string; model?: string; attempt?: number; latencyMs?: number } | null {
+  if (result !== null) {
+    return {
+      provider: result.providerMetadata.provider,
+      model: result.providerMetadata.model,
+      attempt: result.providerMetadata.attempt,
+      latencyMs: result.providerMetadata.latencyMs,
+    };
+  }
+  const provider = detail?.provider;
+  return typeof provider === "string" ? { provider } : null;
+}
+
+/** The per-stage timings a failed run carried on its error, if it carried any. */
+function stageTimingsFromDetail(detail: Record<string, unknown> | null): StageTimings | null {
+  const value = detail?.stageTimings;
+  // The engine writes a `StageTimings` object here; the guard is against a detail
+  // that predates the field, and the cast is the price of a loose detail record.
+  return typeof value === "object" && value !== null ? (value as StageTimings) : null;
+}
+
 export default function SemanticReview({
   onBack,
   onOpenSettings,
@@ -135,6 +172,15 @@ export default function SemanticReview({
   const [failure, setFailure] = React.useState<ReturnType<typeof failureCopyFor> | null>(null);
   /** Identifies this attempt, so a diagnostic report can be joined to a log line. */
   const [runId, setRunId] = React.useState<string | null>(null);
+  /**
+   * The context the engine attached to a failure — the provider and the stages that
+   * ran before it died.
+   *
+   * Kept separately from `result`, which a failure never sets: a report built from
+   * `result` alone arrives with no provider and no timings, which are the two fields
+   * a support report exists to carry.
+   */
+  const [failureDetail, setFailureDetail] = React.useState<Record<string, unknown> | null>(null);
   /** Cancels an in-flight review when the user asks, or replaces it on a retry. */
   const reviewController = React.useRef<AbortController | null>(null);
   const [reviewing, setReviewing] = React.useState(false);
@@ -372,6 +418,7 @@ export default function SemanticReview({
       const view = failureCopyFor(
         new SemanticReviewError("The add-in is offline", "E_PROVIDER_OFFLINE"),
       );
+      setFailureDetail(null);
       setFailure(view);
       setError(view.message);
       setStage("failed");
@@ -386,6 +433,7 @@ export default function SemanticReview({
     setError(null);
     setStatus(null);
     setFailure(null);
+    setFailureDetail(null);
     setAcknowledged(false);
     setStage("input_validation");
     // One id for the attempt, shared by the engine, the telemetry and the report, so
@@ -447,6 +495,10 @@ export default function SemanticReview({
       const view = failureCopyFor(error);
       setResult(null);
       setFailure(view);
+      // The engine attaches the provider and the stages that ran to its error, and
+      // this is the only place they survive: `result` is set only on success, so a
+      // report built from it would carry neither.
+      setFailureDetail(isSemanticReviewError(error) ? error.detail : null);
       setError(view.message);
       setStage("failed");
       commitSession(null);
@@ -463,6 +515,7 @@ export default function SemanticReview({
     setError(null);
     setStatus(null);
     setFailure(null);
+    setFailureDetail(null);
     setStage("apply");
     try {
       const outcome = await applyApprovedSemanticRevision({
@@ -519,6 +572,7 @@ export default function SemanticReview({
         failureCode: view.code,
       });
       setFailure(view);
+      setFailureDetail(isSemanticReviewError(error) ? error.detail : null);
       setError(view.message);
       setStage("failed");
     } finally {
@@ -607,8 +661,8 @@ export default function SemanticReview({
     const report = buildDiagnosticReport({
       runId: runId ?? "unknown",
       failure: { code: failure.code, stage: failure.stage },
-      providerMetadata: result?.providerMetadata ?? null,
-      stageTimings: result?.stageTimings ?? null,
+      provider: providerOfferFor(result, failureDetail),
+      stageTimings: result?.stageTimings ?? stageTimingsFromDetail(failureDetail),
       selectionChars: scope?.anchor.selectedText.length ?? null,
       at: new Date().toISOString(),
     });

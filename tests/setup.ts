@@ -325,7 +325,7 @@ if (typeof globalThis.ResizeObserver !== "function") {
 // Ensure a clean document body between tests, even when a test file does not
 // call cleanup() itself. This prevents DOM rendered by an earlier file from
 // leaking into later files that use global queries.
-afterEach(() => {
+afterEach(async () => {
   if (typeof document !== "undefined" && document.body) {
     document.body.innerHTML = "";
   }
@@ -334,4 +334,26 @@ afterEach(() => {
   // roamingSettings over localStorage, so this is the leak a test sees even when
   // it clears `localStorage` in its own `beforeEach`.
   roamingStore.clear();
+  /*
+   * Let React 19's queued work finish before the environment is torn down.
+   *
+   * The scheduler delivers its work over a `MessageChannel`, and a callback queued
+   * by the test that just finished can run *after* jsdom tears its globals down
+   * (`Node`, `NodeFilter`, `window`), surfacing as an unhandled `ReferenceError`
+   * that fails an otherwise green coverage run — intermittently, under load. This
+   * is not a correctness fix: it drains the queue while the globals still exist.
+   * A plain `setTimeout` does not cover it, because a `MessageChannel` task is a
+   * different queue; a channel round-trip does.
+   */
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (typeof MessageChannel !== "function") return;
+  await new Promise<void>((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      channel.port2.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
 });

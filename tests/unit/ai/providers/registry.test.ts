@@ -54,6 +54,21 @@ describe("LlmRegistry", () => {
     expect(registry.activeName).toBe("openrouter");
   });
 
+  it("names its active provider, so a caller does not read an undefined name", () => {
+    // The registry is handed to the engines as an `LlmProvider`, which requires
+    // `name`. That property used to come from the cast alone — not from this object —
+    // so `registry.name` was undefined at runtime and a run recorded no provider at
+    // all. The name must also follow a switch, because it is the active one.
+    const registry = new LlmRegistry({
+      gatewayBaseUrl: GATEWAY,
+      connection: connection("openrouter"),
+      fetchImpl: okFetch,
+    });
+    expect(registry.name).toBe("openrouter");
+    registry.switch("mock");
+    expect(registry.name).toBe("mock");
+  });
+
   it("falls back to the offline mock when the requested provider is unavailable", () => {
     // An explicit request for a provider that is not connected must not be
     // silently satisfied by a different one: the user asked for OpenAI, so
