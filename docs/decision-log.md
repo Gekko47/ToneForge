@@ -6233,6 +6233,20 @@ already run were discarded on the way out.
   [`tests/unit/ai/providers/retry.test.ts`](../tests/unit/ai/providers/retry.test.ts);
   [`tests/unit/ai/providers/providerAdapters.test.ts`](../tests/unit/ai/providers/providerAdapters.test.ts).
 
+### Amendment (2026-10-16) — a repaired request is timed across both of its calls
+
+The engine's repair ladder makes **two** provider calls inside one `provider_call`
+stage. The repair replaced the response wholesale, so a report built from it carried
+only the second call's `attemptTimings` while `attempt` counted both — the live run
+that prompted this showed three upstream requests against two reported attempts. The
+two calls' attempts are now concatenated, on the merged response **and** on the error
+when the repair throws (there is no merged response in that case, so the error is the
+only carrier). The first call's decision log is emitted before the second call starts,
+so it survives a repair that throws.
+
+**Evidence**: [`src/analysis/semantic/semanticReviewEngine.ts`](../src/analysis/semantic/semanticReviewEngine.ts);
+[`tests/unit/analysis/semantic/semanticReviewEngine.test.ts`](../tests/unit/analysis/semantic/semanticReviewEngine.test.ts).
+
 ## ADR-0150 — The semantic budgets are deployment configuration, and a review is bounded
 
 - **Status**: Accepted (2026-10-16)

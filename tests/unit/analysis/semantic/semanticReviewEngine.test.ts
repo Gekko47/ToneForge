@@ -29,7 +29,12 @@ import {
   SEMANTIC_DIMENSIONS,
   createEmptySemanticStyleProfile,
 } from "../../../../src/core/domain/SemanticStyleProfile";
-import { LlmError, type LlmSemanticProvider } from "../../../../src/ai/providers/LlmProvider";
+import {
+  LlmError,
+  type LlmAttemptTiming,
+  type LlmSemanticProvider,
+} from "../../../../src/ai/providers/LlmProvider";
+import { isSemanticReviewError } from "../../../../src/analysis/semantic/failures";
 import { PRESERVATION_BASE_PARAGRAPH } from "../../../fixtures/expertProse";
 
 const NOW = "2026-01-01T00:00:00.000Z";
@@ -103,6 +108,11 @@ function reviewBody(overrides: Record<string, unknown> = {}): Record<string, unk
     rationale: "Reorders the clauses so the record precedes the conclusion.",
     ...overrides,
   };
+}
+
+/** One provider attempt's timing, for the repair cases below. */
+function attempt(durationMs: number, outcome: "ok" | "error"): LlmAttemptTiming {
+  return { durationMs, waitMs: 0, outcome };
 }
 
 describe("buildSemanticReviewPrompt", () => {
@@ -597,6 +607,82 @@ describe("reviewSemanticSelection", () => {
     expect(review).toHaveBeenCalledTimes(2);
     // Both calls this request cost, so the count stays a measurement.
     expect(result.providerMetadata.attempt).toBe(2);
+  });
+
+  it("keeps both calls' timings when the repair's answer is still unreadable", async () => {
+    /*
+     * The merged response replaces the first call, so a report built from it named
+     * only the repair's attempts — a count of `attempt: 3` with nothing behind two
+     * of its entries.
+     */
+    const review = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: "I am unable to comply.",
+        model: "test",
+        attempt: 1,
+        attemptTimings: [attempt(900, "ok")],
+      })
+      .mockResolvedValue({
+        text: JSON.stringify({}),
+        model: "test",
+        attempt: 2,
+        attemptTimings: [attempt(400, "error"), attempt(350, "ok")],
+      });
+    const registry = {
+      name: "test",
+      complete: review,
+      profile: review,
+      deviations: review,
+      rewrite: review,
+      review,
+    } as LlmSemanticProvider;
+
+    const error: unknown = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry,
+    }).catch((thrown: unknown) => thrown);
+
+    if (!isSemanticReviewError(error)) throw error;
+    expect(error.code).toBe("E_RESPONSE_SCHEMA_INVALID");
+    expect((error.detail.providerAttempts as unknown[]).length).toBe(3);
+  });
+
+  it("keeps the first call's timings when the repair itself throws", async () => {
+    /*
+     * The repair throwing means the merged response never exists, so the only
+     * carrier of the first call's cost is the error. This is the live shape: a 200
+     * whose body could not be read, then a repair that timed out.
+     */
+    const review = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: "I am unable to comply.",
+        model: "test",
+        attempt: 1,
+        attemptTimings: [attempt(900, "ok")],
+      })
+      .mockRejectedValue(
+        new LlmError("the provider is busy", "test", true, 503, undefined, [attempt(500, "error")]),
+      );
+    const registry = {
+      name: "test",
+      complete: review,
+      profile: review,
+      deviations: review,
+      rewrite: review,
+      review,
+    } as LlmSemanticProvider;
+
+    const error: unknown = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry,
+    }).catch((thrown: unknown) => thrown);
+
+    if (!isSemanticReviewError(error)) throw error;
+    // The status and retryability the repair reported are preserved, not re-derived.
+    expect(error.code).toMatch(/^E_PROVIDER_/);
+    expect((error.detail.providerAttempts as unknown[]).length).toBe(2);
   });
 
   it("gives up after one repair rather than asking again and again", async () => {

@@ -40,6 +40,7 @@ import { emitTelemetry } from "./telemetry";
 import { createLlmRegistry } from "../../ai/providers/registry";
 import {
   LlmError,
+  type LlmAttemptTiming,
   type LlmSemanticProvider,
   type LlmResponse,
 } from "../../ai/providers/LlmProvider";
@@ -291,12 +292,8 @@ export async function reviewSemanticSelection(
         if (first.parsed.success || stage.remainingMs() < REPAIR_SUB_BUDGET_MS) return first;
 
         /*
-         * The first call's cost is logged here because it is otherwise discarded.
-         *
-         * The repair replaces the response, so a report of a failed repair describes
-         * only the second call and the first one disappears from the record. A live run
-         * showed three upstream requests against two reported attempts for this reason:
-         * a 200 whose body could not be read, then a repair that timed out and retried.
+         * The decision to repair is logged, with the first call's cost, before the
+         * second call starts — so the line survives a repair that throws.
          */
         logger.warn("Semantic review response could not be read; asking the model to repair it", {
           issues: first.parsed.error.issues.length,
@@ -311,12 +308,24 @@ export async function reviewSemanticSelection(
           prompt + REPAIR_INSTRUCTION,
           stage.signal,
           opts.maxTokens,
-        );
+        ).catch((error: unknown) => {
+          /*
+           * The repair threw, so there is no merged response to return — but the
+           * first call still happened and is still a cost of this request. Its
+           * attempts ride on the error, because the engine's catch builds
+           * `providerAttempts` from the error and would otherwise report only the
+           * repair. A live run showed three upstream requests against two reported
+           * attempts for exactly this reason: a 200 whose body could not be read,
+           * then a repair that timed out and retried.
+           */
+          throw withFirstCallAttempts(error, first.response.attemptTimings);
+        });
         return {
           // Every call this request cost, so the count stays a measurement.
           response: {
             ...repaired.response,
             attempt: (first.response.attempt ?? 1) + (repaired.response.attempt ?? 1),
+            ...mergedAttemptTimings(first.response, repaired.response),
           },
           parsed: repaired.parsed,
         };
@@ -636,6 +645,50 @@ async function callProvider(
     ...(maxTokens === undefined ? {} : { maxTokens }),
   });
   return { response, parsed: SemanticReviewResponseSchema.safeParse(parseJson(response.text)) };
+}
+
+/**
+ * One request's per-attempt timings across its two provider calls.
+ *
+ * Returns an object to spread, and `{}` when neither call recorded any, so the key
+ * stays absent rather than becoming `[]` — "no timings were recorded" and "the
+ * request made no attempts" are different statements. The repair replaces the
+ * response, so spreading only the repair's timings dropped the first call from the
+ * record and left a summed `attempt` count with nothing behind its entries.
+ */
+function mergedAttemptTimings(
+  first: LlmResponse,
+  repaired: LlmResponse,
+): { attemptTimings?: LlmAttemptTiming[] } {
+  const merged: LlmAttemptTiming[] = [
+    ...(first.attemptTimings ?? []),
+    ...(repaired.attemptTimings ?? []),
+  ];
+  return merged.length === 0 ? {} : { attemptTimings: merged };
+}
+
+/**
+ * Attach the first call's attempts to a repair failure.
+ *
+ * A repair that throws discards the merged response, so the only place the first
+ * call's cost can survive is the error the engine's catch reads. An error that is
+ * not an `LlmError`, or carries no attempts of its own to merge into, is returned
+ * untouched — a second representation of the same throw would be a lie about what
+ * was recorded.
+ */
+function withFirstCallAttempts(
+  error: unknown,
+  first: readonly LlmAttemptTiming[] | undefined,
+): unknown {
+  if (!(error instanceof LlmError) || first === undefined || first.length === 0) return error;
+  return new LlmError(
+    error.message,
+    error.provider,
+    error.retryable,
+    error.status,
+    error.retryAfterMs,
+    [...first, ...(error.attemptTimings ?? [])],
+  );
 }
 
 /**

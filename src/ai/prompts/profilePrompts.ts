@@ -121,18 +121,67 @@ const ENUM_OPTIONS = [
 ].join("\n");
 
 /**
+ * The response as literal JSON.
+ *
+ * **Why a skeleton, and not the key list it replaced.** A list of key names is a
+ * shape a model is free to interpret: asked for `tone (primary, secondary,
+ * description)`, a small model answers with the string `"restrained, analytical"`
+ * where an object was required, and the strict extraction schema refuses the whole
+ * analysis over a nesting mistake. The skeleton states the nesting, the
+ * delimiters, and the type of every value — the part a key list cannot state. The
+ * review prompt reached the same conclusion when its prose key list became a
+ * literal skeleton.
+ *
+ * `<allowed>` is a placeholder for one of the values listed for that field, and
+ * `<true or false>` for a boolean. Neither is meant to be echoed.
+ */
+const RESPONSE_SKELETON = [
+  "Return exactly this JSON object, with every key present and no prose around it:",
+  "{",
+  '  "tone": { "primary": "<allowed>", "secondary": [<up to 2 allowed values>], "description": "<one sentence, or an empty string>" },',
+  '  "voice": { "person": "<allowed>", "construction": "<allowed>", "authorialPresence": "<allowed>", "description": "<one sentence, or an empty string>" },',
+  '  "formality": { "score": <integer 0-100>, "label": "<short label>" },',
+  '  "register": { "primary": "<allowed>", "description": "<one sentence, or an empty string>" },',
+  '  "assertionStyle": { "strength": "<allowed>", "ordering": "<allowed>", "directness": "<allowed>" },',
+  '  "qualificationStyle": { "frequency": "<allowed>", "strength": "<allowed>", "exceptions": "<allowed>", "conditionals": <true or false> },',
+  '  "evidenceFraming": { "recordFirst": <true or false>, "attribution": "<allowed>", "quotation": "<allowed>", "explicitReferences": <true or false>, "progression": "<allowed>" },',
+  '  "uncertaintyStyle": { "incompleteEvidence": "<allowed>", "confidenceLanguage": "<allowed>", "modality": "<allowed>", "avoidsUnsupportedCertainty": <true or false> },',
+  '  "sentenceArchitecture": { "complexity": "<allowed>", "clauseDensity": "<allowed>", "targetWords": <integer 5-60>, "coordination": "<allowed>", "shortClosingSentence": <true or false> },',
+  '  "paragraphArchitecture": { "function": "<allowed>", "ordering": "<allowed>", "targetWords": <integer 20-400>, "propositions": "<allowed>" },',
+  '  "transitions": "<allowed>",',
+  '  "agency": { "actorNaming": "<allowed>", "passiveTendency": "<allowed>", "attributionPrecision": "<allowed>" },',
+  '  "technicality": { "density": "<allowed>", "explainsTerms": <true or false>, "abbreviationTendency": "<allowed>" },',
+  '  "rhetoricalStyle": "<allowed>",',
+  '  "conclusionStyle": { "form": "<allowed>", "avoidsRepetition": <true or false> },',
+  '  "lexicalPreferences": { "toneAvoid": [<strings>], "prefersNeutralVerbs": <true or false>, "evaluativeLanguage": "<allowed>" }',
+  "}",
+  "",
+  "The type of each value matters as much as the value:",
+  "- each of the sixteen keys is a JSON object, except transitions and rhetoricalStyle, which are bare strings",
+  "- every boolean field is JSON true or false, unquoted, never the word 'true' or 'yes'",
+  "- every enumerated field takes one of the values listed for it below, spelled exactly as written there",
+  "- secondary and toneAvoid are JSON arrays of strings, never one comma-separated string",
+  "- <allowed> marks a field that takes one of the values listed below",
+].join("\n");
+
+/**
  * The V2 learning prompt.
  *
  * Same raw-text gate as every other builder — the check is the first statement
  * and it throws before a prompt string exists, so no caller can accidentally
  * build a prompt containing a document and then not send it.
  *
- * Two things the V1 prompt did not say, and both are load-bearing:
+ * Three things the V1 prompt did not say, and all three are load-bearing:
  *
  * - **Every group is named, and the model is told not to omit one.** The
  *   response is validated against a schema with no defaults, so a group the model
  *   forgets is a refusal rather than a silent "tone: neutral". Telling the model
  *   the rule is cheaper than telling the user their provider failed.
+ * - **The shape is shown, not listed.** `RESPONSE_SKELETON` states the nesting,
+ *   the delimiters and the type of every value; a list of key names leaves all
+ *   three to inference, which is how a model answers a group with a string where
+ *   an object was required and loses the analysis over the nesting rather than
+ *   the reading.
  * - **The description fields are told not to quote the sample.** They are where
  *   a project name, a date, or a figure lands when a model paraphrases instead of
  *   describing, and the leakage check will refuse the whole analysis if one
@@ -151,18 +200,9 @@ export function buildProfilePromptV2(
   return [
     "Analyze the following writing sample and describe how it reads.",
     "Return a JSON object and nothing else. Every one of these sixteen keys must be",
-    "present, and every key inside them must be present:",
-    "tone (primary, secondary, description), voice (person, construction, authorialPresence, description),",
-    "formality (score, label), register (primary, description),",
-    "assertionStyle (strength, ordering, directness), qualificationStyle (frequency, strength, exceptions, conditionals),",
-    "evidenceFraming (recordFirst, attribution, quotation, explicitReferences, progression),",
-    "uncertaintyStyle (incompleteEvidence, confidenceLanguage, modality, avoidsUnsupportedCertainty),",
-    "sentenceArchitecture (complexity, clauseDensity, targetWords, coordination, shortClosingSentence),",
-    "paragraphArchitecture (function, ordering, targetWords, propositions), transitions,",
-    "agency (actorNaming, passiveTendency, attributionPrecision),",
-    "technicality (density, explainsTerms, abbreviationTendency), rhetoricalStyle,",
-    "conclusionStyle (form, avoidsRepetition),",
-    "lexicalPreferences (toneAvoid, prefersNeutralVerbs, evaluativeLanguage).",
+    "present, and every key inside them must be present.",
+    "",
+    RESPONSE_SKELETON,
     "",
     ENUM_OPTIONS,
     "",
