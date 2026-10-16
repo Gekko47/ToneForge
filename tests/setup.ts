@@ -13,6 +13,24 @@ import "@testing-library/jest-dom/vitest";
 // timeouts are unnecessary.
 configure({ asyncUtilTimeout: 20_000 });
 
+/*
+ * Let React's scheduler drain before the environment is torn down.
+ *
+ * React 19 schedules its work loop through a Node `setImmediate`. When a test file
+ * ends with one still queued, the callback runs after jsdom has been destroyed and
+ * reads a global that no longer exists — surfacing as an unhandled
+ * `ReferenceError: window is not defined` (or `Node is not defined`) attributed to
+ * whichever file happened to be running. It is intermittent because it depends on
+ * timing, and it fails the run even though every test passed.
+ *
+ * One macrotask tick inside the environment is enough for a pending immediate to
+ * run while the globals still exist. Costs one tick per test, which is nothing
+ * against a suite this size.
+ */
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
 // Register Fluent UI icons (ChevronDown, etc.) before any component renders.
 // Fluent v9 icons self-register via @fluentui/react-icons; no initializeIcons needed.
 
