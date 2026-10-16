@@ -615,11 +615,17 @@ export function createDevGatewayBroker({
       const startedAt = Date.now();
       // Logged *before* the call, not only after. The first question about a review
       // that never returns is whether the gateway reached the provider at all, and a
-      // line written only on completion cannot answer it. The endpoint and the model
-      // are named so a wrong base URL or model is visible; the key never is.
+      // line written only on completion cannot answer it. The endpoint, the model and
+      // the two request options a slow completion turns on are named; the key never is.
+      //
+      // `maxTokens` and `stream` are logged because both can only be checked here: the
+      // response is one body either way, so a cap that was not applied looks identical
+      // to a cap the provider ignored.
       console.warn(
         `[toneforge-gateway] chat/completions ${connectionId} -> ${safeEndpoint(endpoint)} ` +
-          `model=${String(body.model)} requestBytes=${JSON.stringify(body).length}`,
+          `model=${String(body.model)} requestBytes=${JSON.stringify(body).length} ` +
+          `maxTokens=${body.max_tokens === undefined ? "absent" : String(body.max_tokens)} ` +
+          `stream=${body.stream === true ? "true" : "false"}`,
       );
       let clientLeftAt = null;
       const controller = new AbortController();

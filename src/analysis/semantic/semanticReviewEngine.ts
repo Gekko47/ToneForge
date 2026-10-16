@@ -290,8 +290,21 @@ export async function reviewSemanticSelection(
         const first = await callProvider(registry, prompt, stage.signal, opts.maxTokens);
         if (first.parsed.success || stage.remainingMs() < REPAIR_SUB_BUDGET_MS) return first;
 
+        /*
+         * The first call's cost is logged here because it is otherwise discarded.
+         *
+         * The repair replaces the response, so a report of a failed repair describes
+         * only the second call and the first one disappears from the record. A live run
+         * showed three upstream requests against two reported attempts for this reason:
+         * a 200 whose body could not be read, then a repair that timed out and retried.
+         */
         logger.warn("Semantic review response could not be read; asking the model to repair it", {
           issues: first.parsed.error.issues.length,
+          firstCallAttempts: first.response.attemptTimings?.length,
+          firstCallMs: first.response.attemptTimings?.reduce(
+            (total, attempt) => total + attempt.durationMs,
+            0,
+          ),
         });
         const repaired = await callProvider(
           registry,
