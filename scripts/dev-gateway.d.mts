@@ -47,6 +47,8 @@ export declare function createDevGatewayBroker(options?: {
   now?: () => Date;
   deploymentManaged?: DeploymentManagedCredential | null;
   authorize?: AuthorizeStub | ((provider: string) => string) | null;
+  /** Backstop on the upstream provider call, in milliseconds. */
+  upstreamTimeoutMs?: number;
 }): (req: unknown, res: unknown, next: () => void) => Promise<void>;
 
 export declare function normalizeModelEntry(raw: unknown): GatewayModelEntry | null;

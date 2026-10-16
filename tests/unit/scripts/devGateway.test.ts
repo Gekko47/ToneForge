@@ -398,6 +398,42 @@ describe("createDevGatewayBroker", () => {
     expect(res.json().choices[0].message.content).toBe("ok");
   });
 
+  it("answers 504 when the provider accepts the request and never replies", async () => {
+    // Without a bound here the gateway held the connection until the client's own
+    // cap fired, so neither side could say which hop was stuck. The mock provider
+    // resolves only when its signal aborts, which is the timeout doing its job.
+    const fetchImpl = asFetch(
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")),
+            );
+          }),
+      ),
+    );
+    const connections = new Map([
+      ["or_1", { apiKey: "sk-or-secret", baseUrl: OPENROUTER_DEFAULT_BASE_URL }],
+    ]);
+    const res = response();
+    await createDevGatewayBroker({
+      expectedNonce: NONCE,
+      fetchImpl,
+      connections,
+      upstreamTimeoutMs: 10,
+    })(
+      request({
+        method: "POST",
+        url: `${GATEWAY_PATH_PREFIX}/connections/or_1/chat/completions`,
+        body: { model: "vendor/model", messages: [{ role: "user", content: "hi" }] },
+      }) as never,
+      res as never,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(504);
+    expect(res.json().error).toMatch(/did not answer/i);
+  });
+
   it("rejects a chat body with no model before calling upstream", async () => {
     const fetchImpl = asFetch(vi.fn(async () => okJson({})));
     const connections = new Map([

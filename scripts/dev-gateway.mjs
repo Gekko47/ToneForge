@@ -132,6 +132,12 @@ export function createDevGatewayBroker({
   // real provider exchange, so the callback issues a connection whose upstream
   // credential is the deployment-managed key when one is configured.
   authorize = null,
+  // Backstop on the upstream provider call. Deliberately *longer* than the add-in's
+  // own per-request cap: this exists to stop an indefinite hang, not to race the
+  // client, and a bound below the client's would abort a generation the client was
+  // still willing to wait for. A client that gives up first closes the response, and
+  // that aborts the upstream request too, so an abandoned generation does not linger.
+  upstreamTimeoutMs = 120_000,
 } = {}) {
   const newConnectionId = () => `or_${randomBytes(16).toString("hex")}`;
 
@@ -597,19 +603,62 @@ export function createDevGatewayBroker({
         sendJson(response, 400, { error: payload.reason });
         return;
       }
-      const upstream = await fetchImpl(`${connection.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${connection.apiKey}`,
-          "HTTP-Referer": "https://github.com/Gekko47/ToneForge",
-          "X-Title": "ToneForge",
-        },
-        body: JSON.stringify(body),
-      });
-      res.statusCode = upstream.status;
-      res.setHeader("Content-Type", upstream.headers.get("content-type") ?? "application/json");
-      res.end(Buffer.from(await upstream.arrayBuffer()));
+      /*
+       * Time the upstream hop, and bound it.
+       *
+       * This buffers the whole provider answer before writing a single header back,
+       * so a client waiting on *this* response learns nothing until upstream
+       * finishes — which made a stalled provider look like a client-side timeout,
+       * with no evidence on either side. The log line and the 504 below give the
+       * add-in an answer it can act on and give this terminal the numbers that say
+       * where the time went: upstream status, time to headers, time to body.
+       */
+      const startedAt = Date.now();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), upstreamTimeoutMs);
+      // Abort upstream when the client goes away, so a cancelled review does not
+      // leave an orphaned provider request behind. `res` has `on` on a real host;
+      // the optional call keeps the unit-test double, which has no emitter, working.
+      const onClientClose = () => controller.abort();
+      response.on?.("close", onClientClose);
+      try {
+        const upstream = await fetchImpl(`${connection.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${connection.apiKey}`,
+            "HTTP-Referer": "https://github.com/Gekko47/ToneForge",
+            "X-Title": "ToneForge",
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        const headersAt = Date.now();
+        const buffer = Buffer.from(await upstream.arrayBuffer());
+        const bodyDoneAt = Date.now();
+        console.warn(
+          `[toneforge-gateway] chat/completions ${connectionId} upstream=${upstream.status} ` +
+            `headersMs=${headersAt - startedAt} bodyMs=${bodyDoneAt - headersAt} bytes=${buffer.length}`,
+        );
+        response.statusCode = upstream.status;
+        response.setHeader(
+          "Content-Type",
+          upstream.headers.get("content-type") ?? "application/json",
+        );
+        response.end(buffer);
+      } catch (error) {
+        const elapsedMs = Date.now() - startedAt;
+        console.error(
+          `[toneforge-gateway] chat/completions ${connectionId} failed after ${elapsedMs}ms: ` +
+            `${error?.name ?? "Error"}`,
+        );
+        // 504 rather than a hang: this is the backstop firing, so the client gets a
+        // definitive answer instead of a connection that outlives its own timeout.
+        sendJson(response, 504, { error: "The provider did not answer in time" });
+      } finally {
+        clearTimeout(timer);
+        response.off?.("close", onClientClose);
+      }
     }
   };
 }
