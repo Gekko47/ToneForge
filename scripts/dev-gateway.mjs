@@ -609,20 +609,37 @@ export function createDevGatewayBroker({
        * This buffers the whole provider answer before writing a single header back,
        * so a client waiting on *this* response learns nothing until upstream
        * finishes — which made a stalled provider look like a client-side timeout,
-       * with no evidence on either side. The log line and the 504 below give the
-       * add-in an answer it can act on and give this terminal the numbers that say
-       * where the time went: upstream status, time to headers, time to body.
+       * with no evidence on either side.
        */
+      const endpoint = `${connection.baseUrl}/chat/completions`;
       const startedAt = Date.now();
+      // Logged *before* the call, not only after. The first question about a review
+      // that never returns is whether the gateway reached the provider at all, and a
+      // line written only on completion cannot answer it. The endpoint and the model
+      // are named so a wrong base URL or model is visible; the key never is.
+      console.warn(
+        `[toneforge-gateway] chat/completions ${connectionId} -> ${safeEndpoint(endpoint)} ` +
+          `model=${String(body.model)} requestBytes=${JSON.stringify(body).length}`,
+      );
+      let clientLeftAt = null;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), upstreamTimeoutMs);
-      // Abort upstream when the client goes away, so a cancelled review does not
-      // leave an orphaned provider request behind. `res` has `on` on a real host;
-      // the optional call keeps the unit-test double, which has no emitter, working.
-      const onClientClose = () => controller.abort();
+      /*
+       * The client closing is recorded, not acted on.
+       *
+       * Aborting upstream here would hide the very thing being diagnosed: whether the
+       * provider ever answers. The add-in caps its own wait at ~30s, so aborting on
+       * its close guarantees the true upstream duration is never observed. The timeout
+       * above still bounds the work; one development request outliving a cancelled
+       * review by up to `upstreamTimeoutMs` is the deliberate trade.
+       */
+      const onClientClose = () => {
+        clientLeftAt = Date.now();
+      };
       response.on?.("close", onClientClose);
+      response.on?.("error", () => {});
       try {
-        const upstream = await fetchImpl(`${connection.baseUrl}/chat/completions`, {
+        const upstream = await fetchImpl(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -638,8 +655,12 @@ export function createDevGatewayBroker({
         const bodyDoneAt = Date.now();
         console.warn(
           `[toneforge-gateway] chat/completions ${connectionId} upstream=${upstream.status} ` +
-            `headersMs=${headersAt - startedAt} bodyMs=${bodyDoneAt - headersAt} bytes=${buffer.length}`,
+            `headersMs=${headersAt - startedAt} bodyMs=${bodyDoneAt - headersAt} bytes=${buffer.length}` +
+            (clientLeftAt === null ? "" : ` clientLeftAfterMs=${clientLeftAt - startedAt}`),
         );
+        // A client that already gave up leaves nothing to write to. The timings above
+        // are still the answer, so the write is skipped rather than forced.
+        if (response.writableEnded || response.destroyed) return;
         response.statusCode = upstream.status;
         response.setHeader(
           "Content-Type",
@@ -661,6 +682,22 @@ export function createDevGatewayBroker({
       }
     }
   };
+}
+
+/**
+ * A provider endpoint for a log line.
+ *
+ * The origin and path, never a query, a fragment or a credential: the base URL is
+ * policy-validated on the way in, and this is belt-and-braces so a log line cannot
+ * become a place a secret appears.
+ */
+function safeEndpoint(value) {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "(unparseable endpoint)";
+  }
 }
 
 function isJsonContentType(headers) {
