@@ -75,6 +75,14 @@ export class LlmError extends Error {
      * status at all.
      */
     public readonly status: number | undefined = undefined,
+    /**
+     * How long the provider asked the caller to wait, when it said so.
+     *
+     * The provider's own answer to "when may I try again" beats any backoff this
+     * add-in invents, and honouring it is what turns a rate limit from a guess into
+     * a wait that is long enough.
+     */
+    public readonly retryAfterMs: number | undefined = undefined,
   ) {
     super(message);
     this.name = "LlmError";

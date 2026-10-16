@@ -59,6 +59,7 @@ export const SEMANTIC_FAILURE_CODES = [
   "E_PROVIDER_UNCONFIGURED",
   "E_PROVIDER_CANCELLED",
   "E_PROVIDER_TRANSIENT",
+  "E_PROVIDER_OFFLINE",
   // response_parse
   "E_RESPONSE_EMPTY",
   "E_RESPONSE_SCHEMA_INVALID",
@@ -89,6 +90,7 @@ const STAGE_BY_CODE: Readonly<Record<SemanticFailureCode, SemanticStage>> = {
   E_PROVIDER_UNCONFIGURED: "provider_call",
   E_PROVIDER_CANCELLED: "provider_call",
   E_PROVIDER_TRANSIENT: "provider_call",
+  E_PROVIDER_OFFLINE: "provider_call",
   E_RESPONSE_EMPTY: "response_parse",
   E_RESPONSE_SCHEMA_INVALID: "response_parse",
   E_PRESERVATION_SPAN_MISMATCH: "preservation_check",

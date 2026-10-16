@@ -384,7 +384,7 @@ Define a `SemanticReviewTelemetryEvent` type with these events:
 
 **Test strategy:** Add tests to `SemanticReview.test.tsx` (if it exists) or create it. Test stage transitions with a mock provider that fails at each stage.
 
-### Phase 4 — Observability and telemetry
+### Phase 4 — Observability and telemetry _(LANDED 2026-10-16)_
 
 **Scope:** new module `src/analysis/semantic/telemetry.ts`, `SemanticReview.tsx`, `semanticReviewEngine.ts`.
 
@@ -405,9 +405,24 @@ Define a `SemanticReviewTelemetryEvent` type with these events:
 - Diagnostic capture stores redacted text in `localStorage` when enabled.
 - "Copy diagnostic report" produces valid JSON with no document text.
 
+**Landed:**
+
+- `SemanticReviewTelemetryEvent` union and `emitTelemetry(event)` in `telemetry.ts`; a run
+  mints `runId` (injected option), an apply mints `applyId`.
+- Stage timings recorded on the result (`stageTimings`) and in the diagnostic report
+  (`stageTimingsMs`).
+- Prompt/response digests computed as **length and identity**, not SHA-256 — a browser has
+  no synchronous digest and an async one would delay the review (ADR-0148, with upgrade path).
+- "Copy diagnostic report" produces redacted JSON with no document text.
+
+**Deferred (deliberately not built):** the Settings diagnostic-capture toggle (item 5). It
+implies a persisted setting, a privacy note and a localStorage store of redacted text; the
+run identity, stage timings and copy-report path deliver the support value without it.
+Recorded here rather than silently dropped.
+
 **Test strategy:** Unit tests for `emitTelemetry`, digest computation, and diagnostic report generation. Mock `crypto.subtle.digest`.
 
-### Phase 5 — Idempotency, concurrency, offline, degradation
+### Phase 5 — Idempotency, concurrency, offline, degradation _(LANDED 2026-10-16)_
 
 **Scope:** `semanticReviewEngine.ts`, `gatewayAdapter.ts`, `SemanticReview.tsx`.
 
@@ -426,6 +441,21 @@ Define a `SemanticReviewTelemetryEvent` type with these events:
 - Concurrency limit queues rather than rejects.
 - Graceful degradation reduces parse failures by at least 50% on the test corpus.
 - `Retry-After` is respected for 429 responses.
+
+**Landed:**
+
+- Offline guard refuses immediately with `E_PROVIDER_OFFLINE`, reading `navigator.onLine`
+  as a hint (only `=== false` refuses) — ADR-0148.
+- Graceful degradation: optional `meaningPreservation` (defaults to preserved), unknown
+  dimensions dropped to `tone`, and a default observation substituted when the model names
+  none (Phase 1 + `withDefaultObservation`).
+- `E_PROVIDER_CONTENT_FILTER` classification for 400/422 and the `429` `Retry-After` header
+  honoured (delay-seconds or HTTP date), capped at `maxDelayMs` — ADR-0148.
+
+**Deviation:** the global concurrency limit (item 2) is implemented as **limit-one by
+aborting the previous review** (an in-flight `reviewController` plus a `reviewing` gate)
+rather than a promise queue. One review at a time is what the UI presents; a queue would add
+a scheduler with no second consumer. Recorded as a deliberate, reversible simplification.
 
 **Test strategy:** Tests for offline detection, concurrency queue, graceful degradation with malformed responses.
 

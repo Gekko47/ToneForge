@@ -34,6 +34,9 @@
 
 import { v4 as uuidv4 } from "uuid";
 
+import { PROMPT_VERSION } from "./reviewPrompt";
+import { emitTelemetry } from "./telemetry";
+
 import { createLlmRegistry } from "../../ai/providers/registry";
 import { type LlmResponse, type LlmSemanticProvider } from "../../ai/providers/LlmProvider";
 import { logger } from "../../shared/utils/logger";
@@ -54,6 +57,7 @@ import {
   type SemanticAssessment,
   type SemanticReviewRequest,
   type SemanticReviewResult,
+  type StageTimings,
 } from "./contracts";
 
 /**
@@ -101,6 +105,11 @@ export interface SemanticReviewEngineOptions {
    * which is worse than none, because it claims to know something it does not.
    */
   onStage?: (stage: SemanticStage) => void;
+  /**
+   * Identifies this attempt, so a telemetry event and a diagnostic report share a
+   * key. Minted here when the caller does not supply one.
+   */
+  runId?: string;
 }
 
 /**
@@ -115,11 +124,80 @@ export async function reviewSemanticSelection(
   request: SemanticReviewRequest,
   opts: SemanticReviewEngineOptions,
 ): Promise<SemanticReviewResult> {
-  const report = (stage: SemanticStage): void => opts.onStage?.(stage);
+  const runId = opts.runId ?? uuidv4();
+
+  /*
+   * Stage bookkeeping in one place.
+   *
+   * Each `begin` closes the stage before it, so durations come from the gaps
+   * between transitions rather than from a matching `end` at every exit — of which
+   * there are several, and one of them is an exception. A stage that never began is
+   * absent from the timings rather than present as a zero.
+   */
+  const stageTimings: StageTimings = {};
+  let openStage: SemanticStage | null = null;
+  // Set by the first `begin`, and never read before it: the first close has nothing
+  // open to close. Kept out of the clock's declaration order on purpose, because the
+  // prompt is built before the clock exists.
+  let openStageAt = 0;
+
+  const closeOpenStage = (): void => {
+    if (openStage === null) return;
+    const durationMs = Math.max(0, clock() - openStageAt);
+    stageTimings[openStage] = durationMs;
+    emitTelemetry({
+      event: "review.stage_completed",
+      runId,
+      stage: openStage,
+      durationMs,
+      // A stage that ended any other way is reported once, as `review.failed` with
+      // its own stage, rather than twice with two accounts of itself.
+      status: "ok",
+    });
+    openStage = null;
+  };
+
+  const begin = (stage: SemanticStage): void => {
+    closeOpenStage();
+    openStage = stage;
+    openStageAt = clock();
+    opts.onStage?.(stage);
+  };
+
+  /** Closes the last stage and reports the outcome. */
+  const finish = (result: SemanticReviewResult): SemanticReviewResult => {
+    closeOpenStage();
+    emitTelemetry({
+      event: "review.completed",
+      runId,
+      actionable: result.actionable,
+      hasProposal: result.proposedRevision !== undefined,
+      preservationPassed: result.preservation.pass,
+      totalDurationMs: Math.max(0, clock() - started),
+      attempt: result.providerMetadata.attempt,
+    });
+    return result;
+  };
+
+  emitTelemetry({
+    event: "review.started",
+    runId,
+    profileId: request.profile.id,
+    profileRevision: request.profile.revision,
+    domain: request.domain,
+    selectionChars: request.selectedText.length,
+    promptVersion: PROMPT_VERSION,
+  });
+
+  // The clock comes first: the stage helpers above time against it, so the prompt
+  // cannot be built — and its stage timed — before it exists.
+  const registry = opts.registry ?? createLlmRegistry();
+  const clock = opts.now ?? (() => Date.now());
+  const started = clock();
 
   let prompt: string;
   try {
-    report("prompt_build");
+    begin("prompt_build");
     prompt = buildSemanticReviewPrompt(request, { includeRawText: opts.includeRawText });
   } catch (error: unknown) {
     /*
@@ -136,9 +214,6 @@ export async function reviewSemanticSelection(
       "E_PROMPT_CONSENT_GATE",
     );
   }
-  const registry = opts.registry ?? createLlmRegistry();
-  const clock = opts.now ?? (() => Date.now());
-  const started = clock();
 
   /*
    * One call, and at most one repair.
@@ -160,7 +235,7 @@ export async function reviewSemanticSelection(
     }> => {
       const stage = stageBudget(opts.signal, PROVIDER_STAGE_TIMEOUT_MS, clock);
       try {
-        report("provider_call");
+        begin("provider_call");
         const first = await callProvider(registry, prompt, stage.signal);
         if (first.parsed.success || stage.remainingMs() < REPAIR_SUB_BUDGET_MS) return first;
 
@@ -193,6 +268,16 @@ export async function reviewSemanticSelection(
       code,
       abortedByCaller,
     });
+    // The stage that was running is reported as failed rather than completed, so a
+    // failed run appears once in the telemetry with the stage it died in.
+    openStage = null;
+    emitTelemetry({
+      event: "review.failed",
+      runId,
+      stage: stageForCode(code),
+      failureCode: code,
+      totalDurationMs: Math.max(0, clock() - started),
+    });
     throw new SemanticReviewError(error instanceof Error ? error.message : String(error), code, {
       provider: registry.name,
       stage: stageForCode(code),
@@ -201,7 +286,7 @@ export async function reviewSemanticSelection(
   }
 
   const { response, parsed } = reviewed;
-  report("response_parse");
+  begin("response_parse");
 
   if (response.text.trim().length === 0) {
     throw new SemanticReviewError(
@@ -232,7 +317,7 @@ export async function reviewSemanticSelection(
    * a reason to discard a review the user has paid for, and both are logged so a
    * prompt that quietly stopped asking for them stays visible.
    */
-  report("preservation_check");
+  begin("preservation_check");
   const assessment = withDefaultObservation(reported);
   const meaningPreservation = parsed.data.meaningPreservation ?? DEFAULT_MEANING_PRESERVATION;
   if (parsed.data.meaningPreservation === undefined) {
@@ -250,6 +335,8 @@ export async function reviewSemanticSelection(
 
   const base = {
     reviewSessionId: opts.newSessionId?.() ?? uuidv4(),
+    runId,
+    stageTimings,
     profileId: request.profile.id,
     profileRevision: request.profile.revision,
     assessment,
@@ -265,12 +352,12 @@ export async function reviewSemanticSelection(
    * show "nothing to change" with the reason rather than an empty card.
    */
   if (proposedRevision === undefined) {
-    return {
+    return finish({
       ...base,
       preservation: validatePreservation(request.selectedText, request.selectedText),
       actionable: false,
       refusalReason: "The model found no change worth proposing for this selection.",
-    };
+    });
   }
 
   /*
@@ -283,13 +370,13 @@ export async function reviewSemanticSelection(
    */
   if (proposedRevision.original.trim() !== request.selectedText.trim()) {
     logger.warn("Semantic review proposed a revision against a different span");
-    return {
+    return finish({
       ...base,
       preservation: validatePreservation(request.selectedText, proposedRevision.revised),
       actionable: false,
       refusalReason:
         "The model's revision did not match the selected text, so it cannot be applied to this selection. Nothing has been changed in the document.",
-    };
+    });
   }
 
   const preservation = validatePreservation(request.selectedText, proposedRevision.revised);
@@ -306,13 +393,13 @@ export async function reviewSemanticSelection(
   const actionable =
     refusal === null || (preservation.requiresAcknowledgement && unpreserved.length === 0);
 
-  return {
+  return finish({
     ...base,
     proposedRevision: proposedRevision.revised,
     preservation,
     actionable,
     ...(refusal === null ? {} : { refusalReason: refusal }),
-  };
+  });
 }
 
 /**

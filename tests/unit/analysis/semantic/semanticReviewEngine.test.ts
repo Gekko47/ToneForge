@@ -187,6 +187,24 @@ describe("reviewSemanticSelection", () => {
     expect(result.rationale).toBe("Reorders the clauses so the record precedes the conclusion.");
   });
 
+  it("records the run id and a duration for every stage that ran", async () => {
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry: registryReturning(reviewBody()),
+      runId: "run-fixed",
+    });
+
+    expect(result.runId).toBe("run-fixed");
+    // Every stage that began is present; a stage that never ran is absent rather
+    // than zero, which is what makes the timings readable as "what happened".
+    expect(Object.keys(result.stageTimings).sort()).toEqual([
+      "preservation_check",
+      "prompt_build",
+      "provider_call",
+      "response_parse",
+    ]);
+  });
+
   it("accepts a dimension the model wrote in the wrong case", async () => {
     // "Tone" fails the enum outright, and a whole response refused over a capital
     // letter is a refusal the user cannot act on.

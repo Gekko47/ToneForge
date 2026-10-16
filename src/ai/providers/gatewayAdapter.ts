@@ -129,6 +129,7 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
       baseDelayMs: 1000,
       maxDelayMs: 8000,
       isRetryable: (err: unknown) => err instanceof LlmError && err.retryable,
+      retryAfterMs: (err: unknown) => (err instanceof LlmError ? err.retryAfterMs : undefined),
     };
     /*
      * The adapter owns retrying, and it is the only layer that does. `attempt`
@@ -197,7 +198,7 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
       );
 
       if (!res.ok) {
-        throw this.fromStatus(res.status, res.statusText);
+        throw this.fromStatus(res.status, res.statusText, res.headers);
       }
       return this.parseResponse((await res.json()) as unknown);
     } catch (err) {
@@ -247,7 +248,7 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
     return timeoutMs;
   }
 
-  private fromStatus(status: number, statusText: string): LlmError {
+  private fromStatus(status: number, statusText: string, headers?: Headers): LlmError {
     // 401/403 mean the gateway rejected this connection. Retrying cannot help
     // and would hide the real reason from the user, so they are not retryable.
     const retryable = status === 429 || status >= 500;
@@ -258,6 +259,23 @@ export abstract class GatewayRoutedAdapter implements LlmProvider {
       // Carried on the error so a caller classifies the failure from the status
       // rather than from this message, which is redacted before it is logged.
       status,
+      retryAfterMs(headers),
     );
   }
+}
+
+/**
+ * The provider's own wait, when it asked for one.
+ *
+ * `Retry-After` is either a number of seconds or an HTTP date, and both are legal,
+ * so both are read. An unparseable value is treated as "no request" rather than as
+ * zero: guessing short on a rate limit is how a retry becomes a second refusal.
+ */
+function retryAfterMs(headers: Headers | undefined): number | undefined {
+  const raw = headers?.get("retry-after");
+  if (raw === null || raw === undefined || raw.trim().length === 0) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - Date.now());
 }

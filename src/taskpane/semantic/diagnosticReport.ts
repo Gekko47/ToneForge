@@ -12,7 +12,7 @@
  * read by someone who did not write it.
  */
 
-import type { ProviderMetadata } from "../../analysis/semantic/contracts";
+import type { ProviderMetadata, StageTimings } from "../../analysis/semantic/contracts";
 import type { SemanticFailureCode, SemanticStage } from "../../analysis/semantic/failures";
 
 export interface DiagnosticReportInput {
@@ -22,6 +22,8 @@ export interface DiagnosticReportInput {
   providerMetadata: ProviderMetadata | null;
   /** How much was under review, which is a size and not the text. */
   selectionChars: number | null;
+  /** Per-stage durations, so a slow run is attributed to a stage. */
+  stageTimings: StageTimings | null;
   /** When the report was produced, ISO 8601. */
   at: string;
 }
@@ -37,6 +39,8 @@ export interface DiagnosticReport {
     attempt: number;
     latencyMs: number;
   } | null;
+  /** Only the stages that ran, so an absent stage stays distinguishable from a fast one. */
+  stageTimingsMs: Record<string, number>;
   selectionChars: number | null;
   timestamp: string;
 }
@@ -56,6 +60,7 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): DiagnosticR
             attempt: input.providerMetadata.attempt,
             latencyMs: input.providerMetadata.latencyMs,
           },
+    stageTimingsMs: { ...(input.stageTimings ?? {}) },
     selectionChars: input.selectionChars,
     timestamp: input.at,
   };

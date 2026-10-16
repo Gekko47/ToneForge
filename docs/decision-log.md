@@ -6083,3 +6083,64 @@ uses (ADR-0031), applied to the theme layer itself.
   [`src/ai/providers/LlmProvider.ts`](../src/ai/providers/LlmProvider.ts);
   [`tests/unit/analysis/semantic/failures.test.ts`](../tests/unit/analysis/semantic/failures.test.ts);
   [`tests/unit/taskpane/semantic/failureCopy.test.ts`](../tests/unit/taskpane/semantic/failureCopy.test.ts).
+
+## ADR-0148 — Telemetry leaves no document behind, and a hint is not a fact
+
+- **Status**: Accepted (2026-10-16)
+- **Context**: A semantic review can take a minute and fail in a dozen ways, and the only
+  record of a run was its final result. Support had no run identity to correlate a log line
+  with a user report, no stage at which the run stopped, and no sense of how long each stage
+  took. The obvious fix — capture the prompt and the response — is the one fix that must not
+  be made casually: telemetry is the easiest place in an application to leak a document,
+  because it is written by the code that already has the text in hand. Separately, a review
+  fired while the host is offline waited the whole deadline to fail on a timeout, and a
+  `429` was retried on the client's own schedule while ignoring the delay the provider asked
+  for.
+
+- **Decision**:
+  1. A run has an identity. The [engine](../src/analysis/semantic/semanticReviewEngine.ts)
+     mints a `runId` (injected as an option, so a caller and its tests own it) and records it
+     on the result beside per-stage timings. An apply mints its own `applyId`. The ids are
+     opaque and carry no state.
+  2. Events are recorded by one function,
+     [`emitTelemetry`](../src/analysis/semantic/telemetry.ts), through the shared logger.
+     **No endpoint is configured and none is added.** `TELEMETRY_DISABLED` governs sending to
+     an endpoint; with no endpoint there is nothing for it to disable. The events exist in a
+     developer console and a support session; leaving the machine requires a deployment to
+     attach a sink, which is a separate decision.
+  3. **No event carries document text.** Every field is an identifier, code, count, duration
+     or size. The prompt and response "digests" are deliberately **length and identity**
+     (prompt version, profile, domain, selection size; response length, parse outcome, repair
+     steps, issue count) rather than a SHA-256 hash — a browser exposes no synchronous digest,
+     and hashing asynchronously to produce a value only support reads would delay the review.
+     This is a stated simplification with a named upgrade path
+     (`crypto.subtle.digest`, off the critical path), not an omission.
+  4. An [offline guard](../src/taskpane/pages/SemanticReview.tsx) refuses before anything is
+     sent, with `E_PROVIDER_OFFLINE`. `navigator.onLine` is read as a **hint, never a fact**:
+     a false "offline" costs one retryable attempt, while a false "online" costs the whole
+     deadline. Only `=== false` refuses.
+  5. The [adapter](../src/ai/providers/gatewayAdapter.ts) honours a provider's `Retry-After`
+     header for `429`, reading either delay-seconds or an HTTP date, and **caps** it at the
+     retry policy's `maxDelayMs` so a hostile or mistaken value cannot stall a run.
+
+- **Consequences**:
+  - Positive: a user report becomes a `runId` a developer can find, with the stage and
+    duration it stalled at, and no document text anywhere in the trail.
+  - Positive: an offline review fails immediately, and a rate-limited retry waits the delay
+    the provider actually asked for rather than guessing.
+  - Cost: no hashed digest means two different prompts of the same shape are
+    indistinguishable in telemetry — accepted, because the fields are identity enough to
+    correlate and the upgrade path is a decision away.
+  - Cost: telemetry with no sink is only as useful as a deployment chooses to make it. That
+    is a deliberate ceiling, not a stub.
+  - **Not claimed**: that any of this has run against a live provider. The taxonomy, the
+    offline guard and the `Retry-After` parse are verified against the adapter's own statuses
+    and headers, not a live endpoint (ADR-0051). The concurrency limit is limit-one by
+    aborting the previous review, not a queueing semaphore.
+- **Evidence**: [`src/analysis/semantic/telemetry.ts`](../src/analysis/semantic/telemetry.ts);
+  [`src/analysis/semantic/semanticReviewEngine.ts`](../src/analysis/semantic/semanticReviewEngine.ts);
+  [`src/ai/providers/retry.ts`](../src/ai/providers/retry.ts);
+  [`src/ai/providers/gatewayAdapter.ts`](../src/ai/providers/gatewayAdapter.ts);
+  [`src/taskpane/pages/SemanticReview.tsx`](../src/taskpane/pages/SemanticReview.tsx);
+  [`tests/unit/analysis/semantic/telemetry.test.ts`](../tests/unit/analysis/semantic/telemetry.test.ts);
+  [`tests/unit/ai/providers/retry.test.ts`](../tests/unit/ai/providers/retry.test.ts).

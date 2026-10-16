@@ -12,6 +12,14 @@ export interface RetryOptions {
    * deterministic. Defaults to `Math.random`.
    */
   random?: () => number;
+  /**
+   * A wait the failure itself asked for, in milliseconds.
+   *
+   * When a provider states a delay it has answered the question the backoff is
+   * guessing at, so its value is used instead of a jittered draw — still capped by
+   * `maxDelayMs`, because a provider asking for an hour must not hold the add-in.
+   */
+  retryAfterMs?: (err: unknown) => number | undefined;
 }
 
 export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Promise<T> {
@@ -36,7 +44,12 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Pr
        * the synchronisation, and it shortens the average wait as a side effect.
        */
       const ceiling = Math.min(opts.baseDelayMs * 2 ** attempt, opts.maxDelayMs);
-      await new Promise((r) => setTimeout(r, Math.round(random() * ceiling)));
+      const requested = opts.retryAfterMs?.(err);
+      const delay =
+        requested === undefined
+          ? Math.round(random() * ceiling)
+          : Math.min(Math.max(0, requested), opts.maxDelayMs);
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
   throw lastError;

@@ -83,6 +83,48 @@ describe("withRetry", () => {
     await expect(done).resolves.toBeInstanceOf(Error);
   });
 
+  it("waits the delay the failure asked for, instead of a jittered draw", async () => {
+    vi.useFakeTimers();
+    const fn = vi.fn().mockRejectedValue(new Error("rate limited"));
+    const done = settled(
+      withRetry(fn, {
+        maxRetries: 1,
+        baseDelayMs: 10,
+        maxDelayMs: 8000,
+        isRetryable: () => true,
+        // A zero draw would retry at once; the provider's 500ms is what is honoured.
+        random: () => 0,
+        retryAfterMs: () => 500,
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(499);
+    expect(fn).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    await expect(done).resolves.toBeInstanceOf(Error);
+  });
+
+  it("caps a requested delay, so a provider cannot hold the add-in", async () => {
+    vi.useFakeTimers();
+    const fn = vi.fn().mockRejectedValue(new Error("rate limited"));
+    const done = settled(
+      withRetry(fn, {
+        maxRetries: 1,
+        baseDelayMs: 10,
+        maxDelayMs: 1000,
+        isRetryable: () => true,
+        retryAfterMs: () => 60 * 60 * 1000,
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    await expect(done).resolves.toBeInstanceOf(Error);
+  });
+
   it("never waits longer than the ceiling", async () => {
     vi.useFakeTimers();
     const fn = vi.fn().mockRejectedValue(new Error("transient"));

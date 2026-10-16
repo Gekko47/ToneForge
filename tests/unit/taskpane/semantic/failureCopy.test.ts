@@ -82,6 +82,7 @@ describe("buildDiagnosticReport", () => {
       runId: "run-1",
       failure: { code: "E_RESPONSE_SCHEMA_INVALID", stage: "response_parse" },
       providerMetadata: { provider: "openai", model: "gpt-4o-mini", latencyMs: 1200, attempt: 2 },
+      stageTimings: { provider_call: 1180, response_parse: 2 },
       selectionChars: 480,
       at: "2026-10-15T00:00:00.000Z",
     });
@@ -92,6 +93,7 @@ describe("buildDiagnosticReport", () => {
       failureCode: "E_RESPONSE_SCHEMA_INVALID",
       stage: "response_parse",
       provider: { provider: "openai", model: "gpt-4o-mini", attempt: 2, latencyMs: 1200 },
+      stageTimingsMs: { provider_call: 1180, response_parse: 2 },
       selectionChars: 480,
       timestamp: "2026-10-15T00:00:00.000Z",
     });
@@ -102,10 +104,12 @@ describe("buildDiagnosticReport", () => {
       runId: "run-2",
       failure: { code: "E_PROMPT_CONSENT_GATE", stage: "prompt_build" },
       providerMetadata: null,
+      stageTimings: null,
       selectionChars: null,
       at: "2026-10-15T00:00:00.000Z",
     });
     expect(report.provider).toBeNull();
+    expect(report.stageTimingsMs).toEqual({});
     // Serialised, the report is the same set of keys every time — which is what
     // makes it safe to paste somewhere a support reader can see.
     expect(Object.keys(report)).not.toContain("text");

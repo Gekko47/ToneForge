@@ -107,6 +107,10 @@ const COPY: Readonly<Record<SemanticFailureCode, SemanticFailureCopy>> = {
     message: "Something went wrong asking your provider. Try again.",
     recovery: RETRY("Try again"),
   },
+  E_PROVIDER_OFFLINE: {
+    message: "You appear to be offline. Semantic review needs a connection to your provider.",
+    recovery: RETRY("Try again"),
+  },
   E_RESPONSE_EMPTY: {
     message: "The model returned an empty answer. Nothing has been changed in the document.",
     recovery: RETRY("Try again"),

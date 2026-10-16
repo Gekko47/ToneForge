@@ -39,6 +39,7 @@ import {
   SEMANTIC_DIMENSIONS,
   type SemanticStyleProfile,
 } from "../../core/domain/SemanticStyleProfile";
+import type { SemanticStage } from "./failures";
 import type { PreservationReport } from "./preservationValidator";
 
 export {
@@ -288,9 +289,22 @@ export type ProviderMetadata = z.infer<typeof ProviderMetadataSchema>;
  * evidence that anything factual survived; it is evidence that the model felt
  * confident. The checks below are ones a reader can audit.
  */
+/**
+ * How long each stage took, in milliseconds.
+ *
+ * Partial rather than total because a stage that never ran has no duration, and a
+ * zero would claim it ran instantly. The diagnostic report shows these so a slow
+ * review is attributed to a stage rather than to "the provider".
+ */
+export type StageTimings = Partial<Record<SemanticStage, number>>;
+
 /** What the engine returns: the schema's shape plus the computed preservation report. */
 export interface SemanticReviewResult {
   reviewSessionId: string;
+  /** Identifies the attempt, so a report and a log line can be joined. */
+  runId: string;
+  /** Per-stage durations, so a slow run can be attributed to a stage. */
+  stageTimings: StageTimings;
   profileId: string;
   profileRevision: number;
   assessment: SemanticAssessment;

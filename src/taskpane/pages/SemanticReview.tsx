@@ -21,9 +21,14 @@ import {
   type SessionContext,
 } from "../../analysis/semantic/session";
 import { reviewDomainFor, type SemanticReviewResult } from "../../analysis/semantic/contracts";
-import type { SemanticFailureCode, SemanticStage } from "../../analysis/semantic/failures";
+import {
+  SemanticReviewError,
+  type SemanticFailureCode,
+  type SemanticStage,
+} from "../../analysis/semantic/failures";
 import { failureCopyFor, stageLabel, type SemanticRecovery } from "../semantic/failureCopy";
 import { buildDiagnosticReport } from "../semantic/diagnosticReport";
+import { emitTelemetry } from "../../analysis/semantic/telemetry";
 import type { SemanticReviewSession } from "../../core/domain/SemanticReviewSession";
 import { applyApprovedSemanticRevision } from "../../reformat/semanticApply";
 import {
@@ -357,6 +362,21 @@ export default function SemanticReview({
 
   async function runReview(): Promise<void> {
     if (scope === null || profile === null || sessionContext === null) return;
+    /*
+     * Refuse an offline review before anything is sent, and without waiting for a
+     * timeout. `navigator.onLine` is a hint rather than a fact, so it is read only to
+     * skip a request that cannot arrive: a false "offline" costs one attempt the user
+     * can make again, while a false "online" costs them the whole deadline.
+     */
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      const view = failureCopyFor(
+        new SemanticReviewError("The add-in is offline", "E_PROVIDER_OFFLINE"),
+      );
+      setFailure(view);
+      setError(view.message);
+      setStage("failed");
+      return;
+    }
     // Abort a run already in flight before starting another, so two reviews cannot
     // race to set the same result.
     reviewController.current?.abort();
@@ -368,7 +388,10 @@ export default function SemanticReview({
     setFailure(null);
     setAcknowledged(false);
     setStage("input_validation");
-    setRunId(uuidv4());
+    // One id for the attempt, shared by the engine, the telemetry and the report, so
+    // a support report and a log line name the same run.
+    const attemptId = uuidv4();
+    setRunId(attemptId);
     try {
       const reviewed = await reviewSemanticSelection(
         {
@@ -384,6 +407,7 @@ export default function SemanticReview({
           registry: generalRegistryFromState(state),
           signal: controller.signal,
           onStage: setStage,
+          runId: attemptId,
         },
       );
       setResult(reviewed);
@@ -434,6 +458,7 @@ export default function SemanticReview({
 
   async function applyRevision(): Promise<void> {
     if (scope === null || result?.proposedRevision === undefined || liveSession === null) return;
+    const applyId = uuidv4();
     setApplying(true);
     setError(null);
     setStatus(null);
@@ -472,6 +497,12 @@ export default function SemanticReview({
        * the write: pressing Apply again would re-apply it. The message is outside
        * the proposal card, because the card is about to be cleared.
        */
+      emitTelemetry({
+        event: "review.applied",
+        applyId,
+        runId,
+        preservationPassed: outcome.preservation.pass,
+      });
       setResult(null);
       setScope(null);
       commitSession(advanceSession(liveSession, "applied", new Date().toISOString()));
@@ -481,6 +512,12 @@ export default function SemanticReview({
       // left the old flow with a button that failed silently. The sentence still
       // comes from the taxonomy, and still says nothing was written.
       const view = failureCopyFor(error);
+      emitTelemetry({
+        event: "review.apply_failed",
+        applyId,
+        runId,
+        failureCode: view.code,
+      });
       setFailure(view);
       setError(view.message);
       setStage("failed");
@@ -528,6 +565,13 @@ export default function SemanticReview({
    */
   function cancelReview(): void {
     reviewController.current?.abort();
+    if (runId !== null) {
+      emitTelemetry({
+        event: "review.cancelled",
+        runId,
+        stage: stage === "idle" || stage === "done" || stage === "failed" ? "provider_call" : stage,
+      });
+    }
     setStatus("Cancelling the review. Nothing has been changed in the document.");
   }
 
@@ -564,6 +608,7 @@ export default function SemanticReview({
       runId: runId ?? "unknown",
       failure: { code: failure.code, stage: failure.stage },
       providerMetadata: result?.providerMetadata ?? null,
+      stageTimings: result?.stageTimings ?? null,
       selectionChars: scope?.anchor.selectedText.length ?? null,
       at: new Date().toISOString(),
     });
