@@ -147,6 +147,26 @@ describe("buildSemanticReviewPrompt", () => {
     expect(prompt).toContain("moderate");
   });
 
+  it("shows the response shape literally, so a model is not left to infer nesting", () => {
+    // These three fields used to be described only in prose, and a small model
+    // returned each of them as a string. A skeleton with the exact key nesting and
+    // placeholder types is what prose could not carry.
+    const prompt = buildSemanticReviewPrompt(request(), { includeRawText: true });
+    expect(prompt).toContain(`"observations": [`);
+    expect(prompt).toContain(`"proposedRevision": {`);
+    expect(prompt).toContain(`"meaningPreservation": {`);
+    expect(prompt).toContain(`"qualificationPreserved": <true or false>`);
+    expect(prompt).toContain(`"original":`);
+    expect(prompt).toContain(`"revised":`);
+  });
+
+  it("states each nested field's type, not only its key", () => {
+    const prompt = buildSemanticReviewPrompt(request(), { includeRawText: true });
+    expect(prompt).toMatch(/JSON array of objects/);
+    expect(prompt).toMatch(/JSON booleans/);
+    expect(prompt).toMatch(/never a string/);
+  });
+
   it("stamps the prompt version, so a stale review can be detected", () => {
     const prompt = buildSemanticReviewPrompt(request(), { includeRawText: true });
     expect(prompt).toContain(`prompt-version: ${PROMPT_VERSION}`);

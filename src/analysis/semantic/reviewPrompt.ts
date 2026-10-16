@@ -7,8 +7,8 @@
  * and skip this — the engine's only route to the network is through a builder
  * that refuses.
  *
- * Three instructions in here are doing real work, and each was written because
- * the alternative was observed:
+ * Four instructions in here are doing real work, and each was written because the
+ * alternative was observed:
  *
  * - **The revision must replace the whole selection.** The engine refuses a
  *   mismatch, but a prompt that does not say so produces one every few calls.
@@ -21,12 +21,18 @@
  *   validator cannot check. The wording asks for the flags the revision
  *   actually bears in mind and tells it that the local checks run anyway, so it
  *   has no reason to over-report to look careful.
+ * - **Show the JSON shape; do not describe it.** A schema described in prose gets
+ *   the nested fields returned as strings: a small model answered with
+ *   `observations`, `proposedRevision` and `meaningPreservation` all the wrong
+ *   type, which is exactly the shape the prose listed and the types it never
+ *   stated. A literal skeleton with `<...>` placeholders and an explicit type rule
+ *   carries what prose cannot.
  */
 
 import type { SemanticReviewRequest } from "./contracts";
 
 /** Prompt version. Bump whenever the output contract changes. */
-export const PROMPT_VERSION = 1;
+export const PROMPT_VERSION = 2;
 
 /**
  * Appended to the prompt for one repair attempt after an unreadable answer.
@@ -138,24 +144,50 @@ export function buildSemanticReviewPrompt(
     "Review the selection below against the active style profile, and propose a restyle if one is warranted.",
     DOMAIN_FRAMING[request.domain],
     "",
-    "Return a single JSON object and nothing else. No markdown, no code fences, no commentary before or after.",
-    "Do not include any keys other than those listed. Do not include null values for required fields.",
+    "Return one JSON object and nothing else: no markdown, no code fences, no text before or after.",
+    "Do not add keys that are not listed, and do not write any listed field as a string.",
     "",
-    "The JSON object must have exactly these keys:",
-    "assessment (overallAlignment: high|moderate|low, summary: string,",
-    "observations: an array of {dimension, alignment, explanation, evidenceQuote?}),",
-    "proposedRevision (optional; omit it entirely if the selection already matches),",
-    "meaningPreservation (qualificationPreserved, attributionPreserved, causationPreserved,",
-    "responsibilityPreserved, certaintyPreserved — five booleans),",
-    "rationale (one sentence on what you changed and why).",
+    "Copy this shape exactly, replacing each <...> with one value from the list it shows:",
+    "{",
+    `  "assessment": {`,
+    `    "overallAlignment": "<high|moderate|low>",`,
+    `    "summary": "<one sentence>",`,
+    `    "observations": [`,
+    "      {",
+    `        "dimension": "<one name from the dimension list below>",`,
+    `        "alignment": "<aligned|minor_deviation|material_deviation>",`,
+    `        "explanation": "<one sentence>",`,
+    `        "evidenceQuote": "<optional: a few words copied from the selection>"`,
+    "      }",
+    "    ]",
+    "  },",
+    `  "proposedRevision": {`,
+    `    "original": "<the selection, copied character for character>",`,
+    `    "revised": "<the same span, restyled>"`,
+    "  },",
+    `  "meaningPreservation": {`,
+    `    "qualificationPreserved": <true or false>,`,
+    `    "attributionPreserved": <true or false>,`,
+    `    "causationPreserved": <true or false>,`,
+    `    "responsibilityPreserved": <true or false>,`,
+    `    "certaintyPreserved": <true or false>`,
+    "  },",
+    `  "rationale": "<one sentence>"`,
+    "}",
+    "",
+    "Types, because these are the fields most often got wrong:",
+    "- assessment, proposedRevision and meaningPreservation are each a JSON object, never a string.",
+    "- observations is a JSON array of objects, even when it holds only one. An empty array is valid.",
+    "- the five meaning flags are JSON booleans: true or false, unquoted.",
     "",
     "The 'dimension' field must be one of: tone, voice, formality, register, assertionStyle, qualificationStyle, evidenceFraming, uncertaintyStyle, sentenceArchitecture, paragraphArchitecture, transitions, agency, technicality, rhetoricalStyle, conclusionStyle, lexicalPreferences.",
     "The 'alignment' field must be one of: aligned, minor_deviation, material_deviation.",
     "The 'overallAlignment' field must be one of: high, moderate, low.",
     "",
-    "For proposedRevision, copy original from the selection character for character and put the",
-    "restyled text in revised. The revision replaces that exact span and nothing else. If you",
-    "cannot reproduce the selection exactly, return no proposedRevision.",
+    "If the selection already matches the style, OMIT the proposedRevision key entirely — never",
+    "send it as null, an empty string or a sentence. Otherwise copy original from the selection",
+    "character for character, put the restyled text in revised, and change that exact span and",
+    "nothing else. If you cannot reproduce the selection exactly, omit proposedRevision.",
     "",
     "Keep every number, date, amount, reference and named party exactly as written. Numbers and",
     "dates are checked locally and a change to either is refused before you are asked about it.",
