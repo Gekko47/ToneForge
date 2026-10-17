@@ -30,6 +30,7 @@
  */
 
 import type { SemanticReviewRequest } from "./contracts";
+import { SEMANTIC_ENUM_OPTIONS } from "../../ai/prompts/profilePrompts";
 
 /** Prompt version. Bump whenever the output contract changes. */
 export const PROMPT_VERSION = 2;
@@ -67,68 +68,12 @@ const DOMAIN_FRAMING: Readonly<Record<SemanticReviewRequest["domain"], string>> 
  * The sixteen semantic dimensions, in the order the editor groups them.
  * Exported so the prompt and the schema agree on the set.
  */
-export const SEMANTIC_DIMENSIONS_LIST = [
-  "tone",
-  "voice",
-  "formality",
-  "register",
-  "assertionStyle",
-  "qualificationStyle",
-  "evidenceFraming",
-  "uncertaintyStyle",
-  "sentenceArchitecture",
-  "paragraphArchitecture",
-  "transitions",
-  "agency",
-  "technicality",
-  "rhetoricalStyle",
-  "conclusionStyle",
-  "lexicalPreferences",
-] as const;
+export { SEMANTIC_DIMENSIONS as SEMANTIC_DIMENSIONS_LIST } from "../../core/domain/SemanticStyleProfile";
 
 /**
  * The allowed values for each dimension's enum fields, so the model can choose
  * from the list rather than inventing values that fail schema validation.
  */
-const DIMENSION_ENUMS = [
-  'tone.primary: "restrained" | "neutral" | "assertive" | "cautious" | "analytical" | "forensic" | "explanatory" | "persuasive"',
-  "tone.secondary: array of at most 2 from the same list",
-  'voice.person: "first" | "third" | "mixed" | "impersonal"',
-  'voice.construction: "active" | "passive" | "balanced"',
-  'voice.authorialPresence: "absent" | "restrained" | "explicit"',
-  "formality.score: integer 0-100",
-  'register.primary: "plain" | "professional" | "technical" | "expert" | "academic" | "legal-technical"',
-  'assertionStyle.strength: "categorical" | "qualified" | "conditional" | "provisional"',
-  'assertionStyle.ordering: "evidence-first" | "conclusion-first" | "interleaved"',
-  'assertionStyle.directness: "direct" | "measured" | "indirect"',
-  'qualificationStyle.frequency: "rare" | "occasional" | "frequent"',
-  'qualificationStyle.strength: "light" | "moderate" | "heavy"',
-  'qualificationStyle.exceptions: "none" | "inline" | "dedicated"',
-  'evidenceFraming.attribution: "none" | "occasional" | "systematic"',
-  'evidenceFraming.quotation: "rare" | "selective" | "frequent"',
-  'evidenceFraming.progression: "source-analysis-conclusion" | "claim-evidence" | "narrative"',
-  'uncertaintyStyle.incompleteEvidence: "stated" | "implied" | "suppressed"',
-  'uncertaintyStyle.confidenceLanguage: "explicit" | "implicit" | "absent"',
-  'uncertaintyStyle.modality: "frequent" | "occasional" | "rare"',
-  'sentenceArchitecture.complexity: "simple" | "moderate" | "complex"',
-  'sentenceArchitecture.clauseDensity: "low" | "medium" | "high"',
-  "sentenceArchitecture.targetWords: integer 5-60",
-  'sentenceArchitecture.coordination: "coordination" | "subordination" | "mixed"',
-  'paragraphArchitecture.function: "topic" | "evidence" | "analysis" | "conclusion" | "mixed"',
-  'paragraphArchitecture.ordering: "topic-evidence-conclusion" | "conclusion-evidence" | "chronological" | "comparative"',
-  "paragraphArchitecture.targetWords: integer 20-400",
-  'paragraphArchitecture.propositions: "single" | "multiple"',
-  'transitions: "restrained" | "explicit" | "rhetorical"',
-  'agency.actorNaming: "named" | "role" | "impersonal" | "mixed"',
-  'agency.passiveTendency: "low" | "medium" | "high"',
-  'agency.attributionPrecision: "exact" | "general" | "unspecified"',
-  'technicality.density: "low" | "medium" | "high"',
-  'technicality.abbreviationTendency: "none" | "first-use" | "permissive"',
-  'rhetoricalStyle: "direct-analytical" | "narrative" | "forensic" | "comparative" | "argumentative" | "explanatory"',
-  'conclusionStyle.form: "concise" | "qualified" | "recap" | "opinion" | "none"',
-  'lexicalPreferences.evaluativeLanguage: "none" | "restrained" | "explicit"',
-].join("\n");
-
 export function buildSemanticReviewPrompt(
   request: SemanticReviewRequest,
   opts: SemanticReviewPromptOptions = { includeRawText: false },
@@ -198,7 +143,7 @@ export function buildSemanticReviewPrompt(
     "so over-reporting does not make the revision safer.",
     "",
     "Allowed values for each dimension's enum fields:",
-    DIMENSION_ENUMS,
+    SEMANTIC_ENUM_OPTIONS,
     "",
     "Active style profile (JSON):",
     JSON.stringify(request.semantic),

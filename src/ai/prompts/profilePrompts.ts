@@ -4,8 +4,6 @@
  * unless the user explicitly opts in.
  */
 
-import { z } from "zod";
-
 export interface ProfilePromptOptions {
   includeRawText: boolean;
 }
@@ -16,18 +14,7 @@ export interface ProfilePromptOptions {
  * fields produce a typed error so callers can surface a clean failure
  * instead of trusting raw model output.
  */
-export const ProfileResponseSchema = z.object({
-  tone: z.string().trim().min(1),
-  voice: z.string().trim().min(1),
-  formality: z.number().min(0).max(100),
-  readingGradeTarget: z.number().min(0).max(20).nullable(),
-  preferredSentenceLength: z.number().min(5).max(60),
-  vocabularyRegister: z.enum(["simple", "standard", "technical", "academic"]),
-  rhetoricalStyle: z.string().trim().min(1),
-  avoidWords: z.array(z.string()).default([]),
-});
-
-export type ProfileResponse = z.infer<typeof ProfileResponseSchema>;
+// ProfileResponseSchema removed — V1 identification path retired (R6).
 
 /*
  * The deviation prompt and its response schema are gone.
@@ -40,30 +27,7 @@ export type ProfileResponse = z.infer<typeof ProfileResponseSchema>;
  * replaces them with an assessment and at most one proposal.
  */
 
-export function buildProfilePrompt(
-  sampleText: string,
-  constraints: string[] = [],
-  opts: ProfilePromptOptions = { includeRawText: false },
-): string {
-  if (!opts.includeRawText) {
-    throw new Error(
-      "buildProfilePrompt requires includeRawText: true — raw document text must not leave the add-in without explicit user opt-in",
-    );
-  }
-  return [
-    "Analyze the following writing sample and produce a concise style profile.",
-    "Return a JSON object with exactly these keys: tone, voice, formality (0-100),",
-    "readingGradeTarget (nullable number), preferredSentenceLength (number),",
-    "vocabularyRegister (one of: simple, standard, technical, academic),",
-    "rhetoricalStyle (string), avoidWords (array of strings).",
-    "Do not include any explanation outside the JSON.",
-    constraints.length > 0 ? `Constraints: ${constraints.join("; ")}` : "",
-    "Writing sample:",
-    sampleText,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
+// buildProfilePrompt removed — V1 identification path retired (R6).
 
 /**
  * The allowed values for every enum field in the V2 extraction schema.
@@ -72,7 +36,7 @@ export function buildProfilePrompt(
  * invent values that fail schema validation, producing a refusal rather than
  * a profile. This is the complete list from `SemanticStyleProfile.ts`.
  */
-const ENUM_OPTIONS = [
+export const SEMANTIC_ENUM_OPTIONS = [
   "Allowed values for each field — choose exactly one unless noted:",
   "",
   'tone.primary: "restrained" | "neutral" | "assertive" | "cautious" | "analytical" | "forensic" | "explanatory" | "persuasive"',
@@ -95,16 +59,16 @@ const ENUM_OPTIONS = [
   'uncertaintyStyle.confidenceLanguage: "explicit" | "implicit" | "absent"',
   'uncertaintyStyle.modality: "frequent" | "occasional" | "rare"',
   'sentenceArchitecture.complexity: "simple" | "moderate" | "complex"',
-  'sentenceArchitecture.clauseDensity: "low" | "medium" | "high"',
   "sentenceArchitecture.targetWords: integer 5-60",
+  'sentenceArchitecture.sentenceVariability: "low" | "medium" | "high"',
   'sentenceArchitecture.coordination: "coordination" | "subordination" | "mixed"',
   'paragraphArchitecture.function: "topic" | "evidence" | "analysis" | "conclusion" | "mixed"',
   'paragraphArchitecture.ordering: "topic-evidence-conclusion" | "conclusion-evidence" | "chronological" | "comparative"',
   "paragraphArchitecture.targetWords: integer 20-400",
+  'paragraphArchitecture.paragraphVariability: "low" | "medium" | "high"',
   'paragraphArchitecture.propositions: "single" | "multiple"',
   'transitions: "restrained" | "explicit" | "rhetorical"',
   'agency.actorNaming: "named" | "role" | "impersonal" | "mixed"',
-  'agency.passiveTendency: "low" | "medium" | "high"',
   'agency.attributionPrecision: "exact" | "general" | "unspecified"',
   'technicality.density: "low" | "medium" | "high"',
   'technicality.abbreviationTendency: "none" | "first-use" | "permissive"',
@@ -116,8 +80,8 @@ const ENUM_OPTIONS = [
   "uncertaintyStyle.avoidsUnsupportedCertainty, sentenceArchitecture.shortClosingSentence,",
   "technicality.explainsTerms, conclusionStyle.avoidsRepetition, qualificationStyle.conditionals,",
   "lexicalPreferences.prefersNeutralVerbs.",
-  "String array fields: tone.secondary, lexicalPreferences.toneAvoid.",
-  "Free-text fields: tone.description, voice.description, register.description, formality.label.",
+  "Array fields: tone.secondary (enum values, at most 2), lexicalPreferences.toneAvoid (strings).",
+  "Free-text fields: tone.description, voice.description, register.description.",
 ].join("\n");
 
 /**
@@ -140,16 +104,16 @@ const RESPONSE_SKELETON = [
   "{",
   '  "tone": { "primary": "<allowed>", "secondary": [<up to 2 allowed values>], "description": "<one sentence, or an empty string>" },',
   '  "voice": { "person": "<allowed>", "construction": "<allowed>", "authorialPresence": "<allowed>", "description": "<one sentence, or an empty string>" },',
-  '  "formality": { "score": <integer 0-100>, "label": "<short label>" },',
+  '  "formality": { "score": <integer 0-100> },',
   '  "register": { "primary": "<allowed>", "description": "<one sentence, or an empty string>" },',
   '  "assertionStyle": { "strength": "<allowed>", "ordering": "<allowed>", "directness": "<allowed>" },',
   '  "qualificationStyle": { "frequency": "<allowed>", "strength": "<allowed>", "exceptions": "<allowed>", "conditionals": <true or false> },',
   '  "evidenceFraming": { "recordFirst": <true or false>, "attribution": "<allowed>", "quotation": "<allowed>", "explicitReferences": <true or false>, "progression": "<allowed>" },',
   '  "uncertaintyStyle": { "incompleteEvidence": "<allowed>", "confidenceLanguage": "<allowed>", "modality": "<allowed>", "avoidsUnsupportedCertainty": <true or false> },',
-  '  "sentenceArchitecture": { "complexity": "<allowed>", "clauseDensity": "<allowed>", "targetWords": <integer 5-60>, "coordination": "<allowed>", "shortClosingSentence": <true or false> },',
-  '  "paragraphArchitecture": { "function": "<allowed>", "ordering": "<allowed>", "targetWords": <integer 20-400>, "propositions": "<allowed>" },',
+  '  "sentenceArchitecture": { "complexity": "<allowed>", "targetWords": <integer 5-60>, "sentenceVariability": "<allowed>", "coordination": "<allowed>", "shortClosingSentence": <true or false> },',
+  '  "paragraphArchitecture": { "function": "<allowed>", "ordering": "<allowed>", "targetWords": <integer 20-400>, "paragraphVariability": "<allowed>", "propositions": "<allowed>" },',
   '  "transitions": "<allowed>",',
-  '  "agency": { "actorNaming": "<allowed>", "passiveTendency": "<allowed>", "attributionPrecision": "<allowed>" },',
+  '  "agency": { "actorNaming": "<allowed>", "attributionPrecision": "<allowed>" },',
   '  "technicality": { "density": "<allowed>", "explainsTerms": <true or false>, "abbreviationTendency": "<allowed>" },',
   '  "rhetoricalStyle": "<allowed>",',
   '  "conclusionStyle": { "form": "<allowed>", "avoidsRepetition": <true or false> },',
@@ -204,13 +168,13 @@ export function buildProfilePromptV2(
     "",
     RESPONSE_SKELETON,
     "",
-    ENUM_OPTIONS,
+    SEMANTIC_ENUM_OPTIONS,
     "",
-    "Describe the writing, not its subject. A description must not name a project, a",
-    "company, a person, a date, an amount, or any other fact from the sample — a style",
-    "profile that carries the document's content into the editor is a leak, and one that",
-    "cannot be checked is useless. Use an empty string when a description would help but",
-    "you have nothing safe to say.",
+    "Describe the writing, not its subject. No free-text field (description)",
+    "must name a project, a company, a person, a date, an amount, or any other fact from",
+    "the sample — a style profile that carries the document's content into the editor is",
+    "a leak, and one that cannot be checked is useless. Use an empty string when a",
+    "description would help but you have nothing safe to say.",
     "Choose the enum values that fit; do not invent new ones. If the sample does not",
     "settle a dimension, give the most likely value rather than omitting the key.",
     constraints.length > 0 ? `Constraints: ${constraints.join("; ")}` : "",

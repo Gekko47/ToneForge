@@ -86,6 +86,11 @@ export type ToneTrait = z.infer<typeof ToneTraitSchema>;
  *
  * Bounded at two because a list of six tones describes an author having no tone.
  * The cap is a statement that a profile which cannot choose is not a profile.
+ *
+ * Distinct from `rhetoricalStyle`: tone is how the writing feels (restrained,
+ * assertive), rhetoricalStyle is how it argues (direct-analytical, narrative).
+ * "Forensic" appears in both because a forensic tone and a forensic argument
+ * strategy often co-occur, but they are not the same thing.
  */
 export const ToneProfileSchema = z.object({
   primary: ToneTraitSchema.default("neutral"),
@@ -108,12 +113,30 @@ export type VoiceProfile = z.infer<typeof VoiceProfileSchema>;
  * Both, because the score is what a rule can compare and the label is what a
  * person reads. A profile saying "78" is unusable in an editor and a profile
  * saying "formal" cannot be reasoned about numerically.
+ *
+ * Distinct from `register.primary`: formality measures social distance
+ * (plain-spoken vs. ceremonious), register measures domain (plain, technical,
+ * legal). A technical register can be informal; a plain register can be formal.
  */
 export const FormalityProfileSchema = z.object({
   score: z.number().int().min(0).max(100).default(50),
   label: z.string().trim().max(40).default(""),
 });
 export type FormalityProfile = z.infer<typeof FormalityProfileSchema>;
+
+/**
+ * Derive a human-readable label from a formality score.
+ *
+ * The label is computed, not stored, so it cannot disagree with the score.
+ * A free-text label was a leak surface (R1) and a partial duplicate of the
+ * score (D4); deriving it eliminates both.
+ */
+export function formalityLabel(score: number): string {
+  if (score <= 25) return "informal";
+  if (score <= 50) return "neutral";
+  if (score <= 75) return "formal";
+  return "highly formal";
+}
 
 export const RegisterProfileSchema = z.object({
   primary: z
@@ -161,14 +184,32 @@ export type EvidenceFramingProfile = z.infer<typeof EvidenceFramingProfileSchema
 export const UncertaintyProfileSchema = z.object({
   incompleteEvidence: z.enum(["stated", "implied", "suppressed"]).default("stated"),
   confidenceLanguage: z.enum(["explicit", "implicit", "absent"]).default("explicit"),
+  /**
+   * Modal verb frequency (may, might, could).
+   *
+   * Distinct from `qualificationStyle.frequency`: modality counts modal verbs,
+   * qualification counts claim-qualifying hedges. A writer can use frequent
+   * modals while rarely qualifying claims, or vice versa.
+   */
   modality: z.enum(["frequent", "occasional", "rare"]).default("occasional"),
   avoidsUnsupportedCertainty: z.boolean().default(true),
 });
 export type UncertaintyProfile = z.infer<typeof UncertaintyProfileSchema>;
 
+/**
+ * Sentence structure: complexity, length, variability, and closing rhythm.
+ *
+ * `clauseDensity` was removed (R8/D2): it duplicated `complexity`. Complex
+ * sentences have more clauses, so the two fields measured the same underlying
+ * dimension. `complexity` is the single source of truth.
+ *
+ * `sentenceVariability` was added (R9/M1): the measured half of the profile
+ * captures sentence-length standard deviation, but the semantic half had no
+ * counterpart. A writer's rhythm — variation in sentence length — is a key
+ * stylistic feature (Crystal, *Cambridge Encyclopedia of Language*).
+ */
 export const SentenceArchitectureProfileSchema = z.object({
   complexity: z.enum(["simple", "moderate", "complex"]).default("moderate"),
-  clauseDensity: z.enum(["low", "medium", "high"]).default("medium"),
   /**
    * The preferred length band, in words.
    *
@@ -177,17 +218,25 @@ export const SentenceArchitectureProfileSchema = z.object({
    * preference but an accident of the sample, and below 5 is not prose.
    */
   targetWords: z.number().int().min(5).max(60).default(22),
+  sentenceVariability: z.enum(["low", "medium", "high"]).default("medium"),
   coordination: z.enum(["coordination", "subordination", "mixed"]).default("mixed"),
   shortClosingSentence: z.boolean().default(false),
 });
 export type SentenceArchitectureProfile = z.infer<typeof SentenceArchitectureProfileSchema>;
 
+/**
+ * Paragraph structure: function, ordering, length, and variability.
+ *
+ * `paragraphVariability` was added (R9/M1): the measured half captures
+ * paragraph-length variation, but the semantic half had no counterpart.
+ */
 export const ParagraphArchitectureProfileSchema = z.object({
   function: z.enum(["topic", "evidence", "analysis", "conclusion", "mixed"]).default("mixed"),
   ordering: z
     .enum(["topic-evidence-conclusion", "conclusion-evidence", "chronological", "comparative"])
     .default("topic-evidence-conclusion"),
   targetWords: z.number().int().min(20).max(400).default(90),
+  paragraphVariability: z.enum(["low", "medium", "high"]).default("medium"),
   propositions: z.enum(["single", "multiple"]).default("single"),
 });
 export type ParagraphArchitectureProfile = z.infer<typeof ParagraphArchitectureProfileSchema>;
@@ -203,13 +252,28 @@ export type ParagraphArchitectureProfile = z.infer<typeof ParagraphArchitectureP
 export const TransitionProfileSchema = z.enum(["restrained", "explicit", "rhetorical"]);
 export type TransitionStyle = z.infer<typeof TransitionProfileSchema>;
 
+/**
+ * Agency: who acts, and how precisely they are named.
+ *
+ * `passiveTendency` was removed (R8/D1): it duplicated `voice.construction`
+ * (active/passive/balanced). A profile with `construction: "active"` and
+ * `passiveTendency: "high"` was internally contradictory. `voice.construction`
+ * is the single source of truth.
+ */
 export const AgencyProfileSchema = z.object({
   actorNaming: z.enum(["named", "role", "impersonal", "mixed"]).default("named"),
-  passiveTendency: z.enum(["low", "medium", "high"]).default("low"),
   attributionPrecision: z.enum(["exact", "general", "unspecified"]).default("exact"),
 });
 export type AgencyProfile = z.infer<typeof AgencyProfileSchema>;
 
+/**
+ * Technical term density and handling.
+ *
+ * Distinct from `register.primary`: register is about domain, technicality is
+ * about term density. A technical register can have low term density
+ * (accessible technical writing); a plain register can have high term density
+ * (a legal document written for lay readers).
+ */
 export const TechnicalityProfileSchema = z.object({
   density: z.enum(["low", "medium", "high"]).default("medium"),
   explainsTerms: z.boolean().default(true),
@@ -302,6 +366,7 @@ export const SemanticStyleProfileSchema = z.object({
   rhetoricalStyle: RhetoricalStyleProfileSchema.default("direct-analytical"),
   conclusionStyle: ConclusionStyleProfileSchema.default({}),
   lexicalPreferences: LexicalSemanticProfileSchema.default({}),
+  /** User-only; never produced by identification. */
   notes: z.array(z.string().trim().min(1).max(240)).max(20).default([]),
   /**
    * Absent on any profile created after v14, and present on a migrated one.
@@ -359,7 +424,6 @@ export function isDefaultSemanticStyle(profile: SemanticStyleProfile): boolean {
     profile.voice.authorialPresence === "restrained" &&
     profile.voice.description === "" &&
     profile.formality.score === 50 &&
-    profile.formality.label === "" &&
     profile.register.primary === "professional" &&
     profile.register.description === "" &&
     profile.assertionStyle.strength === "qualified" &&
@@ -379,17 +443,17 @@ export function isDefaultSemanticStyle(profile: SemanticStyleProfile): boolean {
     profile.uncertaintyStyle.modality === "occasional" &&
     profile.uncertaintyStyle.avoidsUnsupportedCertainty === true &&
     profile.sentenceArchitecture.complexity === "moderate" &&
-    profile.sentenceArchitecture.clauseDensity === "medium" &&
     profile.sentenceArchitecture.targetWords === 22 &&
+    profile.sentenceArchitecture.sentenceVariability === "medium" &&
     profile.sentenceArchitecture.coordination === "mixed" &&
     profile.sentenceArchitecture.shortClosingSentence === false &&
     profile.paragraphArchitecture.function === "mixed" &&
     profile.paragraphArchitecture.ordering === "topic-evidence-conclusion" &&
     profile.paragraphArchitecture.targetWords === 90 &&
+    profile.paragraphArchitecture.paragraphVariability === "medium" &&
     profile.paragraphArchitecture.propositions === "single" &&
     profile.transitions === "restrained" &&
     profile.agency.actorNaming === "named" &&
-    profile.agency.passiveTendency === "low" &&
     profile.agency.attributionPrecision === "exact" &&
     profile.technicality.density === "medium" &&
     profile.technicality.explainsTerms === true &&
@@ -517,12 +581,12 @@ export function migrateSemanticStyleFromV1(input: unknown): SemanticStyleProfile
       authorialPresence: "restrained",
       description: described("voice"),
     },
-    formality: { score: Math.round(v1.formality), label: "" },
+    formality: { score: Math.round(v1.formality), label: formalityLabel(Math.round(v1.formality)) },
     register: { primary: registerFrom(v1.vocabularyRegister), description: "" },
     sentenceArchitecture: {
       complexity: "moderate",
-      clauseDensity: "medium",
       targetWords: v1.preferredSentenceLength,
+      sentenceVariability: "medium",
       coordination: "mixed",
       shortClosingSentence: false,
     },

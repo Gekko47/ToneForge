@@ -8,11 +8,11 @@ import type { SemanticStyleProfile } from "../../../../src/core/domain/SemanticS
 const SEMANTIC: SemanticStyleProfile = {
   ...createEmptySemanticStyleProfile(),
   tone: { primary: "neutral", secondary: [], description: "" },
-  formality: { score: 50, label: "" },
+  formality: { score: 50, label: "neutral" },
   sentenceArchitecture: {
     complexity: "moderate",
-    clauseDensity: "medium",
     targetWords: 20,
+    sentenceVariability: "medium",
     coordination: "mixed",
     shortClosingSentence: false,
   },
@@ -25,7 +25,7 @@ const SEMANTIC: SemanticStyleProfile = {
 
 /** Fluent renders options in a portal, so choosing one is two clicks. */
 async function choose(label: string, option: string): Promise<void> {
-  await userEvent.click(screen.getByLabelText(label));
+  await userEvent.click(screen.getByRole("combobox", { name: label }));
   await userEvent.click(await screen.findByText(option));
 }
 
@@ -49,10 +49,10 @@ describe("SemanticProfileEditor", () => {
      * rendered read-only while `buildCandidate` wrote them back on every save,
      * so a learned tone was silently reset by an unrelated edit.
      *
-     * Every dimension is now a closed enum rather than a free string, so the
-     * control is a dropdown. That is not cosmetic: V1 accepted any text as a
-     * tone, which meant a typo was indistinguishable from a style decision and
-     * both were saved.
+     * Every enum is now a searchable combobox over the schema's generic
+     * options. That is not cosmetic: V1 accepted any text as a tone, which
+     * meant a typo was indistinguishable from a style decision and both were
+     * saved.
      */
     const onSave = vi.fn();
     render(<SemanticProfileEditor semantic={SEMANTIC} onSave={onSave} />);
@@ -166,7 +166,7 @@ describe("SemanticProfileEditor", () => {
      * saving writes them onto whichever profile is now open.
      *
      * The numeric field holds local draft state for the keystroke, so it is the
-     * one place a stale value can survive a profile switch; the dropdowns read
+     * one place a stale value can survive a profile switch; the comboboxes read
      * straight from props and cannot.
      */
     const onSave = vi.fn();

@@ -60,7 +60,6 @@ describe("learnStyleDraft", () => {
             },
             sentenceArchitecture: {
               complexity: "complex",
-              clauseDensity: "high",
               targetWords: 18,
               coordination: "subordination",
               shortClosingSentence: true,
@@ -74,7 +73,6 @@ describe("learnStyleDraft", () => {
             transitions: "explicit",
             agency: {
               actorNaming: "named",
-              passiveTendency: "low",
               attributionPrecision: "exact",
             },
             technicality: {

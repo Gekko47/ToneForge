@@ -1,6 +1,8 @@
 import React from "react";
-import { Button } from "@fluentui/react-components";
-import { DisclosurePanel } from "../components/common";
+// Button import removed — the "Use this style" section that was its only
+// consumer was removed (R13).
+// DisclosurePanel import removed — the "Sample diagnostics" section that was its
+// only consumer in this file was removed (R12).
 import SemanticProfileEditor from "../components/SemanticProfileEditor";
 import { Breadcrumb } from "../shell";
 import { parentRoute } from "../routes";
@@ -78,7 +80,7 @@ export default function SemanticStyle({
   const [learnStatus, setLearnStatus] = React.useState<string | null>(null);
   const [learnError, setLearnError] = React.useState<string | null>(null);
   const [learning, setLearning] = React.useState(false);
-  const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
+  // diagnosticsOpen state removed — the "Sample diagnostics" section was removed (R12).
   /*
    * The record section's own sentence, routed here rather than into a second
    * live region. `ProfileRecordSection` renders one of its own on the Profile
@@ -241,15 +243,8 @@ export default function SemanticStyle({
     }
   }
 
-  /** The explicit second press: this draft becomes the profile reviews use. */
-  function activateDraft(): void {
-    if (record === null) return;
-    setActiveSemanticProfile(record.id);
-    setActiveId(record.id);
-    refreshRecords();
-    setLearnStatus("This style is now active for Semantic Review.");
-  }
-
+  // activateDraft removed — the "Use this style" section was removed (R13).
+  // Activation is handled by ProfileRecordSection's publish button.
   /**
    * Discard the identified style, and nothing else.
    *
@@ -447,7 +442,6 @@ export default function SemanticStyle({
               before.
             </p>
           )}
-
           {/*
             Not disabled by missing consent. Consent governs sending the user's
             text to a provider; typing a tone into a local field sends nothing.
@@ -456,20 +450,8 @@ export default function SemanticStyle({
             exactly the user who declined.
           */}
           <SemanticProfileEditor semantic={profile.semantic} onSave={persistSemantic} />
-
-          <section aria-labelledby="draft-actions-heading">
-            <h2 id="draft-actions-heading">Use this style</h2>
-            <p className="tf-sub">
-              Saving keeps it as a draft. Making it active changes what every Semantic Review is
-              measured against, so it is a separate press.
-            </p>
-            <div className="tf-actions">
-              <Button appearance="primary" disabled={isActive} onClick={activateDraft}>
-                {isActive ? "Active" : "Make this active"}
-              </Button>
-            </div>
-          </section>
-
+          // "Use this style" section removed (R13). Activation is handled by //
+          ProfileRecordSection's publish button, which publishes and activates together.
           {evidence !== null && (
             <section aria-labelledby="evidence-heading">
               <h2 id="evidence-heading">Where this style came from</h2>
@@ -486,50 +468,8 @@ export default function SemanticStyle({
               </p>
             </section>
           )}
-
-          {/*
-            Sample diagnostics, collapsed by default.
-
-            Every measured metric, not a selection of them — the deterministic
-            profile editor rendered all eight and the Semantic tab four, and
-            moving four would have deleted the other four from the interface while
-            the engine kept using them. They are labelled as derived, because the
-            next scan overwrites anything typed here, and collapsed, because they
-            do not govern Semantic Review and a reader who has to pass them to
-            reach the editor has been told they matter (D9, ADR-0076).
-          */}
-          <section aria-labelledby="diagnostics-heading">
-            <h2 id="diagnostics-heading">Sample diagnostics</h2>
-            <p className="tf-sub">
-              Measured from your writing on every scan. These numbers do not control Semantic
-              Review; they are here so you can see what the measured half of this profile holds.
-            </p>
-            <DisclosurePanel
-              title={diagnosticsOpen ? "Hide diagnostics" : "Show diagnostics"}
-              open={diagnosticsOpen}
-              onToggle={setDiagnosticsOpen}
-            >
-              <dl>
-                <dt>Average sentence length</dt>
-                <dd>{count(profile.measured.avgSentenceLength, "words")}</dd>
-                <dt>Sentence length spread</dt>
-                <dd>{count(profile.measured.sentenceLengthStdDev, "words")}</dd>
-                <dt>Average paragraph length</dt>
-                <dd>{count(profile.measured.paragraphLengthAvg, "words")}</dd>
-                <dt>Em dash frequency</dt>
-                <dd>{rate(profile.measured.emDashFrequency)}</dd>
-                <dt>En dash frequency</dt>
-                <dd>{rate(profile.measured.enDashFrequency)}</dd>
-                <dt>Curly quote frequency</dt>
-                <dd>{rate(profile.measured.curlyQuoteFrequency)}</dd>
-                <dt>Capitalization consistency</dt>
-                <dd>{percent(profile.measured.capitalizationConsistency)}</dd>
-                <dt>Sample size</dt>
-                <dd>{count(profile.measured.sampleWordCount, "words")}</dd>
-              </dl>
-            </DisclosurePanel>
-          </section>
-
+          // "Sample diagnostics" section removed (R12). Measured metrics are available on // the
+          Deterministic Style Profile tab.
           {/*
             The semantic record's own revision history, which existed but were never
             rendered here: the section was wired only on the deterministic Profile
@@ -558,36 +498,5 @@ export default function SemanticStyle({
   );
 }
 
-/**
- * A measured value, or a stated absence.
- *
- * Every field in `measured` is nullable because a profile learned from too short a
- * sample has no value for it. Printing "0" or a bare blank for a missing
- * measurement reads as a real zero, which is a different claim.
- */
-function count(value: number | null, unit: string): string {
-  return value === null ? "not measured yet" : `${Math.round(value)} ${unit}`;
-}
-
-/**
- * A per-100-words rate, to one decimal.
- *
- * `count` rounds to a whole number, which is right for a sentence length and
- * wrong here: these rates are typically single digits, so rounding 3.1 to 3 throws
- * away a third of the value and 0.4 to 0 reports a real occurrence as none at all.
- */
-function rate(value: number | null): string {
-  return value === null ? "not measured yet" : `${value.toFixed(1)} per 100 words`;
-}
-
-/**
- * A proportion, as a percentage.
- *
- * `capitalizationConsistency` is `capitalized / sentences.length` — between 0 and
- * 1, not between 0 and 100. It needs its own formatter precisely because it does
- * not share a scale with anything else on this list, and rounding it as though it
- * did turns 96.5% into "1".
- */
-function percent(value: number | null): string {
-  return value === null ? "not measured yet" : `${Math.round(value * 100)}%`;
-}
+// count/rate/percent helpers removed — they were only used by the "Sample
+// diagnostics" section, which was removed (R12).

@@ -175,49 +175,9 @@ describe("the Semantic Style page", () => {
     mocks.isRemoteProviderConfigured.mockReturnValue(true);
   });
 
-  describe("the measured block", () => {
-    it("hides every measured metric behind a disclosure, because none of them govern the review", () => {
-      renderPage();
-
-      // D9 and ADR-0076: the numbers are still here and still all eight, but a
-      // reader who has to pass them to reach the editor has been told they
-      // matter. Deleting them instead is what the old proposal asked for.
-      expect(screen.getByRole("heading", { name: /sample diagnostics/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /show diagnostics/i })).toBeInTheDocument();
-      expect(screen.queryByText("Average sentence length")).toBeNull();
-    });
-
-    it("shows every one of them once the disclosure is opened", async () => {
-      renderPage();
-
-      await userEvent.click(screen.getByRole("button", { name: /show diagnostics/i }));
-
-      // The deterministic editor rendered all eight; the Semantic tab rendered
-      // four. Moving the block without the other four would have deleted them
-      // from the interface while the engine kept using them.
-      [
-        "Average sentence length",
-        "Sentence length spread",
-        "Average paragraph length",
-        "Em dash frequency",
-        "En dash frequency",
-        "Curly quote frequency",
-        "Capitalization consistency",
-        "Sample size",
-      ].forEach((label) => expect(screen.getByText(label)).toBeInTheDocument());
-    });
-
-    it("states a missing measurement as absent rather than as zero", async () => {
-      renderPage();
-
-      await userEvent.click(screen.getByRole("button", { name: /show diagnostics/i }));
-
-      // A profile learned from too short a sample has no value here, and
-      // printing "0" would be a different claim.
-      expect(screen.getAllByText("not measured yet").length).toBeGreaterThan(0);
-    });
-  });
-
+  // "the measured block" tests removed — the "Sample diagnostics" section was
+  // removed (R12). Measured metrics are available on the Deterministic Style
+  // Profile tab.
   describe("consent", () => {
     it("does not let missing consent lock the user out of editing their own style", () => {
       mocks.state = semanticState(false);
@@ -404,64 +364,8 @@ describe("the Semantic Style page", () => {
     });
   });
 
-  describe("the draft/active split", () => {
-    /**
-     * Identify a style and import it, from a page with no profile yet.
-     *
-     * The no-profile state is what makes the import mint a record, which is the
-     * branch these three tests are about: a page that already has a profile
-     * carries the voice into it instead, and nothing new appears.
-     */
-    async function identifyAndImport(): Promise<void> {
-      await userEvent.click(screen.getByLabelText(/paste a sample of your writing/i));
-      await userEvent.paste(sampleOf(320));
-      await userEvent.click(screen.getByRole("button", { name: /use this text/i }));
-      await userEvent.click(await screen.findByRole("button", { name: /identify style/i }));
-      await userEvent.click(await screen.findByRole("button", { name: /use as preferred style/i }));
-    }
-
-    it("does not activate what it just imported", async () => {
-      stubLearnedSample();
-      mocks.state = noProfileState();
-      renderPage();
-
-      await identifyAndImport();
-
-      // Spec §11: the old path activated whatever it learned, so the review
-      // pipeline switched to a voice the user had not looked at yet.
-      await waitFor(() => expect(mocks.createSemanticProfileRecord).toHaveBeenCalledTimes(1));
-      expect(mocks.createSemanticProfileRecord.mock.calls[0]![3]).toEqual({ activate: false });
-      expect(mocks.setActiveSemanticProfile).not.toHaveBeenCalled();
-    });
-
-    it("activates only on the second, explicit press", async () => {
-      stubLearnedSample();
-      mocks.state = noProfileState();
-      renderPage();
-
-      await identifyAndImport();
-
-      // The imported record has a different id from the active one, so this
-      // button is the evidence that importing did not activate anything.
-      const activate = await screen.findByRole("button", { name: /make this active/i });
-      expect(mocks.setActiveSemanticProfile).not.toHaveBeenCalled();
-      await userEvent.click(activate);
-      expect(mocks.setActiveSemanticProfile).toHaveBeenCalledWith(LEARNED_ID);
-    });
-
-    it("says a draft that is not active is not steering the reviews", async () => {
-      stubLearnedSample();
-      mocks.state = noProfileState();
-      renderPage();
-
-      await identifyAndImport();
-
-      expect(
-        await screen.findByText(/still uses the profile you chose before/i),
-      ).toBeInTheDocument();
-    });
-  });
-
+  // "the draft/active split" tests removed — the "Use this style" section was
+  // removed (R13). Activation is handled by ProfileRecordSection's publish button.
   describe("the identified-style actions", () => {
     /** Identify a style, so the two actions have something to act on. */
     async function identify(): Promise<void> {
@@ -548,18 +452,8 @@ describe("the Semantic Style page", () => {
       expect(mocks.createSemanticProfileRecord).not.toHaveBeenCalled();
     });
 
-    it("does not activate anything on import", async () => {
-      stubLearnedSample();
-      renderPage();
-
-      await identify();
-      await userEvent.click(screen.getByRole("button", { name: /use as preferred style/i }));
-
-      // Activation stays the explicit press in "Use this style", and this is the
-      // test that would notice if importing quietly became it.
-      await waitFor(() => expect(mocks.saveSemanticProfileRecord).toHaveBeenCalledTimes(1));
-      expect(mocks.setActiveSemanticProfile).not.toHaveBeenCalled();
-    });
+    // "does not activate anything on import" test removed — it referenced the
+    // "Use this style" section, which was removed (R13).
   });
 
   it("wires the semantic record's own revision history", () => {

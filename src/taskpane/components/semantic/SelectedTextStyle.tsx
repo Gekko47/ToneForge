@@ -314,11 +314,6 @@ export default function SelectedTextStyle({
           label="Sentence complexity"
           value={label(semantic.sentenceArchitecture.complexity)}
         />
-        <TextField
-          id="sts-sentence-clause-density"
-          label="Clause density"
-          value={label(semantic.sentenceArchitecture.clauseDensity)}
-        />
         <NumberField
           id="sts-sentence-target"
           label="Sentence length"
@@ -372,11 +367,6 @@ export default function SelectedTextStyle({
           id="sts-agency-actor"
           label="Actor naming"
           value={label(semantic.agency.actorNaming)}
-        />
-        <TextField
-          id="sts-agency-passive"
-          label="Passive tendency"
-          value={label(semantic.agency.passiveTendency)}
         />
         <TextField
           id="sts-agency-attribution"

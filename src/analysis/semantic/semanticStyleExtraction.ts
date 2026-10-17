@@ -32,6 +32,7 @@ import {
   ConclusionStyleProfileSchema,
   createEmptySemanticStyleProfile,
   EvidenceFramingProfileSchema,
+  formalityLabel,
   FormalityProfileSchema,
   isDefaultSemanticStyle,
   LexicalSemanticProfileSchema,
@@ -188,6 +189,7 @@ export function parseSemanticStyleExtraction(
     formality: {
       ...createEmptySemanticStyleProfile().formality,
       ...stripUndefined(extraction.formality),
+      label: formalityLabel(extraction.formality.score ?? 50),
     },
     register: {
       ...createEmptySemanticStyleProfile().register,

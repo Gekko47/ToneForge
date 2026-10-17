@@ -58,7 +58,6 @@ function extraction(overrides: Record<string, unknown> = {}): Record<string, unk
     },
     sentenceArchitecture: {
       complexity: "complex",
-      clauseDensity: "high",
       targetWords: 28,
       coordination: "subordination",
       shortClosingSentence: true,
@@ -70,7 +69,7 @@ function extraction(overrides: Record<string, unknown> = {}): Record<string, unk
       propositions: "multiple",
     },
     transitions: "explicit",
-    agency: { actorNaming: "named", passiveTendency: "low", attributionPrecision: "exact" },
+    agency: { actorNaming: "named", attributionPrecision: "exact" },
     technicality: { density: "high", explainsTerms: false, abbreviationTendency: "first-use" },
     rhetoricalStyle: "forensic",
     conclusionStyle: { form: "qualified", avoidsRepetition: true },
@@ -111,14 +110,14 @@ describe("SemanticStyleExtractionSchema", () => {
      * is the reverse — a whole group becoming its default because the response
      * was empty — and requiring every group is what prevents that.
      */
-    const partial = extraction({ formality: { label: "professional" } });
+    const partial = extraction({ formality: { score: 72 } });
     expect(SemanticStyleExtractionSchema.safeParse(partial).success).toBe(true);
 
     const outcome = parseSemanticStyleExtraction(partial, SAMPLE);
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.value.formality.label).toBe("professional");
-    expect(outcome.value.formality.score).toBe(50);
+    expect(outcome.value.formality.label).toBe("formal");
+    expect(outcome.value.formality.score).toBe(72);
   });
 
   it("refuses an enum value it does not name", () => {
@@ -167,7 +166,7 @@ describe("parseSemanticStyleExtraction", () => {
           authorialPresence: "restrained",
           description: "",
         },
-        formality: { score: 50, label: "" },
+        formality: { score: 50 },
         register: { primary: "professional", description: "" },
         assertionStyle: {
           strength: "qualified",
@@ -195,7 +194,6 @@ describe("parseSemanticStyleExtraction", () => {
         },
         sentenceArchitecture: {
           complexity: "moderate",
-          clauseDensity: "medium",
           targetWords: 22,
           coordination: "mixed",
           shortClosingSentence: false,
@@ -207,7 +205,7 @@ describe("parseSemanticStyleExtraction", () => {
           propositions: "single",
         },
         transitions: "restrained",
-        agency: { actorNaming: "named", passiveTendency: "low", attributionPrecision: "exact" },
+        agency: { actorNaming: "named", attributionPrecision: "exact" },
         technicality: { density: "medium", explainsTerms: true, abbreviationTendency: "first-use" },
         rhetoricalStyle: "direct-analytical",
         conclusionStyle: { form: "qualified", avoidsRepetition: true },
@@ -286,6 +284,7 @@ describe("parseSemanticStyleExtraction", () => {
   it("checks the leak surface, not the whole answer", () => {
     // The enum values necessarily repeat words that appear in the sample; only
     // the free text can leak, because only the free text can paraphrase.
+    // The formality label is derived, not free text, so it is excluded (R14).
     const parsed = SemanticStyleExtractionSchema.parse(extraction());
     expect(extractionFreeText(parsed)).toBe("utilise leverage");
   });

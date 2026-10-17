@@ -91,8 +91,8 @@ export const SAMPLE_PROFILE = {
     formality: { score: 50, label: "" },
     sentenceArchitecture: {
       complexity: "moderate",
-      clauseDensity: "medium",
       targetWords: 12,
+      sentenceVariability: "medium",
       coordination: "mixed",
       shortClosingSentence: false,
     },

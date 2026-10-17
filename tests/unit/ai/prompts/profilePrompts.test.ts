@@ -1,37 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  buildProfilePrompt,
-  buildProfilePromptV2,
-  ProfileResponseSchema,
-} from "../../../../src/ai/prompts/index";
-
-describe("buildProfilePrompt", () => {
-  it("throws when includeRawText is false (default)", () => {
-    expect(() => buildProfilePrompt("some text")).toThrow(/includeRawText/);
-  });
-
-  it("throws when includeRawText is explicitly false", () => {
-    expect(() => buildProfilePrompt("some text", [], { includeRawText: false })).toThrow(
-      /includeRawText/,
-    );
-  });
-
-  it("includes sample text when includeRawText is true", () => {
-    const prompt = buildProfilePrompt("hello world", [], { includeRawText: true });
-    expect(prompt).toContain("hello world");
-    expect(prompt).toContain("Writing sample:");
-  });
-
-  it("includes constraints when provided", () => {
-    const prompt = buildProfilePrompt("text", ["no em dashes"], { includeRawText: true });
-    expect(prompt).toContain("Constraints: no em dashes");
-  });
-
-  it("omits constraints line when empty", () => {
-    const prompt = buildProfilePrompt("text", [], { includeRawText: true });
-    expect(prompt).not.toContain("Constraints:");
-  });
-});
+import { buildProfilePromptV2 } from "../../../../src/ai/prompts/index";
 
 describe("buildProfilePromptV2", () => {
   it("throws when includeRawText is false (default)", () => {
@@ -69,89 +37,14 @@ describe("buildProfilePromptV2", () => {
     expect(prompt).toMatch(/JSON arrays of strings, never one comma-separated string/);
   });
 
-  it("tells the model not to quote the sample in a description", () => {
+  it("tells the model not to quote the sample in any free-text field", () => {
     // Verified afterwards regardless, but telling the model is cheaper than
-    // telling a user their provider returned a leak.
+    // telling a user their provider returned a leak. The instruction covers
+    // every free-text field — descriptions — because the leakage check reads
+    // all of them (R2). The formality label is derived, not free-text (R14).
     const prompt = buildProfilePromptV2("text", [], { includeRawText: true });
-    expect(prompt).toMatch(/must not name a project/);
-  });
-});
-
-describe("ProfileResponseSchema", () => {
-  it("accepts a valid profile response", () => {
-    const result = ProfileResponseSchema.safeParse({
-      tone: "formal",
-      voice: "third-person",
-      formality: 70,
-      readingGradeTarget: 10,
-      preferredSentenceLength: 22,
-      vocabularyRegister: "standard",
-      rhetoricalStyle: "direct",
-      avoidWords: ["very"],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("strips unknown fields", () => {
-    const result = ProfileResponseSchema.safeParse({
-      tone: "formal",
-      voice: "third-person",
-      formality: 70,
-      readingGradeTarget: null,
-      preferredSentenceLength: 22,
-      vocabularyRegister: "standard",
-      rhetoricalStyle: "direct",
-      avoidWords: [],
-      extraField: "should be dropped",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data).not.toHaveProperty("extraField");
-    }
-  });
-
-  it("rejects out-of-range formality", () => {
-    const result = ProfileResponseSchema.safeParse({
-      tone: "formal",
-      voice: "third-person",
-      formality: 200,
-      readingGradeTarget: null,
-      preferredSentenceLength: 22,
-      vocabularyRegister: "standard",
-      rhetoricalStyle: "direct",
-      avoidWords: [],
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects invalid vocabularyRegister", () => {
-    const result = ProfileResponseSchema.safeParse({
-      tone: "formal",
-      voice: "third-person",
-      formality: 70,
-      readingGradeTarget: null,
-      preferredSentenceLength: 22,
-      vocabularyRegister: "bogus",
-      rhetoricalStyle: "direct",
-      avoidWords: [],
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("defaults avoidWords when omitted", () => {
-    const result = ProfileResponseSchema.safeParse({
-      tone: "formal",
-      voice: "third-person",
-      formality: 70,
-      readingGradeTarget: null,
-      preferredSentenceLength: 22,
-      vocabularyRegister: "standard",
-      rhetoricalStyle: "direct",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.avoidWords).toEqual([]);
-    }
+    expect(prompt).toMatch(/No free-text field \(description\)/);
+    expect(prompt).toMatch(/must name a project, a company, a person, a date, an amount/);
   });
 });
 
