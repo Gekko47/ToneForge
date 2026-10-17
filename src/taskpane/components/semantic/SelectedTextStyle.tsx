@@ -320,6 +320,11 @@ export default function SelectedTextStyle({
           value={semantic.sentenceArchitecture.targetWords}
         />
         <TextField
+          id="sts-sentence-variability"
+          label="Sentence variability"
+          value={label(semantic.sentenceArchitecture.sentenceVariability)}
+        />
+        <TextField
           id="sts-sentence-coordination"
           label="Coordination"
           value={label(semantic.sentenceArchitecture.coordination)}
@@ -343,6 +348,11 @@ export default function SelectedTextStyle({
           id="sts-paragraph-target"
           label="Paragraph length"
           value={semantic.paragraphArchitecture.targetWords}
+        />
+        <TextField
+          id="sts-paragraph-variability"
+          label="Paragraph variability"
+          value={label(semantic.paragraphArchitecture.paragraphVariability)}
         />
         <TextField
           id="sts-paragraph-propositions"

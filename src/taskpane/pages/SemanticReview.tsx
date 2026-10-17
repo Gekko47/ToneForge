@@ -610,7 +610,16 @@ export default function SemanticReview({
       // A throw is a fault, not a refusal, and says so. Collapsing the two is what
       // left the old flow with a button that failed silently. The sentence still
       // comes from the taxonomy, and still says nothing was written.
-      const view = failureCopyFor(error);
+      // Unclassified errors are treated as E_APPLY_FAILED; SemanticReviewError
+      // instances retain their existing classification.
+      const view = isSemanticReviewError(error)
+        ? failureCopyFor(error)
+        : failureCopyFor(
+            new SemanticReviewError(
+              error instanceof Error ? error.message : String(error),
+              "E_APPLY_FAILED",
+            ),
+          );
       emitTelemetry({
         event: "review.apply_failed",
         applyId,

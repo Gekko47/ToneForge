@@ -331,6 +331,14 @@ export interface SemanticReviewResult {
   actionable: boolean;
   /** Present whenever the proposal may not be applied, and names which check. */
   refusalReason?: string;
+  /**
+   * Whether the proposed revision's original text matches the selection.
+   *
+   * Set by the engine when it detects a span mismatch (the model proposed a
+   * revision for a different span than what was selected). This is always a
+   * hard refusal — no acknowledgement can override it.
+   */
+  spanMatch?: boolean;
   providerMetadata: ProviderMetadata;
   selectionAnchor: SemanticSelectionAnchor;
 }

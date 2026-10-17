@@ -402,6 +402,44 @@ describe("reviewSemanticSelection", () => {
     expect(result.refusalReason).toMatch(/did not match the selected text/i);
   });
 
+  it("accepts a faithful copy that differs only by Word's trailing paragraph mark", async () => {
+    // `Paragraph.text` carries the mark, the selection's text does not; both name
+    // the same span, so the revision must not be refused for it.
+    const selectionWithMark = `${SELECTION}\r`;
+    const result = await reviewSemanticSelection(
+      request({
+        selectedText: selectionWithMark,
+        selectionAnchor: {
+          ...request().selectionAnchor,
+          selectedText: selectionWithMark,
+          endOffset: selectionWithMark.length,
+        },
+      }),
+      {
+        includeRawText: true,
+        registry: registryReturning(
+          reviewBody({ proposedRevision: { original: SELECTION, revised: CLEAN_REVISION } }),
+        ),
+      },
+    );
+
+    expect(result.spanMatch).toBeUndefined();
+    expect(result.actionable).toBe(true);
+  });
+
+  it("refuses a copy that adds or drops a space, because the span really differs", async () => {
+    const result = await reviewSemanticSelection(request(), {
+      includeRawText: true,
+      registry: registryReturning(
+        reviewBody({ proposedRevision: { original: ` ${SELECTION}`, revised: CLEAN_REVISION } }),
+      ),
+    });
+
+    expect(result.actionable).toBe(false);
+    expect(result.spanMatch).toBe(false);
+    expect(result.refusalReason).toMatch(/did not match the selected text/i);
+  });
+
   it("treats no proposal as an answer, not a failure", async () => {
     const result = await reviewSemanticSelection(request(), {
       includeRawText: true,

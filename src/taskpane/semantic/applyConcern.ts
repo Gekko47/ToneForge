@@ -41,6 +41,13 @@ export function applyConcernFor(result: SemanticReviewResult): ApplyConcern {
   if (result.preservation.pass === false) {
     return { hard: true, acknowledgementRequired: false };
   }
+  // A span mismatch is always a hard refusal, regardless of meaning flags.
+  // The engine sets `spanMatch: false` when the proposed revision's original
+  // text does not match the selection, which is a hard block no acknowledgement
+  // can override.
+  if (result.spanMatch === false) {
+    return { hard: true, acknowledgementRequired: false };
+  }
   const unpreserved = unpreservedFlags(result.meaningPreservation);
   if (result.actionable === false) {
     // `pass` is true here, so the refusal is either the model's own meaning flag

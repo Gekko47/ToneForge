@@ -124,9 +124,10 @@ export default function SemanticStyle({
    * on — which is why the *active* profile matters and not merely any profile.
    */
   React.useEffect(() => {
-    void syncSemanticRibbon(profile !== null);
-    onProfileChanged?.(profile !== null);
-  }, [profile, onProfileChanged]);
+    const hasActive = activeId !== null;
+    void syncSemanticRibbon(hasActive);
+    onProfileChanged?.(hasActive);
+  }, [activeId, onProfileChanged]);
 
   /**
    * Re-read the picker list after a write, so the list cannot disagree with what
@@ -450,8 +451,8 @@ export default function SemanticStyle({
             exactly the user who declined.
           */}
           <SemanticProfileEditor semantic={profile.semantic} onSave={persistSemantic} />
-          // "Use this style" section removed (R13). Activation is handled by //
-          ProfileRecordSection's publish button, which publishes and activates together.
+          {/* "Use this style" section removed (R13). Activation is handled by
+              ProfileRecordSection's publish button, which publishes and activates together. */}
           {evidence !== null && (
             <section aria-labelledby="evidence-heading">
               <h2 id="evidence-heading">Where this style came from</h2>
@@ -468,8 +469,8 @@ export default function SemanticStyle({
               </p>
             </section>
           )}
-          // "Sample diagnostics" section removed (R12). Measured metrics are available on // the
-          Deterministic Style Profile tab.
+          {/* "Sample diagnostics" section removed (R12). Measured metrics are available on
+              the Deterministic Style Profile tab. */}
           {/*
             The semantic record's own revision history, which existed but were never
             rendered here: the section was wired only on the deterministic Profile
@@ -489,6 +490,12 @@ export default function SemanticStyle({
               onAnnounce={(message) => {
                 setLearnStatus(null);
                 setRecordAnnouncement(message);
+              }}
+              onPublished={(published) => {
+                setActiveId(published.id);
+                setActiveSemanticProfile(published.id);
+                setRecord(published);
+                refreshRecords();
               }}
             />
           </div>

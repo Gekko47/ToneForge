@@ -98,7 +98,17 @@ const prod = {
           priority: -10,
           reuseExistingChunk: true,
         },
+        /*
+         * Application code shared by more than one chunk, kept OUT of the initial
+         * load. Previously this inherited `chunks: "all"`, so modules shared by the
+         * lazy pages were hoisted into a `common` chunk that the entry pulled at
+         * startup — putting the whole editable-profile/state engine in the taskpane
+         * bundle even though only a lazy page used it. `chunks: "async"` keeps them
+         * with the pages that need them, so the pane boots on the shell alone and
+         * the functional cores arrive on demand.
+         */
         common: {
+          chunks: "async",
           minChunks: 2,
           name: "common",
           priority: -20,

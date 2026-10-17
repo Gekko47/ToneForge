@@ -92,14 +92,15 @@ export function normalizeLineEndings(text: string): string {
 }
 
 /**
- * Remove a trailing paragraph mark from host-returned text.
+ * Remove a single trailing paragraph mark from host-returned text.
  *
  * Word's `Paragraph.text` ends in a paragraph mark — `\r` for a body paragraph,
  * `\u0007` in a table cell — while a `Selection`'s text normally does not, and
  * both describe the same paragraph. Any comparison between "the text the user
  * selected" and "the paragraph's own text" must normalise the mark away first,
- * or a whole-paragraph check reads an unchanged paragraph as changed. Only
- * trailing marks are removed, so a real edit — a merged or split paragraph, or
+ * or a whole-paragraph check reads an unchanged paragraph as changed. Only one
+ * trailing mark is removed, so additional trailing line breaks or soft breaks
+ * are preserved as content, and a real edit — a merged or split paragraph, or
  * any character change — still differs.
  *
  * Shared by the selection capture (`word/selectionScope`, deciding whether a
@@ -108,7 +109,7 @@ export function normalizeLineEndings(text: string): string {
  * text) so the two cannot drift on what "the same paragraph text" means.
  */
 export function stripParagraphMark(text: string): string {
-  return text.replace(/[\r\n\u0007]+$/, "");
+  return text.replace(/[\r\n\u0007]$/, "");
 }
 
 /** FNV-1a 32-bit hash — fast, deterministic, good enough for stale guards. */

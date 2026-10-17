@@ -105,9 +105,10 @@ export default function ModelPicker({
     // connection changed can be recognised as stale and dropped.
     const requestConnectionId = active.connectionId;
     catalogConnectionId.current = requestConnectionId;
-    // Clear the catalog when starting a fetch for a new connection, so a stale
-    // list from the previous connection is never shown while loading.
-    setCatalog(null);
+    // Clear the catalog only when starting a fetch for a *different* connection,
+    // so a stale list from the previous connection is never shown while loading.
+    // A failed refresh for the same connection preserves the existing catalog.
+    setCatalog((prev) => (prev?.connectionId === requestConnectionId ? prev : null));
     setLoading(true);
     setFailed(false);
     setUnknownConnection(false);
@@ -127,7 +128,9 @@ export default function ModelPicker({
         logger.warn("Model catalog could not be loaded", {
           errorMessage: error instanceof Error ? error.message : String(error),
         });
-        setCatalog(null);
+        // Preserve the existing catalog on a same-connection failure; clear only
+        // when it belongs to a different connection.
+        setCatalog((prev) => (prev?.connectionId === requestConnectionId ? prev : null));
         setFailed(true);
         setUnknownConnection(error instanceof GatewayError && error.kind === "unknownConnection");
       }
@@ -210,7 +213,11 @@ export default function ModelPicker({
   }
 
   const query = value.trim().toLowerCase();
-  const filtered = query
+  // Filter only while the user is typing (query is non-empty and does not exactly
+  // match an option key). When value exactly matches an option key (i.e. a model
+  // was selected), show the full list so the user can see all available models.
+  const isTyping = query.length > 0 && !options.some((option) => option.key === value);
+  const filtered = isTyping
     ? options.filter(
         (option) =>
           option.text.toLowerCase().includes(query) || option.key.toLowerCase().includes(query),

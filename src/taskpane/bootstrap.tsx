@@ -46,8 +46,8 @@ window.addEventListener(
     if (
       event.message.includes("ResizeObserver loop completed with undelivered notifications") ||
       event.message.includes("ResizeObserver loop limit exceeded") ||
-      event.message.includes("unload") ||
-      event.message.includes("beforeunload")
+      event.message.includes("'unload' is deprecated") ||
+      event.message.includes("'beforeunload' is deprecated")
     ) {
       event.stopImmediatePropagation();
     }

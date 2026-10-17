@@ -88,7 +88,7 @@ export function matchesChangePrecondition(
        * carries it). `word/selectionScope` already strips the mark to decide a
        * selection is a whole paragraph; comparing the raw strings here re-read
        * that same mark as a change and refused every whole-paragraph write on an
-       * untouched document. Stripping only the trailing mark keeps the guard: a
+       * untouched document. Stripping only one trailing mark keeps the guard: a
        * genuine edit changes the text in a way no mark removal can hide.
        *
        * Unread live text is still a mismatch, so a host that served no `text`

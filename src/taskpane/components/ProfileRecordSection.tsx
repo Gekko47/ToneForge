@@ -29,6 +29,15 @@ export interface ProfileRecordSectionProps {
    * stops rendering one.
    */
   onAnnounce?: (message: string) => void;
+  /**
+   * Called after a successful publish, so the page can sync its active profile.
+   *
+   * Publishing activates the published revision, so the page needs to know
+   * which record was published to update its `activeId` and reflect the new
+   * state. Without this, the page would not know a publish happened and the
+   * ribbon and profile-changed signal would not fire.
+   */
+  onPublished?: (record: ProfileRecord) => void;
 }
 
 function dateLabel(iso: string): string {
@@ -48,6 +57,7 @@ export default function ProfileRecordSection({
   record,
   onChange,
   onAnnounce,
+  onPublished,
 }: ProfileRecordSectionProps): React.ReactNode {
   const [announcement, setAnnouncement] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -79,7 +89,9 @@ export default function ProfileRecordSection({
 
   function handlePublish(): void {
     try {
-      commit(publishDraft(record, new Date().toISOString()).record, "Draft published.");
+      const { record: published } = publishDraft(record, new Date().toISOString());
+      commit(published, "Draft published.");
+      onPublished?.(published);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     }

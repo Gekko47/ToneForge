@@ -84,6 +84,7 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
 
     // Map the response back to typed answers. The mapper records whether the
     // output was unreadable, which is a different failure from a partial answer.
+    const answers = this.mapper.map(response, plan);
     consistencyDebugLog("decision-response", {
       provider: this.provider.name,
       responseChars: response.text.length,
@@ -92,7 +93,6 @@ export class SystemOneDecisionProvider implements ConsistencyDecisionProvider {
       parseFailed: this.mapper.parseFailed,
       latencyMs: Date.now() - startTime,
     });
-    const answers = this.mapper.map(response, plan);
 
     const latencyMs = Date.now() - startTime;
 

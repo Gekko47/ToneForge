@@ -80,10 +80,15 @@ describe("normalizeLineEndings", () => {
 });
 
 describe("stripParagraphMark", () => {
-  it("removes a trailing paragraph mark, in either host form", () => {
+  it("removes a single trailing paragraph mark, in either host form", () => {
     expect(stripParagraphMark("hello\r")).toBe("hello");
     expect(stripParagraphMark("hello\u0007")).toBe("hello");
-    expect(stripParagraphMark("hello\r\n")).toBe("hello");
+  });
+
+  it("removes at most one trailing mark, preserving additional trailing breaks as content", () => {
+    // Only one mark is removed; additional trailing line breaks are content.
+    expect(stripParagraphMark("hello\r\n")).toBe("hello\r");
+    expect(stripParagraphMark("hello\r\r")).toBe("hello\r");
   });
 
   it("leaves text with no trailing mark untouched", () => {

@@ -150,7 +150,8 @@ const COPY: Readonly<Record<SemanticFailureCode, SemanticFailureCopy>> = {
     recovery: { kind: "change-selection", label: "Use current selection" },
   },
   E_APPLY_FAILED: {
-    message: "The revision could not be written, so nothing has been changed in the document.",
+    message:
+      "The revision could not be written, so the write did not finish. Check for a partial tracked change before retrying.",
     recovery: RETRY("Try again"),
   },
 };

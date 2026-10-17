@@ -80,8 +80,19 @@ const EnvSchema = z.object({
    * Off by default. When set to "1" or "true", the extraction and decision
    * providers log what was sent and received at each call site, so a timeout
    * can be diagnosed as a wiring problem or a genuinely slow provider.
+   *
+   * Parsed as an exact string match (only "1" or "true" enable it) rather
+   * than coerced boolean, consistent with the reader in debugLog.ts.
    */
-  DEBUG_CONSISTENCY: z.coerce.boolean().default(false),
+  DEBUG_CONSISTENCY: z
+    .string()
+    .refine(
+      (value) => value === "1" || value === "true" || value === "0" || value === "false",
+      'Must be "1", "true", "0", or "false"',
+    )
+    .optional()
+    .default("false")
+    .transform((value) => value === "1" || value === "true"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

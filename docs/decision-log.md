@@ -6376,3 +6376,31 @@ so it survives a repair that throws.
   [`src/taskpane/semantic/gates.ts`](../src/taskpane/semantic/gates.ts);
   [`tests/unit/taskpane/semantic/applyConcern.test.ts`](../tests/unit/taskpane/semantic/applyConcern.test.ts);
   [`tests/unit/taskpane/semantic/gates.test.ts`](../tests/unit/taskpane/semantic/gates.test.ts).
+
+## ADR-0153 — Shared application code loads with the page that uses it, not at pane start
+
+- **Status**: Accepted (2026-10-17)
+- **Context**: The verification chain failed at `build-artifacts` before any work on this
+  branch — the `taskpane` initial load was `runtime (12.6 KiB) + vendors (542 KiB) + common
+(166 KiB)`, 738,331 bytes against a 720 KiB ceiling. The `common` cacheGroup inherited
+  `chunks: "all"`, so application modules shared by the lazy pages were hoisted into a single
+  chunk the entry then pulled at startup: the editable-profile, state, and semantic engines
+  shipped in the boot bundle although only a lazy page used them. The pane already lazy-loads
+  its pages (ADR-0109), so the eager cost was the hoisting, not the pages. The build checker is
+  explicit that the 720 KiB cap is temporary and must come down, not up.
+- **Decision**: set the `common` cacheGroup to `chunks: "async"` in
+  [`webpack.prod.js`](../webpack.prod.js), so code shared by more than one chunk stays with the
+  async pages that use it. The shell (`bootstrap`, `App`, the theme provider, the error/loading
+  states) stays eager, because those modules are genuinely needed before the first page renders.
+- **Consequences**:
+  - Positive: the `taskpane` entrypoint fell from 721 KiB to 645 KiB and the budget passes
+    without raising the ceiling.
+  - Positive: consistent with "load what you use" — a functional core arrives with the page
+    that renders it, and the home page keeps only what it actually draws.
+  - Cost: application code shared by two lazy pages is fetched on first navigation to either,
+    in exchange for a faster pane start.
+  - **Not claimed**: that the `vendors` chunk is small. `react-dom`, the Fluent v9 runtime, and
+    `zod` remain the dominant initial cost; this ADR removes only the hoisted application
+    `common` chunk from the initial load.
+- **Evidence**: [`webpack.prod.js`](../webpack.prod.js);
+  [`scripts/check-build-artifacts.mjs`](../scripts/check-build-artifacts.mjs); ADR-0109.

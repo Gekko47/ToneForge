@@ -45,6 +45,7 @@ import {
   type LlmResponse,
 } from "../../ai/providers/LlmProvider";
 import { logger } from "../../shared/utils/logger";
+import { normalizeLineEndings, stripParagraphMark } from "../../shared/utils/text";
 import { validatePreservation } from "./preservationValidator";
 import {
   SemanticReviewError,
@@ -235,6 +236,13 @@ export async function reviewSemanticSelection(
       stageTimings[openStage] = Math.max(0, clock() - openStageAt);
       openStage = null;
     }
+    emitTelemetry({
+      event: "review.failed",
+      runId,
+      stage: stageForCode(code),
+      failureCode: code,
+      totalDurationMs: Math.max(0, clock() - started),
+    });
     throw new SemanticReviewError(message, code, {
       ...detail,
       provider: registry.name,
@@ -371,13 +379,8 @@ export async function reviewSemanticSelection(
     });
     // The stage that was running is reported as failed rather than completed, so a
     // failed run appears once in the telemetry with the stage it died in.
-    emitTelemetry({
-      event: "review.failed",
-      runId,
-      stage: stageForCode(code),
-      failureCode: code,
-      totalDurationMs: Math.max(0, clock() - started),
-    });
+    // The `fail()` helper emits `review.failed` for every coded failure, so this
+    // catch must not emit it again — each failed run emits the event exactly once.
     fail(error instanceof Error ? error.message : String(error), code, {
       abortedByCaller,
       errorName,
@@ -495,17 +498,22 @@ export async function reviewSemanticSelection(
   /*
    * The revision must replace the selection and nothing else.
    *
-   * Compared after trimming, because a model that reproduces the selection with
-   * one trailing space has still reproduced it. Compared at all, because a
-   * revision scoped to a span the model chose is a change whose extent the user
-   * was never shown.
+   * Compared after removing only Word's own artefacts — the paragraph terminator
+   * and line-ending differences — never after trimming. Trimming would treat a
+   * selection that genuinely starts or ends with a space as equal to one that does
+   * not, so the write would replace a span whose surrounding spaces differ and
+   * silently add or remove them. Removing the trailing paragraph mark is faithful:
+   * `Paragraph.text` carries it and a `Selection`'s text does not, and both name
+   * the same span (`shared/utils/text.stripParagraphMark` is the same helper the
+   * selection capture and the change preconditions already use).
    */
-  if (proposedRevision.original.trim() !== request.selectedText.trim()) {
+  if (!sameSpan(proposedRevision.original, request.selectedText)) {
     logger.warn("Semantic review proposed a revision against a different span");
     return finish({
       ...base,
       preservation: validatePreservation(request.selectedText, proposedRevision.revised),
       actionable: false,
+      spanMatch: false,
       refusalReason:
         "The model's revision did not match the selected text, so it cannot be applied to this selection. Nothing has been changed in the document.",
     });
@@ -532,6 +540,22 @@ export async function reviewSemanticSelection(
     actionable,
     ...(refusal === null ? {} : { refusalReason: refusal }),
   });
+}
+
+/**
+ * Whether the model's `original` names the same span as the selection.
+ *
+ * Line endings are unified and a single trailing paragraph mark is dropped, so a
+ * faithful copy is not refused because Word returned `\r` and JSON carried `\n`.
+ * Nothing else is removed: internal and leading/trailing whitespace is part of
+ * the span, so a revision that adds, drops or reshapes a space is a different
+ * span and stays refused.
+ */
+function sameSpan(original: string, selected: string): boolean {
+  return (
+    stripParagraphMark(normalizeLineEndings(original)) ===
+    stripParagraphMark(normalizeLineEndings(selected))
+  );
 }
 
 /**
@@ -596,12 +620,12 @@ function parseJson(text: string): unknown {
 function outermostObject(text: string): string | null {
   const start = text.indexOf("{");
   if (start === -1) return null;
-  const chars = Array.from(text.slice(start));
   let depth = 0;
   let inString = false;
   let escaped = false;
   let end = -1;
-  chars.some((char, offset) => {
+  Array.from({ length: text.length - start }, (_, k) => start + k).some((i) => {
+    const char = text[i]!;
     if (inString) {
       if (escaped) escaped = false;
       else if (char === "\\") escaped = true;
@@ -613,7 +637,7 @@ function outermostObject(text: string): string | null {
     else if (char === "}") {
       depth -= 1;
       if (depth === 0) {
-        end = start + offset;
+        end = i;
         return true;
       }
     }

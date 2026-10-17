@@ -107,6 +107,19 @@ describe("applyConcernFor", () => {
     });
   });
 
+  it("treats a span mismatch as hard even when a meaning flag is false", () => {
+    // A span mismatch with `spanMatch: false` is always hard, regardless of
+    // meaning flags. The model proposed a revision for a different span.
+    expect(
+      applyConcernFor(
+        result({
+          spanMatch: false,
+          meaningPreservation: { ...ALL_PRESERVED, qualificationPreserved: false },
+        }),
+      ),
+    ).toEqual({ hard: true, acknowledgementRequired: false });
+  });
+
   it("has nothing to block and nothing to apply when the model proposed nothing", () => {
     expect(applyConcernFor(withoutProposal({ actionable: false }))).toEqual({
       hard: false,
